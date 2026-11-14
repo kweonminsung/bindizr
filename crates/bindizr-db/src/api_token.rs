@@ -1,9 +1,8 @@
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::api_token::{ApiToken, TokenId};
 use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
-use crate::model::api_token::ApiToken;
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 

@@ -113,7 +113,7 @@ impl serde::Serialize for ImportMode {
 
 /// Supply the wire default when an import request omits its mode.
 fn default_import_mode() -> String {
-    ImportMode::Append.as_str().to_owned()
+    ImportMode::Append.as_str().to_string()
 }
 
 impl Default for ImportZoneRequest {
@@ -245,7 +245,7 @@ impl FromStr for ImportMode {
             "append" => Ok(Self::Append),
             "upsert" => Ok(Self::Upsert),
             "replace" => Ok(Self::Replace),
-            _ => Err(ParseImportModeError(value.to_owned())),
+            _ => Err(ParseImportModeError(value.to_string())),
         }
     }
 }

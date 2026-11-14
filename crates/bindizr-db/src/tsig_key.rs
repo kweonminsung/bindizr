@@ -1,8 +1,7 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::tsig_key::TsigKeyId;
+use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
 
 use crate::error::DatabaseError;
-use crate::model::tsig_key::TsigKey;
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 

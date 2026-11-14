@@ -4,10 +4,10 @@
 use std::collections::BTreeMap;
 
 use bindizr_core::dns::Ttl;
+use bindizr_core::model::record::{RecordData, RecordSetKey};
+use bindizr_core::model::zone::Zone;
 
 use crate::authorization::ReadableRecords;
-use crate::model::record::{RecordData, RecordSetKey};
-use crate::model::zone::Zone;
 use crate::types;
 use crate::types::{
     RecordChange, RecordDiffEntryResponse, RecordDiffResponse, RecordDiffSummaryResponse,

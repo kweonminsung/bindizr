@@ -8,6 +8,8 @@ mod get;
 mod update;
 pub(crate) mod validation;
 
+use bindizr_core::model::dnssec_record::DnssecRecordWithZone;
+use bindizr_core::model::record::RecordWithZone;
 pub use bulk::create_bulk;
 pub(crate) use changes::{create_with_changes_tx, delete_with_changes_tx, update_with_changes_tx};
 pub use create::create;
@@ -19,8 +21,6 @@ pub(crate) use validation::{
 };
 
 use crate::authorization::Caller;
-use crate::model::dnssec_record::DnssecRecordWithZone;
-use crate::model::record::RecordWithZone;
 use crate::types::{RecordResponse, RecordValue};
 
 /// An API-visible user or derived DNSSEC record; SOA stays in zone metadata.

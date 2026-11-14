@@ -1,12 +1,12 @@
 //! Prepare NOTIFY targets and collect per-address send results.
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::metrics::NotifyResult;
+use bindizr_core::model::secondary::Secondary;
 use thiserror::Error;
 use tokio::task::JoinSet;
 
 use crate::dns_client::{ResolveAddressError, notify};
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
 use crate::types::CheckNotifyResponse;
 use crate::{Context, dns_client, secondary};
 

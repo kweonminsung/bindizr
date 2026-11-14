@@ -1,9 +1,8 @@
 use bindizr_core::dns::address::AddressTarget;
-use bindizr_core::model::secondary::SecondaryId;
+use bindizr_core::model::secondary::{Secondary, SecondaryId};
 use bindizr_core::model::tsig_key::TsigKeyId;
 
 use crate::error::DatabaseError;
-use crate::model::secondary::Secondary;
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 

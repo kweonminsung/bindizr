@@ -1,11 +1,9 @@
 //! API token payloads.
 
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::api_token::{ApiToken, TokenId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
-
-use crate::model::api_token::ApiToken;
 
 /// Request body for creating an API token.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

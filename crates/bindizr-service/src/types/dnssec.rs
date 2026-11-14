@@ -2,13 +2,14 @@
 
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::dnssec::KeyTag;
-use bindizr_core::model::dnssec_key::{DnssecAlgorithm, DnssecKeyId};
+use bindizr_core::model::dnssec_key::{
+    DnssecAlgorithm, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::DnssecPolicyResponse;
-use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 
 /// Whether a step that depends on the parent's DS asks the parent
 /// nameservers, or takes the DS on the operator's word.

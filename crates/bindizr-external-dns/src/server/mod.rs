@@ -135,7 +135,7 @@ async fn track_webhook_metrics(
     let route = request
         .extensions()
         .get::<MatchedPath>()
-        .map(|path| path.as_str().to_owned())
+        .map(|path| path.as_str().to_string())
         .unwrap_or_default();
     let endpoint = endpoint_label(request.method(), &route);
     let started = Instant::now();

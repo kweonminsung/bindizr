@@ -3,7 +3,7 @@
 use std::fmt;
 
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone::{Zone, ZoneId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::openapi::RefOr;
@@ -11,7 +11,6 @@ use utoipa::openapi::schema::Schema;
 use utoipa::{IntoParams, ToSchema};
 
 use super::secondary::TransferResponse;
-use crate::model::zone::Zone;
 
 /// Which records a zone reads back as: the user records alone, or with the
 /// derived DNSSEC records bindizr generates.

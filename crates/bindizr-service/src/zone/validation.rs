@@ -3,12 +3,11 @@ use std::collections::HashSet;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::{SoaMailbox, SrvRecordValue};
 use bindizr_core::dns::{Ttl, name};
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::record::{Record, RecordType};
+use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::{LockLevel, Transaction};
 
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordType};
-use crate::model::zone::Zone;
 use crate::{Context, ttl};
 
 const MAX_EMAIL_LEN: usize = 254;

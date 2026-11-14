@@ -1,11 +1,10 @@
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType, RecordWithZone};
 use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
 use crate::error::DatabaseError;
-use crate::model::record::{Record, RecordType, RecordWithZone};
 use crate::record::RecordFilter;
 use crate::{LockLevel, sql};
 

@@ -11,7 +11,7 @@ use crate::common::{TestApp, TestAppOptions, dns};
 
 /// Resolve equivalent catalog names through SOA, AXFR and IXFR without changing the question.
 #[tokio::test]
-#[serial_test::serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn catalog_queries_match_equivalent_dns_escapes() {
     use domain::base::ToName;
 
@@ -97,7 +97,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
 
 /// Serve every generated catalog owner at the longest accepted catalog name.
 #[tokio::test]
-#[serial_test::serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn catalog_member_owners_fit_at_the_wire_length_boundary() {
     let catalog = format!(
         "{}.{}.{}.{}",

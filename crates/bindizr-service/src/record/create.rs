@@ -1,7 +1,7 @@
 use std::slice;
 
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -10,7 +10,6 @@ use super::validation;
 use super::validation::ParsedRecord;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData};
 use crate::types::{CreateRecordRequest, RecordDiffResponse, RecordResponse, WriteRecordResponse};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, serial, transaction, zone};

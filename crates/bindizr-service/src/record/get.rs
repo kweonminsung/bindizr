@@ -1,13 +1,12 @@
 use bindizr_core::dns::name;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::dnssec_record::DnssecRecordType;
+use bindizr_core::model::record::{RecordId, RecordType};
 use bindizr_db::dnssec_record::DnssecRecordFilter;
 
 use super::ServedRecord;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::dnssec_record::DnssecRecordType;
-use crate::model::record::RecordType;
 use crate::types::{PaginatedResponse, RecordFilter, RecordResponse, ZoneView};
 use crate::zone::validation;
 use crate::{Context, pagination, ttl, zone};

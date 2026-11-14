@@ -270,7 +270,7 @@ where
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
-        self.as_str().to_owned().encode_by_ref(buffer)
+        self.as_str().to_string().encode_by_ref(buffer)
     }
 }
 
@@ -640,7 +640,7 @@ impl PartialOrd for RecordType {
 impl From<RecordType> for String {
     /// Render the canonical mnemonic for serde.
     fn from(value: RecordType) -> Self {
-        value.as_str().to_owned()
+        value.as_str().to_string()
     }
 }
 

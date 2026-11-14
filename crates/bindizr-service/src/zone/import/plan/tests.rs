@@ -1,11 +1,10 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{RecordId, RecordType};
 use bindizr_core::model::zone::{Zone, ZoneId};
 use chrono::Utc;
 
 use super::*;
-use crate::model::record::RecordType;
 
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {

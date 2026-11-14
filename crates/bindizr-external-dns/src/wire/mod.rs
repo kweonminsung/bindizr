@@ -194,7 +194,7 @@ impl Endpoint {
     pub(crate) fn to_bindizr_record(&self, record_type: RecordType) -> BindizrRecord {
         BindizrRecord {
             name: self.dns_name.clone(),
-            record_type: record_type.as_str().to_owned(),
+            record_type: record_type.as_str().to_string(),
             ttl: (self.record_ttl > 0).then_some(self.record_ttl),
             values: self.targets.clone(),
         }

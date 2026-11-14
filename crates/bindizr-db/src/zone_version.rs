@@ -1,9 +1,9 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone_version::{VersionFilter, ZoneVersion};
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
-use crate::model::zone_version::{VersionFilter, ZoneVersion};
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 

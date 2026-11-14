@@ -2,12 +2,12 @@
 
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::secondary::Secondary;
+use bindizr_core::model::tsig_key::TsigKey;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
-use crate::model::tsig_key::TsigKey;
 use crate::types::{SecondaryResponse, UpdateSecondaryRequest};
 use crate::{Context, audit, transaction, tsig_key};
 

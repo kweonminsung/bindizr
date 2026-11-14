@@ -1,10 +1,10 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
 use crate::{Context, dnssec, serial, transaction};
 
 /// Advance a named zone's serial and save its signed version atomically.

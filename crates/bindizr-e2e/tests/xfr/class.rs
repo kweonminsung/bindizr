@@ -5,7 +5,6 @@ use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, MessageBuilder, Ttl};
 use domain::rdata::Soa;
 use domain::rdata::tsig::Tsig;
-use serial_test::serial;
 
 use super::tls;
 use crate::common;
@@ -15,7 +14,7 @@ use crate::common::{TestApp, TestAppOptions, dns};
 
 /// An IN IXFR query cannot take its client serial from another class's SOA.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn ixfr_rejects_foreign_soa_classes() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -183,7 +182,7 @@ fn build_query_with_foreign_record(
 
 /// Every ordinary QUERY section is IN-only; count and EDNS errors keep their order.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn queries_reject_foreign_classes_in_every_section() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -234,7 +233,7 @@ async fn queries_reject_foreign_classes_in_every_section() {
 
 /// Class errors cannot bypass TSIG validation, including alongside BADVERS.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn foreign_record_classes_keep_tsig_error_precedence() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,

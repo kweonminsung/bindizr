@@ -1,11 +1,10 @@
-use bindizr_core::model::dnssec_record::DnssecRecordId;
+use bindizr_core::model::dnssec_record::{DnssecRecord, DnssecRecordId, DnssecRecordWithZone};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
 use crate::dnssec_record::DnssecRecordFilter;
 use crate::error::DatabaseError;
-use crate::model::dnssec_record::{DnssecRecord, DnssecRecordWithZone};
 use crate::{LockLevel, sql};
 
 /// Insert a batch of derived DNSSEC records in the current transaction.

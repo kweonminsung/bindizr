@@ -10,13 +10,13 @@ use std::collections::HashSet;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::zonefile::ParsedZoneFile;
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 pub use multiple::import_many;
 pub use single::import;
 
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
 use crate::types::{ImportMode, ImportZoneResponse, Run};
 use crate::{Context, zone};
 

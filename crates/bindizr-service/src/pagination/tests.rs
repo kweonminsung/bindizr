@@ -8,7 +8,7 @@ use bindizr_core::model::change::ChangeSource;
 use bindizr_core::model::dnssec_record::{DnssecRecord, DnssecRecordId, DnssecRecordType};
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role::{Role, RoleId};
-use bindizr_core::model::zone::Zone;
+use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_core::model::zone_version::{VersionFilter, ZoneVersion, ZoneVersionId};
 use bindizr_db::Db;
 use chrono::Utc;
@@ -17,7 +17,6 @@ use tokio::sync::{mpsc, watch};
 use super::*;
 use crate::authorization::Caller;
 use crate::error::ErrorCode;
-use crate::model::zone::ZoneId;
 use crate::types::{
     AuditLogFilter, PageRequest, RecordFilter, TokenFilter, TsigKeyFilter, ZoneFilter,
 };

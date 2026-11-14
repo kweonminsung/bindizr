@@ -3,11 +3,11 @@
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::dns::record::{SoaMailbox, SoaRecordValue};
 use bindizr_core::dns::{Serial, Ttl};
+use bindizr_core::model::zone::Zone;
 
 use super::NsupdateError;
 use super::operation::RecordOperation;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
 use crate::zone::validation;
 use crate::{serial, ttl};
 

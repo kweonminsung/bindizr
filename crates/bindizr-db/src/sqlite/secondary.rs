@@ -1,12 +1,11 @@
 use bindizr_core::dns::address::AddressTarget;
-use bindizr_core::model::secondary::SecondaryId;
+use bindizr_core::model::secondary::{Secondary, SecondaryId};
 use bindizr_core::model::tsig_key::TsigKeyId;
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::secondary::Secondary;
 
 /// Insert a secondary.
 pub(crate) async fn create_tx(

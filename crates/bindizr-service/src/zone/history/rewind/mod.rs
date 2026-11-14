@@ -3,13 +3,13 @@
 use std::collections::HashMap;
 
 use bindizr_core::dns::Serial;
+use bindizr_core::model::record::{Record, RecordData, RecordKey};
 use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 use bindizr_db::LockLevel;
 
 use crate::Transaction;
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData, RecordKey};
-use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 
 /// Rewind current records through journal `(target_serial, current_serial]`.
 /// Skip SOA rows; `zone_versions` restores SOA state.

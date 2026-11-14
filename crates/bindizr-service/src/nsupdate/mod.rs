@@ -13,7 +13,9 @@ use bindizr_core::dns::nsupdate::parser::{
 };
 use bindizr_core::dns::record::ParseRecordValueError;
 use bindizr_core::dns::{Serial, name};
+use bindizr_core::model::record::RecordType;
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use bindizr_db::error::DatabaseError;
 use plan::UpdateOperation;
@@ -22,8 +24,6 @@ use thiserror::Error;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::model::record::RecordType;
-use crate::model::zone::Zone;
 use crate::{Context, dnssec, notify, transaction, zone};
 
 /// An UPDATE failure and its RFC 2136 response classification.

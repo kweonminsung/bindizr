@@ -4,12 +4,12 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::secondary::Secondary;
 use bindizr_core::model::transfer::{TransferKind, TransferLogWithZone, TransferResult};
 use bindizr_db::transfer_log::TransferLogFilter;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
 use crate::types::{
     SecondaryTransferFilter, SecondaryTransfersResponse, TransferResponse, TransferSummaryResponse,
 };

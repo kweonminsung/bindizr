@@ -14,7 +14,6 @@ use domain::tsig::{ClientSequence, ClientTransaction, Key};
 use reqwest::{Method, StatusCode};
 use rustls::pki_types::CertificateDer;
 use rustls::{ClientConfig, RootCertStore, SupportedProtocolVersion, version};
-use serial_test::serial;
 
 use super::common;
 use crate::common::dns::nsupdate::UpdateRecord;
@@ -87,7 +86,7 @@ fn exchange_signed_boundary_transfer<S: io::Read + io::Write>(
 
 /// Maximum storable RDATA fits SHA-512-signed EDNS AXFR over TCP and TLS.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
     use std::str::FromStr;
 
@@ -220,7 +219,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
 
 /// SOA replies carry verifiable RRSIGs only with DO; IXFR stays SOA-only.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn soa_queries_return_current_signatures_when_dnssec_is_requested() {
     use domain::base::ToName;
     use domain::base::rdata::ComposeRecordData;
@@ -391,7 +390,7 @@ async fn soa_queries_return_current_signatures_when_dnssec_is_requested() {
 
 /// TLS requires both key and address authorization; plain accepts either.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tls_transfer_requires_key_and_registered_address() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
@@ -449,7 +448,7 @@ async fn tls_transfer_requires_key_and_registered_address() {
 
 /// Apply IXFR serial policy over TLS after both transfer gates pass.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
@@ -516,7 +515,7 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
 
 /// Echo DO in signed TLS responses, including REFUSED and BADVERS.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tls_response_preserves_edns_dnssec_ok() {
     let app = xot_app().await;
     app.create_secondary("loopback", "127.0.0.1").await;
@@ -553,7 +552,7 @@ async fn tls_response_preserves_edns_dnssec_ok() {
 
 /// Return authenticated BADTIME with OPT over TLS.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn badtime_tls_responses_preserve_edns_and_verify() {
     let app = xot_app().await;
     app.create_secondary("loopback", "127.0.0.1").await;
@@ -602,7 +601,7 @@ async fn badtime_tls_responses_preserve_edns_and_verify() {
 
 /// Authenticate truncated TLS queries before applying time and length policy.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn truncated_tls_queries_follow_tsig_validation_order() {
     let app = xot_app().await;
     app.create_secondary("loopback", "127.0.0.1").await;
@@ -673,7 +672,7 @@ async fn truncated_tls_queries_follow_tsig_validation_order() {
 
 /// Sign FORMERR responses to multi-question queries over TLS.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn multi_question_queries_receive_signed_formerr_over_tls() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
@@ -713,7 +712,7 @@ async fn multi_question_queries_receive_signed_formerr_over_tls() {
 
 /// `require_tls` refuses plain transfers, allowing SOA and TLS (RFC 9103, Section 11).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn require_tls_refuses_a_transfer_over_plain_tcp() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -763,7 +762,7 @@ async fn require_tls_refuses_a_transfer_over_plain_tcp() {
 
 /// `config reload` serves renewed certificates without a restart.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn config_reload_replaces_dns_tls_certificate() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
@@ -813,7 +812,7 @@ async fn config_reload_replaces_dns_tls_certificate() {
 
 /// Reject TLS 1.2 and ALPN without "dot", including missing ALPN.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tls_handshake_rejects_tls_1_2_and_foreign_alpn() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
@@ -844,7 +843,7 @@ async fn tls_handshake_rejects_tls_1_2_and_foreign_alpn() {
 
 /// Unsupported TLS types receive REFUSED/EDE21 (RFC 9103, Section 7.8).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tls_query_returns_not_supported_for_unserved_type() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
@@ -888,7 +887,7 @@ async fn tls_query_returns_not_supported_for_unserved_type() {
 
 /// Unsupported NOTIFY is refused before class checks on every transport.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tls_notify_returns_refused_with_not_supported() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
@@ -947,7 +946,7 @@ async fn tls_notify_returns_refused_with_not_supported() {
 
 /// TLS class refusals retain NOTAUTH/EDE20 and TSIG signatures.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tls_supported_queries_reject_foreign_classes() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
@@ -989,7 +988,7 @@ async fn tls_supported_queries_reject_foreign_classes() {
 /// Refuse TLS UPDATE and sign authenticated replies (RFC 9103, Section 7.8;
 /// RFC 8945, Section 5.3).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tls_update_returns_not_supported() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;

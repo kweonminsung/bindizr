@@ -7,8 +7,8 @@ use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::SoaMailbox;
 use bindizr_core::dns::zonefile::{ParsedZoneFile, ZoneFileSoa, ZoneFileValue};
-use bindizr_core::model::record::RecordId;
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::record::{Record, RecordData, RecordId, RecordKey, RecordType};
+use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
@@ -16,8 +16,6 @@ use super::plan::{DesiredRecord, ImportPlan};
 use super::{ImportOptions, ImportSource, MissingZoneAction};
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData, RecordKey, RecordType};
-use crate::model::zone::Zone;
 use crate::record::validation;
 use crate::types::{
     ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,

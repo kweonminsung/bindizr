@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::api_token::{ApiToken, TokenId};
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::Action;
@@ -14,7 +14,6 @@ use ring::digest::SHA256;
 
 use super::error::ServiceError;
 use crate::authorization::Caller;
-use crate::model::api_token::ApiToken;
 use crate::text::MAX_COLUMN_TEXT_LEN;
 use crate::types::{CreateTokenRequest, PaginatedResponse, TokenFilter, TokenResponse};
 use crate::{Context, audit, pagination, role, text, transaction};

@@ -2,10 +2,10 @@
 //! client address and zone.
 
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone};
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
-use crate::model::transfer::{TransferLog, TransferLogWithZone};
 use crate::{Backend, Db, mysql, postgres, sqlite};
 
 /// Which of one client address's transfer log rows a listing selects.

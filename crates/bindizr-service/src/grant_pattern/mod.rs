@@ -4,9 +4,9 @@
 use bindizr_core::dns::name;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::grant_pattern::MATCH_ANY;
+use bindizr_core::model::record::RecordType;
 
 use crate::error::ServiceError;
-use crate::model::record::RecordType;
 
 /// Derive an ExternalDNS domain filter, which includes all descendants.
 /// Widen `@` and exact names to their containing domain.
@@ -72,7 +72,7 @@ pub(crate) fn normalize_types(value: Option<&str>) -> Result<String, ServiceErro
 
     for part in raw.split(',') {
         let record_type: RecordType = part.trim().parse().map_err(ServiceError::invalid_input)?;
-        let name = record_type.as_str().to_owned();
+        let name = record_type.as_str().to_string();
         if !types.contains(&name) {
             types.push(name);
         }

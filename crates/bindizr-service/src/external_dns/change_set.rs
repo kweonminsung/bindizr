@@ -6,13 +6,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::record::{RecordId, RecordKey};
+use bindizr_core::model::record::{Record, RecordId, RecordKey, RecordType};
+use bindizr_core::model::zone::Zone;
 use chrono::Utc;
 
 use super::policy;
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordType};
-use crate::model::zone::Zone;
 use crate::types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord};
 use crate::{record, ttl};
 

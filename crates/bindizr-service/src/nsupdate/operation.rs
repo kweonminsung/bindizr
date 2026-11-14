@@ -3,16 +3,15 @@
 
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::dns::{Serial, Ttl};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::NsupdateError;
 use crate::Transaction;
 use crate::authorization::{Caller, RecordAccess};
-use crate::model::record::{Record, RecordType};
-use crate::model::zone::Zone;
 use crate::record::{self, AddResult};
 
 /// One update to apply (RFC 2136, Section 2.5). Owner names have passed the zone prescan.

@@ -1,8 +1,8 @@
+use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone};
 use chrono::{DateTime, Utc};
 use sqlx::{MySql, Pool};
 
 use crate::error::DatabaseError;
-use crate::model::transfer::{TransferLog, TransferLogWithZone};
 use crate::transfer_log::TransferLogFilter;
 
 /// Append a transfer log row.

@@ -3,13 +3,12 @@ use std::slice;
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::TxtRecordValue;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 
 use super::*;
 use crate::error::{ErrorCode, ServiceError};
-use crate::model::record::{Record, RecordType};
 
 /// TTL of every [`test_record`], so adds under test share their record set's TTL
 /// instead of tripping the record set TTL rule.

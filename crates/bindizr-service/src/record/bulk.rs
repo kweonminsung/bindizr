@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -10,7 +10,6 @@ use chrono::Utc;
 use super::validation;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData};
 use crate::types::{
     CreateBulkRecordsRequest, CreateBulkRecordsResponse, RecordDiffResponse, RecordResponse, Run,
 };

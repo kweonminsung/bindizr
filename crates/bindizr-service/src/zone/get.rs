@@ -1,9 +1,9 @@
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
 use crate::types::{PaginatedResponse, ZoneFilter, ZoneResponse};
 use crate::{Context, Transaction, pagination, ttl};
 

@@ -4,12 +4,11 @@
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
 use bindizr_core::dns::record::{CaaRecordValue, MxRecordValue};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType};
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordType};
-use crate::model::zone::Zone;
 use crate::types::RecordValue;
 use crate::{Transaction, ttl};
 

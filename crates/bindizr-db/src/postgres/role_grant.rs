@@ -1,11 +1,10 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::role_grant::RoleGrantId;
+use bindizr_core::model::role_grant::{RoleGrant, RoleGrantId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::role_grant::RoleGrant;
 
 /// Insert a role grant.
 pub(crate) async fn create_tx(

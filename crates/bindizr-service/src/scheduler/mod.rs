@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use bindizr_core::metrics::SchedulerResult;
+use bindizr_core::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{Duration, Utc};
 use tokio::sync::watch;
@@ -12,7 +13,6 @@ use tokio::time;
 use tokio::time::{Interval, MissedTickBehavior};
 
 use crate::dnssec::maintenance;
-use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 use crate::zone::history;
 use crate::{Context, notify};
 

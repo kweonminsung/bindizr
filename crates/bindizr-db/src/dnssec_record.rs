@@ -1,11 +1,10 @@
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::dnssec_record::DnssecRecordId;
+use bindizr_core::model::dnssec_record::{DnssecRecord, DnssecRecordId, DnssecRecordWithZone};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
-use crate::model::dnssec_record::{DnssecRecord, DnssecRecordWithZone};
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 

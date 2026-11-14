@@ -1,10 +1,10 @@
+use bindizr_core::model::audit_log::{AuditEntity, AuditLog};
+use bindizr_core::model::change::ChangeActor;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
 use crate::audit_log::AuditLogFilter;
 use crate::error::DatabaseError;
-use crate::model::audit_log::{AuditEntity, AuditLog};
-use crate::model::change::ChangeActor;
 
 /// Insert an audit log row in the current transaction.
 pub(crate) async fn create_tx(

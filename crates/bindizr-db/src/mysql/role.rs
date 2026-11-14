@@ -1,9 +1,8 @@
-use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role::{Role, RoleId};
 use chrono::Utc;
 use sqlx::{MySql, Pool, Transaction};
 
 use crate::error::DatabaseError;
-use crate::model::role::Role;
 
 /// Insert a role.
 pub(crate) async fn create_tx(

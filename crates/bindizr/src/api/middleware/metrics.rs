@@ -13,11 +13,11 @@ pub(crate) async fn track_http_metrics(
     request: Request,
     next: Next,
 ) -> Response {
-    let method = request.method().as_str().to_owned();
+    let method = request.method().as_str().to_string();
     let route = request
         .extensions()
         .get::<MatchedPath>()
-        .map_or_else(|| "unmatched".to_string(), |path| path.as_str().to_owned());
+        .map_or_else(|| "unmatched".to_string(), |path| path.as_str().to_string());
     let started = Instant::now();
 
     let response = next.run(request).await;

@@ -2,13 +2,13 @@
 
 use bindizr_core::dns::name;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_record::DnssecRecord;
+use bindizr_core::model::record::Record;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::dnssec_record::DnssecRecord;
-use crate::model::record::Record;
-use crate::model::zone::Zone;
 use crate::types::ZoneView;
 use crate::{Context, transaction};
 

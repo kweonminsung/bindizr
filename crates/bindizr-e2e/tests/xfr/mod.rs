@@ -21,7 +21,6 @@ use domain::rdata::{A, Soa};
 use domain::tsig::{Algorithm, ClientSequence, ClientTransaction};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use serial_test::serial;
 use tokio::time;
 
 use crate::common::dns::nsupdate::UpdateRecord;
@@ -38,7 +37,7 @@ async fn transfer_app() -> TestApp {
 
 /// UDP errors fit without losing their signed error; streams retain the question.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn oversized_tsig_errors_preserve_error_and_authentication_across_transports() {
     use domain::tsig::Algorithm;
 
@@ -228,7 +227,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
 /// An upper-case TSIG algorithm name names the same key (RFC 1035, Section
 /// 2.3.3); the digest takes the canonical form, so the MAC verifies.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tsig_algorithm_names_match_regardless_of_case() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -259,7 +258,7 @@ async fn tsig_algorithm_names_match_regardless_of_case() {
 
 /// SHA1 authenticates queries and updates (RFC 8945, Section 6).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn sha1_tsig_key_authenticates_queries_and_updates() {
     use base64::Engine;
     use domain::tsig::{Algorithm, Key, KeyName};
@@ -307,7 +306,7 @@ async fn sha1_tsig_key_authenticates_queries_and_updates() {
 /// Verify that an unsigned transfer is admitted only while its secondary is
 /// registered and enabled.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn unsigned_transfer_requires_registered_secondary() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -356,7 +355,7 @@ async fn unsigned_transfer_requires_registered_secondary() {
 /// Verify that a transfer question no zone can carry is answered NOTAUTH,
 /// like a missing zone, rather than closing the connection.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn transfer_returns_notauth_for_invalid_zone_name() {
     let app = transfer_app().await;
 
@@ -371,7 +370,7 @@ async fn transfer_returns_notauth_for_invalid_zone_name() {
 /// Verify that an IXFR over UDP is answered with the zone's current SOA
 /// alone and counts as a truncated transfer.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn udp_ixfr_returns_current_soa() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -423,7 +422,7 @@ async fn udp_ixfr_returns_current_soa() {
 
 /// Check IXFR serial ordering for ordinary and catalog zones on both transports.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn ixfr_serial_order_selects_soa_only_replies() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -516,7 +515,7 @@ async fn ixfr_serial_order_selects_soa_only_replies() {
 
 /// Require transfer permission even when IXFR would return only an SOA.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn ixfr_soa_only_replies_require_transfer_permission() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -546,7 +545,7 @@ async fn ixfr_soa_only_replies_require_transfer_permission() {
 
 /// Local SOA diagnostics do not exempt UDP IXFR from the transfer address ACL.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn unsigned_local_ixfr_requires_a_registered_secondary() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -588,7 +587,7 @@ async fn unsigned_local_ixfr_requires_a_registered_secondary() {
 
 /// Verify that an unsigned transfer still runs under the address acl.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn unsigned_transfer_enforces_address_acl() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -604,7 +603,7 @@ async fn unsigned_transfer_enforces_address_acl() {
 
 /// Verify that a signed transfer answers under the key that asked.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn signed_transfer_replies_with_request_key() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -621,7 +620,7 @@ async fn signed_transfer_replies_with_request_key() {
 
 /// Verify that a key transfers only the zones its role grants `zone:transfer` in.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn signed_transfer_limits_zones_to_key_role_grants() {
     let app = transfer_app().await;
     let granted = app.create_test_zone().await;
@@ -676,7 +675,7 @@ async fn signed_transfer_limits_zones_to_key_role_grants() {
 
 /// Verify that a transfer only grant pulls the zone without changing it.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn transfer_only_grant_reads_zone_without_write_access() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -721,7 +720,7 @@ async fn transfer_only_grant_reads_zone_without_write_access() {
 
 /// Verify that an unknown key is refused rather than falling back to the address.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn signed_transfer_rejects_unknown_key_without_address_fallback() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -749,7 +748,7 @@ const CDS: u16 = 59;
 
 /// Verify that signed zone propagates DNSSEC records and signed IXFR.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
     let app = TestApp::start().await;
 
@@ -842,7 +841,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
 
 /// Verify that NSEC3 zone propagates nsec3param and CDS.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsec3_zone_propagates_nsec3param_and_cds() {
     let app = TestApp::start().await;
 
@@ -921,7 +920,7 @@ async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) ->
 
 /// Verify the transfer log and its per-zone summary, including refusals before secondary registration.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn transfer_history_returns_served_secondary_transfers() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -1077,7 +1076,7 @@ async fn transfer_history_returns_served_secondary_transfers() {
 /// Verify malformed TSIG gets unsigned FORMERR even from an allowed address
 /// (RFC 8945, Section 5.2).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn malformed_tsig_returns_unsigned_formerr() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -1146,7 +1145,7 @@ async fn malformed_tsig_returns_unsigned_formerr() {
 
 /// Verify that a response copies the query's RD bit (RFC 1035, Section 4.1.1).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn query_response_preserves_rd_bit() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -1170,7 +1169,7 @@ async fn query_response_preserves_rd_bit() {
 
 /// Reject multiple questions before choosing a handler or checking EDNS versions.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn multi_question_queries_receive_formerr() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -1225,7 +1224,7 @@ async fn multi_question_queries_receive_formerr() {
 /// Return a header-only FORMERR for a QUERY whose question cannot be read:
 /// none (RFC 9619, Section 4), an unreadable one, or more than one.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn queries_without_a_readable_question_receive_formerr() {
     let app = TestApp::start_local().await;
 
@@ -1260,7 +1259,7 @@ async fn queries_without_a_readable_question_receive_formerr() {
 
 /// Echo DO in ordinary, truncated, refused and BADVERS responses.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn query_response_preserves_edns_dnssec_ok() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -1316,7 +1315,7 @@ async fn query_response_preserves_edns_dnssec_ok() {
 
 /// Preserve DO when TSIG verification rejects a key or MAC.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn query_tsig_error_preserves_edns_dnssec_ok() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -1366,7 +1365,7 @@ async fn query_tsig_error_preserves_edns_dnssec_ok() {
 
 /// Return authenticated BADTIME with OPT for stale TCP and UDP queries.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn badtime_query_responses_preserve_edns_and_verify() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -1438,7 +1437,7 @@ async fn badtime_query_responses_preserve_edns_and_verify() {
 
 /// Authenticate truncated queries before applying time and length policy.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn truncated_queries_follow_tsig_validation_order() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -1513,7 +1512,7 @@ async fn truncated_queries_follow_tsig_validation_order() {
 /// Verify the OPT handling of RFC 6891, Sections 6.1.1 and 6.1.3, and that
 /// an AXFR envelope carries the OPT too (RFC 9103, Section 6.3.4).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn edns_query_returns_opt() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -1586,7 +1585,7 @@ async fn edns_query_returns_opt() {
 /// Verify that a UDP answer over 512 octets is truncated without EDNS and
 /// sent whole within an advertised size (RFC 1035, Section 4.2.1).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn udp_query_truncates_answers_above_limit() {
     let app = transfer_app().await;
 
@@ -1639,7 +1638,7 @@ async fn udp_query_truncates_answers_above_limit() {
 /// Verify that two transfers pipelined on one connection both complete,
 /// their streams free to intermingle (RFC 9103, Section 6.2).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tcp_connection_completes_pipelined_transfers() {
     let app = transfer_app().await;
     let first = app.create_test_zone().await;
@@ -1693,7 +1692,7 @@ async fn tcp_connection_completes_pipelined_transfers() {
 
 /// Rejected queries do not prevent later requests on the same TCP connection.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn rejected_queries_keep_the_tcp_connection_usable() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
@@ -1752,7 +1751,7 @@ async fn rejected_queries_keep_the_tcp_connection_usable() {
 /// Verify that a question of another class is NOTAUTH, its class echoed
 /// (RFC 5936, Section 2.2.2).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn query_returns_notauth_for_unsupported_class() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;

@@ -7,7 +7,6 @@ use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::ClientTransaction;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use serial_test::serial;
 
 use crate::common;
 use crate::common::dns::nsupdate::{PrerequisiteRecord, UpdateRecord};
@@ -17,7 +16,7 @@ use crate::common::{TestApp, TestAppOptions, dns};
 
 /// Preserve root targets through signed updates, transfers, and DNSSEC.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_root_targets_round_trip_through_signed_zone() {
     use domain::base::rdata::ComposeRecordData;
     use domain::base::{MessageBuilder, ToName, UnknownRecordData};
@@ -178,7 +177,7 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
 
 /// Misplaced TSIG is FORMERR before authority or grants, with no partial write.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
     for tsig_required in [false, true] {
         let app = TestApp::start_with_options(TestAppOptions {
@@ -265,7 +264,7 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
 
 /// Refuse managed changes atomically while keeping DNSSEC prerequisites.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
     use domain::base::rdata::ComposeRecordData;
     use domain::rdata::AllRecordData;
@@ -401,7 +400,7 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
 
 /// Preserve CAA property octets through signed additions, prerequisites and deletions.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_caa_values_keep_their_wire_bytes() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -491,7 +490,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
 
 /// Refuse invalid NAPTR flags without applying the update.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_naptr_flags_refuse_the_whole_update() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -551,7 +550,7 @@ async fn nsupdate_naptr_flags_refuse_the_whole_update() {
 
 /// Refuse unserved zone classes before evaluating prerequisites or updates.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_returns_notauth_for_unserved_zone_classes_over_udp() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -640,7 +639,7 @@ async fn nsupdate_returns_notauth_for_unserved_zone_classes_over_udp() {
 
 /// Sign TCP class refusals and distinguish missing authority from missing grants.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_signs_zone_class_refusals_over_tcp() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -679,7 +678,7 @@ async fn nsupdate_signs_zone_class_refusals_over_tcp() {
 
 /// Add and delete records over UDP and TCP without TSIG.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_adds_and_deletes_records() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate.example");
@@ -777,7 +776,7 @@ async fn nsupdate_adds_and_deletes_records() {
 
 /// Verify that nsupdate deletes every record of a name and type.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_deletes_every_record_of_a_name_and_type() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-records.example");
@@ -828,7 +827,7 @@ async fn nsupdate_deletes_every_record_of_a_name_and_type() {
 
 /// Verify that nsupdate applies nothing when a prerequisite fails.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-prereq.example");
@@ -882,7 +881,7 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
 
 /// Verify that a value prerequisite needs every record of the name and type.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_value_prerequisite_requires_complete_record_set() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-records.example");
@@ -961,7 +960,7 @@ async fn nsupdate_value_prerequisite_requires_complete_record_set() {
 /// Verify that a prerequisite may name the zone's SOA, which no row holds
 /// (RFC 2136, Section 3.2).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_prerequisite_accepts_zone_soa() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -1039,7 +1038,7 @@ async fn nsupdate_prerequisite_accepts_zone_soa() {
 
 /// Verify that `nsupdate` refuses an owner outside the zone.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_refuses_an_owner_outside_the_zone() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-notzone.example");
@@ -1065,7 +1064,7 @@ async fn nsupdate_refuses_an_owner_outside_the_zone() {
 /// Verify that every delete passes the zone prescan before it can be ignored
 /// (RFC 2136, Section 3.4.1), and a rejected batch changes neither data nor serial.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_prescans_ignored_deletes() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-prescan.example");
@@ -1146,7 +1145,7 @@ async fn nsupdate_prescans_ignored_deletes() {
 /// Verify that a query or meta type is FORMERR even in an otherwise ignored
 /// delete, with no partial writes (RFC 2136, Section 3.4.1.2).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_prescans_delete_types() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-meta.example");
@@ -1204,7 +1203,7 @@ async fn nsupdate_prescans_delete_types() {
 /// Verify that TCP prescan errors retain TSIG authentication, and the zone
 /// lookup precedes the prescan (RFC 2136, Sections 3.1 and 3.4.1).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_signs_prescan_errors_over_tcp() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -1273,7 +1272,7 @@ async fn nsupdate_signs_prescan_errors_over_tcp() {
 
 /// Verify that nsupdate advances the zone serial once per message.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_advances_the_zone_serial_once_per_message() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-serial.example");
@@ -1330,7 +1329,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
 /// Verify that replacing an alias needs `record:delete` and retiming a set
 /// needs `record:update`, in addition to `record:create`.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_create_grant_preserves_existing_records() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("nsupdate-rewrite.example");
@@ -1440,7 +1439,7 @@ async fn nsupdate_create_grant_preserves_existing_records() {
 
 /// Verify that signed updates require a zone grant for their TSIG key.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("nsupdate-policy.example");
@@ -1547,7 +1546,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
 
 /// Verify that a signed prerequisite needs a grant reaching what it names.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_signed_prerequisite_requires_matching_grant() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("nsupdate-prereq.example");
@@ -1629,7 +1628,7 @@ async fn nsupdate_signed_prerequisite_requires_matching_grant() {
 
 /// Verify that nsupdate maps the input apex `@` to the empty stored owner.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_adds_at_the_zone_apex() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-apex.example");
@@ -1665,7 +1664,7 @@ async fn nsupdate_adds_at_the_zone_apex() {
 /// Verify that an unsigned update is NOTAUTH for an unserved zone and REFUSED
 /// for a served one: authority before the signature policy (RFC 2136, Section 3.1.1).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_checks_authority_before_refusing_unsigned_requests() {
     let app = TestApp::start_with_options(TestAppOptions {
         nsupdate_tsig_required: true,
@@ -1702,7 +1701,7 @@ async fn nsupdate_checks_authority_before_refusing_unsigned_requests() {
 /// Verify that prerequisites are evaluated in wire order (RFC 2136, Section
 /// 3.2.5): the first failure answers before a later one is decoded.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_evaluates_prerequisites_in_wire_order() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -1735,7 +1734,7 @@ async fn nsupdate_evaluates_prerequisites_in_wire_order() {
 /// Verify NOTAUTH for unserved zones and NOTZONE for out-of-zone owners
 /// (RFC 2136, Section 3.1.2).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_answers_notauth_for_a_zone_it_does_not_serve() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-notauth.example");
@@ -1759,7 +1758,7 @@ async fn nsupdate_answers_notauth_for_a_zone_it_does_not_serve() {
 /// Verify that a delete leaves the apex NS set standing and passes over the
 /// SOA (RFC 2136, Sections 3.4.2.3 and 3.4.2.4).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_keeps_the_apex_ns_set() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-apex-ns.example");
@@ -1827,7 +1826,7 @@ async fn nsupdate_keeps_the_apex_ns_set() {
 /// Verify that CNAME/data conflicts are ignored and a second CNAME replaces the first
 /// (RFC 2136, Section 3.4.2.2).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -1898,7 +1897,7 @@ async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {
 /// Verify that an add with a new TTL moves the whole record set to it, as
 /// RFC 2181, Section 5.2 keeps one TTL per set.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_moves_a_record_set_to_the_added_ttl() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -1941,7 +1940,7 @@ async fn nsupdate_moves_a_record_set_to_the_added_ttl() {
 /// Verify that a signed request the parser rejects is still answered under
 /// its key (RFC 8945, Section 5.2), as a signed FORMERR.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_signs_parse_errors_with_request_key() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -1960,7 +1959,7 @@ async fn nsupdate_signs_parse_errors_with_request_key() {
 /// Verify that a signed request's BADVERS is answered under its key
 /// (RFC 8945, Section 5.3).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_signs_badvers_with_request_key() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -1978,7 +1977,7 @@ async fn nsupdate_signs_badvers_with_request_key() {
 
 /// Echo DO in signed UPDATE success and BADVERS responses over UDP and TCP.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_response_preserves_edns_dnssec_ok() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -2026,7 +2025,7 @@ async fn nsupdate_response_preserves_edns_dnssec_ok() {
 
 /// Reject stale signed UPDATEs with a verifiable BADTIME and OPT.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn badtime_update_responses_preserve_edns_and_verify() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -2084,7 +2083,7 @@ async fn badtime_update_responses_preserve_edns_and_verify() {
 
 /// Authenticate truncated UPDATEs before applying time and length policy.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn truncated_updates_follow_tsig_validation_order() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -2163,7 +2162,7 @@ async fn truncated_updates_follow_tsig_validation_order() {
 /// Verify the DNAME rules of RFC 6672: a DNAME beside a CNAME is passed
 /// over, a second DNAME replaces the first, a name below one is refused.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -2248,7 +2247,7 @@ async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
 
 /// Check derived names and RRsets for existence (RFC 2136, Sections 3.2.1–3.2.2).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn dnssec_prerequisites_see_derived_records() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -2340,7 +2339,7 @@ async fn dnssec_prerequisites_see_derived_records() {
 
 /// Check RRset equality with NSEC/NSEC3 and split keys (RFC 2136, Section 3.2.3).
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn dnssec_prerequisites_compare_whole_served_record_sets() {
     for denial in ["nsec", "nsec3"] {
         let app = unsigned_nsupdate_app().await;
@@ -2532,7 +2531,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
 
 /// Check derived read grants and signed TCP errors.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -2728,7 +2727,7 @@ async fn metadata(app: &TestApp, zone: &str) -> Value {
 
 /// Ignore equal, older, and non-apex SOAs without changing records or metadata.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn soa_addition_ignores_ineffective_updates() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -2766,7 +2765,7 @@ async fn soa_addition_ignores_ineffective_updates() {
 
 /// Keep the last advancing SOA and journal every record under that serial.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn soa_replacement_versions_the_whole_update_once() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -2900,7 +2899,7 @@ async fn soa_replacement_versions_the_whole_update_once() {
 
 /// Require zone:update for SOA changes and preserve TCP response authentication.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn soa_replacement_uses_zone_permissions() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -2957,7 +2956,7 @@ async fn soa_replacement_uses_zone_permissions() {
 
 /// Policy failures and failed prerequisites roll back SOA and ordinary records together.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn soa_replacement_rejects_invalid_changes_atomically() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -3087,7 +3086,7 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
 
 /// An explicit advance to the stored ceiling still permits subsequent SOA no-ops.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn soa_noop_accepts_maximum_serial() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -3115,7 +3114,7 @@ async fn soa_noop_accepts_maximum_serial() {
 
 /// Re-sign the updated SOA and use it in subsequent value-dependent prerequisites.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn soa_replacement_updates_the_signed_zone() {
     use domain::base::rdata::ComposeRecordData;
     use domain::dep::octseq::parse::Parser;
@@ -3191,7 +3190,7 @@ async fn soa_replacement_updates_the_signed_zone() {
 
 /// Transfer the old and new SOAs around one delta even when the serial skips values.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn ixfr_replays_soa_replacement() {
     use domain::base::iana::Class;
     use domain::base::rdata::ComposeRecordData;
@@ -3287,7 +3286,7 @@ async fn ixfr_replays_soa_replacement() {
 
 /// Reusing a wire serial after a full cycle cannot resurrect old transfer content or history.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn soa_serial_reuse_refreshes_the_transfer_cache() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -3378,7 +3377,7 @@ async fn unsigned_nsupdate_app() -> TestApp {
 
 /// A policy-refused ordinary type rolls back every operation in the request.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_rejects_unsupported_types_and_invalid_wks_atomically() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -3420,7 +3419,7 @@ async fn nsupdate_rejects_unsupported_types_and_invalid_wks_atomically() {
 
 /// UPDATE preserves high-bit TTLs and replaces only a WKS address/protocol match.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_replaces_wks_by_address_and_protocol() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -3490,7 +3489,7 @@ async fn nsupdate_replaces_wks_by_address_and_protocol() {
 
 /// Reply to pipelined UPDATEs after a TCP write-half close.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_answers_pipelined_requests_after_write_half_close() {
     use std::net::{Shutdown, TcpStream};
 
@@ -3538,7 +3537,7 @@ async fn nsupdate_answers_pipelined_requests_after_write_half_close() {
 
 /// Accept an advancing SOA carrying an already accepted non-UTF-8 mailbox domain.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn soa_replacement_preserves_mailbox_domain_octets() {
     let app = TestApp::start_with_options(TestAppOptions {
         nsupdate_tsig_required: false,

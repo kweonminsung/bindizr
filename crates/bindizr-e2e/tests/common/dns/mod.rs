@@ -536,7 +536,7 @@ fn generic_wks_export(text: &str) -> String {
             let fields: Vec<_> = line.split_whitespace().collect();
 
             if fields.get(3) != Some(&"WKS") || fields.get(4) == Some(&r"\#") {
-                return line.to_owned();
+                return line.to_string();
             }
 
             let address: Ipv4Addr = fields[4].parse().unwrap();

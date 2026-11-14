@@ -36,7 +36,6 @@ pub mod zone_change;
 pub mod zone_version;
 
 use bindizr_core::config;
-pub use bindizr_core::model;
 use bindizr_core::model::role::Role;
 use bindizr_core::model::role_grant::{Action, ActionSet};
 use error::DatabaseError;

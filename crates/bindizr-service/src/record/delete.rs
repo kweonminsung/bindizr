@@ -2,14 +2,13 @@ use std::collections::HashSet;
 use std::slice;
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
 use super::validation;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData};
 use crate::types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, serial, transaction, zone};

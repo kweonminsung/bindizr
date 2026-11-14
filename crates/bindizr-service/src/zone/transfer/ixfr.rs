@@ -2,15 +2,15 @@
 
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::zone::Zone;
+use bindizr_core::model::zone_change::ZoneChange;
+use bindizr_core::model::zone_version::ZoneVersion;
 use bindizr_db::LockLevel;
 use thiserror::Error;
 
 use super::TransferAccess;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
-use crate::model::zone_change::ZoneChange;
-use crate::model::zone_version::ZoneVersion;
 use crate::{Context, transaction};
 
 /// What an IXFR from a client's serial is answered with.

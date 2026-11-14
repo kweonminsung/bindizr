@@ -1,12 +1,10 @@
 //! DNSSEC policy payloads.
 
 use bindizr_core::model::dnssec_key::DnssecAlgorithm;
-use bindizr_core::model::dnssec_policy::{Days, PolicyId};
+use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, DnssecPolicy, PolicyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-
-use crate::model::dnssec_policy::{DnssecDenial, DnssecPolicy};
 
 /// Request body for creating a DNSSEC policy. The key layout, algorithm,
 /// and denial mode are fixed once created. Omitted fields use the built-in

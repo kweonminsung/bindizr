@@ -5,6 +5,9 @@ use std::fmt;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::record::SoaMailbox;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::model::change::{ChangeActor, ChangeSource};
+use bindizr_core::model::record::{RecordData, RecordType};
+use bindizr_core::model::zone_version::ZoneVersion;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -12,9 +15,6 @@ use utoipa::ToSchema;
 use super::record;
 use super::record::RecordValue;
 use crate::error::ServiceError;
-use crate::model::change::{ChangeActor, ChangeSource};
-use crate::model::record::{RecordData, RecordType};
-use crate::model::zone_version::ZoneVersion;
 
 /// One entry of a zone's serial history, with SOA metadata in API form
 /// (`rname` converted back from SOA mailbox form).

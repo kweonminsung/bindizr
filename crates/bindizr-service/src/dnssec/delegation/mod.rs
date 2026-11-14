@@ -3,7 +3,9 @@
 use bindizr_core::dns::dnssec::{DS_DIGEST_TYPES, KeyTag};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecordSet;
+use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyState};
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 use thiserror::Error;
@@ -14,8 +16,6 @@ use crate::dns_client::ds;
 use crate::dns_client::ds::ParentDs;
 use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
-use crate::model::dnssec_key::{DnssecKey, DnssecKeyState};
-use crate::model::zone::Zone;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState,
 };

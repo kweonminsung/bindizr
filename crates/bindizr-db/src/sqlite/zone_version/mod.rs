@@ -20,12 +20,12 @@ const EXCLUDE_PAST_SIGNER_ONLY_FILTER: &str = r#"
               )"#;
 
 use bindizr_core::dns::Serial;
+use bindizr_core::model::change::ChangeActor;
 use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone_version::{VersionFilter, ZoneVersion};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::change::ChangeActor;
-use crate::model::zone_version::{VersionFilter, ZoneVersion};
 
 /// Insert or update a zone version in the current transaction.
 pub(crate) async fn upsert_tx(

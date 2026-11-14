@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::secondary::Secondary;
 use bindizr_core::model::tsig_key::TsigKeyId;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
 use crate::types::{PageRequest, PaginatedResponse, SecondaryResponse};
 use crate::{Context, pagination};
 

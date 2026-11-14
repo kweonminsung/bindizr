@@ -4,8 +4,8 @@ use bindizr_core::config::Config;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::metrics::Metrics;
-use bindizr_core::model::record::RecordId;
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::record::{Record, RecordId, RecordType};
+use bindizr_core::model::zone::{Zone, ZoneId};
 use change_set::{self, ZoneChangeSet, ZoneOperations};
 use chrono::Utc;
 use policy;
@@ -15,8 +15,6 @@ use tokio::sync::{mpsc, watch};
 use super::*;
 use crate::authorization::Caller;
 use crate::error::ErrorCode;
-use crate::model::record::{Record, RecordType};
-use crate::model::zone::Zone;
 use crate::types::{
     ApplyExternalDnsChangesRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest,
     ExternalDnsRecord, ExternalDnsRecordUpdate, RoleGrantResponse,

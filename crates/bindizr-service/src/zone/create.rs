@@ -1,14 +1,12 @@
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::Transaction;
 use chrono::Utc;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordType};
-use crate::model::zone::Zone;
 use crate::types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse};
 use crate::zone::validation;
 use crate::{Context, notify, serial, text, transaction, ttl};

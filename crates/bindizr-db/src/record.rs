@@ -1,10 +1,9 @@
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType, RecordWithZone};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::zone::ZoneId;
 
 use crate::error::DatabaseError;
-use crate::model::record::{Record, RecordType, RecordWithZone};
 use crate::sql::{RecordSortField, SortOrder};
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};

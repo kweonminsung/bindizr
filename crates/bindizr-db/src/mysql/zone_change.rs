@@ -1,11 +1,11 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone_change::ZoneChange;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Transaction};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::zone_change::ZoneChange;
 
 /// Insert a batch of journal entries in the current transaction.
 pub(crate) async fn create_many_tx(

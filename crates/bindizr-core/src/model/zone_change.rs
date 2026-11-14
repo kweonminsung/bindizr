@@ -99,8 +99,8 @@ impl JournalRecordType {
     /// Render the stored record mnemonic.
     pub fn to_text(&self) -> String {
         match self {
-            Self::User(record_type) => record_type.as_str().to_owned(),
-            Self::Derived(record_type) => record_type.as_str().to_owned(),
+            Self::User(record_type) => record_type.as_str().to_string(),
+            Self::Derived(record_type) => record_type.as_str().to_string(),
             Self::Soa => "SOA".to_string(),
         }
     }

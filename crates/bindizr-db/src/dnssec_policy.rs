@@ -1,7 +1,6 @@
-use bindizr_core::model::dnssec_policy::PolicyId;
+use bindizr_core::model::dnssec_policy::{DnssecPolicy, PolicyId};
 
 use crate::error::DatabaseError;
-use crate::model::dnssec_policy::DnssecPolicy;
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 

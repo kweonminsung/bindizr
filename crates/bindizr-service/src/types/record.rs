@@ -7,7 +7,7 @@ use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::record::{ParseRecordValueError, TxtContent, TxtRecordValue};
 use bindizr_core::model::dnssec_record::DnssecRecordType;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::ZoneId;
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,6 @@ use thiserror::Error;
 use utoipa::{IntoParams, ToSchema};
 
 use super::version::RecordDiffResponse;
-use crate::model::record::{Record, RecordType};
 
 /// A request value that has no record-row form.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -380,8 +379,8 @@ impl ServedRecordType {
     /// Render the canonical API mnemonic.
     pub fn to_text(self) -> String {
         match self {
-            Self::User(value) => value.as_str().to_owned(),
-            Self::Derived(value) => value.as_str().to_owned(),
+            Self::User(value) => value.as_str().to_string(),
+            Self::Derived(value) => value.as_str().to_string(),
         }
     }
 }

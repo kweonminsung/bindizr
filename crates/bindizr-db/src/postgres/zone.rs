@@ -1,12 +1,11 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_policy::PolicyId;
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone::{Zone, ZoneId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
 use crate::error::DatabaseError;
-use crate::model::zone::Zone;
 use crate::zone::ZoneFilter;
 use crate::{LockLevel, sql};
 

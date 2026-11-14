@@ -546,7 +546,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     from_server,
                     zone_names,
                     from_catalog,
-                    mode: types::ImportMode::from(mode).as_str().to_owned(),
+                    mode: types::ImportMode::from(mode).as_str().to_string(),
                     dry_run,
                     create,
                 },
@@ -598,7 +598,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 request: ImportZoneRequest {
                     content,
                     from_server,
-                    mode: types::ImportMode::from(mode).as_str().to_owned(),
+                    mode: types::ImportMode::from(mode).as_str().to_string(),
                     dry_run,
                     create,
                 },

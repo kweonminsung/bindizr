@@ -4,12 +4,12 @@ use std::net::IpAddr;
 
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::secondary::Secondary;
 use tokio::task::JoinSet;
 
 use crate::dns_client::probe;
 use crate::dns_client::probe::ProbeSoaError;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
 use crate::types::{SecondaryStatus, SecondaryStatusResponse, TransferResponse};
 use crate::{Context, secondary, transfer};
 

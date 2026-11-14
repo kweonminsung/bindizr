@@ -8,13 +8,12 @@ use bindizr_core::dns::name;
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::tsig_key::TsigKeyId;
+use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
 use chrono::Utc;
 use rand::RngExt;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 use crate::text::MAX_COLUMN_TEXT_LEN;
 use crate::types::{
     CreateTsigKeyRequest, PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse,

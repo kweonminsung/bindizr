@@ -8,14 +8,14 @@ use bindizr_db::LockLevel;
 
 mod ixfr;
 
+use bindizr_core::model::dnssec_record::DnssecRecord;
+use bindizr_core::model::record::Record;
+use bindizr_core::model::zone::Zone;
+use bindizr_core::model::zone_version::ZoneVersionId;
 pub use ixfr::{IxfrPlan, authorize_ixfr_plan_by_name};
 
 use crate::authorization::Caller;
 use crate::error::{ErrorCode, ServiceError};
-use crate::model::dnssec_record::DnssecRecord;
-use crate::model::record::Record;
-use crate::model::zone::Zone;
-use crate::model::zone_version::ZoneVersionId;
 use crate::{Context, Transaction, transaction};
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer

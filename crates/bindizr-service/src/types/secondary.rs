@@ -1,7 +1,7 @@
 //! Secondary server payloads.
 
 use bindizr_core::dns::Serial;
-use bindizr_core::model::secondary::SecondaryId;
+use bindizr_core::model::secondary::{Secondary, SecondaryId};
 use bindizr_core::model::transfer::{
     TransferKind, TransferLogWithZone, TransferResult, TransferTransport,
 };
@@ -9,7 +9,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use crate::model::secondary::Secondary;
 use crate::types::SecondaryStatusResponse;
 
 /// Request body for registering a secondary.

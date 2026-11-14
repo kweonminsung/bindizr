@@ -2,20 +2,18 @@
 //! Socket callers are unrestricted; DNS callers use TSIG or explicitly admitted unsigned access.
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::api_token::{ApiToken, TokenId};
+use bindizr_core::model::change::{ChangeActor, ChangeSource};
+use bindizr_core::model::record::{Record, RecordData, RecordType};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrants};
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
+use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
 use crate::change::ChangeOrigin;
 use crate::error::ServiceError;
-use crate::model::api_token::ApiToken;
-use crate::model::change::{ChangeActor, ChangeSource};
-use crate::model::record::{Record, RecordData, RecordType};
-use crate::model::tsig_key::{TsigKey, TsigKeyId};
-use crate::model::zone::Zone;
 use crate::{Context, Transaction, token};
 
 /// A request's access rights and change origin, kept as independent facts.
@@ -533,7 +531,7 @@ fn authorize_with_grants(
                     .record_type
                     .map_or("records".to_string(), |record_type| record_type
                         .as_str()
-                        .to_owned()),
+                        .to_string()),
                 zone.name
             )));
         }

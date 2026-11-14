@@ -1,8 +1,7 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::role_grant::RoleGrantId;
+use bindizr_core::model::role_grant::{RoleGrant, RoleGrantId};
 
 use crate::error::DatabaseError;
-use crate::model::role_grant::RoleGrant;
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 

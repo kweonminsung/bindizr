@@ -1,12 +1,12 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
+use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
-use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 use crate::types::{UpdateZoneRequest, WriteZoneResponse, ZoneResponse};
 use crate::zone::validation;
 use crate::{Context, dnssec, notify, record, serial, text, transaction, ttl};

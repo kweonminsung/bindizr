@@ -9,8 +9,9 @@ use std::collections::{HashMap, HashSet};
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::SoaMailbox;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordData, RecordId, RecordKey};
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_core::model::zone_version::VersionFilter;
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -19,8 +20,6 @@ pub(crate) use retention::prune_by_zone_id;
 use super::{diff, update};
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData, RecordKey};
-use crate::model::zone::Zone;
 use crate::types::{
     DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse,
     RollbackZoneSummaryResponse, Run, VersionRecordResponse, ZoneVersionResponse,

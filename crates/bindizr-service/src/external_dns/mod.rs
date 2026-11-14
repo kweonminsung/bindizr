@@ -11,13 +11,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub use apply::apply_changes;
 use bindizr_core::dns::Ttl;
+use bindizr_core::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::record::RecordFilter;
 use bindizr_db::zone::ZoneFilter;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey};
 use crate::types::{
     AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse, ExternalDnsRecord,
 };
@@ -146,7 +146,7 @@ pub async fn list_records(
                 values.sort();
                 ExternalDnsRecord {
                     name: key.name.clone(),
-                    record_type: key.record_type.as_str().to_owned(),
+                    record_type: key.record_type.as_str().to_string(),
                     ttl: Some(i64::from(ttl)),
                     values,
                 }

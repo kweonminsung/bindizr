@@ -1,11 +1,9 @@
 //! TSIG key payloads.
 
-use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKeyId};
+use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
-
-use crate::model::tsig_key::TsigKey;
 
 /// Request body for creating a TSIG key. Omitting `secret` generates one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

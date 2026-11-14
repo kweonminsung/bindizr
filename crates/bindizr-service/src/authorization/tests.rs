@@ -1,15 +1,14 @@
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::model::api_token::{ApiToken, TokenId};
+use bindizr_core::model::record::RecordType;
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrantId, RoleGrants, RoleZoneScope};
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone::{Zone, ZoneId};
 use chrono::Utc;
 
 use super::*;
 use crate::error::ErrorCode;
-use crate::model::record::RecordType;
-use crate::model::zone::Zone;
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
@@ -280,7 +279,7 @@ fn authorize_whole_zone_rejects_a_constrained_grant() {
 /// Equally privileged socket and API callers retain distinct request origins.
 #[test]
 fn change_origin_preserves_credential_across_access_scopes() {
-    use crate::model::change::{ChangeActor, ChangeSource};
+    use bindizr_core::model::change::{ChangeActor, ChangeSource};
 
     let socket = Caller::socket();
     let api = Caller::unauthenticated_api();

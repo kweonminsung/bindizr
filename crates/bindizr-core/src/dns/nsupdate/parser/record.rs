@@ -149,7 +149,7 @@ impl UpdateRecord {
                 })?;
                 let value = super::to_presentation_name(&name).map_err(|error| {
                     ParseUpdateError::RdataName {
-                        record_type: record_type.as_str().to_owned(),
+                        record_type: record_type.as_str().to_string(),
                         source: Box::new(error),
                     }
                 })?;

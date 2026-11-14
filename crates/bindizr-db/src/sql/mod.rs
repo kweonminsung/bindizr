@@ -4,11 +4,10 @@ mod grant;
 mod sort;
 
 use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::record::NAME_LIKE_RECORD_TYPES;
 use chrono::{DateTime, TimeDelta, Utc};
 pub(crate) use grant::{concat_fn, concat_pipes, grant_record_match_sql};
 pub use sort::{AuditLogSortField, ParseSortError, RecordSortField, SortOrder, ZoneSortField};
-
-use crate::model::record::NAME_LIKE_RECORD_TYPES;
 
 /// The latest expiry any policy's re-sign window can reach: the constant a
 /// query seeks the index on. Saturates, which only makes that filter a no-op.

@@ -5,7 +5,6 @@ use domain::base::opt::exterr::ExtendedError;
 use domain::base::{Message, MessageBuilder, Ttl};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::{Algorithm, ClientTransaction};
-use serial_test::serial;
 
 use super::{common, tls};
 use crate::common::dns::tsig;
@@ -14,7 +13,7 @@ use crate::common::{TestApp, TestAppOptions, dns};
 
 /// TSIG error metrics follow the final RCODE, including overflow fallback.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn tsig_error_metrics_follow_the_encoded_response() {
     let app = TestApp::start_local().await;
 
@@ -129,7 +128,7 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
 
 /// UPDATE parse failures retain SERVFAIL when TSIG error encoding fails.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
     let app = TestApp::start_local().await;
 
@@ -194,7 +193,7 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
 
 /// Signed UDP AXFR encoding failures count as failed transfers.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn udp_axfr_counts_encoding_failure_before_truncation() {
     use std::io;
     use std::net::UdpSocket;
@@ -301,7 +300,7 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
 
 /// UPDATE validation failures still use readable EDNS when their TSIG error exceeds 512 bytes.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn questionless_updates_use_readable_edns_for_tsig_errors() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -382,7 +381,7 @@ async fn questionless_updates_use_readable_edns_for_tsig_errors() {
 
 /// A readable first question does not make a truncated later section usable.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn unreadable_bodies_receive_header_only_responses_on_every_transport() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -433,7 +432,7 @@ async fn unreadable_bodies_receive_header_only_responses_on_every_transport() {
 
 /// Readable Additional sections remain meaningful when QDCOUNT is zero.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn questionless_queries_preserve_edns_and_tsig() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -532,7 +531,7 @@ async fn questionless_queries_preserve_edns_and_tsig() {
 
 /// An unsupported opcode needs only a header, not a QUERY-shaped body.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn unsupported_opcodes_return_refusals_without_questions() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -592,7 +591,7 @@ async fn unsupported_opcodes_return_refusals_without_questions() {
 
 /// TSIG validation precedes question-count, EDNS-version, and opcode refusals.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn questionless_tsig_failures_keep_their_specific_errors() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -704,7 +703,7 @@ async fn questionless_tsig_failures_keep_their_specific_errors() {
 
 /// A nonstandard opcode body cannot be mistaken for a malformed QUERY or TSIG.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -745,7 +744,7 @@ async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
 
 /// Invalid OPT/TSIG metadata remains FORMERR even when no question is present.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn questionless_malformed_extensions_receive_formerr() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -812,7 +811,7 @@ async fn questionless_malformed_extensions_receive_formerr() {
 
 /// A refused message leaves both framed transports available for another request.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn questionless_refusals_allow_connection_reuse() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,

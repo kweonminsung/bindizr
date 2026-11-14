@@ -1,11 +1,11 @@
 //! Load the TSIG key a registered secondary uses for outbound NOTIFY.
 
 use bindizr_core::dns::tsig::TsigSigningKey;
+use bindizr_core::model::secondary::Secondary;
+use bindizr_core::model::tsig_key::TsigKey;
 
 use crate::Context;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
-use crate::model::tsig_key::TsigKey;
 
 /// The key a secondary's NOTIFY is signed with, ready to sign; `None`
 /// for one notified unsigned. The FK keeps a referenced key present.
