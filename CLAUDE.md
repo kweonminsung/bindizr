@@ -92,7 +92,7 @@ dirs are git-ignored.
 | --- | --- |
 | `bindizr-core` | Configuration, logging, DB models, DNS value types, wire encoding/decoding, DNSSEC signing, TSIG, zone-file parsing. Owns the production `domain` dependency; higher product layers use core types. E2E may use `domain` as a dev-dependency for independent protocol inspection. |
 | `bindizr-db` | Row access through `Db` and `Transaction` enums over MySQL, PostgreSQL, and SQLite. Entity modules dispatch to same-named backend functions. SQL and error text are intentionally duplicated per backend; do not deduplicate them. |
-| `bindizr-service` | Business logic, RFC 2136 apply, `Context`, and outbound `dns_client/` operations: NOTIFY, SOA/parent-DS probes, inbound AXFR. `transfer` persists what the DNS server served each client across restarts. Wire formats stay in core. |
+| `bindizr-service` | Business logic, RFC 2136 apply, `Context`, and outbound `dns_client/` operations: NOTIFY, SOA/parent-DS probes, inbound AXFR. `transfer` logs what the DNS server served each client, across restarts. Wire formats stay in core. |
 | `bindizr` | Daemon bootstrap and front ends: HTTP API, CLI, Unix-socket IPC, inbound DNS listeners and dispatch (AXFR/IXFR/catalog/NOTIFY/nsupdate). |
 | `bindizr-external-dns` | ExternalDNS webhook adapter forwarding to `/external-dns` over HTTP; no DNS logic or independent state. |
 | `bindizr-e2e` | API/CLI/DNS end-to-end tests. Its binary targets let `env!("CARGO_BIN_EXE_…")` resolve inside the test package. |
@@ -357,8 +357,33 @@ one always has one. The entry names the entity kind and name (a grant's is
 its role's), the operation, and the `ChangeSource` and `ChangeActor` a
 version carries. Reads, refused requests, and startup setup (the built-in
 `admin` role) leave none. `audit:read`, an all-zones action, lists the log;
-`history.audit_max_days` bounds it, pruned by the scheduler pass beside
-`history.zone_max_days`.
+`history.audit.max_days` bounds it, as [Logs and history](#logs-and-history)
+describes.
+
+### Logs and history
+
+A log holds rows that only say what happened: nothing decides on them. Its
+table is `<subject>_log`, singular where entity tables are plural, and its row
+type and db module carry that name (`audit_log`, `AuditLog`;
+`transfer_log`, `TransferLog`); the service module keeps the subject (`audit`,
+`transfer`). The audit log holds management changes; the transfer log holds
+every transfer Bindizr answered, refused, or failed, by client address and
+zone. `zone_journal` and `zone_versions` are not logs: IXFR, diff, and rollback
+are served from them.
+
+A log is append-only. `save_*` writes a row once the outcome is known and
+nothing updates it: the audit row inside its change's transaction, every other
+log on the pool, where a failure to save is logged and leaves the answer
+already given as it was.
+
+Zone history and each log have a `[history.<subject>]` table. `max_days`
+bounds it, pruned by the scheduler pass, and `0` keeps it forever. `save`
+narrows what a log writes, where a narrower set means something:
+`history.transfer.save = "unserved"` keeps refusals and failures alone, so
+zone status and a secondary's summary then show no successful transfer. The
+audit log has no `save`, since a committed change always has its row. The
+transfer log's prune keeps the newest row of each client address and zone
+whatever its age: that row is the last transfer those reports read.
 
 ### Transactions and locking
 

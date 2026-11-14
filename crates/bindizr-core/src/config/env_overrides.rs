@@ -164,11 +164,18 @@ impl Config {
         }
 
         if let Some(value) = get_env("BINDIZR_HISTORY_ZONE_MAX_DAYS") {
-            self.history.zone_max_days = parse_env_value("BINDIZR_HISTORY_ZONE_MAX_DAYS", &value)?;
+            self.history.zone.max_days = parse_env_value("BINDIZR_HISTORY_ZONE_MAX_DAYS", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_HISTORY_AUDIT_MAX_DAYS") {
-            self.history.audit_max_days =
+            self.history.audit.max_days =
                 parse_env_value("BINDIZR_HISTORY_AUDIT_MAX_DAYS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_HISTORY_TRANSFER_SAVE") {
+            self.history.transfer.save = parse_env_value("BINDIZR_HISTORY_TRANSFER_SAVE", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_HISTORY_TRANSFER_MAX_DAYS") {
+            self.history.transfer.max_days =
+                parse_env_value("BINDIZR_HISTORY_TRANSFER_MAX_DAYS", &value)?;
         }
 
         if let Some(value) = get_env("BINDIZR_LOGGING_LEVEL") {

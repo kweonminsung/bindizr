@@ -107,7 +107,7 @@ async fn run_scheduler_pass(cx: &Context) {
 
     // Bound retained IXFR and rollback history before maintaining signed zones,
     // one zone per transaction under its lock, like every other step here.
-    let zone_max_days = config.history.zone_max_days;
+    let zone_max_days = config.history.zone.max_days;
 
     if zone_max_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(zone_max_days));
@@ -151,7 +151,7 @@ async fn run_scheduler_pass(cx: &Context) {
     }
 
     // The audit log has no row lock to take: one statement bounds it.
-    let audit_max_days = config.history.audit_max_days;
+    let audit_max_days = config.history.audit.max_days;
 
     if audit_max_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(audit_max_days));
@@ -166,6 +166,27 @@ async fn run_scheduler_pass(cx: &Context) {
             Err(error) => {
                 failed = true;
                 log::error!("Audit log pruning failed: {}", error)
+            }
+        }
+    }
+
+    // One statement bounds the transfer log too; the newest row of each
+    // client address and zone outlives the cutoff as its last transfer.
+    let transfer_max_days = config.history.transfer.max_days;
+
+    if transfer_max_days > 0 {
+        let cutoff = Utc::now() - Duration::days(i64::from(transfer_max_days));
+
+        match bindizr_db::transfer_log::prune_older_than(cx.db(), cutoff).await {
+            Ok(rows) => {
+                cx.metrics().track_pruned_transfer_log_rows(rows);
+                if rows > 0 {
+                    log::info!("Pruned {} transfer log rows", rows);
+                }
+            }
+            Err(error) => {
+                failed = true;
+                log::error!("Transfer log pruning failed: {}", error)
             }
         }
     }

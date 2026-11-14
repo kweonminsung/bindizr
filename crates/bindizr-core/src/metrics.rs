@@ -293,7 +293,7 @@ impl Metrics {
             dnssec_scheduler_runs_total.with_label_values(&[result.label()]);
         }
 
-        for table in ["journal", "version", "audit"] {
+        for table in ["journal", "version", "audit", "transfer"] {
             pruned_rows_total.with_label_values(&[table]);
         }
 
@@ -533,6 +533,13 @@ impl Metrics {
     pub fn track_pruned_audit_log_rows(&self, rows: u64) {
         self.pruned_rows_total
             .with_label_values(&["audit"])
+            .inc_by(rows);
+    }
+
+    /// Count the transfer log rows the retention pass pruned.
+    pub fn track_pruned_transfer_log_rows(&self, rows: u64) {
+        self.pruned_rows_total
+            .with_label_values(&["transfer"])
             .inc_by(rows);
     }
 

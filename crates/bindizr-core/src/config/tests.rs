@@ -147,8 +147,10 @@ fn from_toml_defaults_missing_optional_fields() {
     assert!(parsed.dns.nsupdate.tsig_required);
     assert_eq!(parsed.dns.catalog_zone_name.as_str(), "catalog.bindizr");
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
-    assert_eq!(parsed.history.zone_max_days, 365);
-    assert_eq!(parsed.history.audit_max_days, 365);
+    assert_eq!(parsed.history.zone.max_days, 365);
+    assert_eq!(parsed.history.audit.max_days, 365);
+    assert_eq!(parsed.history.transfer.save, SavedTransfers::All);
+    assert_eq!(parsed.history.transfer.max_days, 90);
     assert_eq!(parsed.logging.format, LogFormat::Text);
 }
 
@@ -352,6 +354,8 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
             "BINDIZR_HISTORY_ZONE_MAX_DAYS" => Some("0".to_string()),
             "BINDIZR_HISTORY_AUDIT_MAX_DAYS" => Some("30".to_string()),
+            "BINDIZR_HISTORY_TRANSFER_SAVE" => Some("unserved".to_string()),
+            "BINDIZR_HISTORY_TRANSFER_MAX_DAYS" => Some("7".to_string()),
             "BINDIZR_LOGGING_LEVEL" => Some("info".to_string()),
             "BINDIZR_LOGGING_FORMAT" => Some("json".to_string()),
             _ => None,
@@ -401,8 +405,10 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     // 0 is the off switch, not a rejected value.
     assert_eq!(overridden.dns.scheduler_interval_secs, 0);
     assert_eq!(overridden.dns.zone_defaults.ttl.as_secs(), 600);
-    assert_eq!(overridden.history.zone_max_days, 0);
-    assert_eq!(overridden.history.audit_max_days, 30);
+    assert_eq!(overridden.history.zone.max_days, 0);
+    assert_eq!(overridden.history.audit.max_days, 30);
+    assert_eq!(overridden.history.transfer.save, SavedTransfers::Unserved);
+    assert_eq!(overridden.history.transfer.max_days, 7);
     assert!(matches!(overridden.logging.level, LogLevel::Info));
     assert_eq!(overridden.logging.format, LogFormat::Json);
 }
@@ -950,6 +956,44 @@ fn database_type_spells_itself_once() {
             value
         );
     }
+}
+
+/// Verify the canonical spelling and round-trip of every SavedTransfers variant.
+#[test]
+fn saved_transfers_spells_itself_once() {
+    for (value, expected) in [
+        (SavedTransfers::All, "all"),
+        (SavedTransfers::Unserved, "unserved"),
+    ] {
+        assert_eq!(value.as_str(), expected);
+        assert_eq!(expected.parse::<SavedTransfers>().unwrap(), value);
+        assert_eq!(
+            serde_json::to_value(value).unwrap(),
+            serde_json::json!(expected)
+        );
+        assert_eq!(
+            serde_json::from_value::<SavedTransfers>(serde_json::json!(expected)).unwrap(),
+            value
+        );
+    }
+}
+
+/// Verify that each kind of history reads its own `[history.<subject>]` table.
+#[test]
+fn from_toml_reads_history_tables() {
+    let parsed = Config::from_toml(
+        "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n\
+         [history.zone]\nmax_days = 30\n\
+         [history.audit]\nmax_days = 0\n\
+         [history.transfer]\nsave = \"unserved\"\nmax_days = 14\n",
+        |_| None,
+    )
+    .unwrap();
+
+    assert_eq!(parsed.history.zone.max_days, 30);
+    assert_eq!(parsed.history.audit.max_days, 0);
+    assert_eq!(parsed.history.transfer.save, SavedTransfers::Unserved);
+    assert_eq!(parsed.history.transfer.max_days, 14);
 }
 
 /// Verify the canonical spelling and round-trip of every LogFormat variant.

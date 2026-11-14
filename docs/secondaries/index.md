@@ -138,7 +138,7 @@ whose transfers are XoT; SOA queries keep answering on every listener.
 | `bindizr doctor` | Installation health and catalog synchronization |
 | `bindizr zone status <zone>` | The member zone's serial on each secondary |
 | `bindizr secondary check <name>` | One secondary's catalog serial and NOTIFY acceptance |
-| `bindizr secondary transfers <name>` | Latest transfers, refusals, and failures |
+| `bindizr secondary transfers <name>` | Transfers, refusals, and failures, newest first |
 
 A synchronized catalog does not guarantee that every member zone loaded.
 Check the zone's status as well; each server page includes its own inspection

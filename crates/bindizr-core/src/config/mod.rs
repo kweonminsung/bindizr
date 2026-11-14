@@ -670,26 +670,38 @@ fn default_notify_timeout_secs() -> u64 {
     3
 }
 
-/// The most days of history kept before the scheduler pass prunes it:
-/// zone versions and the audit log. `0` keeps it forever.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+/// What Bindizr keeps of the past and for how long: zone versions and the
+/// audit and transfer logs. The scheduler pass prunes what is older.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct HistoryConfig {
     /// Zone versions, for diff and rollback, and the IXFR journal behind
     /// incremental updates to secondaries; a pruned serial falls back to AXFR.
-    #[serde(default = "default_history_days")]
-    pub zone_max_days: u32,
+    #[serde(default)]
+    pub zone: RetentionConfig,
     /// The audit log of management changes.
-    #[serde(default = "default_history_days")]
-    pub audit_max_days: u32,
+    #[serde(default)]
+    pub audit: RetentionConfig,
+    /// The transfer log of what each client pulled.
+    #[serde(default)]
+    pub transfer: TransferHistoryConfig,
 }
 
-impl Default for HistoryConfig {
-    /// Build the default history settings: a year of each.
+/// How long one kind of history is kept.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RetentionConfig {
+    /// Days kept before the scheduler pass prunes older entries; `0` keeps
+    /// them forever.
+    #[serde(default = "default_history_days")]
+    pub max_days: u32,
+}
+
+impl Default for RetentionConfig {
+    /// Build the default retention: a year.
     fn default() -> Self {
         Self {
-            zone_max_days: default_history_days(),
-            audit_max_days: default_history_days(),
+            max_days: default_history_days(),
         }
     }
 }
@@ -697,6 +709,66 @@ impl Default for HistoryConfig {
 /// Return the default days of history kept.
 fn default_history_days() -> u32 {
     365
+}
+
+/// The transfer log: which transfers are saved, and for how long.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TransferHistoryConfig {
+    #[serde(default)]
+    pub save: SavedTransfers,
+    /// Days kept before the scheduler pass prunes older entries; `0` keeps
+    /// them forever. The newest transfer of each client and zone stays.
+    #[serde(default = "default_transfer_history_days")]
+    pub max_days: u32,
+}
+
+impl Default for TransferHistoryConfig {
+    /// Build the default transfer log settings: every transfer, for 90 days.
+    fn default() -> Self {
+        Self {
+            save: SavedTransfers::default(),
+            max_days: default_transfer_history_days(),
+        }
+    }
+}
+
+/// Return the default days of transfer log kept.
+fn default_transfer_history_days() -> u32 {
+    90
+}
+
+/// Which transfers the transfer log saves.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SavedTransfers {
+    /// Every transfer answered, refused, or failed.
+    #[default]
+    All,
+    /// Refusals and failures alone.
+    Unserved,
+}
+
+impl fmt::Display for SavedTransfers {
+    /// Write the setting in its display form.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for SavedTransfers {
+    type Err = ConfigError;
+
+    /// Parse the setting from its text representation.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "all" => Ok(SavedTransfers::All),
+            "unserved" => Ok(SavedTransfers::Unserved),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "all or unserved",
+            }),
+        }
+    }
 }
 
 /// Logging settings.
@@ -1120,6 +1192,23 @@ impl DatabaseType {
 }
 
 impl serde::Serialize for DatabaseType {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl SavedTransfers {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Unserved => "unserved",
+        }
+    }
+}
+
+impl serde::Serialize for SavedTransfers {
     /// Serialize through the canonical spelling used by the wire contract.
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())

@@ -230,7 +230,7 @@ UTC, as the times listed are), or an RFC 3339 timestamp. `--sort` takes
 Over HTTP the same is `GET /audit`, with the same `entity`, `entity_name`,
 `since`, `until` (RFC 3339), `sort`, `order`, `limit`, and `offset` parameters. Reading the log needs
 `audit:read`, which only a grant without `--zone` carries. Entries older
-than `history.audit_max_days` (365 by default; `0` keeps them forever) are
+than `history.audit.max_days` (365 by default; `0` keeps them forever) are
 pruned by the scheduler pass — see [Configuration](../configuration.md).
 
 ## Examples

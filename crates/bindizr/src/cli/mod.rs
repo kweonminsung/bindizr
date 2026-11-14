@@ -4,6 +4,7 @@
 mod commands;
 pub(crate) mod error;
 mod output;
+mod time;
 
 use bindizr_core::errln;
 use clap::{Parser, Subcommand};

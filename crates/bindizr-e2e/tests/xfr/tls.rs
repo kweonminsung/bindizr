@@ -741,7 +741,7 @@ async fn require_tls_refuses_a_transfer_over_plain_tcp() {
     assert_eq!(response.header().rcode(), Rcode::REFUSED);
     assert!(dns::probe_zone_soa(app.dns_port(), zone_name));
 
-    // Read the refusal before the next transfer replaces the zone's log row.
+    // Read the refusal while it is the zone's last transfer, which the summary counts.
     let body = super::wait_for_transfer_summary(&app, "refused", 1).await;
     let refused = &body["transfers"][0];
 

@@ -26,7 +26,7 @@ mod schema;
 pub mod secondary;
 mod sql;
 mod sqlite;
-pub mod transfer;
+pub mod transfer_log;
 pub mod tsig_key;
 mod tx;
 pub mod zone;

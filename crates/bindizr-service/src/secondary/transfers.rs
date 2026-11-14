@@ -1,10 +1,11 @@
-//! Read the transfer history matching a secondary's current addresses.
+//! Read the transfer log rows matching a secondary's current addresses.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferWithZone};
+use bindizr_core::model::transfer::{TransferKind, TransferLogWithZone, TransferResult};
+use bindizr_db::transfer_log::TransferLogFilter;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
@@ -14,7 +15,7 @@ use crate::types::{
 };
 use crate::{Context, dns_client, pagination, transfer, zone};
 
-/// The transfers Bindizr served `name`, newest first, with how each zone
+/// The transfers Bindizr answered `name`, newest first, with how each zone
 /// was last served.
 pub async fn list_transfers(
     cx: &Context,
@@ -26,47 +27,55 @@ pub async fn list_transfers(
     let limit = filter.limit.unwrap_or(1000);
     pagination::validate_page_limit(Some(limit))?;
 
+    if let (Some(since), Some(until)) = (filter.since, filter.until)
+        && since >= until
+    {
+        return Err(ServiceError::invalid_input("since must be before until"));
+    }
+
     let secondary = super::lookup_by_name(cx, name).await?;
 
-    let zone_filter = filter
+    let zone_name = filter
         .zone_name
         .as_deref()
         .map(zone::normalize_name)
         .transpose()?;
 
-    let served = transfer::list_by_clients(cx, &resolve_ips(cx, &secondary).await).await?;
-    let summary = build_transfer_summary(&served);
-    let transfers = served
-        .iter()
-        .filter(|transfer| {
-            zone_filter
-                .as_ref()
-                .is_none_or(|zone| transfer.zone_name == *zone)
-        })
-        .take(limit as usize)
-        .map(TransferResponse::from)
-        .collect();
+    // The summary counts every zone's last transfer, whatever the filter selects.
+    let clients = resolve_ips(cx, &secondary).await;
+    let latest = transfer::list_latest_by_clients(cx, &clients).await?;
+    let logs = transfer::list_by_clients(
+        cx,
+        &clients,
+        &TransferLogFilter {
+            zone_name,
+            since: filter.since,
+            until: filter.until,
+            limit: Some(limit),
+        },
+    )
+    .await?;
 
     Ok(SecondaryTransfersResponse {
         secondary_name: secondary.name,
         address: secondary.address.to_string(),
-        summary,
-        transfers,
+        summary: build_transfer_summary(&latest),
+        transfers: logs.iter().map(TransferResponse::from).collect(),
     })
 }
 
-/// How Bindizr served `secondary`, for the check and doctor.
+/// How Bindizr last served `secondary` each zone, for the check and doctor.
 pub(crate) async fn summarize_transfers(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<TransferSummaryResponse, ServiceError> {
-    let served = transfer::list_by_clients(cx, &resolve_ips(cx, secondary).await).await?;
-    Ok(build_transfer_summary(&served))
+    let latest = transfer::list_latest_by_clients(cx, &resolve_ips(cx, secondary).await).await?;
+    Ok(build_transfer_summary(&latest))
 }
 
 /// Count each zone by its latest transfer among `transfers`.
-fn build_transfer_summary(transfers: &[TransferWithZone]) -> TransferSummaryResponse {
-    let mut latest: HashMap<&str, &TransferWithZone> = HashMap::new();
+fn build_transfer_summary(transfers: &[TransferLogWithZone]) -> TransferSummaryResponse {
+    let mut latest: HashMap<&str, &TransferLogWithZone> = HashMap::new();
 
     for transfer in transfers {
         let entry = latest
@@ -99,7 +108,7 @@ fn build_transfer_summary(transfers: &[TransferWithZone]) -> TransferSummaryResp
     summary
 }
 
-/// The addresses the secondary resolves to now, which key the transfer
+/// The addresses the secondary resolves to now, which key the transfer log
 /// rows; none when it does not resolve.
 async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
     let timeout = cx.config().dns.notify.timeout();

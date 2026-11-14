@@ -111,9 +111,15 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # expire = 3600000              # SOA expire
 # minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
-[history]                     # Days of history kept; older entries are pruned by the scheduler pass (0 = forever)
-# zone_max_days = 365           # Zone versions: diff and rollback, and incremental updates to secondaries
-# audit_max_days = 365          # Audit log entries: who changed a token, role, grant, key, secondary, or policy, or deleted a zone
+[history.zone]                # Zone versions: diff and rollback, and incremental updates to secondaries
+# max_days = 365              # Days kept; older entries are pruned by the scheduler pass (0 = forever)
+
+[history.audit]               # Audit log: who changed a token, role, grant, key, secondary, or policy, or deleted a zone
+# max_days = 365              # Days kept (0 = forever)
+
+[history.transfer]            # Transfer log: the zone transfers each client was answered
+# save = "all"                # all, or unserved for refusals and failures alone
+# max_days = 90               # Days kept (0 = forever); each client's last transfer of a zone stays
 
 [logging]
 # level = "info"                # error, warn, info, debug, trace
@@ -188,8 +194,10 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE` | `dns.zone_defaults.expire` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL` | `dns.zone_defaults.minimum_ttl` | |
-| `BINDIZR_HISTORY_ZONE_MAX_DAYS` | `history.zone_max_days` | `0` keeps zone versions forever |
-| `BINDIZR_HISTORY_AUDIT_MAX_DAYS` | `history.audit_max_days` | `0` keeps the audit log forever |
+| `BINDIZR_HISTORY_ZONE_MAX_DAYS` | `history.zone.max_days` | `0` keeps zone versions forever |
+| `BINDIZR_HISTORY_AUDIT_MAX_DAYS` | `history.audit.max_days` | `0` keeps the audit log forever |
+| `BINDIZR_HISTORY_TRANSFER_SAVE` | `history.transfer.save` | `all` or `unserved` |
+| `BINDIZR_HISTORY_TRANSFER_MAX_DAYS` | `history.transfer.max_days` | `0` keeps the transfer log forever |
 | `BINDIZR_LOGGING_LEVEL` | `logging.level` | |
 | `BINDIZR_LOGGING_FORMAT` | `logging.format` | `text` or `json` |
 
