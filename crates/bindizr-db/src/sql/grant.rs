@@ -3,12 +3,12 @@
 
 use bindizr_core::model::role_grant::Action;
 
-/// String concatenation for the backends that spell it `||`.
+/// Concatenate strings for the backends that spell it `||`.
 pub(crate) fn concat_pipes(parts: &[&str]) -> String {
     parts.join(" || ")
 }
 
-/// String concatenation for MySQL, where `||` is logical OR.
+/// Concatenate strings for MySQL, where `||` is logical OR.
 pub(crate) fn concat_fn(parts: &[&str]) -> String {
     format!("CONCAT({})", parts.join(", "))
 }
@@ -48,12 +48,12 @@ pub(crate) fn grant_record_match_sql(
           OR {alias}.name = p.record_name_pattern)"
     );
     let types = match record_type_column {
-        None => "p.record_types = '*'".to_string(),
         Some(column) => {
             let haystack = concat(&["','", "p.record_types", "','"]);
             let needle = concat(&["'%,'", &format!("{alias}.{column}"), "',%'"]);
             format!("(p.record_types = '*' OR {haystack} LIKE {needle})")
         }
+        None => "p.record_types = '*'".to_string(),
     };
 
     format!("{read} AND {name} AND {types}")

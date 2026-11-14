@@ -1,7 +1,5 @@
 //! TSIG keys and request signing shared by DNS tests.
 
-use std::str::FromStr;
-
 use base64::Engine;
 use base64::engine::general_purpose;
 use domain::base::Message;
@@ -30,6 +28,8 @@ impl SigningKey {
 
     /// Construct a client key that emits the requested MAC length.
     pub(crate) fn to_tsig_key_with_mac_len(&self, mac_len: usize) -> Result<Key, String> {
+        use std::str::FromStr;
+
         let secret = general_purpose::STANDARD
             .decode(&self.secret)
             .map_err(|error| format!("TSIG secret is not base64: {error}"))?;
@@ -39,7 +39,7 @@ impl SigningKey {
     }
 }
 
-/// Whether the response carries a TSIG record.
+/// Return whether the response carries a TSIG record.
 pub(crate) fn parse_tsig_presence(response: &Message<Vec<u8>>) -> Result<bool, String> {
     Ok(response
         .additional()

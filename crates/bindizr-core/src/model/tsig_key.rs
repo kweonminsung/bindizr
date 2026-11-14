@@ -30,8 +30,7 @@ pub enum TsigAlgorithm {
 }
 
 impl TsigAlgorithm {
-    /// Presentation/storage name, identical to the wire algorithm name without
-    /// the trailing root dot (e.g. `"hmac-sha256"`).
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::HmacSha1 => "hmac-sha1",
@@ -41,7 +40,8 @@ impl TsigAlgorithm {
         }
     }
 
-    /// HMAC output length in bytes, the least a secret should hold (RFC 8945, Section 8).
+    /// Return the HMAC output length in bytes, the least a secret should hold
+    /// (RFC 8945, Section 8).
     pub fn digest_len(self) -> usize {
         match self {
             Self::HmacSha1 => 20,
@@ -51,7 +51,7 @@ impl TsigAlgorithm {
         }
     }
 
-    /// All supported algorithm names, for error messages.
+    /// List all supported algorithm names, for error messages.
     fn supported_names() -> &'static [&'static str] {
         &["hmac-sha1", "hmac-sha256", "hmac-sha384", "hmac-sha512"]
     }
@@ -67,7 +67,7 @@ impl fmt::Display for TsigAlgorithm {
 impl FromStr for TsigAlgorithm {
     type Err = ParseTsigAlgorithmError;
 
-    /// Accepts the storage form or the wire form (trailing root dot tolerated),
+    /// Accept the storage form or the wire form (trailing root dot tolerated),
     /// case-insensitively.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.trim_end_matches('.').to_ascii_lowercase().as_str() {

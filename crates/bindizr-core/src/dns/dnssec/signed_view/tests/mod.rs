@@ -17,11 +17,6 @@ use crate::model::dnssec_record::{DnssecRecord, DnssecRecordType};
 use crate::model::record::{Record, RecordType};
 use crate::model::zone::Zone;
 
-const RECORD_TYPE_SOA: i32 = 6;
-const RECORD_TYPE_NS: i32 = 2;
-const RECORD_TYPE_A: i32 = 1;
-const RECORD_TYPE_DS: i32 = 43;
-
 /// Build a signing-key fixture for the test.
 fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {
     let mut key = DnssecKey::generate(
@@ -52,7 +47,7 @@ struct ComputeArgs<'a> {
     keys: &'a [DnssecKey],
     prev: &'a [DnssecRecord],
     denial: DnssecDenial,
-    new_serial: i32,
+    new_serial: u32,
     expiration: DateTime<Utc>,
     /// `0` pins every record set to `expiration`; the spread has its own test.
     expiration_jitter_secs: i64,
@@ -64,7 +59,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
     let now = fixed_now();
     SignedViewParams {
         zone: args.zone,
-        new_serial: Serial::try_from(args.new_serial).unwrap(),
+        new_serial: Serial::from(args.new_serial),
         records: args.records,
         keys: args.keys,
         prev: args.prev,
@@ -86,8 +81,8 @@ fn default_expiration() -> DateTime<Utc> {
     fixed_now() + Duration::days(14)
 }
 
-/// Stored form of a computed plane: rows get distinct ids like the database
-/// would assign.
+/// Convert a computed plane to its stored form: rows get distinct ids like the
+/// database would assign.
 fn to_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
     records
         .iter()

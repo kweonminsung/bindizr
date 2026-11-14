@@ -106,14 +106,14 @@ pub(crate) async fn serve_connection(
         let dns_cx = dns_cx.clone();
         let writer = writer.clone();
 
-        let answer = async move {
+        let task = async move {
             handle_tcp_query(&dns_cx, &writer, client_addr, &query_data, idle_timeout).await;
         };
 
         if transfer {
-            transfers.spawn(answer);
+            transfers.spawn(task);
         } else {
-            in_flight.spawn(answer);
+            in_flight.spawn(task);
         }
     };
 

@@ -14,6 +14,7 @@ impl<'a> NsRecordValue<'a> {
         if value != "." {
             value::validate_domain_record_value("NS record value", value)?;
         }
+
         Ok(Self { target: value })
     }
 

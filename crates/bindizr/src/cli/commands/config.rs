@@ -1,9 +1,10 @@
 use std::fmt;
 
-use bindizr_core::config::Config;
+use bindizr_core::config::{Config, DatabaseTlsMode};
 use bindizr_core::{config, outln};
 use bindizr_service::types::MessageResponse;
 use clap::Subcommand;
+use serde_json::Value;
 
 use crate::cli::error::CliError;
 use crate::cli::output;
@@ -122,8 +123,8 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
 
     if output == OutputFormat::Table {
         match found {
-            serde_json::Value::String(value) => outln!("{value}"),
-            serde_json::Value::Object(_) => outln!(
+            Value::String(value) => outln!("{value}"),
+            Value::Object(_) => outln!(
                 "{}",
                 serde_json::to_string_pretty(found).map_err(|error| {
                     CliError::request_with_source(
@@ -178,11 +179,7 @@ fn print_config(config: &Config) {
     print_section("database.tls");
     print_optional(
         "mode",
-        config
-            .database
-            .tls
-            .mode
-            .map(config::DatabaseTlsMode::as_str),
+        config.database.tls.mode.map(DatabaseTlsMode::as_str),
     );
     print_optional("ca_file", config.database.tls.ca_file.as_deref());
     outln!();
@@ -255,8 +252,8 @@ fn print_section(name: &str) {
     outln!("{}", color::cyan(&format!("[{name}]")));
 }
 
-/// A value the configuration may leave out, shown as unset rather than absent
-/// so the list says what the daemon actually holds.
+/// Print a value the configuration may leave out, shown as unset rather than
+/// absent so the list says what the daemon actually holds.
 fn print_optional(key: &str, value: Option<&str>) {
     print_value(key, value.unwrap_or("(unset)"));
 }

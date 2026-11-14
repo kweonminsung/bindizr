@@ -71,7 +71,7 @@ pub struct RecordKey {
 }
 
 impl RecordKey {
-    /// The identity of a record with these fields, canonicalizing its value once.
+    /// Build the identity of a record with these fields, canonicalizing its value once.
     pub fn new(
         name: &OwnerName,
         record_type: RecordType,
@@ -114,7 +114,7 @@ impl Record {
         priority.is_none_or(|wanted| self.priority == Some(wanted))
     }
 
-    /// Whether this row holds `value` as its rdata (with `priority`, for MX
+    /// Return whether this row holds `value` as its rdata (with `priority`, for MX
     /// and SRV), compared canonically under the row's own type.
     pub fn has_rdata(&self, value: &str, priority: Option<i32>) -> bool {
         self.record_type
@@ -141,7 +141,7 @@ impl Record {
         }
     }
 
-    /// This record's identity for set matching, shared with [`RecordData`].
+    /// Return this record's identity for set matching, shared with [`RecordData`].
     pub fn match_key(&self) -> RecordKey {
         RecordKey::new(&self.name, self.record_type, &self.value, self.priority)
     }
@@ -165,6 +165,13 @@ pub struct RecordData {
     pub priority: Option<i32>,
 }
 
+impl RecordData {
+    /// Return this record's identity for set matching, shared with [`Record`].
+    pub fn match_key(&self) -> RecordKey {
+        RecordKey::new(&self.name, self.record_type, &self.value, self.priority)
+    }
+}
+
 impl From<Record> for RecordData {
     /// Drop a stored record's row identity.
     fn from(record: Record) -> Self {
@@ -175,13 +182,6 @@ impl From<Record> for RecordData {
             ttl: record.ttl,
             priority: record.priority,
         }
-    }
-}
-
-impl RecordData {
-    /// This record's identity for set matching, shared with [`Record`].
-    pub fn match_key(&self) -> RecordKey {
-        RecordKey::new(&self.name, self.record_type, &self.value, self.priority)
     }
 }
 
@@ -216,6 +216,16 @@ impl RecordWithZone {
     }
 }
 
+/// A record type outside the user records bindizr stores, by mnemonic or by
+/// wire type.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseRecordTypeError {
+    #[error("invalid record type: {value}")]
+    Unknown { value: String },
+    #[error("unsupported record type: {value}")]
+    Unsupported { value: Rtype },
+}
+
 /// The record types bindizr stores.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -238,7 +248,7 @@ pub enum RecordType {
 }
 
 impl RecordType {
-    /// Render the stored and API mnemonic.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::A => "A",
@@ -259,7 +269,7 @@ impl RecordType {
         }
     }
 
-    /// The record TYPE number this type's records carry on the wire.
+    /// Return the record TYPE number this type's records carry on the wire.
     pub fn wire_type(self) -> u16 {
         match self {
             Self::A => 1,
@@ -315,7 +325,7 @@ impl RecordType {
         }
     }
 
-    /// Whether two stored values (with their priority columns) name the same
+    /// Return whether two stored values (with their priority columns) name the same
     /// rdata for this record type.
     pub fn values_equal(
         self,
@@ -327,8 +337,9 @@ impl RecordType {
         self.canonical_value(left, left_priority) == self.canonical_value(right, right_priority)
     }
 
-    /// MX and SRV encode a preference in their rdata, so an omitted one takes
-    /// the default serving applies; other types pass through to be rejected.
+    /// Return the stored priority: MX and SRV encode a preference in their rdata, so
+    /// an omitted one takes the default serving applies; other types pass through
+    /// to be rejected.
     pub fn stored_priority(self, priority: Option<i32>) -> Option<i32> {
         match self {
             Self::Mx | Self::Srv => Some(priority.unwrap_or(i32::from(DEFAULT_PRIORITY))),
@@ -336,7 +347,7 @@ impl RecordType {
         }
     }
 
-    /// Canonical form used only to compare two values, never to store them.
+    /// Return the canonical form used only to compare two values, never to store them.
     pub fn canonical_value<'a>(
         self,
         value: &'a str,
@@ -433,7 +444,7 @@ impl RecordType {
         }
     }
 
-    /// Whether this type's display form is a domain name.
+    /// Return whether this type's display form is a domain name.
     fn is_name_like(self) -> bool {
         NAME_LIKE_RECORD_TYPES.contains(&self)
     }
@@ -454,7 +465,7 @@ impl RecordType {
         }
     }
 
-    /// Whether the ExternalDNS provider manages records of this type
+    /// Return whether the ExternalDNS provider manages records of this type
     /// ([`EXTERNAL_DNS_RECORD_TYPES`]).
     pub fn is_external_dns_supported(self) -> bool {
         EXTERNAL_DNS_RECORD_TYPES.contains(&self)
@@ -473,16 +484,6 @@ impl fmt::Display for RecordType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(self.as_str())
     }
-}
-
-/// A record type outside the user records bindizr stores, by mnemonic or by
-/// wire type.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum ParseRecordTypeError {
-    #[error("invalid record type: {value}")]
-    Unknown { value: String },
-    #[error("unsupported record type: {value}")]
-    Unsupported { value: Rtype },
 }
 
 impl FromStr for RecordType {
@@ -536,7 +537,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -565,7 +566,7 @@ impl From<RecordType> for String {
 impl TryFrom<Rtype> for RecordType {
     type Error = ParseRecordTypeError;
 
-    /// The record types bindizr stores as user records, keyed by wire record type.
+    /// Convert a wire record type to one of the record types bindizr stores as user records.
     /// SOA is excluded because it is managed through the zone's own fields.
     fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
         match rtype {
@@ -616,7 +617,7 @@ impl utoipa::PartialSchema for RecordType {
 
 impl utoipa::ToSchema for RecordType {}
 
-/// TXT text for the display column: control characters as `\DDD`, since a
+/// Render TXT text for the display column: control characters as `\DDD`, since a
 /// text column cannot hold a NUL, and everything else as typed, for search.
 fn to_display_text(text: &str) -> String {
     if !text.chars().any(|ch| ch.is_ascii_control()) {

@@ -21,7 +21,7 @@ fn zone_content(records: usize) -> CachedTransferContent {
             name: OwnerName::from_row("www"),
             record_type: RecordType::A,
             value: "192.0.2.1".to_string(),
-            ttl: Ttl::try_from(3600).unwrap(),
+            ttl: Ttl::from_secs(3600),
             priority: None,
             created_at: Utc::now(),
             zone_id: ZoneId::from(1),

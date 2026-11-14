@@ -161,10 +161,8 @@ pub async fn delete(
         transaction::finish_tx(tx, apply_result, "failed to delete record").await?;
 
     log::info!(
-        "event=record_delete zone={} record_id={} applied={}",
-        zone_name,
-        record_id,
-        response.applied
+        "event=record_delete zone={zone_name} record_id={record_id} applied={}",
+        response.applied,
     );
 
     // Announce only a committed deletion, never a preview.
@@ -297,12 +295,9 @@ pub async fn delete_matching(
         transaction::finish_tx(tx, apply_result, "failed to delete records").await?;
 
     log::info!(
-        "event=record_delete_matching zone={} name={} type={:?} deleted={} applied={}",
-        zone_name,
-        owner,
-        record_type,
+        "event=record_delete_matching zone={zone_name} name={owner} type={record_type:?} deleted={} applied={}",
         response.deleted,
-        response.applied
+        response.applied,
     );
 
     // Announce only a committed deletion, never a preview or an empty

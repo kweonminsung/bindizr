@@ -36,8 +36,8 @@ pub struct DsRecordValue {
 }
 
 impl DsRecordValue {
-    /// The value is `<key tag> <algorithm> <digest type> <digest>`: the algorithm
-    /// a number or mnemonic (RFC 4034, Section 5.3), the hex digest groupable as `dig` prints.
+    /// Parse `<key tag> <algorithm> <digest type> <digest>`: the algorithm a
+    /// number or mnemonic (RFC 4034, Section 5.3), the hex digest groupable as `dig` prints.
     pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         let mut fields = value.split_whitespace();
         let (Some(key_tag), Some(algorithm), Some(digest_type)) =
@@ -105,17 +105,18 @@ impl DsRecordValue {
             self.key_tag,
             self.algorithm,
             self.digest_type,
-            value::hex_upper(&self.digest)
+            hex::encode_upper(&self.digest)
         )
     }
 
-    /// The wire-format RDATA of a stored value (RFC 4034, Section 5.1).
+    /// Encode the stored value as wire RDATA (RFC 4034, Section 5.1).
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(4 + self.digest.len());
         rdata.extend_from_slice(&self.key_tag.as_u16().to_be_bytes());
         rdata.push(self.algorithm);
         rdata.push(self.digest_type);
         rdata.extend_from_slice(&self.digest);
+
         Rdata::new(rdata)
     }
 }
@@ -147,12 +148,13 @@ mod tests {
     fn validate_pins_the_digest_length_per_type() {
         let short = DsRecordValue::parse("1 13 2 4B9B").unwrap();
 
-        assert!(
-            short
-                .validate()
-                .unwrap_err()
-                .to_string()
-                .contains("32-byte")
+        assert_eq!(
+            short.validate(),
+            Err(ParseRecordValueError::DsDigestLength {
+                digest_type: 2,
+                expected: 32,
+                len: 2,
+            })
         );
 
         // Unknown digest types carry no known length to enforce.

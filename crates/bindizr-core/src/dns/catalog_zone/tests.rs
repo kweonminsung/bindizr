@@ -108,15 +108,14 @@ fn extract_member_zones_rejects_repeated_members() {
             name_record("a1.zones.catalog.example.", Rtype::PTR, "zone-b.example."),
         ],
         &catalog_zone_name,
-    )
-    .unwrap_err();
+    );
 
     assert!(
         matches!(
             two_ptrs,
-            ExtractMemberZonesError::MemberNodeNotSingular { .. }
+            Err(ExtractMemberZonesError::MemberNodeNotSingular { .. })
         ),
-        "{two_ptrs}"
+        "{two_ptrs:?}"
     );
 
     let two_nodes = extract_member_zones(
@@ -126,12 +125,11 @@ fn extract_member_zones_rejects_repeated_members() {
             name_record("a2.zones.catalog.example.", Rtype::PTR, "Zone-A.example."),
         ],
         &catalog_zone_name,
-    )
-    .unwrap_err();
+    );
 
     assert!(
-        matches!(&two_nodes, ExtractMemberZonesError::MemberRepeated { name } if name == "zone-a.example"),
-        "{two_nodes}"
+        matches!(&two_nodes, Err(ExtractMemberZonesError::MemberRepeated { name }) if name == "zone-a.example"),
+        "{two_nodes:?}"
     );
 }
 
@@ -167,9 +165,12 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
     let catalog_zone_name = ZoneName::parse("catalog.example").unwrap();
     let member = name_record("a1.zones.catalog.example.", Rtype::PTR, "zone-a.example.");
 
-    let missing = extract_member_zones(slice::from_ref(&member), &catalog_zone_name).unwrap_err();
+    let missing = extract_member_zones(slice::from_ref(&member), &catalog_zone_name);
 
-    assert!(matches!(missing, ExtractMemberZonesError::MissingVersion));
+    assert!(matches!(
+        missing,
+        Err(ExtractMemberZonesError::MissingVersion)
+    ));
 
     let two_versions = extract_member_zones(
         &[
@@ -178,23 +179,24 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
             member.clone(),
         ],
         &catalog_zone_name,
-    )
-    .unwrap_err();
+    );
 
     assert!(
-        matches!(two_versions, ExtractMemberZonesError::VersionNotSingular),
-        "{two_versions}"
+        matches!(
+            two_versions,
+            Err(ExtractMemberZonesError::VersionNotSingular)
+        ),
+        "{two_versions:?}"
     );
 
     let foreign_version = extract_member_zones(
         &[version_record("catalog.example", b"1"), member],
         &catalog_zone_name,
-    )
-    .unwrap_err();
+    );
 
     assert!(
-        matches!(&foreign_version, ExtractMemberZonesError::UnsupportedVersion { found } if found == "1"),
-        "{foreign_version}"
+        matches!(&foreign_version, Err(ExtractMemberZonesError::UnsupportedVersion { found }) if found == "1"),
+        "{foreign_version:?}"
     );
 
     let foreign_owner = extract_member_zones(
@@ -203,12 +205,14 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
             name_record("a1.zones.other.example.", Rtype::PTR, "zone-a.example."),
         ],
         &catalog_zone_name,
-    )
-    .unwrap_err();
+    );
 
     assert!(
-        matches!(foreign_owner, ExtractMemberZonesError::OwnerName { .. }),
-        "{foreign_owner}"
+        matches!(
+            foreign_owner,
+            Err(ExtractMemberZonesError::OwnerName { .. })
+        ),
+        "{foreign_owner:?}"
     );
 }
 

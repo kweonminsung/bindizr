@@ -14,7 +14,7 @@ pub struct TlsaRecordValue {
 }
 
 impl TlsaRecordValue {
-    /// The value is `<usage> <selector> <matching type> <certificate data>`;
+    /// Parse `<usage> <selector> <matching type> <certificate data>`;
     /// the hex data may be split into whitespace-separated groups.
     pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         let mut fields = value.split_whitespace();
@@ -75,17 +75,18 @@ impl TlsaRecordValue {
             self.cert_usage,
             self.selector,
             self.matching_type,
-            value::hex_upper(&self.cert_data)
+            hex::encode_upper(&self.cert_data)
         )
     }
 
-    /// The wire-format RDATA of a stored value (RFC 6698, Section 2.1).
+    /// Encode the stored value as wire RDATA (RFC 6698, Section 2.1).
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(3 + self.cert_data.len());
         rdata.push(self.cert_usage);
         rdata.push(self.selector);
         rdata.push(self.matching_type);
         rdata.extend_from_slice(&self.cert_data);
+
         Rdata::new(rdata)
     }
 }
@@ -113,12 +114,13 @@ mod tests {
     fn validate_pins_digest_lengths_but_not_full_certificates() {
         let short = TlsaRecordValue::parse("3 1 1 4B9B").unwrap();
 
-        assert!(
-            short
-                .validate()
-                .unwrap_err()
-                .to_string()
-                .contains("32-byte")
+        assert_eq!(
+            short.validate(),
+            Err(ParseRecordValueError::TlsaDataLength {
+                matching_type: 1,
+                expected: 32,
+                len: 2,
+            })
         );
 
         // Matching type 0 carries the full certificate at any length.
@@ -145,8 +147,12 @@ mod tests {
                 .is_ok()
         );
         let oversized = format!("3 0 0 {}", "AB".repeat(cap + 1));
-        let error = TlsaRecordValue::parse(&oversized).unwrap().validate();
-
-        assert!(error.unwrap_err().to_string().contains(&cap.to_string()));
+        assert_eq!(
+            TlsaRecordValue::parse(&oversized).unwrap().validate(),
+            Err(ParseRecordValueError::TlsaDataTooLong {
+                max: cap,
+                len: cap + 1,
+            })
+        );
     }
 }

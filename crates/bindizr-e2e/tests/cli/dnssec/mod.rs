@@ -1,10 +1,10 @@
-use crate::cli::common;
-use crate::common::TestApp;
-
 mod delegation;
 mod keys;
 mod policy;
 mod rollover;
+
+use crate::cli::common;
+use crate::common::TestApp;
 
 /// Verify that the CLI drives the DNSSEC lifecycle.
 #[tokio::test]

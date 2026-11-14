@@ -18,16 +18,18 @@ fn naptr_flags_reject_non_alphanumeric_characters() {
             );
             let parsed = NaptrRecordValue::parse(&text).unwrap();
 
-            assert!(
-                matches!(parsed.validate(), Err(ParseRecordValueError::NaptrFlags)),
+            assert_eq!(
+                parsed.validate(),
+                Err(ParseRecordValueError::NaptrFlags),
                 "{text} was accepted"
             );
             let wire =
                 NaptrRecordValue::from_wire(1, 1, flags.as_bytes(), b"app", b"", replacement)
                     .unwrap();
 
-            assert!(
-                matches!(wire.validate(), Err(ParseRecordValueError::NaptrFlags)),
+            assert_eq!(
+                wire.validate(),
+                Err(ParseRecordValueError::NaptrFlags),
                 "wire flags {flags:?} were accepted"
             );
         }

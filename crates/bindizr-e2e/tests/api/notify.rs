@@ -92,13 +92,10 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
             .unwrap();
     }
 
-    let request_app = app.clone();
+    let task_app = app.clone();
 
-    let request = tokio::spawn(async move {
-        request_app
-            .send_request(Method::POST, "/notify", None)
-            .await
-    });
+    let task =
+        tokio::spawn(async move { task_app.send_request(Method::POST, "/notify", None).await });
 
     let mut seen = HashSet::new();
     let mut peers = HashSet::new();
@@ -136,7 +133,7 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
             .unwrap();
     }
 
-    let (status, body) = request.await.unwrap();
+    let (status, body) = task.await.unwrap();
 
     assert_eq!(status, StatusCode::OK, "{body}");
 }
@@ -347,9 +344,9 @@ async fn notify_reports_completion_when_secondary_does_not_implement_notify() {
         let mut buffer = [0; 4096];
 
         let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
-        let request = Message::from_octets(&buffer[..len]).unwrap();
+        let query = Message::from_octets(&buffer[..len]).unwrap();
         let response = MessageBuilder::new_vec()
-            .start_answer(&request, Rcode::NOTIMP)
+            .start_answer(&query, Rcode::NOTIMP)
             .unwrap()
             .finish();
 

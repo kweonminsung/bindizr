@@ -36,6 +36,7 @@ pub async fn check_ds(
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to check the parent DS").await?;
+
     let result: Result<_, ServiceError> = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
@@ -45,7 +46,7 @@ pub async fn check_ds(
             LockLevel::Shared,
         )
         .await?;
-        let status = status::load_status_tx(
+        let status = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -57,6 +58,7 @@ pub async fn check_ds(
         Ok((signed, status))
     }
     .await;
+
     let (signed, mut status) =
         transaction::finish_tx(tx, result, "failed to check the parent DS").await?;
 
@@ -67,8 +69,8 @@ pub async fn check_ds(
     Ok(status)
 }
 
-/// The parent's answer about the zone's DS, matched against the zone's
-/// SEP keys, or the unverified error a refusal reports.
+/// Probe the parent for the zone's DS, matched against the zone's SEP keys,
+/// or return the unverified error a refusal reports.
 pub(crate) async fn probe_delegation(
     cx: &Context,
     signed: &SignedZone,

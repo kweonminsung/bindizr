@@ -2,8 +2,8 @@
 
 use thiserror::Error;
 
+use super::ValidateNaptrRegexpError;
 use crate::dns::name::ParseNameError;
-use crate::dns::record::naptr::ValidateNaptrRegexpError;
 use crate::model::record::RecordType;
 
 /// A record value that is not what its type's presentation form spells. The
@@ -32,8 +32,8 @@ pub enum ParseRecordValueError {
     OddHexLength { field: &'static str },
     #[error("{field} must be hex")]
     NotHex { field: &'static str },
-    #[error("{field} must be a quoted string: {input}")]
-    NotQuoted { field: &'static str, input: String },
+    #[error("{field} must be a quoted string: {value}")]
+    NotQuoted { field: &'static str, value: String },
     #[error("{field} must be valid UTF-8")]
     NotUtf8 { field: &'static str },
     #[error("{field} contains an invalid \\DDD escape")]

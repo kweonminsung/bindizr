@@ -58,6 +58,7 @@ pub async fn enable(
     let parent_ns_addrs = parent_ns_addrs::normalize_parent_ns_addrs(&request.parent_ns_addrs)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to enable DNSSEC").await?;
+
     let apply_result = async {
         // Check the unsigned state under the same lock used to install the keys.
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
@@ -135,7 +136,7 @@ pub async fn enable(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::load_status_tx(
+        let response = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -147,6 +148,7 @@ pub async fn enable(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
+
     let (response, changed) =
         transaction::finish_tx(tx, apply_result, "failed to enable DNSSEC").await?;
 
@@ -191,6 +193,7 @@ pub async fn update_settings(
         .transpose()?;
 
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC settings").await?;
+
     let apply_result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -263,11 +266,13 @@ pub async fn update_settings(
         }
 
         let response =
-            status::load_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial).await?;
+            status::lookup_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial)
+                .await?;
 
         Ok((response, new_serial != candidate.serial))
     }
     .await;
+
     let (response, changed) =
         transaction::finish_tx(tx, apply_result, "failed to update DNSSEC settings").await?;
 
@@ -294,6 +299,7 @@ pub async fn disable(
     ds_check: DsCheck,
 ) -> Result<(), ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to disable DNSSEC").await?;
+
     let apply_result = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
@@ -349,6 +355,7 @@ pub async fn disable(
         Ok(())
     }
     .await;
+
     transaction::finish_tx(tx, apply_result, "failed to disable DNSSEC").await?;
 
     cx.metrics().track_serial_bumps(1);
@@ -368,6 +375,7 @@ pub async fn disable(
 /// hatch when stored state is doubted).
 pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result<(), ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
@@ -385,6 +393,7 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
         Ok(changed)
     }
     .await;
+
     let changed = transaction::finish_tx(tx, apply_result, "failed to sign zone").await?;
 
     if changed {

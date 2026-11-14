@@ -38,6 +38,7 @@ pub async fn start_rollover(
         .map_err(ServiceError::invalid_input)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
+
     let apply_result = async {
         // Select a role only after ruling out an existing rollover under the zone lock.
         let mut signed = super::get_signed_zone_tx(
@@ -93,7 +94,7 @@ pub async fn start_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::load_status_tx(
+        let response = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -105,6 +106,7 @@ pub async fn start_rollover(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
+
     let (response, changed) =
         transaction::finish_tx(tx, apply_result, "failed to start key rollover").await?;
 
@@ -156,6 +158,7 @@ pub async fn advance_rollover(
     holddown: Holddown,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
+
     let apply_result = async {
         let mut signed = super::get_signed_zone_tx(
             &mut tx,
@@ -216,7 +219,7 @@ pub async fn advance_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::load_status_tx(
+        let response = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -228,6 +231,7 @@ pub async fn advance_rollover(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
+
     let (response, changed) =
         transaction::finish_tx(tx, apply_result, "failed to advance key rollover").await?;
 

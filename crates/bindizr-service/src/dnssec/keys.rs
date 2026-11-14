@@ -20,7 +20,7 @@ use crate::types::{
 };
 use crate::{Context, dnssec_policy, notify, transaction, zone};
 
-/// The zone's keys as BIND file contents (`K*.key` / `K*.private`).
+/// Export the zone's keys as BIND file contents (`K*.key` / `K*.private`).
 pub async fn export_keys(
     cx: &Context,
     caller: &Caller,
@@ -29,6 +29,7 @@ pub async fn export_keys(
     // One locked transaction: a rename cannot split the rendered name
     // from the keys.
     let mut tx = transaction::begin_read_tx(cx, "failed to export DNSSEC keys").await?;
+
     let result = async {
         let SignedZone { zone, keys, .. } = super::get_signed_zone_tx(
             &mut tx,
@@ -84,6 +85,7 @@ pub async fn import_keys(
     )?;
 
     let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
+
     let apply_result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -183,7 +185,7 @@ pub async fn import_keys(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::load_status_tx(
+        let response = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -195,6 +197,7 @@ pub async fn import_keys(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
+
     let (response, changed) =
         transaction::finish_tx(tx, apply_result, "failed to import DNSSEC keys").await?;
 

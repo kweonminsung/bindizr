@@ -51,7 +51,7 @@ pub struct DnssecRecordKey {
 }
 
 impl DnssecRecord {
-    /// This record's identity for set matching.
+    /// Return this record's identity for set matching.
     pub fn match_key(&self) -> DnssecRecordKey {
         DnssecRecordKey {
             name: self.name.clone(),
@@ -114,7 +114,7 @@ impl DnssecRecordType {
         }
     }
 
-    /// Return the text representation of this DNSSEC record type.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Rrsig => "RRSIG",
@@ -132,24 +132,6 @@ impl fmt::Display for DnssecRecordType {
     /// Write the DNSSEC record type in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
-    }
-}
-
-impl TryFrom<i32> for DnssecRecordType {
-    type Error = ParseDnssecRecordTypeError;
-
-    /// Validate and convert the stored value into a DNSSEC record type.
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            46 => Ok(Self::Rrsig),
-            47 => Ok(Self::Nsec),
-            48 => Ok(Self::Dnskey),
-            50 => Ok(Self::Nsec3),
-            51 => Ok(Self::Nsec3param),
-            59 => Ok(Self::Cds),
-            60 => Ok(Self::Cdnskey),
-            _ => Err(ParseDnssecRecordTypeError::Number { value }),
-        }
     }
 }
 
@@ -173,6 +155,24 @@ impl FromStr for DnssecRecordType {
     }
 }
 
+impl TryFrom<i32> for DnssecRecordType {
+    type Error = ParseDnssecRecordTypeError;
+
+    /// Validate and convert the stored value into a DNSSEC record type.
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            46 => Ok(Self::Rrsig),
+            47 => Ok(Self::Nsec),
+            48 => Ok(Self::Dnskey),
+            50 => Ok(Self::Nsec3),
+            51 => Ok(Self::Nsec3param),
+            59 => Ok(Self::Cds),
+            60 => Ok(Self::Cdnskey),
+            _ => Err(ParseDnssecRecordTypeError::Number { value }),
+        }
+    }
+}
+
 impl<DB: sqlx::Database> sqlx::Type<DB> for DnssecRecordType
 where
     i32: sqlx::Type<DB>,
@@ -182,7 +182,7 @@ where
         <i32 as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i32 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -198,5 +198,33 @@ where
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         i32::from(self.wire_type()).encode_by_ref(buffer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// Verify that `DnssecRecordType` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn dnssec_record_type_spells_itself_once() {
+        for value in [
+            DnssecRecordType::Rrsig,
+            DnssecRecordType::Nsec,
+            DnssecRecordType::Dnskey,
+            DnssecRecordType::Nsec3,
+            DnssecRecordType::Nsec3param,
+            DnssecRecordType::Cds,
+            DnssecRecordType::Cdnskey,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<DnssecRecordType>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<DnssecRecordType>().unwrap(), value);
+        }
     }
 }

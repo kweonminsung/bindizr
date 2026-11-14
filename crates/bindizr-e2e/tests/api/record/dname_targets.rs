@@ -1,5 +1,4 @@
-use domain::base::Rtype;
-use domain::base::iana::Rcode;
+use domain::base::iana::{Rcode, Rtype};
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
@@ -43,7 +42,7 @@ async fn dname_targets_reject_both_creation_orders_and_previews() {
 
             assert_eq!(status, StatusCode::CREATED, "{body}");
 
-            let serial = app.read_zone_serial(zone_name).await;
+            let base_serial = app.read_zone_serial(zone_name).await;
             let before = app.list_records(zone_name).await;
 
             for dry_run in [true, false] {
@@ -60,7 +59,7 @@ async fn dname_targets_reject_both_creation_orders_and_previews() {
                     "{record_type}, DNAME first={dname_first}: {body}"
                 );
                 assert_eq!(body["code"], "RECORD_CONFLICT");
-                assert_eq!(app.read_zone_serial(zone_name).await, serial);
+                assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
                 assert_eq!(app.list_records(zone_name).await, before);
             }
         }
@@ -131,7 +130,7 @@ async fn dname_targets_respect_label_and_delegation_boundaries() {
     }
 
     // Removing the cut would make its DNAME authoritative over a stored target.
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     for dry_run in [true, false] {
         let (status, body) = app
@@ -143,7 +142,7 @@ async fn dname_targets_respect_label_and_delegation_boundaries() {
             .await;
 
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
-        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
     }
 }
 
@@ -156,7 +155,7 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let key = tsig::create_tsig_key(&app, "dname-targets", KeyRole::Admin).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
     let before = app.list_records(zone_name).await;
 
     for dry_run in [true, false] {
@@ -191,7 +190,7 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
 
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
         assert_eq!(body["applied"], false);
-        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         assert_eq!(app.list_records(zone_name).await, before);
     }
 
@@ -220,7 +219,7 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
         nsupdate::send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
         Rcode::REFUSED
     );
-    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
     assert_eq!(app.list_records(zone_name).await, before);
 
     let (status, body) = app
@@ -248,7 +247,7 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let mx_id = body["record"]["id"].as_i64().unwrap();
 
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     for dry_run in [true, false] {
         let (status, body) = app
@@ -262,7 +261,7 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
             .await;
 
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
-        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
     }
 
     // Replacing the zone removes the DNAME before the target constraint is checked.

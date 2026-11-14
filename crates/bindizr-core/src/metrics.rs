@@ -358,7 +358,7 @@ impl XfrResult {
         Self::Failed,
     ];
 
-    /// The metric label value of this xfr result.
+    /// Return the metric label value of this xfr result.
     fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -382,7 +382,7 @@ pub enum SoaResult {
 impl SoaResult {
     const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Failed];
 
-    /// The metric label value of this SOA result.
+    /// Return the metric label value of this SOA result.
     fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -420,7 +420,7 @@ impl NsupdateResult {
         Self::Rcode(Rcode::NOTIMP),
     ];
 
-    /// The metric label value of this nsupdate result.
+    /// Return the metric label value of this nsupdate result.
     fn label(self) -> &'static str {
         let Self::Rcode(rcode) = self else {
             return "tsig_failed";
@@ -455,7 +455,7 @@ pub enum NotifyResult {
 impl NotifyResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::ResolveFailed];
 
-    /// The metric label value of this notify result.
+    /// Return the metric label value of this notify result.
     fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -477,7 +477,7 @@ pub enum SchedulerResult {
 impl SchedulerResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::Panicked];
 
-    /// The metric label value of this scheduler result.
+    /// Return the metric label value of this scheduler result.
     fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -488,7 +488,7 @@ impl SchedulerResult {
 }
 
 impl Metrics {
-    /// A zone transfer's outcome by query type and transport; a non-transfer
+    /// Count a zone transfer's outcome by query type and transport; a non-transfer
     /// type is not counted, so the caller passes what it was asked for.
     pub fn track_xfr(&self, qtype: Rtype, transport: TransferTransport, result: XfrResult) {
         let xfr_type = match qtype {
@@ -501,22 +501,22 @@ impl Metrics {
             .inc();
     }
 
-    /// Secondaries poll SOA on their refresh timer, so this is the question
-    /// bindizr answers most; the result says whether they are getting a serial.
+    /// Count an SOA answer: secondaries poll SOA on their refresh timer, so this is
+    /// the question bindizr answers most; the result says whether they are getting a serial.
     pub fn track_soa(&self, result: SoaResult) {
         self.soa_queries_total
             .with_label_values(&[result.label()])
             .inc();
     }
 
-    /// Increment the counter for an nsupdate result.
+    /// Count an nsupdate result.
     pub fn track_nsupdate(&self, result: NsupdateResult) {
         self.nsupdate_requests_total
             .with_label_values(&[result.label()])
             .inc();
     }
 
-    /// Track a NOTIFY send result.
+    /// Count a NOTIFY send result.
     pub fn track_notify(&self, result: NotifyResult) {
         self.notify_sent_total
             .with_label_values(&[result.label()])
@@ -553,14 +553,14 @@ impl Metrics {
         self.zone_serial_bumps_total.inc_by(count);
     }
 
-    /// Increment the counter for a DNSSEC scheduler pass result.
+    /// Count a DNSSEC scheduler pass result.
     pub fn track_dnssec_scheduler(&self, result: SchedulerResult) {
         self.dnssec_scheduler_runs_total
             .with_label_values(&[result.label()])
             .inc();
     }
 
-    /// The pool's occupancy at scrape time.
+    /// Set the pool's occupancy at scrape time.
     pub fn set_db_pool_gauges(&self, connections: u32, idle: u32, max: u32) {
         self.db_connections
             .with_label_values(&["idle"])
@@ -571,7 +571,7 @@ impl Metrics {
         self.db_connections_max.set(i64::from(max));
     }
 
-    /// Record a zone-cache hit or miss.
+    /// Count a zone-cache hit or miss.
     pub fn track_zone_cache_lookup(&self, hit: bool) {
         self.zone_cache_lookups_total
             .with_label_values(&[if hit {
@@ -582,7 +582,7 @@ impl Metrics {
             .inc();
     }
 
-    /// What the cache holds after a store, and what it dropped to fit.
+    /// Set what the cache holds after a store, and count what it dropped to fit.
     pub fn track_zone_cache_store(&self, records: usize, evicted: usize) {
         self.zone_cache_records.set(records as i64);
         self.zone_cache_evictions_total.inc_by(evicted as u64);

@@ -26,7 +26,7 @@ fn log_level() -> Level {
 pub struct Logger;
 
 impl Log for Logger {
-    /// Check whether a log record meets the current threshold.
+    /// Return whether a log record meets the current threshold.
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         metadata.level() <= log_level()
     }

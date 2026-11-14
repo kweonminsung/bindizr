@@ -20,8 +20,8 @@ struct UpdateZoneResult {
     catalog_changed: bool,
 }
 
-/// DEL(old)+ADD(new) apex SOA changes for an in-place zone row update, so IXFR
-/// consumers replay the SOA transition.
+/// Build the DEL(old)+ADD(new) apex SOA changes for an in-place zone row
+/// update, so IXFR consumers replay the SOA transition.
 pub(crate) fn soa_replacement_changes(
     old_zone: &Zone,
     new_zone: &Zone,
@@ -51,8 +51,8 @@ pub(crate) fn soa_replacement_changes(
     ])
 }
 
-/// Omitted fields keep the stored zone's value; the merge runs inside the
-/// transaction, against the locked row.
+/// Update a zone: omitted fields keep the stored zone's value, and the merge
+/// runs inside the transaction, against the locked row.
 pub async fn update(
     cx: &Context,
     caller: &Caller,
@@ -60,13 +60,13 @@ pub async fn update(
     request: &UpdateZoneRequest,
 ) -> Result<WriteZoneResponse, ServiceError> {
     // Keep input errors until the locked zone has been authorized.
-    let name = request
+    let new_zone_name = request
         .name
         .as_deref()
-        .map(|name| {
-            let name = validation::normalize_name(name)?;
-            validation::reject_catalog_zone_name(cx, &name)?;
-            Ok::<_, ServiceError>(name)
+        .map(|new_zone_name| {
+            let new_zone_name = validation::normalize_name(new_zone_name)?;
+            validation::reject_catalog_zone_name(cx, &new_zone_name)?;
+            Ok::<_, ServiceError>(new_zone_name)
         })
         .transpose();
     let mname = request
@@ -119,7 +119,7 @@ pub async fn update(
         let zone_id = existing_zone.id;
 
         let candidate = Zone {
-            name: name?.unwrap_or_else(|| existing_zone.name.clone()),
+            name: new_zone_name?.unwrap_or_else(|| existing_zone.name.clone()),
             mname: mname?.unwrap_or_else(|| existing_zone.mname.clone()),
             rname: rname?.unwrap_or_else(|| existing_zone.rname.clone()),
             default_ttl: default_ttl?.unwrap_or(existing_zone.default_ttl),
@@ -195,7 +195,7 @@ pub async fn update(
             });
         }
 
-        let name = candidate.name.clone();
+        let new_zone_name = candidate.name.clone();
 
         let updated_zone = bindizr_db::zone::update_tx(&mut tx, candidate)
             .await
@@ -203,7 +203,9 @@ pub async fn update(
                 // A rename that raced past the pre-check above trips
                 // UNIQUE(name); the backstop reads as the same conflict.
                 if error.is_unique_violation() {
-                    ServiceError::zone_conflict(format!("zone with name '{name}' already exists"))
+                    ServiceError::zone_conflict(format!(
+                        "zone with name '{new_zone_name}' already exists"
+                    ))
                 } else {
                     log::error!("Failed to update zone: {error}");
                     ServiceError::internal_with_source("failed to update zone", error)
@@ -238,12 +240,11 @@ pub async fn update(
     } = transaction::finish_tx(tx, apply_result, "failed to update zone").await?;
 
     log::info!(
-        "event=zone_update zone={} previous_name={} new_serial={} zone_id={} dry_run={}",
+        "event=zone_update zone={} previous_name={zone_name} new_serial={} zone_id={} dry_run={}",
         updated_zone.name,
-        zone_name,
         updated_zone.serial,
         updated_zone.id,
-        request.dry_run
+        request.dry_run,
     );
 
     // Announce the zone's new serial after its data and version have committed.

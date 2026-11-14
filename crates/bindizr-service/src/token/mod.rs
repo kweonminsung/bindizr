@@ -59,6 +59,7 @@ pub async fn create(
     let token_hash = hash_token(&raw_token);
 
     let mut tx = transaction::begin_tx(cx, "failed to create token").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -108,6 +109,7 @@ pub async fn create(
         Ok(token)
     }
     .await;
+
     let token = transaction::finish_tx(tx, apply_result, "failed to create token").await?;
 
     Ok((TokenResponse::from_token(&token, &role.name), raw_token))
@@ -156,7 +158,7 @@ pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<TokenResponse, S
     Ok(TokenResponse::from_token(token, &role.name))
 }
 
-/// The number of API tokens, read for the daemon's startup hint.
+/// Count the API tokens, read for the daemon's startup hint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(bindizr_db::api_token::list_all(cx.db()).await?.len() as u64)
 }
@@ -169,6 +171,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     let token = lookup_by_name(cx, name).await?;
 
     let mut tx = transaction::begin_tx(cx, "failed to delete token").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -195,15 +198,16 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     transaction::finish_tx(tx, apply_result, "failed to delete token").await
 }
 
-/// Load an API token by name or return a not-found error.
+/// Look up an API token by name or return a not-found error.
 async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceError> {
     bindizr_db::api_token::get_by_name(cx.db(), &normalize_name(name)?)
         .await?
         .ok_or_else(|| ServiceError::token_not_found(name))
 }
 
-/// Lowercased so one name means one token on every backend (MySQL compares
-/// case-insensitively), and kept to one URL path segment for `/tokens/{name}`.
+/// Normalize a token name: lowercased so one name means one token on every
+/// backend (MySQL compares case-insensitively), and kept to one URL path
+/// segment for `/tokens/{name}`.
 pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
     let name = text::normalize_identifier(value, "token name", MAX_COLUMN_TEXT_LEN)?;
 
@@ -217,7 +221,7 @@ pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
     Ok(name)
 }
 
-/// When a token created now expires; `None` never does.
+/// Normalize when a token created now expires; `None` never does.
 fn normalize_expires_at(
     expires_in_days: Option<i64>,
 ) -> Result<Option<DateTime<Utc>>, ServiceError> {

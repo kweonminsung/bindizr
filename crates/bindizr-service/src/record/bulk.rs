@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
@@ -68,7 +68,7 @@ pub async fn create_bulk(
 
     let mut tx = transaction::begin_tx(cx, "failed to create records").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let started = Instant::now();
 
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
@@ -82,10 +82,10 @@ pub async fn create_bulk(
         let writes: Vec<RecordAccess> = prepared
             .iter()
             .zip(&owners)
-            .filter_map(|(prepared_record, owner_name)| {
-                owner_name.as_ref().ok().map(|owner_name| RecordAccess {
+            .filter_map(|(prepared_record, owner)| {
+                owner.as_ref().ok().map(|owner| RecordAccess {
                     action: Action::RecordCreate,
-                    relative_name: owner_name.clone(),
+                    relative_name: owner.clone(),
                     record_type: Some(prepared_record.record_type),
                 })
             })
@@ -143,17 +143,17 @@ pub async fn create_bulk(
         let started = Instant::now();
         let mut to_insert = Vec::with_capacity(prepared.len());
 
-        for (prepared_record, owner_name) in prepared.iter().zip(owners) {
-            let owner_name = owner_name?;
+        for (prepared_record, owner) in prepared.iter().zip(owners) {
+            let owner = owner?;
 
-            let records_at_name = records_by_name.entry(owner_name.clone()).or_default();
+            let records_at_name = records_by_name.entry(owner.clone()).or_default();
 
             // Fixed at write time: a later zone TTL change will not move it.
             let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
             validation::validate_record_constraints(
                 records_at_name,
-                &owner_name,
+                &owner,
                 prepared_record.record_type,
                 &prepared_record.value,
                 ttl,
@@ -163,7 +163,7 @@ pub async fn create_bulk(
 
             let record = Record {
                 id: RecordId::UNWRITTEN,
-                name: owner_name,
+                name: owner,
                 record_type: prepared_record.record_type,
                 value: prepared_record.value.clone(),
                 ttl,
@@ -214,7 +214,7 @@ pub async fn create_bulk(
         };
 
         // Carry grants out of the locked snapshot; render values after commit.
-        let records = created_records
+        let records: Vec<_> = created_records
             .into_iter()
             .map(|record| {
                 let actions =
@@ -223,9 +223,7 @@ pub async fn create_bulk(
             })
             .collect();
 
-        Ok::<(Vec<(Record, Vec<Action>)>, ZoneName, RecordDiffResponse), ServiceError>((
-            records, zone.name, diff,
-        ))
+        Ok((records, zone.name, diff))
     }
     .await;
 
@@ -233,10 +231,9 @@ pub async fn create_bulk(
         transaction::finish_tx(tx, apply_result, "failed to create records").await?;
 
     log::info!(
-        "event=record_bulk_create zone={} count={} dry_run={}",
-        zone_name,
+        "event=record_bulk_create zone={zone_name} count={} dry_run={}",
         created_records.len(),
-        request.dry_run
+        request.dry_run,
     );
 
     let started = Instant::now();
@@ -251,19 +248,16 @@ pub async fn create_bulk(
     // Per-stage breakdown for profiling; debug-gated so it stays out of
     // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
     log::debug!(
-        "event=record_bulk_create_timing zone={} count={} prepare_ms={:.1} load_zone_ms={:.1} \
+        "event=record_bulk_create_timing zone={zone_name} count={} prepare_ms={prepare_ms:.1} load_zone_ms={:.1} \
          load_existing_ms={:.1} build_index_ms={:.1} build_records_ms={:.1} \
-         db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} total_ms={:.1}",
-        zone_name,
+         db_write_ms={:.1} serial_ms={:.1} notify_ms={notify_ms:.1} total_ms={:.1}",
         created_records.len(),
-        prepare_ms,
         timings.load_zone_ms,
         timings.load_existing_ms,
         timings.build_index_ms,
         timings.build_records_ms,
         timings.db_write_ms,
         timings.serial_ms,
-        notify_ms,
         time::elapsed_ms(total_started),
     );
 

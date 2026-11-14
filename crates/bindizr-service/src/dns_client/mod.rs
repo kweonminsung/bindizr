@@ -32,17 +32,17 @@ pub enum ExchangeMessageError {
     TcpTimedOut { what: &'static str },
     #[error("{what} send timeout")]
     SendTimedOut { what: &'static str },
-    #[error("incomplete {what} send to {server}: sent {sent} of {len} bytes")]
+    #[error("incomplete {what} send to {addr}: sent {sent} of {len} bytes")]
     IncompleteSend {
         what: &'static str,
-        server: SocketAddr,
+        addr: SocketAddr,
         sent: usize,
         len: usize,
     },
-    #[error("{what} response timeout from {server}")]
+    #[error("{what} response timeout from {addr}")]
     ResponseTimedOut {
         what: &'static str,
-        server: SocketAddr,
+        addr: SocketAddr,
     },
 }
 
@@ -136,7 +136,7 @@ pub(crate) async fn exchange_over_udp(
     if sent != request.len() {
         return Err(ExchangeMessageError::IncompleteSend {
             what,
-            server: server_addr,
+            addr: server_addr,
             sent,
             len: request.len(),
         });
@@ -159,7 +159,7 @@ pub(crate) async fn exchange_over_udp(
     let received = time::timeout(timeout, receive).await.map_err(|_| {
         ExchangeMessageError::ResponseTimedOut {
             what,
-            server: server_addr,
+            addr: server_addr,
         }
     })??;
 
@@ -213,9 +213,8 @@ pub async fn resolve_address_entry(
                 }
                 Err(_) => {
                     log::error!(
-                        "Resolving server address '{}' timed out after {} seconds",
-                        target,
-                        timeout.as_secs()
+                        "Resolving server address '{target}' timed out after {} seconds",
+                        timeout.as_secs(),
                     );
                     Err(ResolveAddressError::TimedOut {
                         secs: timeout.as_secs(),
@@ -237,7 +236,8 @@ mod tests {
 
     use super::*;
 
-    /// Ignore over-advertisement replies without resetting the deadline or sending again.
+    /// Verify that a UDP exchange ignores over-advertisement replies without resetting the
+    /// deadline or sending again.
     #[tokio::test]
     async fn udp_exchange_ignores_oversized_matching_responses() {
         use std::str::FromStr;
@@ -245,7 +245,7 @@ mod tests {
         for (advertised, limit) in [(None, 512), (Some(1232), 1232)] {
             let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr = socket.local_addr().unwrap();
-            let (_, request) = query::build_question(
+            let (_, query) = query::build_question(
                 Opcode::QUERY,
                 false,
                 false,
@@ -253,10 +253,10 @@ mod tests {
                 Rtype::SOA,
                 advertised,
             );
-            let request = request.finish();
+            let query = query.finish();
 
             let mut exchange = tokio::spawn(async move {
-                exchange_over_udp(addr, Duration::from_secs(1), &request, "test").await
+                exchange_over_udp(addr, Duration::from_secs(1), &query, "test").await
             });
 
             let mut buffer = [0; 1232];

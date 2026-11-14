@@ -155,8 +155,8 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
     Ok(())
 }
 
-/// The `key` statement BIND, Knot and NSD all read a TSIG key from, so the
-/// secret reaches a secondary as something to paste rather than reformat.
+/// Print the `key` statement BIND, Knot and NSD all read a TSIG key from, so
+/// the secret reaches a secondary as something to paste rather than reformat.
 fn print_bind_key(response: &SingleTsigKeyResponse) {
     outln!("key \"{}\" {{", response.tsig_key.name);
     outln!("    algorithm {};", response.tsig_key.algorithm);

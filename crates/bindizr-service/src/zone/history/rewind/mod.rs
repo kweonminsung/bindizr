@@ -113,7 +113,8 @@ pub(crate) async fn list_records_at_serial_tx(
     }
 }
 
-/// Deterministic output order (hash-map iteration order is not).
+/// Sort records into a deterministic output order (hash-map iteration order
+/// is not).
 fn sort_records(records: &mut [RecordData]) {
     records.sort_by(|left, right| {
         (&left.name, left.record_type.as_str(), &left.value).cmp(&(

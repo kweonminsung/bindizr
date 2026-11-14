@@ -20,11 +20,17 @@ use crate::model::zone::Zone;
 #[derive(Debug, Error)]
 pub enum ImportKeyError {
     #[error("invalid {field} time '{value}' in the private key file")]
-    InvalidTime { field: String, value: String },
-    #[error("this key's Delete time ({at}) has passed, so BIND no longer serves it")]
-    Deleted { at: String },
-    #[error("this key is not published until {at}, so BIND does not serve it yet")]
-    NotYetPublished { at: String },
+    InvalidTime { field: &'static str, value: String },
+    #[error(
+        "this key's Delete time ({}) has passed, so BIND no longer serves it",
+        at.format("%Y-%m-%dT%H:%M:%SZ")
+    )]
+    Deleted { at: DateTime<Utc> },
+    #[error(
+        "this key is not published until {}, so BIND does not serve it yet",
+        at.format("%Y-%m-%dT%H:%M:%SZ")
+    )]
+    NotYetPublished { at: DateTime<Utc> },
     #[error("DNSKEY record needs flags, protocol, algorithm, and key")]
     DnskeyShape,
     #[error("invalid DNSKEY flags '{value}'")]
@@ -48,7 +54,7 @@ pub enum ImportKeyError {
 }
 
 impl DnssecKey {
-    /// The key's `K*.private` contents, including BIND timing fields so
+    /// Render the key's `K*.private` contents, including BIND timing fields so
     /// [`DnssecKey::import`] restores its rollover state.
     pub fn to_bind_private_file(&self) -> String {
         let timing = match self.state {
@@ -82,11 +88,11 @@ impl DnssecKey {
     }
 }
 
-/// One of BIND's key timing fields from a `K*.private` file, written by
+/// Parse one of BIND's key timing fields from a `K*.private` file, written by
 /// `dnssec-keygen` and `dnssec-settime` as UTC `YYYYMMDDHHMMSS`.
 fn parse_bind_key_time(
     private_key: &str,
-    field: &str,
+    field: &'static str,
 ) -> Result<Option<DateTime<Utc>>, ImportKeyError> {
     let Some(value) = private_key.lines().find_map(|line| {
         line.split_once(':')
@@ -98,7 +104,7 @@ fn parse_bind_key_time(
     NaiveDateTime::parse_from_str(value, "%Y%m%d%H%M%S")
         .map(|time| Some(time.and_utc()))
         .map_err(|_| ImportKeyError::InvalidTime {
-            field: field.to_string(),
+            field,
             value: value.to_string(),
         })
 }
@@ -129,9 +135,7 @@ fn bind_key_phase(
     let passed = |at: Option<DateTime<Utc>>| at.filter(|at| *at <= now);
 
     if let Some(delete) = passed(delete) {
-        return Err(ImportKeyError::Deleted {
-            at: delete.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        });
+        return Err(ImportKeyError::Deleted { at: delete });
     }
 
     // The DNSKEY record set's own TTL bounds how long a resolver can hold an answer
@@ -163,9 +167,7 @@ fn bind_key_phase(
     }
 
     match publish.or(activate) {
-        Some(at) => Err(ImportKeyError::NotYetPublished {
-            at: at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        }),
+        Some(at) => Err(ImportKeyError::NotYetPublished { at }),
         None => Ok(DnssecKeyPhase {
             state: DnssecKeyState::Active,
             state_changed_at: now,

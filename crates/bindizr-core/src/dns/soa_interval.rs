@@ -28,7 +28,7 @@ impl SoaInterval {
     /// The largest interval the row form holds.
     pub const MAX: Self = Self(i32::MAX as u32);
 
-    /// An interval known to be in range, such as a literal; wire input goes
+    /// Build an interval known to be in range, such as a literal; wire input goes
     /// through `TryFrom` instead.
     ///
     /// # Panics
@@ -39,7 +39,7 @@ impl SoaInterval {
         Self(secs)
     }
 
-    /// The interval in seconds, as the wire carries it.
+    /// Return the interval in seconds, as the wire carries it.
     pub const fn as_secs(self) -> u32 {
         self.0
     }
@@ -69,14 +69,14 @@ impl TryFrom<i32> for SoaInterval {
 }
 
 impl From<SoaInterval> for u32 {
-    /// The wire form.
+    /// Convert to the wire form.
     fn from(interval: SoaInterval) -> Self {
         interval.0
     }
 }
 
 impl From<SoaInterval> for i32 {
-    /// The row form; the range invariant makes it exact.
+    /// Convert to the row form; the range invariant makes it exact.
     fn from(interval: SoaInterval) -> Self {
         interval.0 as Self
     }
@@ -93,12 +93,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for SoaInterval
 where
     i32: sqlx::Type<DB>,
 {
-    /// The row form's column type.
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <i32 as sqlx::Type<DB>>::type_info()
     }
 
-    /// Whether the column can hold the row form.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i32 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -108,7 +108,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for SoaInterval
 where
     i32: sqlx::Encode<'q, DB>,
 {
-    /// Bind the row form.
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,

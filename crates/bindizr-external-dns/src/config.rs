@@ -5,6 +5,7 @@ use std::{fs, io};
 
 use bindizr_core::config::{ConfigError, LogLevel};
 use clap::Parser;
+use reqwest::Url;
 use thiserror::Error;
 
 /// ExternalDNS webhook provider adapter for bindizr.
@@ -17,21 +18,17 @@ pub(crate) struct Cli {
     /// Base URL of the bindizr HTTP API, e.g. http://bindizr:8000
     #[arg(long, env = "BINDIZR_URL", value_name = "URL")]
     bindizr_url: String,
-
     /// Bindizr API token; prefer --token-file so the token stays out of the
     /// process list
     #[arg(long, env = "BINDIZR_API_TOKEN", hide_env_values = true)]
     token: Option<String>,
-
     /// File containing the bindizr API token (takes precedence over --token)
     #[arg(long, env = "BINDIZR_API_TOKEN_FILE", value_name = "FILE")]
     token_file: Option<String>,
-
     /// PEM CA certificate to trust on top of the system roots, for a bindizr
     /// serving a private or self-signed certificate
     #[arg(long, env = "BINDIZR_CA_FILE", value_name = "FILE")]
     ca_file: Option<String>,
-
     /// Webhook listener address; keep it on localhost so only the
     /// external-dns container in the same pod can reach it
     #[arg(
@@ -40,7 +37,6 @@ pub(crate) struct Cli {
         default_value = "127.0.0.1:8888"
     )]
     listen_addr: SocketAddr,
-
     /// Health and metrics listener address, exposed for Kubernetes probes
     #[arg(
         long,
@@ -48,13 +44,11 @@ pub(crate) struct Cli {
         default_value = "0.0.0.0:8080"
     )]
     health_listen_addr: SocketAddr,
-
     /// Timeout in seconds for each bindizr API request; keep it under the
     /// external-dns webhook write timeout (10s by default) so the mapped
     /// 502 still reaches the caller when bindizr stalls
     #[arg(long, env = "BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS", default_value_t = 8)]
     timeout_secs: u64,
-
     /// Log level (error, warn, info, debug, trace)
     #[arg(long, env = "BINDIZR_EXTERNAL_DNS_LOG_LEVEL", default_value = "info")]
     log_level: String,
@@ -111,12 +105,11 @@ impl AdapterConfig {
 
         // Endpoint paths are appended to this string, so it must parse as a
         // URL and carry no query/fragment for the joined URLs to stay valid.
-        let parsed = reqwest::Url::parse(&bindizr_url).map_err(|source| {
-            LoadAdapterConfigError::InvalidUrl {
+        let parsed =
+            Url::parse(&bindizr_url).map_err(|source| LoadAdapterConfigError::InvalidUrl {
                 url: bindizr_url.clone(),
                 source: Box::new(source),
-            }
-        })?;
+            })?;
 
         if parsed.query().is_some() || parsed.fragment().is_some() {
             return Err(LoadAdapterConfigError::UrlQueryOrFragment { url: bindizr_url });

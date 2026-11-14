@@ -30,10 +30,12 @@ async fn context(save: SavedTransfers, zone_names: &[&str]) -> (Context, Vec<Zon
     );
     let mut zone_ids = Vec::new();
 
-    for name in zone_names {
+    for zone_name in zone_names {
         let request = serde_json::from_value(json!({
-            "name": name, "mname": format!("ns.{name}"),
-            "rname": format!("hostmaster@{name}"), "apex_ns": false,
+            "name": zone_name,
+            "mname": format!("ns.{zone_name}"),
+            "rname": format!("hostmaster@{zone_name}"),
+            "apex_ns": false
         }))
         .unwrap();
         let created = zone::create(&cx, &Caller::socket(), &request)

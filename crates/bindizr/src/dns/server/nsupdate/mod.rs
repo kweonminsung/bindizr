@@ -90,7 +90,7 @@ async fn handle_nsupdate_request(
             // under it, a FORMERR included; a bad key or MAC is its own error.
             let (signer, fudge) = match tsig::request_signature(query_data) {
                 RequestSignature::Key { name, fudge } => {
-                    match update::authenticate_tsig_key(dns_cx, &name, query_data).await {
+                    match update::authenticate_tsig_key(dns_cx, query_data, &name).await {
                         Ok((_, signer)) => (Some(signer), fudge),
                         Err(UpdateError::Tsig(TsigError::Rejected { rcode, key, time })) => {
                             match tsig::build_error_response(

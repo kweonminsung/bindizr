@@ -56,6 +56,7 @@ pub async fn authorize_soa_content_by_name(
     include_signatures: bool,
 ) -> Result<TransferAccess<(Zone, Vec<DnssecRecord>)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load SOA content").await?;
+
     let result = async {
         let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
@@ -84,6 +85,7 @@ pub async fn authorize_transfer_by_name(
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<(Zone, ZoneVersionId)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to authorize the transfer").await?;
+
     let result = async {
         match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => {
@@ -106,6 +108,7 @@ pub async fn refresh_catalog_content(
     caller: &Caller,
 ) -> Result<TransferAccess<(CatalogZone, Vec<String>)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load catalog content").await?;
+
     let result: Result<_, ServiceError> = async {
         let caller = match reauthenticate_transfer_tx(&mut tx, caller).await? {
             TransferAccess::Granted(caller) => caller,
@@ -141,6 +144,7 @@ pub async fn authorize_transfer_content_by_name(
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<TransferContent>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load transfer content").await?;
+
     let result = async {
         let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,

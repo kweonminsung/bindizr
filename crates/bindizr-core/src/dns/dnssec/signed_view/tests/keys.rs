@@ -132,7 +132,7 @@ fn ed448_keys_generate_verifiable_signatures() {
     // Algorithm 16 only signs through the OpenSSL backend; this guards the
     // ring-to-OpenSSL fallback staying wired up.
     let apex = OwnerName::apex();
-    let rrsigs = rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS);
+    let rrsigs = rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int()));
 
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 16);
@@ -169,7 +169,7 @@ fn rsa_keys_generate_verifiable_signatures() {
 
     // RSA key generation also runs on the OpenSSL backend (ring only signs).
     let apex = OwnerName::apex();
-    let rrsigs = rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS);
+    let rrsigs = rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int()));
 
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 8);

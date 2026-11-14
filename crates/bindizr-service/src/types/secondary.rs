@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use super::SecondaryStatusResponse;
+use crate::types::zone::SecondaryStatusResponse;
 
 /// Request body for registering a secondary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -229,7 +229,7 @@ pub struct SecondaryTransferFilter {
 }
 
 impl CheckSecondaryResponse {
-    /// Whether every part of the check passed: resolved, in sync, and every
+    /// Return whether every part of the check passed: resolved, in sync, and every
     /// NOTIFY accepted. The transfer summary is information, not a verdict.
     pub fn is_healthy(&self) -> bool {
         self.resolve_error.is_none()

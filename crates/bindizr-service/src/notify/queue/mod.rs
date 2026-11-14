@@ -30,7 +30,7 @@ enum NotifyJobTarget {
 }
 
 impl NotifyJob {
-    /// A job for the zones `target` names.
+    /// Create a job for the zones `target` names.
     pub(crate) fn new(target: NotifyTarget<'_>) -> Self {
         Self {
             target: match target {

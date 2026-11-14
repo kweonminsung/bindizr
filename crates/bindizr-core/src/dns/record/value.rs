@@ -105,15 +105,10 @@ pub(crate) fn parse_hex_record_field<'a>(
             let hi = char::from(pair[0]).to_digit(16);
             let lo = char::from(pair[1]).to_digit(16);
             hi.zip(lo)
-                .map(|(hi, lo)| (hi * 16 + lo) as u8)
+                .and_then(|(hi, lo)| u8::try_from(hi * 16 + lo).ok())
                 .ok_or(ParseRecordValueError::NotHex { field })
         })
         .collect()
-}
-
-/// Encode bytes as uppercase hexadecimal text.
-pub(crate) fn hex_upper(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02X}")).collect()
 }
 
 /// Parse an unsigned 16-bit record field.
@@ -156,7 +151,7 @@ pub(crate) fn parse_string_octets<'a>(
             b'"' => {
                 return Err(ParseRecordValueError::NotQuoted {
                     field,
-                    input: input.to_string(),
+                    value: input.to_string(),
                 });
             }
             b'\\' => match bytes.next() {
@@ -201,7 +196,7 @@ pub(crate) fn parse_char_string<'a>(
     if !input.starts_with('"') {
         return Err(ParseRecordValueError::NotQuoted {
             field,
-            input: input.to_string(),
+            value: input.to_string(),
         });
     }
 

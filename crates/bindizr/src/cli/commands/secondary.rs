@@ -263,7 +263,7 @@ fn print_check(check: &CheckSecondaryResponse) {
             "disabled"
         },
         match &secondary.notify_key_name {
-            Some(key) => format!(", NOTIFY signed with {key}"),
+            Some(key_name) => format!(", NOTIFY signed with {key_name}"),
             None => String::new(),
         }
     );

@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::dns::record::{EncodeRdataError, ParseRecordValueError, WksRecordValue};
 
 /// Why native WKS text could not be prepared for the zone-file parser.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub(crate) enum RewriteNativeRecordsError {
     #[error("unexpected ')' in zone file")]
     UnexpectedClosingParenthesis,

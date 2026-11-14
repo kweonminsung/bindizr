@@ -33,9 +33,9 @@ pub async fn import_many(
             MissingZoneAction::Reject
         },
     };
-    let server = request.from_server.trim();
+    let address = request.from_server.trim();
 
-    if !address::is_address_target(server) {
+    if !address::is_address_target(address) {
         return Err(ServiceError::invalid_input(
             "from_server must name one server as host[:port]",
         ));
@@ -47,7 +47,7 @@ pub async fn import_many(
     }
 
     let config = cx.config();
-    let mut client = AxfrClient::new(server);
+    let mut client = AxfrClient::new(address);
 
     let zone_names = match (&request.zone_names, &request.from_catalog) {
         (Some(names), None) => super::normalize_zone_names(names)?,
@@ -58,23 +58,28 @@ pub async fn import_many(
                 caller.authorize_all_whole_zones(*action)?;
             }
 
-            let catalog = zone::normalize_name(catalog)?;
+            let catalog_zone_name = zone::normalize_name(catalog)?;
 
             let records = client
-                .fetch_zone(&catalog, &config.dns.import)
+                .fetch_zone(&catalog_zone_name, &config.dns.import)
                 .await
                 .map_err(|error| {
                     ServiceError::invalid_input_with_source(
-                        format!("AXFR of catalog {catalog} from {server} failed: {error}"),
+                        format!(
+                            "AXFR of catalog {catalog_zone_name} from {address} failed: {error}"
+                        ),
                         error,
                     )
                 })?;
-            let members = dns::extract_member_zones(&records, &catalog).map_err(|error| {
-                ServiceError::invalid_input_with_source(
-                    format!("catalog {catalog} from {server} cannot be read: {error}"),
-                    error,
-                )
-            })?;
+            let members =
+                dns::extract_member_zones(&records, &catalog_zone_name).map_err(|error| {
+                    ServiceError::invalid_input_with_source(
+                        format!(
+                            "catalog {catalog_zone_name} from {address} cannot be read: {error}"
+                        ),
+                        error,
+                    )
+                })?;
 
             for member in &members {
                 zone::validate_name(member)?;
@@ -104,17 +109,24 @@ pub async fn import_many(
 
     // Reuse the transfer connection while each zone keeps its own transaction.
     for zone_name in &zone_names {
-        let (result, import, error) =
-            match super::import_transfer(cx, caller, zone_name, &mut client, server, options).await
-            {
-                Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
-                Ok(import) => (ImportResult::Ok, Some(import), None),
-                Err(error) => (
-                    ImportResult::Failed,
-                    None,
-                    Some(ErrorResponse::from(&error)),
-                ),
-            };
+        let (result, import, error) = match super::import_transfer(
+            cx,
+            caller,
+            zone_name,
+            &mut client,
+            address,
+            options,
+        )
+        .await
+        {
+            Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
+            Ok(import) => (ImportResult::Ok, Some(import), None),
+            Err(error) => (
+                ImportResult::Failed,
+                None,
+                Some(ErrorResponse::from(&error)),
+            ),
+        };
 
         match result {
             ImportResult::Ok => summary.ok += 1,
@@ -131,9 +143,7 @@ pub async fn import_many(
     }
 
     log::info!(
-        "event=zones_import server={} mode={:?} dry_run={} zones={} ok={} rejected={} failed={}",
-        server,
-        mode,
+        "event=zones_import server={address} mode={mode:?} dry_run={} zones={} ok={} rejected={} failed={}",
         request.dry_run,
         summary.zones,
         summary.ok,

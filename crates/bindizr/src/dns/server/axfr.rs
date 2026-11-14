@@ -62,7 +62,7 @@ pub(crate) async fn handle_axfr(
         Err(_) => TransferAccess::NotAuth,
     };
     let (zone, content) = match access {
-        TransferAccess::Granted(found) => found,
+        TransferAccess::Granted(content) => content,
         TransferAccess::NotAuth => return Err(DnsError::NotAuth(zone_name_str.to_string())),
         TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
     };

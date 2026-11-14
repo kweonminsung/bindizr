@@ -23,7 +23,7 @@ pub async fn list(
     let secondaries = bindizr_db::secondary::list_all(cx.db()).await?;
 
     // One statement names every key rather than one per secondary.
-    let key_names: HashMap<TsigKeyId, String> = bindizr_db::tsig_key::list_all(cx.db())
+    let tsig_key_names: HashMap<TsigKeyId, String> = bindizr_db::tsig_key::list_all(cx.db())
         .await?
         .into_iter()
         .map(|tsig_key| (tsig_key.id, tsig_key.name))
@@ -37,7 +37,7 @@ pub async fn list(
                     secondary,
                     secondary
                         .notify_tsig_key_id
-                        .and_then(|id| key_names.get(&id))
+                        .and_then(|tsig_key_id| tsig_key_names.get(&tsig_key_id))
                         .map(String::as_str),
                 )
             })
@@ -47,18 +47,19 @@ pub async fn list(
     ))
 }
 
-/// Fetch one secondary by name.
+/// Get one secondary by name.
 pub async fn get(
     cx: &Context,
     caller: &Caller,
     name: &str,
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
+
     let secondary = lookup_by_name(cx, name).await?;
     lookup_response(cx, &secondary).await
 }
 
-/// The enabled secondaries, for the DNS plane, which takes no caller.
+/// List the enabled secondaries, for the DNS plane, which takes no caller.
 /// Read per use, so a change takes effect on the next NOTIFY or transfer.
 pub async fn list_enabled(cx: &Context) -> Result<Vec<Secondary>, ServiceError> {
     Ok(bindizr_db::secondary::list_all(cx.db())
@@ -68,7 +69,7 @@ pub async fn list_enabled(cx: &Context) -> Result<Vec<Secondary>, ServiceError> 
         .collect())
 }
 
-/// The API form of a secondary, naming its NOTIFY key.
+/// Look up the API form of a secondary, naming its NOTIFY key.
 pub(crate) async fn lookup_response(
     cx: &Context,
     secondary: &Secondary,
@@ -80,7 +81,7 @@ pub(crate) async fn lookup_response(
     ))
 }
 
-/// Fetch one secondary by name, unchecked.
+/// Look up one secondary by name, unchecked.
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<Secondary, ServiceError> {
     let name = super::normalize_name(name)?;
     bindizr_db::secondary::get_by_name(cx.db(), &name)

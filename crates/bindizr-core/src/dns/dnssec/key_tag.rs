@@ -20,7 +20,7 @@ pub struct ConvertKeyTagError {
 }
 
 impl KeyTag {
-    /// The key tag as the wire carries it.
+    /// Return the key tag as the wire carries it.
     pub const fn as_u16(self) -> u16 {
         self.0
     }
@@ -45,14 +45,14 @@ impl TryFrom<i32> for KeyTag {
 }
 
 impl From<KeyTag> for u16 {
-    /// The wire form.
+    /// Convert to the wire form.
     fn from(key_tag: KeyTag) -> Self {
         key_tag.0
     }
 }
 
 impl From<KeyTag> for i32 {
-    /// The row form.
+    /// Convert to the row form.
     fn from(key_tag: KeyTag) -> Self {
         Self::from(key_tag.0)
     }
@@ -69,12 +69,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for KeyTag
 where
     i32: sqlx::Type<DB>,
 {
-    /// The row form's column type.
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <i32 as sqlx::Type<DB>>::type_info()
     }
 
-    /// Whether the column can hold the row form.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i32 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -84,7 +84,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for KeyTag
 where
     i32: sqlx::Encode<'q, DB>,
 {
-    /// Bind the row form.
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,

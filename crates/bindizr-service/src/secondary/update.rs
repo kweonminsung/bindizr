@@ -37,7 +37,7 @@ pub async fn update(
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
         Some("") => Some(None),
-        Some(key_name) => Some(Some(tsig_key::lookup_by_name(cx, key_name).await?)),
+        Some(notify_key_name) => Some(Some(tsig_key::lookup_by_name(cx, notify_key_name).await?)),
         None => None,
     };
 
@@ -47,14 +47,15 @@ pub async fn update(
         && other.name != name
     {
         return Err(ServiceError::secondary_conflict(format!(
-            "secondary with address '{}' already exists (name '{}')",
-            address, other.name
+            "secondary with address '{address}' already exists (name '{}')",
+            other.name
         )));
     }
 
     // Read and write under the row lock, or two partial updates would
     // each restore the field the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update secondary").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -72,9 +73,11 @@ pub async fn update(
         let notify_key_change = match &notify_tsig_key {
             Some(next) => {
                 let previous = match secondary.notify_tsig_key_id {
-                    Some(id) => bindizr_db::tsig_key::get_tx(&mut tx, id, LockLevel::Unlocked)
-                        .await?
-                        .map_or_else(|| format!("key {id}"), |tsig_key| tsig_key.name),
+                    Some(tsig_key_id) => {
+                        bindizr_db::tsig_key::get_tx(&mut tx, tsig_key_id, LockLevel::Unlocked)
+                            .await?
+                            .map_or_else(|| format!("key {tsig_key_id}"), |tsig_key| tsig_key.name)
+                    }
                     None => "none".to_string(),
                 };
 
@@ -129,6 +132,7 @@ pub async fn update(
         Ok(secondary)
     }
     .await;
+
     let secondary = transaction::finish_tx(tx, apply_result, "failed to update secondary").await?;
 
     super::lookup_response(cx, &secondary).await

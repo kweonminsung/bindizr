@@ -4,10 +4,9 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use base64::Engine;
 use base64::engine::general_purpose;
 use domain::base::iana::{Class, DigestAlgorithm, OptRcode, Rtype, SecurityAlgorithm};
-use domain::base::{Message, MessageBuilder, Name, Serial, ToName, Ttl};
+use domain::base::{Message, MessageBuilder, Name, Serial, Ttl};
 use domain::rdata::{Ds, Soa};
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
 use serde_json::Value;
@@ -23,7 +22,7 @@ pub(crate) struct DsRecord {
 }
 
 impl DsRecord {
-    /// The DS of key `key_tag` as a status payload's `ds_records` lists it.
+    /// Build the DS of key `key_tag` as a status payload's `ds_records` lists it.
     pub(crate) fn from_status(dnssec: &Value, key_tag: u16, ttl: u32) -> Self {
         let record = dnssec["ds_records"]
             .as_array()
@@ -56,6 +55,8 @@ impl DsRecord {
     ) -> Self {
         use std::str::FromStr;
 
+        use base64::Engine;
+
         let dnskey = dnssec["keys"]
             .as_array()
             .expect("status carries keys")
@@ -65,8 +66,8 @@ impl DsRecord {
             .as_str()
             .expect("DNSKEY presentation");
         let fields: Vec<&str> = dnskey.split(' ').collect();
-        let flags: u16 = fields[0].parse().expect("DNSKEY flags");
-        let algorithm: u8 = fields[2].parse().expect("DNSKEY algorithm");
+        let flags = fields[0].parse::<u16>().expect("DNSKEY flags");
+        let algorithm = fields[2].parse::<u8>().expect("DNSKEY algorithm");
         let mut rdata = flags.to_be_bytes().to_vec();
         rdata.extend_from_slice(&[3, algorithm]);
         rdata.extend(
@@ -91,7 +92,7 @@ impl DsRecord {
         }
     }
 
-    /// The same DS with a digest of no key: another key sharing the tag.
+    /// Return the same DS with a digest of no key: another key sharing the tag.
     pub(crate) fn with_wrong_digest(mut self) -> Self {
         self.digest = vec![0xab; self.digest.len()];
         self
@@ -122,6 +123,8 @@ pub(crate) struct FakeParent {
 impl FakeParent {
     /// Start on an ephemeral port, serving no DS records yet.
     pub(crate) fn start() -> Self {
+        use domain::base::ToName;
+
         let socket = UdpSocket::bind(("127.0.0.1", 0)).expect("failed to bind the fake parent");
         let addr = socket
             .local_addr()

@@ -7,16 +7,13 @@ use crate::model::record::EXTERNAL_DNS_RECORD_TYPES;
 /// Verify that `Action` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
 fn action_spells_itself_once() {
-    for action in Action::ALL {
+    for value in Action::ALL {
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
         assert_eq!(
-            serde_json::to_value(action).unwrap(),
-            json!(action.as_str())
+            serde_json::from_value::<Action>(json!(value.as_str())).unwrap(),
+            value
         );
-        assert_eq!(
-            serde_json::from_value::<Action>(json!(action.as_str())).unwrap(),
-            action
-        );
-        assert_eq!(action.as_str().parse::<Action>().unwrap(), action);
+        assert_eq!(value.as_str().parse::<Action>().unwrap(), value);
     }
 }
 

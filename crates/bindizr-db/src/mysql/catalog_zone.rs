@@ -8,7 +8,7 @@ use crate::error::DatabaseError;
 /// return the serial in effect after the upsert.
 pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, MySql>,
-    name: &ZoneName,
+    catalog_zone_name: &ZoneName,
     digest: &str,
     base_serial: Serial,
 ) -> Result<Serial, DatabaseError> {
@@ -23,7 +23,7 @@ pub(crate) async fn upsert_tx(
             digest = VALUES(digest)
         "#,
     )
-    .bind(name)
+    .bind(catalog_zone_name)
     .bind(digest)
     .bind(base_serial)
     .execute(&mut **tx)
@@ -36,7 +36,7 @@ pub(crate) async fn upsert_tx(
         WHERE name = ?
         "#,
     )
-    .bind(name)
+    .bind(catalog_zone_name)
     .fetch_one(&mut **tx)
     .await?;
 

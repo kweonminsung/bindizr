@@ -18,8 +18,8 @@ fn record(class: Class, record_type: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRec
 
 /// Verify that managed changes return REFUSED and malformed RDATA returns FORMERR.
 #[test]
-fn nsupdate_decode_refuses_managed_dnssec_changes_after_validating_wire_data() {
-    let zone = ZoneName::parse("example.com").unwrap();
+fn nsupdate_decode_rejects_managed_dnssec_changes_after_validating_wire_data() {
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     for class in [Class::IN, Class::NONE, Class::ANY] {
         let data = if class == Class::ANY {
@@ -28,7 +28,7 @@ fn nsupdate_decode_refuses_managed_dnssec_changes_after_validating_wire_data() {
             &[1, 1, 3, 13, 1][..]
         };
         let error =
-            decode_updates(&[record(class, Rtype::DNSKEY, 0, data)], &zone, data).unwrap_err();
+            decode_updates(&[record(class, Rtype::DNSKEY, 0, data)], &zone_name, data).unwrap_err();
 
         assert!(matches!(error, NsupdateError::ManagedType(Rtype::DNSKEY)));
         assert_eq!(error.rcode(), Rcode::REFUSED);
@@ -36,7 +36,7 @@ fn nsupdate_decode_refuses_managed_dnssec_changes_after_validating_wire_data() {
 
     for class in [Class::IN, Class::NONE] {
         let error =
-            decode_updates(&[record(class, Rtype::DNSKEY, 0, &[1])], &zone, &[1]).unwrap_err();
+            decode_updates(&[record(class, Rtype::DNSKEY, 0, &[1])], &zone_name, &[1]).unwrap_err();
         assert_eq!(error.rcode(), Rcode::FORMERR);
     }
 
@@ -48,11 +48,13 @@ fn nsupdate_decode_refuses_managed_dnssec_changes_after_validating_wire_data() {
         } else {
             &[][..]
         };
-        assert!(decode_prerequisite(&record(class, Rtype::DNSKEY, 0, data), &zone, data).is_ok());
+        assert!(
+            decode_prerequisite(&record(class, Rtype::DNSKEY, 0, data), &zone_name, data).is_ok()
+        );
     }
 
     assert!(matches!(
-        &decode_updates(&[record(Class::ANY, Rtype::ANY, 0, &[])], &zone, &[]).unwrap()[0],
+        &decode_updates(&[record(Class::ANY, Rtype::ANY, 0, &[])], &zone_name, &[]).unwrap()[0],
         UpdateOperation::Record(RecordOperation::DeleteRecordSet {
             record_type: None,
             ..
@@ -64,7 +66,7 @@ fn nsupdate_decode_refuses_managed_dnssec_changes_after_validating_wire_data() {
 /// (RFC 2136, Sections 3.2.1 and 3.4.1).
 #[test]
 fn nsupdate_decode_returns_formerr_for_malformed_sections() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     for prerequisite in [
         record(Class::ANY, Rtype::ANY, 1, &[]),
@@ -72,7 +74,7 @@ fn nsupdate_decode_returns_formerr_for_malformed_sections() {
         record(Class::IN, Rtype::ANY, 0, &[]),
         record(Class::CH, Rtype::ANY, 0, &[]),
     ] {
-        let error = decode_prerequisite(&prerequisite, &zone, &[]).unwrap_err();
+        let error = decode_prerequisite(&prerequisite, &zone_name, &[]).unwrap_err();
         assert_eq!(error.rcode(), Rcode::FORMERR, "{error}");
     }
 
@@ -82,7 +84,7 @@ fn nsupdate_decode_returns_formerr_for_malformed_sections() {
         record(Class::IN, Rtype::AXFR, 0, &[]),
         record(Class::CH, Rtype::A, 0, &[1, 2, 3, 4]),
     ] {
-        let error = decode_updates(&[update], &zone, &[]).unwrap_err();
+        let error = decode_updates(&[update], &zone_name, &[]).unwrap_err();
         assert_eq!(error.rcode(), Rcode::FORMERR, "{error}");
     }
 }
@@ -91,7 +93,7 @@ fn nsupdate_decode_returns_formerr_for_malformed_sections() {
 /// names whose escaped dots cannot act as zone boundaries (RFC 2136, Section 3.4.1).
 #[test]
 fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     for (rtype, data) in [
         (Rtype::SOA, vec![0; 22]),
@@ -105,7 +107,7 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
                 &data
             };
             let valid = record(class, rtype, 0, data);
-            let result = decode_updates(slice::from_ref(&valid), &zone, data);
+            let result = decode_updates(slice::from_ref(&valid), &zone_name, data);
 
             if rtype == Rtype::SOA {
                 assert!(result.unwrap().is_empty());
@@ -117,13 +119,13 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
             for name in ["elsewhere.example.net.", r"outside\.example.com.", "."] {
                 let mut outside = valid.clone();
                 outside.name = name.to_string();
-                let error = decode_updates(&[outside], &zone, data).unwrap_err();
+                let error = decode_updates(&[outside], &zone_name, data).unwrap_err();
                 assert_eq!(error.rcode(), Rcode::NOTZONE, "{error}");
             }
 
             let mut malformed = valid;
             malformed.ttl = 1;
-            let error = decode_updates(&[malformed], &zone, data).unwrap_err();
+            let error = decode_updates(&[malformed], &zone_name, data).unwrap_err();
 
             assert_eq!(error.rcode(), Rcode::FORMERR, "{error}");
         }
@@ -134,11 +136,11 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
 /// ineffective delete is omitted (RFC 2136, Section 3.4.1).
 #[test]
 fn nsupdate_decode_prescans_all_records_before_decoding_operations() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     let malformed_add = record(Class::IN, Rtype::A, 0, &[]);
     let mut outside = record(Class::ANY, Rtype::SOA, 0, &[]);
     outside.name = "outside.example.net.".to_string();
-    let error = decode_updates(&[malformed_add, outside], &zone, &[]).unwrap_err();
+    let error = decode_updates(&[malformed_add, outside], &zone_name, &[]).unwrap_err();
     assert_eq!(error.rcode(), Rcode::NOTZONE, "{error}");
 }
 
@@ -146,11 +148,11 @@ fn nsupdate_decode_prescans_all_records_before_decoding_operations() {
 /// high-bit TTL retains its unsigned value (RFC 8767, Section 4).
 #[test]
 fn nsupdate_decode_returns_operations_with_checked_owners() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     let message = [192, 0, 2, 1];
     let mut add = record(Class::IN, Rtype::A, u32::MAX, &message);
     add.name = r"host\.name.example.com.".to_string();
-    let operations = decode_updates(&[add], &zone, &message).unwrap();
+    let operations = decode_updates(&[add], &zone_name, &message).unwrap();
 
     match &operations[0] {
         UpdateOperation::Record(RecordOperation::AddRecord { name, ttl, .. }) => {

@@ -26,7 +26,7 @@ impl OwnerName {
         Self(Vec::new())
     }
 
-    /// Check whether this owner names the zone apex.
+    /// Return whether this owner names the zone apex.
     pub fn is_apex(&self) -> bool {
         self.0.is_empty()
     }
@@ -100,8 +100,8 @@ impl OwnerName {
         }
     }
 
-    /// The form rows store: empty at the apex, so no label can collide with it,
-    /// otherwise the escaped labels joined with `.`.
+    /// Return the form rows store: empty at the apex, so no label can collide with
+    /// it, otherwise the escaped labels joined with `.`.
     pub fn to_stored(&self) -> String {
         if self.is_apex() {
             return String::new();
@@ -110,8 +110,8 @@ impl OwnerName {
         self.to_presentation()
     }
 
-    /// The wire form within `zone_name`: this owner's labels, the zone's, then the
-    /// root.
+    /// Encode the wire form within `zone_name`: this owner's labels, the zone's,
+    /// then the root.
     pub fn to_wire(&self, zone_name: &ZoneName) -> Result<Vec<u8>, ParseNameError> {
         let zone_labels = zone_name.labels();
         super::labels_to_wire(
@@ -122,7 +122,7 @@ impl OwnerName {
         )
     }
 
-    /// The absolute form within `zone_name`.
+    /// Return the absolute form within `zone_name`.
     pub fn to_fqdn(&self, zone_name: &ZoneName) -> String {
         if self.is_apex() {
             return zone_name.to_fqdn();
@@ -131,12 +131,12 @@ impl OwnerName {
         format!("{}.{}", self.to_presentation(), zone_name.to_fqdn())
     }
 
-    /// This owner's labels in presentation form, with the required escapes.
+    /// Render this owner's labels in presentation form, with the required escapes.
     fn to_presentation(&self) -> String {
         super::labels_to_presentation(&self.0)
     }
 
-    /// Whether this owner is `other` or sits under it, compared label by label.
+    /// Return whether this owner is `other` or sits under it, compared label by label.
     pub fn is_same_or_under(&self, other: &Self) -> bool {
         is_label_suffix(&self.0, &other.0)
     }
@@ -153,7 +153,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -323,13 +323,13 @@ pub(crate) fn escape_label(label: &[u8]) -> String {
     escaped
 }
 
-/// Whether `suffix` is a label-wise suffix of `name` (the same name or under it).
+/// Return whether `suffix` is a label-wise suffix of `name` (the same name or under it).
 pub fn is_label_suffix(name: &[Vec<u8>], suffix: &[Vec<u8>]) -> bool {
     name.len() >= suffix.len() && name[name.len() - suffix.len()..] == *suffix
 }
 
-/// The labels left after removing `zone` from the end of `name`, or `None`
-/// when `name` does not sit inside `zone`.
+/// Return the labels left after removing `zone` from the end of `name`, or
+/// `None` when `name` does not sit inside `zone`.
 fn relative_labels(name: &[Vec<u8>], zone: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
     is_label_suffix(name, zone).then(|| name[..name.len() - zone.len()].to_vec())
 }

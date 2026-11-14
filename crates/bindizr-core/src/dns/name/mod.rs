@@ -19,7 +19,7 @@ pub(crate) const MAX_WIRE_NAME_LEN: usize = 255;
 /// The wire form adds a label-length octet and the terminating zero.
 pub(crate) const MAX_DOMAIN_LEN: usize = MAX_WIRE_NAME_LEN - 2;
 
-/// Check whether text contains whitespace or control characters.
+/// Return whether text contains whitespace or control characters.
 pub fn has_whitespace_or_control(value: &str) -> bool {
     value
         .chars()

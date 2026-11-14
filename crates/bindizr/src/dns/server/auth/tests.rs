@@ -8,6 +8,7 @@ use bindizr_db::Db;
 use bindizr_service::Context;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::CreateTsigKeyRequest;
+use sqlx::SqliteConnection;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
@@ -27,15 +28,13 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
 
     let db = Db::connect(&config.database).await.unwrap();
 
-    let (notify_jobs, _jobs) = mpsc::unbounded_channel();
-    let (scheduler, _period) = watch::channel(0);
     let cx = Arc::new(Context::new(
         config,
         String::new(),
         db,
         Metrics::new().unwrap(),
-        notify_jobs,
-        scheduler,
+        mpsc::unbounded_channel().0,
+        watch::channel(0).0,
     ));
 
     tsig_key::create(
@@ -66,20 +65,22 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
         None,
     );
     let verifier = tsig::sign_request(&mut request, key).unwrap();
-    let request = request.finish();
-    let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
+    let query_data = request.finish();
+    let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
     let dns_cx = DnsContext::new(cx);
 
-    assert!(authenticate_tsig_key(&dns_cx, &request).await.is_ok());
+    assert!(authenticate_tsig_key(&dns_cx, &query_data).await.is_ok());
 
-    let mut connection = sqlx::SqliteConnection::connect(&format!("sqlite://{}", path.display()))
+    let mut connection = SqliteConnection::connect(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();
     sqlx::query("DROP TABLE role_grants")
         .execute(&mut connection)
         .await
         .unwrap();
-    let refusal = authenticate_tsig_key(&dns_cx, &request).await.unwrap_err();
+    let refusal = authenticate_tsig_key(&dns_cx, &query_data)
+        .await
+        .unwrap_err();
 
     assert!(refusal.is_failure());
     let source = refusal
@@ -90,7 +91,7 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
 
     assert!(source.source().is_some());
     let response = refusal
-        .into_response(&QueryMetadata::from(&query), &request)
+        .into_response(&QueryMetadata::from(&query), &query_data)
         .unwrap();
 
     assert_eq!(response[3] & 15, Rcode::SERVFAIL.to_int());

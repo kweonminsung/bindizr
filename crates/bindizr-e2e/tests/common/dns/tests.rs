@@ -108,16 +108,25 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
     assert_eq!(
         values,
         vec![
-            (1, Some(json!("192.0.2.1"))),
-            (15, Some(json!("5 mail.example.com."))),
-            (33, Some(json!("1 2 8080 mail.example.com."))),
-            (16, Some(json!("hello"))),
-            (16, Some(json!(["ab", "c"]))),
-            (257, Some(json!(r#"0 issue """#))),
-            (257, Some(json!(r#"128 custom "\000\255\010\"\\""#))),
-            (5, Some(json!(r"a\046b.\255.caf\195\169.\;meta.example."))),
+            (Rtype::A.to_int(), Some(json!("192.0.2.1"))),
+            (Rtype::MX.to_int(), Some(json!("5 mail.example.com."))),
             (
-                16,
+                Rtype::SRV.to_int(),
+                Some(json!("1 2 8080 mail.example.com."))
+            ),
+            (Rtype::TXT.to_int(), Some(json!("hello"))),
+            (Rtype::TXT.to_int(), Some(json!(["ab", "c"]))),
+            (Rtype::CAA.to_int(), Some(json!(r#"0 issue """#))),
+            (
+                Rtype::CAA.to_int(),
+                Some(json!(r#"128 custom "\000\255\010\"\\""#))
+            ),
+            (
+                Rtype::CNAME.to_int(),
+                Some(json!(r"a\046b.\255.caf\195\169.\;meta.example."))
+            ),
+            (
+                Rtype::TXT.to_int(),
                 Some(json!({ "presentation": r#""\000\255" "\195" "\169" """# }))
             ),
             (65280, Some(json!(r"\# 0"))),

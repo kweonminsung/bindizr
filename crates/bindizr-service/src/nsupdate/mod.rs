@@ -238,9 +238,8 @@ pub async fn apply(
     if changed {
         cx.metrics().track_serial_bumps(1);
         log::info!(
-            "event=nsupdate_apply zone={} serial={}",
+            "event=nsupdate_apply zone={} serial={new_serial}",
             zone.name,
-            new_serial
         );
 
         // Queue through the service like every other mutation path, so

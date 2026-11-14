@@ -32,7 +32,7 @@ pub enum DnssecDenial {
 }
 
 impl DnssecDenial {
-    /// Storage name, as the columns and the API spell it.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Nsec => "nsec",
@@ -105,7 +105,7 @@ pub struct DnssecPolicy {
 }
 
 impl DnssecPolicy {
-    /// Whether this is the built-in `default` policy, which cannot be deleted.
+    /// Return whether this is the built-in `default` policy, which cannot be deleted.
     pub fn is_builtin(&self) -> bool {
         self.name == DEFAULT_DNSSEC_POLICY_NAME
     }
@@ -125,22 +125,16 @@ impl DnssecPolicy {
         (self.signature_validity_secs() - self.signature_refresh_secs()).max(0) / 2
     }
 
-    /// How long a signature stays valid, in seconds.
+    /// Return how long a signature stays valid, in seconds.
     pub fn signature_validity_secs(&self) -> i64 {
         self.signature_validity_days.to_duration().num_seconds()
     }
 
-    /// How long before it expires a signature is renewed, in seconds.
+    /// Return how long before it expires a signature is renewed, in seconds.
     pub fn signature_refresh_secs(&self) -> i64 {
         self.signature_refresh_days.to_duration().num_seconds()
     }
 }
-
-/// A count of days as one value with two forms: the unsigned count a payload
-/// carries and the signed 32-bit column a row stores, 0 through 2^31 - 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(try_from = "u32", into = "u32")]
-pub struct Days(u32);
 
 /// A day count outside the range both forms hold.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -153,16 +147,22 @@ pub enum ConvertDaysError {
     TooLarge { days: u32 },
 }
 
+/// A count of days as one value with two forms: the unsigned count a payload
+/// carries and the signed 32-bit column a row stores, 0 through 2^31 - 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct Days(u32);
+
 impl Days {
     /// The largest count the row form holds.
     pub const MAX: Self = Self(i32::MAX as u32);
 
-    /// The count of days.
+    /// Return the count of days.
     pub const fn as_days(self) -> u32 {
         self.0
     }
 
-    /// The count as a duration.
+    /// Return the count as a duration.
     pub fn to_duration(self) -> Duration {
         Duration::days(i64::from(self.0))
     }
@@ -192,14 +192,14 @@ impl TryFrom<i32> for Days {
 }
 
 impl From<Days> for u32 {
-    /// The payload form.
+    /// Convert to the payload form.
     fn from(days: Days) -> Self {
         days.0
     }
 }
 
 impl From<Days> for i32 {
-    /// The row form; the range invariant makes it exact.
+    /// Convert to the row form; the range invariant makes it exact.
     fn from(days: Days) -> Self {
         days.0 as Self
     }
@@ -216,12 +216,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for Days
 where
     i32: sqlx::Type<DB>,
 {
-    /// The row form's column type.
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <i32 as sqlx::Type<DB>>::type_info()
     }
 
-    /// Whether the column can hold the row form.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i32 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -231,7 +231,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for Days
 where
     i32: sqlx::Encode<'q, DB>,
 {
-    /// Bind the row form.
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,

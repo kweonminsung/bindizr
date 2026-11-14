@@ -134,9 +134,9 @@ impl Connection {
 
 impl AxfrClient {
     /// Name the primary; nothing is resolved or connected until a transfer asks.
-    pub(crate) fn new(server: &str) -> Self {
+    pub(crate) fn new(address: &str) -> Self {
         Self {
-            server: server.to_string(),
+            server: address.to_string(),
             addr: None,
             connection: None,
         }
@@ -213,13 +213,13 @@ impl AxfrClient {
     }
 }
 
-/// Resolve `server` and connect to the first of its addresses that accepts,
+/// Resolve `address` and connect to the first of its addresses that accepts,
 /// reporting the last refusal when none does.
 async fn connect_to_server(
-    server: &str,
+    address: &str,
     import: &ImportConfig,
 ) -> Result<(SocketAddr, TcpStream), FetchZoneError> {
-    let entries = super::resolve_address_entries(server, import.timeout()).await;
+    let entries = super::resolve_address_entries(address, import.timeout()).await;
 
     let mut last_error = None;
 
@@ -242,7 +242,7 @@ async fn connect_to_server(
     Err(last_error.unwrap_or(FetchZoneError::NoAddress))
 }
 
-/// One AXFR on an open connection: read length-prefixed messages until the
+/// Fetch one AXFR on an open connection: read length-prefixed messages until the
 /// closing SOA repeats the opening one.
 async fn fetch_zone_on_stream(
     stream: &mut TcpStream,
@@ -323,7 +323,8 @@ async fn fetch_zone_on_stream(
     }
 }
 
-/// Owner names compare as labels, never as text (RFC 4343 case, escapes).
+/// Return an owner name's labels: owner names compare as labels, never as
+/// text (RFC 4343 case, escapes).
 fn owner_labels(name: &str) -> Result<Vec<Vec<u8>>, FetchZoneError> {
     name::decode_name_labels(name)
         .map(|(labels, _)| labels)

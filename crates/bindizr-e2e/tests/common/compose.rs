@@ -19,9 +19,16 @@ const COMPOSE_PROJECT_NAME: &str = "bindizr-e2e-dns";
 const COMPOSE_API_BASE_URL: &str = "http://127.0.0.1:8000";
 const ARM_STACK_ENV: &str = "BINDIZR_E2E_ARM";
 const SECONDARY_PORTS: [u16; 2] = [1053, 1054];
+
 /// The BIND9 services of the compose file, by the names the daemon reaches them at.
 const COMPOSE_SECONDARY_SERVICES: [&str; 2] = ["bind9-1", "bind9-2"];
+
 const COMPOSE_COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// The TSIG key bind9-1 pulls over TLS with, as its named.conf spells it.
+const COMPOSE_XOT_KEY: &str = "xot-key";
+const COMPOSE_XOT_SECRET: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+
 static COMPOSE_STACK: OnceLock<ComposeStack> = OnceLock::new();
 
 impl TestApp {
@@ -47,10 +54,6 @@ impl TestApp {
         }
     }
 }
-
-/// The TSIG key bind9-1 pulls over TLS with, as its named.conf spells it.
-const COMPOSE_XOT_KEY: &str = "xot-key";
-const COMPOSE_XOT_SECRET: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
 /// Register the stack's BIND9 services as secondaries, and the key bind9-1
 /// signs with; the stack is reused across tests, so what exists is left alone.
@@ -102,7 +105,7 @@ async fn register_compose_secondaries(client: &Client) {
     .await;
 }
 
-/// Whether the compose API serves `path`.
+/// Return whether the compose API serves `path`.
 async fn probe_api_resource(client: &Client, path: &str) -> bool {
     client
         .get(format!("{COMPOSE_API_BASE_URL}{path}"))
@@ -194,7 +197,7 @@ impl ComposeStack {
             .stderr(Stdio::inherit());
         let mut child = command.spawn().expect("failed to run docker compose");
 
-        let started_at = Instant::now();
+        let started = Instant::now();
         let status = loop {
             if let Some(status) = child
                 .try_wait()
@@ -203,7 +206,7 @@ impl ComposeStack {
                 break status;
             }
 
-            if started_at.elapsed() > COMPOSE_COMMAND_TIMEOUT {
+            if started.elapsed() > COMPOSE_COMMAND_TIMEOUT {
                 let _ = child.kill();
                 let _ = child.wait();
                 panic!(
@@ -224,7 +227,7 @@ impl ComposeStack {
     }
 }
 
-/// Check whether the expected Compose service ports are reachable.
+/// Return whether the expected Compose service ports are reachable.
 fn is_compose_stack_reachable() -> bool {
     [8000, SECONDARY_PORTS[0], SECONDARY_PORTS[1]]
         .into_iter()
@@ -237,7 +240,8 @@ fn is_compose_stack_reachable() -> bool {
         })
 }
 
-/// The ARM override swaps the amd64-only ISC bind9 image for a multi-arch one.
+/// List the compose files; the ARM override swaps the amd64-only ISC bind9
+/// image for a multi-arch one.
 fn compose_files() -> Vec<&'static str> {
     if super::read_env_flag(ARM_STACK_ENV) {
         vec![COMPOSE_FILE, ARM_COMPOSE_FILE]

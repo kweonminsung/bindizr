@@ -36,6 +36,7 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create role").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -75,6 +76,7 @@ pub async fn create(
         Ok(role)
     }
     .await;
+
     let role = transaction::finish_tx(tx, apply_result, "failed to create role").await?;
 
     Ok(RoleResponse {
@@ -188,6 +190,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete role").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -229,7 +232,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     transaction::finish_tx(tx, apply_result, "failed to delete role").await
 }
 
-/// Load a role by name or return a not-found error.
+/// Look up a role by name or return a not-found error.
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<Role, ServiceError> {
     bindizr_db::role::get_by_name(cx.db(), &normalize_name(name)?)
         .await?
@@ -248,8 +251,8 @@ fn refuse_builtin(role: &Role) -> Result<(), ServiceError> {
     Ok(())
 }
 
-/// Lowercased so one name means one role on every backend, and kept to one
-/// URL path segment for `/roles/{name}`.
+/// Normalize a role name: lowercased so one name means one role on every
+/// backend, and kept to one URL path segment for `/roles/{name}`.
 fn normalize_name(value: &str) -> Result<String, ServiceError> {
     let name = text::normalize_identifier(value, "role name", MAX_COLUMN_TEXT_LEN)?;
 

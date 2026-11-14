@@ -2,6 +2,7 @@
 
 use domain::base::Name;
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
+use domain::rdata::AllRecordData;
 
 use super::ParseResponseError;
 use crate::dns::record::Rdata;
@@ -25,7 +26,6 @@ pub fn extract_transfer_records(
     response: &[u8],
 ) -> Result<Vec<TransferRecord>, ParseResponseError> {
     use domain::base::rdata::ComposeRecordData;
-    use domain::rdata::AllRecordData;
 
     let message = super::parse_response_header(query_id, Opcode::QUERY, response)?;
 

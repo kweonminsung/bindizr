@@ -1,12 +1,12 @@
-use serde_json::Value;
-
-use crate::common;
-use crate::common::TestApp;
-
 mod export;
 mod history;
 mod import;
 mod status;
+
+use serde_json::Value;
+
+use crate::common;
+use crate::common::TestApp;
 
 /// Verify that escaped trailing spaces are preserved through CLI/socket writes and escaped wildcard zones are rejected.
 #[tokio::test]
@@ -37,12 +37,12 @@ async fn escaped_zone_names_follow_the_same_policy() {
 
     assert_eq!(created["zone"]["name"], canonical);
 
-    let read = app
+    let fetched = app
         .run_cli_success(&["zone", "get", &canonical, "--output", "json"], None)
         .await;
-    let read: Value = serde_json::from_str(&read).expect("CLI did not return valid JSON");
+    let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
 
-    assert_eq!(read["zone"]["name"], canonical);
+    assert_eq!(fetched["zone"]["name"], canonical);
     let wildcard = format!(r"\042.{base}");
     let args = [
         "zone",
@@ -114,13 +114,13 @@ async fn zone_supports_create_read_and_delete() {
 
     assert!(created.contains(&zone_name), "{created}");
 
-    let zone = app
+    let fetched = app
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"], None)
         .await;
-    let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
+    let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
 
-    assert_eq!(zone["zone"]["name"], zone_name);
-    assert_eq!(zone["zone"]["mname"], mname);
+    assert_eq!(fetched["zone"]["name"], zone_name);
+    assert_eq!(fetched["zone"]["mname"], mname);
 
     let deleted = app
         .run_cli_success(&["zone", "delete", &zone_name], None)
@@ -208,14 +208,14 @@ async fn zone_rejects_invalid_name_and_ttl() {
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_listing_filters_and_paginates() {
     let app = TestApp::start().await;
-    let first_zone = app.zone_name("first.example");
-    let filtered_zone = app.zone_name("filtered.example");
+    let first_zone_name = app.zone_name("first.example");
+    let filtered_zone_name = app.zone_name("filtered.example");
 
-    for (zone_name, ttl) in [(&first_zone, "3600"), (&filtered_zone, "7200")] {
+    for (zone_name, ttl) in [(&first_zone_name, "3600"), (&filtered_zone_name, "7200")] {
         app.create_zone_cli(zone_name, ttl).await;
     }
 
-    let zones = app
+    let listed = app
         .run_cli_success(
             &[
                 "zone",
@@ -232,15 +232,22 @@ async fn zone_listing_filters_and_paginates() {
             None,
         )
         .await;
-    let zones: Value = serde_json::from_str(&zones).expect("CLI did not return valid JSON");
-    let zones = zones["items"].as_array().expect("missing zone items");
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let zones = listed["items"].as_array().expect("missing zone items");
 
     assert_eq!(zones.len(), 1);
-    assert_eq!(zones[0]["name"], filtered_zone);
+    assert_eq!(zones[0]["name"], filtered_zone_name);
 
     let by_name = app
         .run_cli_success(
-            &["zone", "list", "--name", &first_zone, "--output", "json"],
+            &[
+                "zone",
+                "list",
+                "--name",
+                &first_zone_name,
+                "--output",
+                "json",
+            ],
             None,
         )
         .await;
@@ -248,7 +255,7 @@ async fn zone_listing_filters_and_paginates() {
     let by_name = by_name["items"].as_array().expect("missing zone items");
 
     assert_eq!(by_name.len(), 1);
-    assert_eq!(by_name[0]["name"], first_zone);
+    assert_eq!(by_name[0]["name"], first_zone_name);
 
     let page = app
         .run_cli_success(
@@ -299,10 +306,10 @@ async fn zone_create_omits_apex_ns_when_disabled() {
     )
     .await;
 
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
 
-    assert_eq!(records["pagination"]["total"], 0, "{records}");
+    assert_eq!(listed["pagination"]["total"], 0, "{listed}");
 }

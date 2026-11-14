@@ -30,7 +30,7 @@ pub enum ChangeSource {
 }
 
 impl ChangeSource {
-    /// Return the text representation of this change source.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Api => "api",
@@ -92,6 +92,14 @@ impl ChangeActor {
     }
 }
 
+impl fmt::Display for ChangeActor {
+    /// Write the credential kind with its name so equal names remain distinguishable.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (kind, name) = self.as_columns();
+        write!(f, "{kind}:{name}")
+    }
+}
+
 /// The nullable SQL columns decoded into one optional actor at the row
 /// boundary, by every row that carries an actor.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
@@ -126,14 +134,6 @@ impl TryFrom<ChangeActorColumns> for Option<ChangeActor> {
     }
 }
 
-impl fmt::Display for ChangeActor {
-    /// Show the credential kind with its name so equal names remain distinguishable.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (kind, name) = self.as_columns();
-        write!(f, "{kind}:{name}")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -158,8 +158,8 @@ mod tests {
                 json!({ "kind": kind, "name": name })
             );
             let decoded = Option::<ChangeActor>::try_from(ChangeActorColumns {
-                changed_by_kind: Some(kind.into()),
-                changed_by_name: Some(name.into()),
+                changed_by_kind: Some(kind.to_string()),
+                changed_by_name: Some(name.to_string()),
             })
             .unwrap();
 

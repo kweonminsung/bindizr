@@ -38,7 +38,7 @@ async fn record_bulk_dry_run_shows_the_diff() {
     assert!(
         listed["items"]
             .as_array()
-            .unwrap()
+            .expect("missing record items")
             .iter()
             .all(|record| record["type"] != "MX"),
         "a dry run must not insert records"
@@ -56,7 +56,7 @@ async fn record_bulk_insert_reads_stdin() {
 
     let records = json!([
         { "name": "www", "type": "A", "value": "192.0.2.20", "ttl": 300 },
-        { "name": "mail", "type": "A", "value": "192.0.2.21", "ttl": 300 },
+        { "name": "mail", "type": "A", "value": "192.0.2.21", "ttl": 300 }
     ])
     .to_string();
 

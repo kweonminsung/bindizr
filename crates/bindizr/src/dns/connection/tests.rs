@@ -8,6 +8,7 @@ use bindizr_service::types::RecordFilter;
 use bindizr_service::{Context, record, secondary, zone};
 use rustls::server::ResolvesServerCertUsingSni;
 use rustls::{ServerConfig, version};
+use serde_json::json;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
@@ -58,9 +59,9 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
 
         zone::create(&cx, &caller, &request).await.unwrap();
         let secondary_socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let request = serde_json::from_value(serde_json::json!({
+        let request = serde_json::from_value(json!({
             "name": "ack-gate",
-            "address": secondary_socket.local_addr().unwrap().to_string(),
+            "address": secondary_socket.local_addr().unwrap().to_string()
         }))
         .unwrap();
 
@@ -120,11 +121,11 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             udp_client.as_ref().unwrap().send(&update).await.unwrap();
         }
 
-        let mut notify = [0; 4096];
+        let mut buffer = [0; 4096];
 
         let (len, peer) = time::timeout(
             Duration::from_secs(2),
-            secondary_socket.recv_from(&mut notify),
+            secondary_socket.recv_from(&mut buffer),
         )
         .await
         .unwrap()
@@ -137,7 +138,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
                 .await
                 .is_err()
         );
-        let response = ParsedQuery::parse(&notify[..len], Keepalive::None)
+        let response = ParsedQuery::parse(&buffer[..len], Keepalive::None)
             .unwrap()
             .build_signed_error_response(OptRcode::NOERROR, None, None)
             .unwrap();

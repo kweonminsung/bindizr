@@ -1,7 +1,6 @@
 pub(crate) mod notify;
 pub(crate) mod nsupdate;
 mod parent;
-mod tests;
 mod transfer;
 mod transport;
 pub(crate) mod tsig;
@@ -32,7 +31,7 @@ use super::TestApp;
 pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();
 
-    if !matches!(record_type, 15 | 33) {
+    if !matches!(Rtype::from_int(record_type), Rtype::MX | Rtype::SRV) {
         return value;
     }
 
@@ -41,9 +40,9 @@ pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Valu
     };
 
     let fields: Vec<_> = target.split_whitespace().collect();
-    let expects_priority_fallback = match record_type {
-        15 => fields.len() == 1,
-        33 => fields.len() == 3,
+    let expects_priority_fallback = match Rtype::from_int(record_type) {
+        Rtype::MX => fields.len() == 1,
+        Rtype::SRV => fields.len() == 3,
         _ => false,
     };
 
@@ -72,7 +71,9 @@ pub(crate) fn extract_record_key(record: &Value) -> (String, u16) {
 
 /// Map a supported record mnemonic to its wire type number.
 pub(crate) fn parse_record_type(record_type: &str) -> Option<u16> {
-    record_type.parse::<Rtype>().ok().map(Rtype::to_int)
+    use std::str::FromStr;
+
+    Rtype::from_str(record_type).ok().map(Rtype::to_int)
 }
 
 /// Poll DNS until its answers match the expected record values.
@@ -121,9 +122,9 @@ pub(crate) async fn wait_for_dns_records(
     );
 }
 
-/// Check whether a DNS failure represents an expected deleted zone.
+/// Return whether a DNS failure represents an expected deleted zone.
 fn is_deleted_zone_absence(record_type: u16, expected: &[Value], error: &str) -> bool {
-    record_type == 6 && expected.is_empty() && error.contains("REFUSED RCODE")
+    record_type == Rtype::SOA.to_int() && expected.is_empty() && error.contains("REFUSED RCODE")
 }
 
 /// A response record, including referrals, in the harness comparison form.
@@ -135,13 +136,16 @@ pub(crate) struct DnsRecord {
 
 /// Compare response records with expected values for the record type.
 fn matches_dns_values(record_type: u16, expected: &[Value], records: &[DnsRecord]) -> bool {
-    if record_type == 6 {
+    if record_type == Rtype::SOA.to_int() {
         return true;
     }
 
     let normalize = |value: &Value| {
         let value = value.to_string();
-        if matches!(record_type, 2 | 5 | 12 | 15 | 33 | 39) {
+        if matches!(
+            Rtype::from_int(record_type),
+            Rtype::NS | Rtype::CNAME | Rtype::PTR | Rtype::MX | Rtype::SRV | Rtype::DNAME
+        ) {
             value.to_ascii_lowercase()
         } else {
             value
@@ -182,10 +186,10 @@ pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: 
     panic!("no type {record_type} record for {name} appeared on 127.0.0.1:{port}");
 }
 
-/// Whether the DNS plane serves `zone_name`: a zone it does not know answers
-/// REFUSED, which `validate_response_header` reports as an error.
+/// Return whether the DNS plane serves `zone_name`: a zone it does not know
+/// answers REFUSED, which `validate_response_header` reports as an error.
 pub(crate) fn probe_zone_soa(port: u16, zone_name: &str) -> bool {
-    matches!(query_dns_records(port, zone_name, 6), Ok(records) if !records.is_empty())
+    matches!(query_dns_records(port, zone_name, Rtype::SOA.to_int()), Ok(records) if !records.is_empty())
 }
 
 /// Query DNS and decode answer or referral records.
@@ -306,10 +310,9 @@ fn validate_response_header(query_id: u16, message: &Message<&[u8]>) -> Result<b
     match header.rcode() {
         Rcode::NOERROR => Ok(true),
         Rcode::NXDOMAIN => Ok(false),
-        code => Err(format!(
-            "DNS response returned {} RCODE ({})",
-            code,
-            code.to_int()
+        rcode => Err(format!(
+            "DNS response returned {rcode} RCODE ({})",
+            rcode.to_int()
         )),
     }
 }
@@ -418,8 +421,8 @@ fn decode_wks_value(bytes: &[u8]) -> Result<String, String> {
         return Err("WKS service bitmap exceeds port 65535".to_string());
     }
 
-    let address = Ipv4Addr::new(fields[0], fields[1], fields[2], fields[3]);
-    let mut value = format!("{} {}", address, fields[4]);
+    let ip = Ipv4Addr::new(fields[0], fields[1], fields[2], fields[3]);
+    let mut value = format!("{ip} {}", fields[4]);
 
     // RFC 1035, Section 3.4.2: the first bitmap byte's high bit is port zero.
     for (index, byte) in bitmap.iter().enumerate() {
@@ -535,8 +538,8 @@ fn generic_wks_export(text: &str) -> String {
                 return line.to_string();
             }
 
-            let address: Ipv4Addr = fields[4].parse().unwrap();
-            let protocol: u8 = fields[5].parse().unwrap();
+            let ip = fields[4].parse::<Ipv4Addr>().unwrap();
+            let protocol = fields[5].parse::<u8>().unwrap();
             let mut bitmap = vec![0; 8192];
 
             for port in &fields[6..] {
@@ -550,12 +553,12 @@ fn generic_wks_export(text: &str) -> String {
                     .rposition(|byte| *byte != 0)
                     .map_or(0, |last| last + 1),
             );
-            let mut bytes = address.octets().to_vec();
+            let mut bytes = ip.octets().to_vec();
             bytes.push(protocol);
             bytes.extend(bitmap);
             let hex = hex_upper(&bytes);
 
-            format!(r"{} \# {} {}", fields[..4].join(" "), bytes.len(), hex)
+            format!(r"{} \# {} {hex}", fields[..4].join(" "), bytes.len())
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -563,3 +566,5 @@ fn generic_wks_export(text: &str) -> String {
 
     normalized
 }
+
+mod tests;

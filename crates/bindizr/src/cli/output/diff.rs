@@ -45,8 +45,11 @@ fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
         let record_type = entry.record_type.as_str();
 
         // Show only the delta: records removed, then records added.
-        let render_line = |value: &RecordDiffValueResponse| {
-            (value.ttl.to_string(), display_rdata(value, record_type))
+        let render_line = |diff_value: &RecordDiffValueResponse| {
+            (
+                diff_value.ttl.to_string(),
+                display_rdata(diff_value, record_type),
+            )
         };
         let from_lines: Vec<(String, String)> = entry.from.iter().map(render_line).collect();
         let to_lines: Vec<(String, String)> = entry.to.iter().map(render_line).collect();

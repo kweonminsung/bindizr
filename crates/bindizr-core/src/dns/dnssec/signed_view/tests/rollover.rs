@@ -90,9 +90,12 @@ fn published_key_cosigns_key_record_sets_but_not_zone_data() {
         .len(),
         2
     );
-    assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int())).len(),
+        1
+    );
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
 }
@@ -145,7 +148,10 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
     );
 
     // And it signs no zone data.
-    assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int())).len(),
+        1
+    );
 }
 
 /// Verify that split keys partition key record sets from zone data.
@@ -203,10 +209,13 @@ fn split_keys_partition_key_record_sets_from_zone_data() {
         1
     );
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
-    assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int())).len(),
+        1
+    );
 }
 
 /// Verify that algorithm rollover double signs zone data while published.
@@ -243,7 +252,10 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
     // all data, so the pre-published new-algorithm key signs immediately.
     let apex = OwnerName::apex();
 
-    assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 2);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int())).len(),
+        2
+    );
 }
 
 /// Verify that algorithm rollover keeps the retired old algorithm signing.
@@ -280,5 +292,8 @@ fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
     // all data until the key is removed (RFC 6840, Section 5.11).
     let apex = OwnerName::apex();
 
-    assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 2);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int())).len(),
+        2
+    );
 }

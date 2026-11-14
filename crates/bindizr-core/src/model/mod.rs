@@ -28,7 +28,7 @@ macro_rules! id_newtype {
             /// the id on insert.
             pub const UNWRITTEN: Self = Self(0);
 
-            /// The id the database gave the row, or `None` for the placeholder.
+            /// Return the id the database gave the row, or `None` for the placeholder.
             pub fn written(self) -> Option<Self> {
                 (self != Self::UNWRITTEN).then_some(self)
             }
@@ -42,7 +42,7 @@ macro_rules! id_newtype {
         }
 
         impl From<$name> for i32 {
-            /// The row form.
+            /// Convert to the row form.
             fn from(id: $name) -> Self {
                 id.0
             }

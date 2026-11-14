@@ -115,7 +115,7 @@ fn service_errors_retain_their_sources_and_classification() {
 /// parser cause.
 #[test]
 fn owner_errors_retain_their_sources_and_classification() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     for (name, source, rcode) in [
         (
@@ -129,7 +129,7 @@ fn owner_errors_retain_their_sources_and_classification() {
             Rcode::REFUSED,
         ),
     ] {
-        let error = parse_update_owner(name, &zone).unwrap_err();
+        let error = parse_update_owner(name, &zone_name).unwrap_err();
         assert_eq!(error.rcode(), rcode);
         assert_eq!(
             error.source().unwrap().downcast_ref::<ParseNameError>(),

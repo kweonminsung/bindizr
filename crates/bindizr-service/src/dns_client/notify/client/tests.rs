@@ -9,7 +9,8 @@ use tokio::time;
 
 use super::*;
 
-/// Every affected request retains the same socket error, including OS codes and custom causes.
+/// Verify that every affected request retains the same socket error, including OS codes
+/// and custom causes.
 #[tokio::test]
 async fn shared_socket_failure_preserves_original_io_error() {
     use std::error::Error;
@@ -76,7 +77,8 @@ async fn shared_socket_failure_preserves_original_io_error() {
     }
 }
 
-/// Exhausting an ID space rotates the socket instead of reusing a live or retired ID.
+/// Verify that exhausting an ID space rotates the socket instead of reusing a live or
+/// retired ID.
 #[tokio::test]
 async fn id_exhaustion_rotates_the_socket() {
     let client = NotifyClient::default();
@@ -100,7 +102,8 @@ async fn id_exhaustion_rotates_the_socket() {
     assert!(!Arc::ptr_eq(&next, &first));
 }
 
-/// Peer filtering and retired IDs prevent old or spoofed ACKs ending a later event.
+/// Verify that peer filtering and retired IDs prevent old or spoofed ACKs ending a later
+/// event.
 #[tokio::test]
 async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
     let client = NotifyClient::default();
@@ -169,7 +172,8 @@ async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
     drop(held);
 }
 
-/// An oversized matching ACK, including a truncated prefix, cannot end a transaction.
+/// Verify that an oversized matching ACK, including a truncated prefix, cannot end a
+/// transaction.
 #[tokio::test]
 async fn oversized_ack_is_ignored_until_a_bounded_ack_arrives() {
     for size in [513, 4096] {

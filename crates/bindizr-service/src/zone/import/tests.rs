@@ -3,6 +3,7 @@ use std::net::TcpListener;
 
 use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
+use bindizr_db::Db;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
@@ -19,7 +20,7 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
     let mut config: Config = serde_json::from_str("{}").unwrap();
     config.database.sqlite.file_path = "sqlite::memory:".to_string();
 
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let db = Db::connect(&config.database).await.unwrap();
     let cx = Context::new(
         config,
         String::new(),
@@ -29,18 +30,18 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
         watch::channel(0).0,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let server = listener.local_addr().unwrap().to_string();
+    let address = listener.local_addr().unwrap().to_string();
     drop(listener);
-    let name = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     let caller = Caller::socket();
 
     let single = import(
         &cx,
         &caller,
-        &name,
+        &zone_name,
         &ImportZoneRequest {
             content: None,
-            from_server: Some(server.clone()),
+            from_server: Some(address.clone()),
             mode: "append".to_string(),
             dry_run: false,
             create: true,
@@ -52,7 +53,7 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
         &cx,
         &caller,
         &ImportZonesRequest {
-            from_server: server.clone(),
+            from_server: address.clone(),
             zone_names: None,
             from_catalog: Some("catalog.example".to_string()),
             mode: "append".to_string(),
@@ -64,10 +65,10 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
     .unwrap_err();
 
     for (error, context) in [
-        (single, format!("AXFR from {server} failed")),
+        (single, format!("AXFR from {address} failed")),
         (
             catalog,
-            format!("AXFR of catalog catalog.example from {server} failed"),
+            format!("AXFR of catalog catalog.example from {address} failed"),
         ),
     ] {
         assert_eq!(error.code(), ErrorCode::InvalidInput);

@@ -37,7 +37,7 @@ pub async fn apply_changes(
 
     let mut tx = transaction::begin_tx(cx, "failed to apply ExternalDNS changes").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
         let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
@@ -131,7 +131,7 @@ pub async fn apply_changes(
             changed_zones.push(zone.name.clone());
         }
 
-        Ok::<_, ServiceError>((changed_zones, added, deleted))
+        Ok((changed_zones, added, deleted))
     }
     .await;
 
@@ -147,11 +147,8 @@ pub async fn apply_changes(
 
     let changed_zones: Vec<String> = changed_zones.iter().map(ToString::to_string).collect();
     log::info!(
-        "event=external_dns_apply zones={} ops={} added={} deleted={} noop={} ms={:.1}",
+        "event=external_dns_apply zones={} ops={requested_operations} added={added} deleted={deleted} noop={} ms={:.1}",
         changed_zones.join(","),
-        requested_operations,
-        added,
-        deleted,
         changed_zones.is_empty(),
         time::elapsed_ms(started),
     );

@@ -28,12 +28,12 @@ async fn zone_versions_support_diff_and_rollback() {
     )
     .await;
 
-    let zone = app
+    let fetched = app
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"], None)
         .await;
-    let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
+    let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
 
-    assert_eq!(zone["zone"]["serial"].as_i64().unwrap(), 1);
+    assert_eq!(fetched["zone"]["serial"].as_i64().unwrap(), 1);
 
     app.run_cli_success(
         &[
@@ -69,16 +69,16 @@ async fn zone_versions_support_diff_and_rollback() {
     .await;
 
     // Inspect the version list and the target snapshot before comparing changes.
-    let versions = app
+    let listed = app
         .run_cli_success(
             &["zone", "version", "list", &zone_name, "--output", "json"],
             None,
         )
         .await;
-    let versions: Value = serde_json::from_str(&versions).expect("CLI did not return valid JSON");
-    let serials: Vec<i64> = versions["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let serials: Vec<i64> = listed["items"]
         .as_array()
-        .expect("missing version items")
+        .unwrap()
         .iter()
         .map(|item| item["serial"].as_i64().unwrap())
         .collect();
@@ -167,7 +167,7 @@ async fn zone_versions_support_diff_and_rollback() {
 
     assert!(rolled_back.contains("Zone rolled back to serial 2 (new serial 4)"));
 
-    let records = app
+    let listed = app
         .run_cli_success(
             &[
                 "record", "list", &zone_name, "--type", "A", "--output", "json",
@@ -175,8 +175,8 @@ async fn zone_versions_support_diff_and_rollback() {
             None,
         )
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let names: Vec<&str> = records["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let names: Vec<&str> = listed["items"]
         .as_array()
         .unwrap()
         .iter()

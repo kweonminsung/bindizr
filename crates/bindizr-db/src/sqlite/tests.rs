@@ -46,19 +46,19 @@ async fn fixture() -> Pool<Sqlite> {
         sqlx::query(query).execute(&pool).await.unwrap();
     }
 
-    for (id, zone) in [(1, "example.com"), (2, "other.com")] {
+    for (zone_id, zone_name) in [(1, "example.com"), (2, "other.com")] {
         sqlx::query(
             "INSERT INTO zones (id, name, mname, rname, default_ttl, serial, created_at)
              VALUES (?, ?, 'ns1.example.com', 'admin@example.com', 3600, 1, ?)",
         )
-        .bind(id)
-        .bind(zone)
+        .bind(zone_id)
+        .bind(zone_name)
         .bind(Utc::now())
         .execute(&pool)
         .await
         .unwrap();
 
-        let zone_name = ZoneName::parse(zone).unwrap();
+        let zone_name = ZoneName::parse(zone_name).unwrap();
 
         for name in NAMES {
             let owner = OwnerName::parse_in_zone(name, &zone_name).unwrap();
@@ -69,15 +69,15 @@ async fn fixture() -> Pool<Sqlite> {
                      VALUES (?, ?, 'v', 'v', 300, ?, ?)",
                 )
                 .bind(&owner)
-                .bind(record_type.as_str())
+                .bind(record_type)
                 .bind(Utc::now())
-                .bind(id)
+                .bind(zone_id)
                 .execute(&pool)
                 .await
                 .unwrap();
             }
 
-            if id == 1 {
+            if zone_id == 1 {
                 sqlx::query(
                     "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata)
                      VALUES (1, ?, 46, 1, 300, X'00')",
@@ -124,7 +124,7 @@ async fn create_role(pool: &Pool<Sqlite>, index: usize, grants: &[RoleGrant]) ->
         )
         .bind(role_id)
         .bind(grant.zone_scope.zone_id())
-        .bind(grant.actions.to_string())
+        .bind(&grant.actions)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
         .bind(Utc::now())

@@ -13,6 +13,7 @@ use ring::hmac;
 use super::*;
 use crate::dns::message;
 use crate::dns::message::ResponseLimit;
+use crate::dns::nsupdate::parser;
 use crate::dns::nsupdate::parser::{ParseUpdateError, UpdateRequest};
 use crate::model::role::RoleId;
 use crate::model::tsig_key::TsigKeyId;
@@ -87,13 +88,14 @@ fn request_tsig_rejects_nonzero_error() {
     ] {
         let key = test_key(algorithm).to_signing_key().unwrap();
 
-        for error in [
+        for tsig_rcode in [
             TsigRcode::BADSIG,
             TsigRcode::BADKEY,
             TsigRcode::BADTIME,
             TsigRcode::BADTRUNC,
         ] {
-            let message = build_signed_update_with_tsig_fields(algorithm, now_secs(), error, &[]);
+            let message =
+                build_signed_update_with_tsig_fields(algorithm, now_secs(), tsig_rcode, &[]);
 
             assert_eq!(request_signature(&message), RequestSignature::Malformed);
             assert_eq!(
@@ -568,7 +570,7 @@ fn build_signed_update_with_tsig_fields(
     rcode: TsigRcode,
     other: &[u8],
 ) -> Vec<u8> {
-    let base = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
+    let base = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int());
     let key_name = encode_name("update-key");
     let algorithm_name = encode_name(algorithm.as_str());
     let mut digest = base.clone();
@@ -748,11 +750,11 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
         let error = verify_tsig(&query, Some(key.clone())).unwrap_err();
 
         // RFC 8945, Section 5.2: a failed MAC cannot produce signed BADTIME.
-        let (rcode, error, _, mac, other) =
+        let (rcode, tsig_rcode, _, mac, other) =
             extract_response_tsig(&build_failed_response(&query, error, ResponseLimit::STREAM));
 
         assert_eq!(rcode, Rcode::NOTAUTH);
-        assert_eq!(error, TsigRcode::BADSIG);
+        assert_eq!(tsig_rcode, TsigRcode::BADSIG);
         assert!(mac.is_empty());
         assert!(other.is_empty());
     }
@@ -773,11 +775,11 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
         .unwrap();
     let error = verify_tsig(&query, Some(key)).unwrap_err();
 
-    let (rcode, error, _, _, _) =
+    let (rcode, tsig_rcode, _, _, _) =
         extract_response_tsig(&build_failed_response(&query, error, ResponseLimit::STREAM));
 
     assert_eq!(rcode, Rcode::NOTAUTH);
-    assert_eq!(error, TsigRcode::BADSIG);
+    assert_eq!(tsig_rcode, TsigRcode::BADSIG);
 }
 
 /// Verify that `verify_tsig` rejects algorithm mismatch with badkey.
@@ -790,11 +792,11 @@ fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
         .unwrap();
     let error = verify_tsig(&query, Some(key)).unwrap_err();
 
-    let (rcode, error, _, mac, _) =
+    let (rcode, tsig_rcode, _, mac, _) =
         extract_response_tsig(&build_failed_response(&query, error, ResponseLimit::STREAM));
 
     assert_eq!(rcode, Rcode::NOTAUTH);
-    assert_eq!(error, TsigRcode::BADKEY);
+    assert_eq!(tsig_rcode, TsigRcode::BADKEY);
     assert!(mac.is_empty());
 }
 
@@ -805,11 +807,11 @@ fn verify_tsig_rejects_unknown_key_with_badkey() {
 
     let error = verify_tsig(&query, None).unwrap_err();
 
-    let (rcode, error, _, mac, _) =
+    let (rcode, tsig_rcode, _, mac, _) =
         extract_response_tsig(&build_failed_response(&query, error, ResponseLimit::STREAM));
 
     assert_eq!(rcode, Rcode::NOTAUTH);
-    assert_eq!(error, TsigRcode::BADKEY);
+    assert_eq!(tsig_rcode, TsigRcode::BADKEY);
     assert!(mac.is_empty());
 }
 
@@ -1052,9 +1054,9 @@ fn truncated_requests_follow_validation_order() {
                         verify_tsig(&query, None).unwrap_err(),
                         ResponseLimit::STREAM,
                     );
-                    let (_, error, _, mac, _) = extract_response_tsig(&unknown_key);
+                    let (_, tsig_rcode, _, mac, _) = extract_response_tsig(&unknown_key);
 
-                    assert_eq!(error, TsigRcode::BADKEY);
+                    assert_eq!(tsig_rcode, TsigRcode::BADKEY);
                     assert!(mac.is_empty());
                 }
             }
@@ -1155,7 +1157,7 @@ fn tsig_parser_rejects_unparseable_signature() {
     ));
 
     // Malformed TSIG must not fall through to address-based authorization.
-    let mut empty_rdata = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
+    let mut empty_rdata = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int());
     empty_rdata[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
     empty_rdata.extend_from_slice(&encode_name("update-key"));
     empty_rdata.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
@@ -1173,19 +1175,21 @@ fn tsig_parser_rejects_unparseable_signature() {
     assert_eq!(request_signature(&overrun), RequestSignature::Malformed);
 
     assert_eq!(
-        request_signature(&crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6)),
+        request_signature(&parser::tests::build_minimal_update_with_ztype(
+            Rtype::SOA.to_int()
+        )),
         RequestSignature::Absent
     );
 }
 
-/// The signed update with its TSIG MAC replaced by `mac_len` zero octets; the
-/// digest does not verify, which the structure checks never reach.
+/// Build the signed update with its TSIG MAC replaced by `mac_len` zero octets;
+/// the digest does not verify, which the structure checks never reach.
 fn build_update_with_mac_len(mac_len: usize) -> Vec<u8> {
     let key_name = encode_name("update-key");
     let algorithm_name = encode_name(TsigAlgorithm::HmacSha256.as_str());
     let mac = vec![0; mac_len];
 
-    let mut message = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
+    let mut message = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int());
     message[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
     message.extend_from_slice(&key_name);
     message.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
@@ -1224,7 +1228,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     assert_eq!(request_signature(&not_last), RequestSignature::Malformed);
 
     // The TSIG record twice over.
-    let base_len = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6).len();
+    let base_len = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int()).len();
     let mut doubled = signed;
     doubled[10..12].copy_from_slice(&2u16.to_be_bytes());
     doubled.extend_from_within(base_len..);
@@ -1236,7 +1240,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     for (mac_len, malformed) in [(4, true), (40, true), (16, false), (32, false)] {
         let signature = request_signature(&build_update_with_mac_len(mac_len));
         assert_eq!(
-            matches!(signature, RequestSignature::Malformed),
+            signature == RequestSignature::Malformed,
             malformed,
             "mac of {mac_len}: {signature:?}"
         );
@@ -1248,7 +1252,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
 #[test]
 fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
     let wire = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
-    let start = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6).len();
+    let start = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int()).len();
     let class = start + encode_name("update-key").len() + 2;
 
     for offset in [class + 1, class + 5] {

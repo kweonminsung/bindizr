@@ -40,6 +40,9 @@ use crate::tls::TlsCertificates;
 /// Bound command allocation above the 32 MB HTTP cap to accommodate JSON-escaped zone files.
 const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
 
+/// Socket paths tried in order when the daemon starts.
+const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH];
+
 /// Why the control socket could not be bound.
 #[derive(Debug, Error)]
 pub(crate) enum BindSocketError {
@@ -92,7 +95,7 @@ pub(crate) struct SocketContext {
 }
 
 impl SocketContext {
-    /// The front end's context over the daemon's.
+    /// Build the front end's context over the daemon's.
     pub(crate) fn new(
         daemon: Arc<Context>,
         control: mpsc::Sender<DaemonControl>,
@@ -105,17 +108,17 @@ impl SocketContext {
         }
     }
 
-    /// The daemon's context.
+    /// Return the daemon's context.
     pub(crate) fn daemon(&self) -> &Arc<Context> {
         &self.daemon
     }
 
-    /// The certificates the TLS listeners present.
+    /// Return the certificates the TLS listeners present.
     pub(crate) fn tls(&self) -> &TlsCertificates {
         &self.tls
     }
 
-    /// The sender a shutdown or restart request goes down.
+    /// Return the sender a shutdown or restart request goes down.
     pub(crate) fn control(&self) -> &mpsc::Sender<DaemonControl> {
         &self.control
     }
@@ -240,9 +243,6 @@ pub(crate) async fn remove_socket_file(socket_path: &str) {
         log::warn!("Failed to remove the daemon socket {socket_path}: {error}");
     }
 }
-
-/// Socket paths tried in order when the daemon starts.
-const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH];
 
 /// Bind the daemon's configured control socket. Owning it is what refuses a
 /// second daemon, so the daemon binds before anything else it would share.

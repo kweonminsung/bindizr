@@ -1,5 +1,6 @@
 //! SQLite file paths, parent directories, and connection URLs.
 
+use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::{fs, io};
@@ -32,7 +33,7 @@ pub(crate) fn create_parent_dir(file_path: &str) -> Result<(), DatabaseError> {
     };
     fs::create_dir_all(parent).map_err(failed)?;
 
-    fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(failed)
+    fs::set_permissions(parent, Permissions::from_mode(0o700)).map_err(failed)
 }
 
 /// Convert a configured SQLite path into a SQLx connection URL.

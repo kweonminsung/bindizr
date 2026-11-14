@@ -1,6 +1,5 @@
 use std::slice;
 
-use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
@@ -10,7 +9,7 @@ use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
 use crate::record::validation;
 use crate::record::validation::ParsedRecord;
-use crate::types::{CreateRecordRequest, RecordDiffResponse, RecordResponse, WriteRecordResponse};
+use crate::types::{CreateRecordRequest, RecordResponse, WriteRecordResponse};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, serial, transaction, zone};
 
@@ -34,11 +33,11 @@ pub async fn create(
     )?;
 
     let zone_name = zone::normalize_name(&request.zone_name)?;
-    let owner_name = validation::normalize_record_owner_name(&request.name, &zone_name)?;
+    let owner = validation::normalize_record_owner_name(&request.name, &zone_name)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to create record").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
@@ -46,31 +45,27 @@ pub async fn create(
             &zone,
             &[RecordAccess {
                 action: Action::RecordCreate,
-                relative_name: owner_name.clone(),
+                relative_name: owner.clone(),
                 record_type: Some(record_type),
             }],
         )?;
 
         // Only records sharing the owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name = bindizr_db::record::list_by_name_tx(
-            &mut tx,
-            zone.id,
-            &owner_name,
-            LockLevel::Exclusive,
-        )
-        .await
-        .map_err(|error| {
-            log::error!("Failed to check existing records: {error}");
-            ServiceError::internal_with_source("failed to create record", error)
-        })?;
+        let records_at_name =
+            bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
+                .await
+                .map_err(|error| {
+                    log::error!("Failed to check existing records: {error}");
+                    ServiceError::internal_with_source("failed to create record", error)
+                })?;
 
         // Fixed at write time: a later zone TTL change will not move it.
         let ttl = ttl.unwrap_or(zone.default_ttl);
 
         validation::validate_record_constraints(
             &records_at_name,
-            &owner_name,
+            &owner,
             record_type,
             &record_value,
             ttl,
@@ -85,7 +80,7 @@ pub async fn create(
         );
         let candidate = Record {
             id: RecordId::UNWRITTEN,
-            name: owner_name,
+            name: owner,
             record_type,
             value: record_value,
             ttl,
@@ -105,9 +100,7 @@ pub async fn create(
 
         // The record is validated and authorized, so a dry run stops here.
         if request.dry_run {
-            return Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
-                candidate, zone.name, diff, actions,
-            ));
+            return Ok((candidate, zone.name, diff, actions));
         }
 
         // Persist the validated record and its signed view as one journaled serial.
@@ -129,12 +122,7 @@ pub async fn create(
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
-            created_record,
-            zone.name,
-            diff,
-            actions,
-        ))
+        Ok((created_record, zone.name, diff, actions))
     }
     .await;
 
@@ -142,16 +130,15 @@ pub async fn create(
         transaction::finish_tx(tx, apply_result, "failed to create record").await?;
 
     log::info!(
-        "event=record_create dry_run={} zone={} name={} type={} ttl={} priority={} record_id={}",
+        "event=record_create dry_run={} zone={zone_name} name={} type={} ttl={} priority={} record_id={}",
         request.dry_run,
-        zone_name,
         created_record.name,
         created_record.record_type,
         created_record.ttl,
         created_record
             .priority
             .map_or("null".to_string(), |value| value.to_string()),
-        created_record.id
+        created_record.id,
     );
 
     // Request secondary transfers only after the new record is committed.

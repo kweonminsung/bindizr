@@ -22,8 +22,8 @@ fn endpoint_deserializes_external_dns_wire_format() {
         "targets": ["192.0.2.10"],
         "recordType": "A",
         "recordTTL": 300,
-        "labels": {"owner": "default"},
-        "providerSpecific": [{"name": "x", "value": "y"}]
+        "labels": { "owner": "default" },
+        "providerSpecific": [{ "name": "x", "value": "y" }]
     }))
     .unwrap();
 
@@ -116,42 +116,42 @@ fn endpoint_validation_rejects_unsupported_shapes() {
 #[test]
 fn changes_to_bindizr_pairs_updates_and_maps_ttl() {
     let changes: Changes = serde_json::from_value(json!({
-        "create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": 300}],
-        "updateOld": [{"dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A"}],
-        "updateNew": [{"dnsName": "b.example.com", "targets": ["192.0.2.3"], "recordType": "A"}]
+        "create": [{ "dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": 300 }],
+        "updateOld": [{ "dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A" }],
+        "updateNew": [{ "dnsName": "b.example.com", "targets": ["192.0.2.3"], "recordType": "A" }]
     }))
     .unwrap();
 
-    let bindizr = changes.to_apply_changes_request().unwrap();
+    let request = ApplyExternalDnsChangesRequest::try_from(&changes).unwrap();
 
-    assert_eq!(bindizr.creates.len(), 1);
-    assert_eq!(bindizr.creates[0].ttl, Some(300));
-    assert_eq!(bindizr.updates.len(), 1);
+    assert_eq!(request.creates.len(), 1);
+    assert_eq!(request.creates[0].ttl, Some(300));
+    assert_eq!(request.updates.len(), 1);
 
     // TTL 0 (unset) maps to None so the server applies the zone TTL.
-    assert_eq!(bindizr.updates[0].old.ttl, None);
-    assert_eq!(bindizr.updates[0].new.values, vec!["192.0.2.3"]);
-    assert!(bindizr.deletes.is_empty());
+    assert_eq!(request.updates[0].old.ttl, None);
+    assert_eq!(request.updates[0].new.values, vec!["192.0.2.3"]);
+    assert!(request.deletes.is_empty());
 }
 
 /// Verify that changes to bindizr rejects mismatched update pairs.
 #[test]
 fn changes_to_bindizr_rejects_mismatched_update_pairs() {
     let changes: Changes = serde_json::from_value(json!({
-        "updateOld": [{"dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A"}],
+        "updateOld": [{ "dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A" }],
         "updateNew": []
     }))
     .unwrap();
 
-    assert!(changes.to_apply_changes_request().is_err());
+    assert!(ApplyExternalDnsChangesRequest::try_from(&changes).is_err());
 }
 
 /// Verify that ExternalDNS keeps zero as unspecified while preserving the unsigned TTL range.
 #[test]
 fn endpoint_ttl_preserves_unsigned_boundaries() {
     for ttl in [0i64, 2_147_483_647, 2_147_483_648, i64::from(u32::MAX)] {
-        let changes: Changes = serde_json::from_value(json!({ "create": [{"dnsName": "ttl.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": ttl}] })).unwrap();
-        let request = changes.to_apply_changes_request().unwrap();
+        let changes: Changes = serde_json::from_value(json!({ "create": [{ "dnsName": "ttl.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": ttl }] })).unwrap();
+        let request = ApplyExternalDnsChangesRequest::try_from(&changes).unwrap();
         assert_eq!(request.creates[0].ttl, (ttl > 0).then_some(ttl));
     }
 

@@ -310,16 +310,16 @@ async fn tokens_self_grants_lists_the_bearers_role_grants() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token.clone());
 
-    let granted_zone = app.zone_name("granted.com");
+    let granted_zone_name = app.zone_name("granted.com");
 
-    app.create_named_zone(&granted_zone).await;
+    app.create_named_zone(&granted_zone_name).await;
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     let (status, _) = app
         .send_request(
             Method::POST,
             &format!("/roles/{scoped_name}/grants"),
             Some(json!({
-                "zone_name": granted_zone,
+                "zone_name": granted_zone_name,
                 "actions": ["record:read"],
                 "record_name_pattern": "*.dyn",
                 "record_types": "A,AAAA"
@@ -340,7 +340,7 @@ async fn tokens_self_grants_lists_the_bearers_role_grants() {
 
     assert_eq!(grants.len(), 1, "{body}");
     assert_eq!(grants[0]["role_name"], scoped_name);
-    assert_eq!(grants[0]["zone_name"], granted_zone);
+    assert_eq!(grants[0]["zone_name"], granted_zone_name);
     assert_eq!(grants[0]["record_name_pattern"], "*.dyn");
     assert_eq!(grants[0]["record_types"], "A,AAAA");
 
@@ -420,11 +420,11 @@ async fn zone_lookup_hides_existence_across_name_spellings() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token);
 
-    let granted_zone = app.zone_name("granted.com");
-    let hidden_zone = app.zone_name("hidden.com");
+    let granted_zone_name = app.zone_name("granted.com");
+    let hidden_zone_name = app.zone_name("hidden.com");
 
-    app.create_named_zone(&granted_zone).await;
-    app.create_named_zone(&hidden_zone).await;
+    app.create_named_zone(&granted_zone_name).await;
+    app.create_named_zone(&hidden_zone_name).await;
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(
         &[
@@ -432,7 +432,7 @@ async fn zone_lookup_hides_existence_across_name_spellings() {
             "grant",
             &scoped_name,
             "--zone",
-            &granted_zone,
+            &granted_zone_name,
             "--actions",
             RECORD_ACTIONS,
         ],
@@ -443,11 +443,11 @@ async fn zone_lookup_hides_existence_across_name_spellings() {
     app.set_auth_token(scoped_token);
 
     // An echoed spelling would name a hidden zone as stored, an absent one as typed.
-    let absent_zone = app.zone_name("absent.com");
+    let absent_zone_name = app.zone_name("absent.com");
 
-    for zone in [&hidden_zone, &absent_zone] {
-        let spelled = format!("{}.", zone.to_uppercase());
-        let expected = format!("zone with name '{zone}' not found");
+    for zone_name in [&hidden_zone_name, &absent_zone_name] {
+        let spelled = format!("{}.", zone_name.to_uppercase());
+        let expected = format!("zone with name '{zone_name}' not found");
 
         let (status, body) = app
             .send_request(Method::GET, &format!("/zones/{spelled}"), None)
@@ -721,11 +721,11 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token);
 
-    let granted_zone = app.zone_name("granted.com");
-    let other_zone = app.zone_name("other.com");
+    let granted_zone_name = app.zone_name("granted.com");
+    let other_zone_name = app.zone_name("other.com");
 
-    app.create_named_zone(&granted_zone).await;
-    app.create_named_zone(&other_zone).await;
+    app.create_named_zone(&granted_zone_name).await;
+    app.create_named_zone(&other_zone_name).await;
 
     // Persist a record in the ungranted zone so listing assertions can prove
     // exclusion, not pass over an empty zone.
@@ -733,7 +733,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .send_request(
             Method::POST,
             "/records",
-            Some(record_body(&other_zone, "app", "A", "192.0.2.9")),
+            Some(record_body(&other_zone_name, "app", "A", "192.0.2.9")),
         )
         .await;
 
@@ -747,7 +747,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
             "grant",
             &scoped_name,
             "--zone",
-            &granted_zone,
+            &granted_zone_name,
             "--actions",
             RECORD_ACTIONS,
         ],
@@ -768,12 +768,12 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .map(|zone| zone["name"].as_str().unwrap())
         .collect();
 
-    assert!(names.contains(&granted_zone.as_str()));
-    assert!(!names.contains(&other_zone.as_str()));
+    assert!(names.contains(&granted_zone_name.as_str()));
+    assert!(!names.contains(&other_zone_name.as_str()));
     assert_eq!(body["pagination"]["total"], 1);
 
     let (status, _) = app
-        .send_request(Method::GET, &format!("/zones/{other_zone}"), None)
+        .send_request(Method::GET, &format!("/zones/{other_zone_name}"), None)
         .await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -783,7 +783,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .send_request(
             Method::POST,
             "/records",
-            Some(record_body(&granted_zone, "app", "A", "192.0.2.1")),
+            Some(record_body(&granted_zone_name, "app", "A", "192.0.2.1")),
         )
         .await;
 
@@ -794,7 +794,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .send_request(
             Method::POST,
             "/records",
-            Some(record_body(&other_zone, "app", "A", "192.0.2.2")),
+            Some(record_body(&other_zone_name, "app", "A", "192.0.2.2")),
         )
         .await;
 
@@ -822,15 +822,15 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     assert!(!listed_ids.contains(&ungranted_record_id));
 
     // Zone actions need grants of their own; record actions carry none.
-    let new_zone = app.zone_name("new.com");
+    let new_zone_name = app.zone_name("new.com");
 
     let (status, _) = app
         .send_request(
             Method::POST,
             "/zones",
             Some(json!({
-                "name": new_zone,
-                "mname": format!("ns1.{new_zone}"),
+                "name": new_zone_name,
+                "mname": format!("ns1.{new_zone_name}"),
                 "rname": "admin@example.com",
                 "default_ttl": 3600
             })),
@@ -840,7 +840,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     let (status, _) = app
-        .send_request(Method::DELETE, &format!("/zones/{granted_zone}"), None)
+        .send_request(Method::DELETE, &format!("/zones/{granted_zone_name}"), None)
         .await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -849,7 +849,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     let (status, _) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{granted_zone}/notify?bump_serial=true"),
+            &format!("/zones/{granted_zone_name}/notify?bump_serial=true"),
             None,
         )
         .await;
@@ -1244,12 +1244,12 @@ async fn permissions_report_what_each_zone_allows() {
     );
     assert_eq!(body["zones"], json!([]));
 
-    let narrowed = app.zone_name("narrowed.com");
-    let whole = app.zone_name("whole.com");
-    let untouched = app.zone_name("untouched.com");
+    let narrowed_zone_name = app.zone_name("narrowed.com");
+    let whole_zone_name = app.zone_name("whole.com");
+    let untouched_zone_name = app.zone_name("untouched.com");
 
-    for zone in [&narrowed, &whole, &untouched] {
-        app.create_named_zone(zone).await;
+    for zone_name in [&narrowed_zone_name, &whole_zone_name, &untouched_zone_name] {
+        app.create_named_zone(zone_name).await;
     }
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
@@ -1261,7 +1261,7 @@ async fn permissions_report_what_each_zone_allows() {
             "grant",
             &scoped_name,
             "--zone",
-            &narrowed,
+            &narrowed_zone_name,
             "--actions",
             "record:read,record:create",
             "--pattern",
@@ -1272,7 +1272,7 @@ async fn permissions_report_what_each_zone_allows() {
             "grant",
             &scoped_name,
             "--zone",
-            &whole,
+            &whole_zone_name,
             "--actions",
             "record:read",
         ],
@@ -1298,12 +1298,12 @@ async fn permissions_report_what_each_zone_allows() {
         zones,
         vec![
             json!({
-                "zone_name": narrowed,
+                "zone_name": narrowed_zone_name,
                 "actions": ["zone:read", "record:read", "record:create"],
                 "whole_zone": []
             }),
             json!({
-                "zone_name": whole,
+                "zone_name": whole_zone_name,
                 "actions": ["zone:read", "record:read"],
                 "whole_zone": ["record:read"]
             }),
@@ -1520,11 +1520,11 @@ async fn write_only_grant_changes_matching_records() {
     };
 
     assert!(!leaks(&body), "create revealed a neighbour: {body}");
-    let mut dry_run = record_body(&zone_name, "_acme-challenge", "TXT", "probe");
-    dry_run["dry_run"] = json!(true);
+    let mut request = record_body(&zone_name, "_acme-challenge", "TXT", "probe");
+    request["dry_run"] = json!(true);
 
     let (status, body) = app
-        .send_request(Method::POST, "/records", Some(dry_run))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1950,13 +1950,13 @@ async fn zone_import_checks_record_permissions_before_fetching() {
     // Nothing listens there: a refusal before the fetch is 403, an attempted
     // fetch fails as invalid input.
     let zone_name = app.zone_name("fetched.example.com");
-    let import = json!({ "create": true, "from_server": "127.0.0.1:1", "mode": "upsert" });
+    let request = json!({ "create": true, "from_server": "127.0.0.1:1", "mode": "upsert" });
 
     let (status, body) = app
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(import.clone()),
+            Some(request.clone()),
         )
         .await;
 
@@ -1990,7 +1990,7 @@ async fn zone_import_checks_record_permissions_before_fetching() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(import),
+            Some(request),
         )
         .await;
 
@@ -2021,9 +2021,9 @@ async fn zone_rename_requires_zone_create() {
 
     app.create_named_zone(&zone_name).await;
 
-    let other_zone = app.zone_name("other.com");
+    let other_zone_name = app.zone_name("other.com");
 
-    app.create_named_zone(&other_zone).await;
+    app.create_named_zone(&other_zone_name).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(
@@ -2043,7 +2043,7 @@ async fn zone_rename_requires_zone_create() {
     app.set_auth_token(scoped_token.clone());
 
     // Refused before any name is looked up, taken or not.
-    for name in [other_zone.as_str(), "unused.example.net"] {
+    for name in [other_zone_name.as_str(), "unused.example.net"] {
         let (status, body) = app
             .send_request(
                 Method::PUT,
@@ -2113,7 +2113,7 @@ async fn zone_import_rejects_credential_revoked_during_transfer() {
 
     app.create_named_zone(&zone_name).await;
 
-    for (revocation, expected) in [
+    for (revocation, expected_status) in [
         ("grant", StatusCode::FORBIDDEN),
         ("token", StatusCode::UNAUTHORIZED),
     ] {
@@ -2153,7 +2153,7 @@ async fn zone_import_rejects_credential_revoked_during_transfer() {
         )
         .unwrap();
         let grant_id = granted["role_grant"]["id"].as_i64().unwrap().to_string();
-        let revoke: Vec<&str> = match revocation {
+        let args: Vec<&str> = match revocation {
             "grant" => vec!["role", "revoke", &role_name, &grant_id],
             _ => vec!["token", "delete", &role_name],
         };
@@ -2183,14 +2183,14 @@ async fn zone_import_rejects_credential_revoked_during_transfer() {
 
         let revoking = async {
             accepted_rx.await.unwrap();
-            app.run_cli_success(&revoke, None).await;
+            app.run_cli_success(&args, None).await;
             release_tx.send(()).unwrap();
         };
         let ((status, body), ()) = tokio::join!(import, revoking);
 
         relaying.await.unwrap();
 
-        assert_eq!(status, expected, "revoked {revocation}: {body}");
+        assert_eq!(status, expected_status, "revoked {revocation}: {body}");
         app.set_auth_token(admin_token.clone());
     }
 }

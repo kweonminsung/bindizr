@@ -158,7 +158,7 @@ pub(crate) async fn apply_import(
             let value = match requested.to_encoded_value(record.record_type, record.priority) {
                 Ok(value) => value,
                 Err(error) => {
-                    errors.push(format!("{}: {}", record.owner_fqdn, error));
+                    errors.push(format!("{}: {error}", record.owner_fqdn));
                     continue;
                 }
             };
@@ -166,7 +166,7 @@ pub(crate) async fn apply_import(
                 match validation::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
                     Ok(stored_name) => stored_name,
                     Err(error) => {
-                        errors.push(format!("{}: {}", record.owner_fqdn, error));
+                        errors.push(format!("{}: {error}", record.owner_fqdn));
                         continue;
                     }
                 };
@@ -190,9 +190,9 @@ pub(crate) async fn apply_import(
                     skipped += 1;
                 } else {
                     errors.push(format!(
-                        "{}: {} records with conflicting TTLs {} and {}; \
+                        "{}: {} records with conflicting TTLs {kept_ttl} and {this_ttl}; \
                          records sharing a name and type share one TTL",
-                        record.owner_fqdn, record.record_type, kept_ttl, this_ttl
+                        record.owner_fqdn, record.record_type,
                     ));
                 }
 
@@ -295,7 +295,7 @@ pub(crate) async fn apply_import(
                 None,
             ) {
                 Ok(()) => records_at_name.push(candidate.clone()),
-                Err(error) => errors.push(format!("{}: {}", desired_record.source_name, error)),
+                Err(error) => errors.push(format!("{}: {error}", desired_record.source_name)),
             }
         }
 
@@ -413,9 +413,7 @@ pub(crate) async fn apply_import(
     } = transaction::finish_tx(tx, apply_result, "failed to import zone file").await?;
 
     log::info!(
-        "event=zone_import zone={} mode={:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",
-        zone_name,
-        mode,
+        "event=zone_import zone={zone_name} mode={mode:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",
         response.applied,
         response.summary.added,
         response.summary.deleted,
@@ -447,12 +445,10 @@ pub(crate) async fn apply_import(
     // Per-stage breakdown for profiling; debug-gated so it stays out of
     // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
     log::debug!(
-        "event=zone_import_timing zone={} mode={:?} parsed={} applied={} parse_ms={:.1} \
+        "event=zone_import_timing zone={zone_name} mode={mode:?} parsed={} applied={} parse_ms={:.1} \
          load_zone_ms={:.1} load_existing_ms={:.1} normalize_ms={:.1} \
-         reconcile_ms={:.1} validate_ms={:.1} db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} \
+         reconcile_ms={:.1} validate_ms={:.1} db_write_ms={:.1} serial_ms={:.1} notify_ms={notify_ms:.1} \
          total_ms={:.1}",
-        zone_name,
-        mode,
         response.summary.parsed,
         response.applied,
         timings.parse_ms,
@@ -463,7 +459,6 @@ pub(crate) async fn apply_import(
         timings.validate_ms,
         timings.db_write_ms,
         timings.serial_ms,
-        notify_ms,
         time::elapsed_ms(total_started),
     );
 

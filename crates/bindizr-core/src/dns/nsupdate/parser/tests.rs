@@ -369,8 +369,12 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
 
     for message in [&forward[..], &self_referential[..]] {
         let record = update_record(Rtype::CNAME, Class::IN, 300, message[..2].to_vec());
-        let error = record.to_record_value(message).unwrap_err();
-        assert!(!error.to_string().is_empty());
+        assert_eq!(
+            record.to_record_value(message),
+            Err(ParseUpdateError::Rdata {
+                record_type: "CNAME".to_string(),
+            })
+        );
     }
 }
 
@@ -379,8 +383,12 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
 fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     let message = [1, b'a', 0, 0];
     let record = update_record(Rtype::CNAME, Class::IN, 300, message.to_vec());
-    let error = record.to_record_value(&message).unwrap_err();
-    assert!(!error.to_string().is_empty());
+    assert_eq!(
+        record.to_record_value(&message),
+        Err(ParseUpdateError::Rdata {
+            record_type: "CNAME".to_string(),
+        })
+    );
 }
 
 /// Verify that empty TXT RDATA, which lacks the character-string required by RFC 1035,
@@ -388,8 +396,10 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
 #[test]
 fn to_record_value_rejects_empty_txt_rdata() {
     let record = update_record(Rtype::TXT, Class::IN, 300, Vec::new());
-    let error = record.to_record_value(&[]).unwrap_err();
-    assert!(!error.to_string().is_empty());
+    assert_eq!(
+        record.to_record_value(&[]),
+        Err(ParseUpdateError::TxtValue(ParseRecordValueError::TxtRdata))
+    );
 }
 
 /// Verify that arbitrary TXT octets survive UPDATE decoding.
@@ -420,10 +430,10 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
 }
 
 /// Build an nsupdate record with the requested wire fields.
-fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
+fn update_record(rtype: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
     UpdateRecord {
         name: "www.example.com.".to_string(),
-        record_type,
+        record_type: rtype,
         class,
         ttl,
         rdata,

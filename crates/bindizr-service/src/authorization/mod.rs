@@ -155,7 +155,7 @@ impl Caller {
         }
     }
 
-    /// Whether this is the unsigned DNS caller: a request no TSIG key named,
+    /// Return whether this is the unsigned DNS caller: a request no TSIG key named,
     /// which the policy on unsigned requests may still refuse.
     pub fn is_unsigned_dns(&self) -> bool {
         self.origin.source == ChangeSource::Nsupdate && self.origin.actor.is_none()
@@ -211,9 +211,7 @@ impl Caller {
 
         let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
             Ok(Some(token)) => token,
-            Ok(None) => {
-                return Err(ServiceError::invalid_token("invalid or expired token"));
-            }
+            Ok(None) => return Err(ServiceError::invalid_token("invalid or expired token")),
             Err(error) => {
                 log::error!("Failed to validate token: {error}");
                 return Err(ServiceError::internal_with_source(
@@ -318,7 +316,7 @@ impl Caller {
         }
     }
 
-    /// Whether the caller may see `zone_id`: any grant reaching it, whatever its actions.
+    /// Return whether the caller may see `zone_id`: any grant reaching it, whatever its actions.
     pub(crate) fn sees_zone(&self, zone_id: ZoneId) -> bool {
         self.grants()
             .is_none_or(|grants| grants.reaches_zone(zone_id))
@@ -401,7 +399,7 @@ impl Caller {
         authorize_with_grants(grants, zone, writes)
     }
 
-    /// Whether `record:read` or the write `action` covers a record of this
+    /// Return whether `record:read` or the write `action` covers a record of this
     /// name and type, so a write-only grant finds what it may change.
     pub(crate) fn reaches_record(
         &self,
@@ -414,7 +412,7 @@ impl Caller {
             .is_none_or(|grants| grants.reaches_record(action, zone_id, name, record_type))
     }
 
-    /// Whether a `record:read` grant covers a record of this name and type.
+    /// Return whether a `record:read` grant covers a record of this name and type.
     pub(crate) fn sees_record(
         &self,
         zone_id: ZoneId,

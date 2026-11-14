@@ -13,7 +13,7 @@ pub(crate) const SOCKET_FILE_PATH: &str = "/run/bindizr/bindizr.sock";
 /// Fallback socket path used when the primary path is unavailable.
 pub(crate) const FALLBACK_SOCKET_FILE_PATH: &str = "/tmp/bindizr/bindizr.sock";
 
-/// Whether a socket peer may drive the daemon: its own user, or root.
+/// Return whether a socket peer may drive the daemon: its own user, or root.
 pub(crate) fn is_trusted_peer(peer_uid: u32, own_uid: u32) -> bool {
     peer_uid == own_uid || peer_uid == 0
 }

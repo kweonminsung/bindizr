@@ -9,7 +9,7 @@ const QUALITY_PRECISION: usize = 3;
 /// Unit quality expressed at the parser's fixed decimal precision.
 const QUALITY_SCALE: u16 = 10u16.pow(QUALITY_PRECISION as u32);
 
-/// Check whether Accept permits the response (RFC 9110, Section 12.5.1).
+/// Return whether Accept permits the response (RFC 9110, Section 12.5.1).
 /// The most specific range determines quality; an absent header accepts any type.
 pub(crate) fn is_acceptable(headers: &HeaderMap) -> bool {
     if !headers.contains_key(ACCEPT) {

@@ -65,7 +65,7 @@ impl DnsMessageBuilder {
         )
     }
 
-    /// Adds a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
+    /// Add a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
     pub fn add_catalog_soa(&mut self, zone: &CatalogZone) -> Result<(), EncodeMessageError> {
         let rdata = SoaRecordValue {
             mname: "invalid",
@@ -85,7 +85,7 @@ impl DnsMessageBuilder {
         )
     }
 
-    /// Adds an SOA from a serial-specific version.
+    /// Add an SOA from a serial-specific version.
     pub fn add_version_soa(&mut self, version: &ZoneVersion) -> Result<(), EncodeMessageError> {
         let rdata = SoaRecordValue {
             mname: &version.mname,
@@ -107,7 +107,7 @@ impl DnsMessageBuilder {
         )
     }
 
-    /// Adds one answer of any supported stored type at an absolute owner name.
+    /// Add one answer of any supported stored type at an absolute owner name.
     pub fn add_text_rdata(
         &mut self,
         name: &str,
@@ -116,12 +116,14 @@ impl DnsMessageBuilder {
         ttl: u32,
         priority: Option<i32>,
     ) -> Result<(), EncodeMessageError> {
-        let EncodedRdata { record_type, rdata } =
-            EncodedRdata::from_columns(record_type, value, priority)?;
-        self.add_raw_rdata(parse_name(name)?, record_type, ttl, rdata)
+        let EncodedRdata {
+            record_type: rtype,
+            rdata,
+        } = EncodedRdata::from_columns(record_type, value, priority)?;
+        self.add_raw_rdata(parse_name(name)?, rtype, ttl, rdata)
     }
 
-    /// Adds the catalog-zone NS record, which is the placeholder "invalid".
+    /// Add the catalog-zone NS record, which is the placeholder "invalid".
     pub fn add_catalog_ns(&mut self, zone: &CatalogZone) -> Result<(), EncodeMessageError> {
         let owner_name = zone.name.to_fqdn();
         self.add_text_rdata(
@@ -133,7 +135,7 @@ impl DnsMessageBuilder {
         )
     }
 
-    /// Adds the catalog-zone version TXT record.
+    /// Add the catalog-zone version TXT record.
     pub fn add_catalog_schema_version(
         &mut self,
         zone: &CatalogZone,
@@ -183,7 +185,7 @@ impl DnsMessageBuilder {
         )
     }
 
-    /// Adds an answer from stored record columns (records and journal
+    /// Add an answer from stored record columns (records and journal
     /// rows share this shape). Unsupported types are skipped.
     pub fn add_record_parts(
         &mut self,
@@ -194,17 +196,14 @@ impl DnsMessageBuilder {
         ttl: Ttl,
         priority: Option<i32>,
     ) -> Result<(), EncodeMessageError> {
-        let EncodedRdata { record_type, rdata } =
-            EncodedRdata::from_columns(record_type, value, priority)?;
-        self.add_raw_rdata(
-            name.to_wire_name(zone_name)?,
-            record_type,
-            ttl.as_secs(),
+        let EncodedRdata {
+            record_type: rtype,
             rdata,
-        )
+        } = EncodedRdata::from_columns(record_type, value, priority)?;
+        self.add_raw_rdata(name.to_wire_name(zone_name)?, rtype, ttl.as_secs(), rdata)
     }
 
-    /// Adds a derived DNSSEC record; its RDATA is stored in wire form.
+    /// Add a derived DNSSEC record; its RDATA is stored in wire form.
     pub fn add_dnssec_record(
         &mut self,
         record: &DnssecRecord,
@@ -219,7 +218,7 @@ impl DnsMessageBuilder {
     }
 }
 
-/// Parses a presentation-form name through the one core name encoding.
+/// Parse a presentation-form name through the one core name encoding.
 fn parse_name(name: &str) -> Result<Name<Vec<u8>>, EncodeMessageError> {
     let wire = name::encode_name(name)?;
     Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)).into())

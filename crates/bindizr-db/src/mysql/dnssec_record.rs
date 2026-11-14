@@ -37,9 +37,9 @@ pub(crate) async fn create_many_tx(
                 .bind(record.record_type)
                 .bind(record.covered_record_type)
                 .bind(record.ttl)
-                .bind(record.rdata.clone())
+                .bind(&record.rdata)
                 .bind(record.expires_at)
-                .bind(record.record_set_digest.clone());
+                .bind(&record.record_set_digest);
         }
 
         query.execute(&mut **tx).await?;

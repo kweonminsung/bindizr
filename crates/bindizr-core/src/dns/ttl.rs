@@ -3,11 +3,12 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 use thiserror::Error;
 use utoipa::openapi::RefOr;
-use utoipa::openapi::schema::Schema;
+use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, Schema, SchemaFormat, Type};
 
 /// A TTL in seconds, 0 through 2^32 - 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -34,7 +35,7 @@ impl Ttl {
         Self(secs)
     }
 
-    /// The TTL in seconds, as the wire carries it.
+    /// Return the TTL in seconds, as the wire carries it.
     pub const fn as_secs(self) -> u32 {
         self.0
     }
@@ -71,14 +72,14 @@ impl TryFrom<i64> for Ttl {
 }
 
 impl From<Ttl> for u32 {
-    /// The wire form.
+    /// Convert to the wire form.
     fn from(ttl: Ttl) -> Self {
         ttl.0
     }
 }
 
 impl From<Ttl> for i64 {
-    /// The row form; the range invariant makes it exact.
+    /// Convert to the row form; the range invariant makes it exact.
     fn from(ttl: Ttl) -> Self {
         Self::from(ttl.0)
     }
@@ -94,14 +95,12 @@ impl fmt::Display for Ttl {
 impl utoipa::PartialSchema for Ttl {
     /// Describe the wire range using the domain value's maximum.
     fn schema() -> RefOr<Schema> {
-        use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, Type};
-
         ObjectBuilder::new()
             .schema_type(Type::Integer)
             .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
             .minimum(Some(0u64))
             .maximum(Some(u64::from(Self::MAX.as_secs())))
-            .examples([serde_json::json!(3600)])
+            .examples([json!(3600)])
             .into()
     }
 }
@@ -112,12 +111,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for Ttl
 where
     i64: sqlx::Type<DB>,
 {
-    /// The row form's column type.
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <i64 as sqlx::Type<DB>>::type_info()
     }
 
-    /// Whether the column can hold the row form.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i64 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -127,7 +126,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for Ttl
 where
     i64: sqlx::Encode<'q, DB>,
 {
-    /// Bind the row form.
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,

@@ -8,7 +8,7 @@ use bindizr_service::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, Holddown, MessageResponse,
     StartDnssecRolloverRequest, UpdateDnssecSettingsRequest,
 };
-use clap::Subcommand;
+use clap::{ArgGroup, Subcommand};
 pub(crate) use keys::DnssecKeysCommand;
 pub(crate) use policy::DnssecPolicyCommand;
 
@@ -51,7 +51,7 @@ publish the DS itself — hand the DS from `dnssec status` to the registrar.")]
     /// Change a zone's signing settings: the policy it signs under and/or
     /// the parent nameservers asked for its DS record
     #[command(
-        group = clap::ArgGroup::new("setting").required(true).multiple(true),
+        group = ArgGroup::new("setting").required(true).multiple(true),
         after_help = "\
 Examples:
   bindizr dnssec set example.com --policy stronger

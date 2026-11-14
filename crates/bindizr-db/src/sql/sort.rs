@@ -13,7 +13,6 @@ pub enum ParseSortError {
         value: String,
         expected: &'static str,
     },
-
     #[error("unknown sort order '{value}': expected asc or desc")]
     UnknownOrder { value: String },
 }
@@ -173,7 +172,7 @@ pub enum SortOrder {
 }
 
 impl SortOrder {
-    /// Return the text representation of this sort order.
+    /// Return the canonical wire spelling.
     fn as_str(self) -> &'static str {
         match self {
             Self::Asc => "ASC",

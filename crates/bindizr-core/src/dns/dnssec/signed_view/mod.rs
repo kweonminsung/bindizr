@@ -37,10 +37,10 @@ type SignRecord = WireRecord<ZoneRecordData<Vec<u8>, WireName>>;
 pub enum SignZoneError {
     #[error("zone has keys but no usable signer for the key records or the zone data")]
     NoUsableSigner,
-    #[error("derived owner '{owner}' is not inside zone '{zone}': {source}")]
+    #[error("derived owner '{owner}' is not inside zone '{zone_name}': {source}")]
     OwnerOutsideZone {
         owner: String,
-        zone: String,
+        zone_name: String,
         #[source]
         source: ParseNameError,
     },
@@ -311,7 +311,7 @@ pub struct SignedViewDiff {
 }
 
 impl SignedViewDiff {
-    /// Check whether the signed view has no added or removed records.
+    /// Return whether the signed view has no added or removed records.
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
     }
@@ -344,13 +344,13 @@ impl SignedViewDiff {
     }
 }
 
-/// Check whether a type carries DNSKEY, CDS, or CDNSKEY data.
+/// Return whether a type carries DNSKEY, CDS, or CDNSKEY data.
 fn is_key_rtype(rtype: Rtype) -> bool {
     matches!(rtype, Rtype::DNSKEY | Rtype::CDS | Rtype::CDNSKEY)
 }
 
-/// Content identity for signature reuse; any component changing must force
-/// a fresh signature.
+/// Return the content identity for signature reuse; any component changing
+/// must force a fresh signature.
 fn record_set_digest(
     signers: &[&Signer<'_>],
     record_set: &[&SignRecord],
@@ -382,7 +382,7 @@ fn record_set_digest(
     Ok(hex::encode(hasher.finish()))
 }
 
-/// Check whether an owner lies below a delegation in this zone.
+/// Return whether an owner lies below a delegation in this zone.
 fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8>>) -> bool {
     // Walk proper ancestors of `owner` down to (excluding) the apex; the name
     // is glue if any of them is a delegation point.
@@ -407,7 +407,7 @@ fn parse_derived_owner(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerNa
     OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|source| {
         SignZoneError::OwnerOutsideZone {
             owner: owner.to_string(),
-            zone: zone_name.to_string(),
+            zone_name: zone_name.to_string(),
             source,
         }
     })
@@ -465,7 +465,7 @@ impl<'a> Signer<'a> {
     }
 }
 
-/// Wire RDATA of `data`, without the length prefix.
+/// Encode the wire RDATA of `data`, without the length prefix.
 fn to_rdata(data: &impl ComposeRecordData) -> Result<Rdata, EncodeRdataError> {
     let mut bytes = Vec::new();
     let Ok(()) = data.compose_rdata(&mut bytes);

@@ -15,7 +15,7 @@ pub(crate) async fn force_increment_serial(
 ) -> Result<(), ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to force increment zone serial").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
@@ -40,7 +40,7 @@ pub(crate) async fn force_increment_serial(
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
         super::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
 
-        Ok::<Zone, ServiceError>(updated_zone)
+        Ok(updated_zone)
     }
     .await;
 

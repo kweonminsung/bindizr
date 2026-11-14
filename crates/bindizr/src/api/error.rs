@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::api::middleware::body_parser::{DEFAULT_BODY_BYTES, MAX_UPLOAD_BODY_BYTES};
 
-/// The HTTP status each error code answers with. Every code is spelled out,
+/// Return the HTTP status each error code answers with. Every code is spelled out,
 /// so a new one has to choose its status here.
 pub(crate) fn http_status(code: ErrorCode) -> StatusCode {
     match code {
@@ -66,8 +66,8 @@ pub(crate) struct ApiError(pub(crate) ServiceError);
 
 impl From<ServiceError> for ApiError {
     /// Wrap a service error for HTTP response conversion.
-    fn from(value: ServiceError) -> Self {
-        Self(value)
+    fn from(error: ServiceError) -> Self {
+        Self(error)
     }
 }
 
@@ -210,12 +210,12 @@ mod tests {
             .unwrap()
             .into_parts();
 
-        let Query(query) = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &())
+        let Query(request) = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &())
             .await
             .unwrap();
 
-        assert_eq!(query.record_type.as_deref(), Some("A"));
-        assert!(query.dry_run);
+        assert_eq!(request.record_type.as_deref(), Some("A"));
+        assert!(request.dry_run);
     }
 
     /// Verify that an unknown body field is rejected, naming the field.

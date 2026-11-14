@@ -84,7 +84,7 @@ pub async fn list_between_serials_tx(
     }
 }
 
-/// Delete expired whole serials, retaining a contiguous IXFR chain. Older
+/// Prune expired whole serials, retaining a contiguous IXFR chain. Older
 /// requests use AXFR; return the deleted row count.
 pub async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_>,
@@ -104,7 +104,7 @@ pub async fn prune_by_zone_id_older_than_tx(
     }
 }
 
-/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
+/// Prune history outside the unambiguous RFC 1982 half-range behind the current serial.
 pub async fn prune_by_zone_id_outside_serial_window_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,

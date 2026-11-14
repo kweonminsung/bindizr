@@ -266,8 +266,8 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
         socket
             .send_to(&query.finish(), ("127.0.0.1", app.dns_port()))
             .unwrap();
-        let mut response = vec![0; 4096];
-        let received = socket.recv_from(&mut response);
+        let mut buffer = vec![0; 4096];
+        let received = socket.recv_from(&mut buffer);
 
         if advertised == 512 {
             assert!(matches!(
@@ -283,8 +283,8 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
                 truncated_before
             );
         } else {
-            response.truncate(received.unwrap().0);
-            let mut response = Message::from_octets(response).unwrap();
+            buffer.truncate(received.unwrap().0);
+            let mut response = Message::from_octets(buffer).unwrap();
 
             assert!(response.header().tc());
             assert_eq!(response.header().rcode(), Rcode::NOERROR);
@@ -750,8 +750,8 @@ async fn questionless_malformed_extensions_receive_formerr() {
     let key = tsig::create_tsig_key(&app, "questionless-malformed", KeyRole::Admin).await;
 
     for malformed_tsig in [false, true] {
-        let mut request = MessageBuilder::new_vec().additional();
-        request
+        let mut query = MessageBuilder::new_vec().additional();
+        query
             .opt(|opt| {
                 opt.set_udp_payload_size(512);
                 Ok(())
@@ -759,11 +759,11 @@ async fn questionless_malformed_extensions_receive_formerr() {
             .unwrap();
 
         if malformed_tsig {
-            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut request, Time48::now())
+            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut query, Time48::now())
                 .unwrap();
         } else {
             // A second OPT is invalid but its record boundaries are readable.
-            request
+            query
                 .opt(|opt| {
                     opt.set_udp_payload_size(512);
                     Ok(())
@@ -771,10 +771,10 @@ async fn questionless_malformed_extensions_receive_formerr() {
                 .unwrap();
         }
 
-        let mut request = request.finish();
+        let mut query = query.finish();
 
         if malformed_tsig {
-            let message = Message::from_octets(request.as_slice()).unwrap();
+            let message = Message::from_octets(query.as_slice()).unwrap();
             let mut additional = message.additional().unwrap();
             additional.next().unwrap().unwrap();
             let tsig_start = additional.pos();
@@ -782,13 +782,13 @@ async fn questionless_malformed_extensions_receive_formerr() {
 
             // TSIG requires CLASS ANY; zero breaks framing-independent validation.
             let class_start = tsig_start + owner_len + 2;
-            request[class_start..class_start + 2].copy_from_slice(&0u16.to_be_bytes());
+            query[class_start..class_start + 2].copy_from_slice(&0u16.to_be_bytes());
         }
 
         for response in [
-            dns::exchange_udp(app.dns_port(), &request).unwrap(),
-            dns::exchange_tcp(app.dns_port(), &request).unwrap(),
-            dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap(),
+            dns::exchange_udp(app.dns_port(), &query).unwrap(),
+            dns::exchange_tcp(app.dns_port(), &query).unwrap(),
+            dns::exchange_tls(app.dns_tls_port(), &query, tls::dot_client(&app)).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
 

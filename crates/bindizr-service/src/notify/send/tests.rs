@@ -14,7 +14,8 @@ use crate::authorization::Caller;
 use crate::dns_client::notify;
 use crate::types::CreateSecondaryRequest;
 
-/// A failed ACK remains typed for propagation while reports render the same error text.
+/// Verify that a failed ACK remains typed for propagation while reports render the same
+/// error text.
 #[tokio::test]
 async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     let mut config: Config = serde_json::from_str("{}").unwrap();
@@ -133,7 +134,7 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     }
 }
 
-/// Signing-key preparation keeps its service and underlying storage cause.
+/// Verify that signing-key preparation keeps its service and underlying storage cause.
 #[test]
 fn notify_key_failure_preserves_service_source() {
     let error = SendNotifyError::Key(ServiceError::internal_with_source(

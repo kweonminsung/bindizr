@@ -15,7 +15,7 @@ pub(crate) async fn send_catalog_response(
     signer: &mut Option<TransferSigner>,
     content: (CatalogZone, Vec<String>),
 ) -> Result<(), DnsError> {
-    let (catalog_zone, member_zones) = content;
+    let (catalog_zone, member_zone_names) = content;
     log::info!(
         "{response_qtype} request for catalog zone: {}",
         catalog_zone.name
@@ -60,10 +60,10 @@ pub(crate) async fn send_catalog_response(
             .await?;
 
         // Member PTRs tell secondaries which zones this catalog provisions.
-        for member_zone in &member_zones {
+        for member_zone_name in &member_zone_names {
             writer
                 .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-                    builder.add_catalog_ptr(&catalog_zone, member_zone)
+                    builder.add_catalog_ptr(&catalog_zone, member_zone_name)
                 })
                 .await?;
         }

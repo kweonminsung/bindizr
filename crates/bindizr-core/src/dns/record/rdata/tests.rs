@@ -47,7 +47,7 @@ fn encode_caa_rdata_returns_flags_tag_length_tag_and_value() {
         EncodedRdata::from_columns(RecordType::Caa, "0 issue \"letsencrypt.org\"", None).unwrap();
 
     assert_eq!(encoded.record_type, 257);
-    let mut expected = vec![0u8, 5];
+    let mut expected = vec![0, 5];
     expected.extend_from_slice(b"issue");
     expected.extend_from_slice(b"letsencrypt.org");
 
@@ -162,10 +162,10 @@ fn canonical_rdata_resolves_compression_without_consuming_the_next_record() {
 
     assert_eq!(rdata.as_bytes(), b"\0\x0a\x02ns\x07example\x03com\0");
     assert!(Rdata::parse_canonical(Rtype::MX, &message, start, 3).is_err());
-    assert!(matches!(
+    assert_eq!(
         Rdata::parse_canonical(Rtype::MX, &message, start, 5),
         Err(ParseRdataError::TrailingBytes)
-    ));
+    );
     assert!(Rdata::parse_canonical(Rtype::MX, &message, usize::MAX, 4).is_err());
     assert!(Rdata::parse_canonical(Rtype::MX, &message, start, usize::MAX).is_err());
 }
@@ -217,9 +217,9 @@ fn canonical_rdata_rejects_malformed_known_types() {
     let bytes = [192, 0, 2, 1, 0];
 
     assert!(Rdata::parse_canonical(Rtype::A, &bytes, 0, 3).is_err());
-    assert!(matches!(
+    assert_eq!(
         Rdata::parse_canonical(Rtype::A, &bytes, 0, 5),
         Err(ParseRdataError::TrailingBytes)
-    ));
+    );
     assert!(Rdata::parse_canonical(Rtype::DNSKEY, &bytes, 0, 3).is_err());
 }

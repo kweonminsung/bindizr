@@ -8,6 +8,15 @@ use crate::cli::commands::ReadInputError;
 use crate::cli::output::RenderOutputError;
 use crate::daemon::DaemonError;
 
+/// 2 is left to clap's usage errors. The daemon is a systemd service, so 6
+/// and 7 keep the meanings it prints for them: `NOTCONFIGURED`, `NOTRUNNING`.
+const EXIT_FAILURE: i32 = 1;
+const EXIT_NOT_FOUND: i32 = 3;
+const EXIT_CONFLICT: i32 = 4;
+const EXIT_DENIED: i32 = 5;
+const EXIT_CONFIG: i32 = 6;
+const EXIT_UNAVAILABLE: i32 = 7;
+
 /// Error surfaced to the CLI user: the daemon's message plus, when the daemon
 /// sent a machine-readable code, an actionable hint derived from it.
 #[derive(Debug, Error)]
@@ -58,7 +67,8 @@ impl From<ConfigError> for CliError {
 
 /// The daemon's own failure, classed so a supervisor knows whether to retry.
 impl From<DaemonError> for CliError {
-    /// A configuration or TLS failure is permanent; anything else may pass.
+    /// Classify a configuration or TLS failure as permanent; anything else may
+    /// pass.
     fn from(error: DaemonError) -> Self {
         if error.is_configuration() {
             Self::configuration(error)
@@ -68,18 +78,9 @@ impl From<DaemonError> for CliError {
     }
 }
 
-/// 2 is left to clap's usage errors. The daemon is a systemd service, so 6
-/// and 7 keep the meanings it prints for them: `NOTCONFIGURED`, `NOTRUNNING`.
-const EXIT_FAILURE: i32 = 1;
-const EXIT_NOT_FOUND: i32 = 3;
-const EXIT_CONFLICT: i32 = 4;
-const EXIT_DENIED: i32 = 5;
-const EXIT_CONFIG: i32 = 6;
-const EXIT_UNAVAILABLE: i32 = 7;
-
 impl CliError {
-    /// A request that failed before or after reaching the daemon, with no
-    /// code to hint from.
+    /// Build the error of a request that failed before or after reaching the
+    /// daemon, with no code to hint from.
     pub(crate) fn request(message: impl fmt::Display) -> Self {
         Self {
             code: None,
@@ -102,7 +103,7 @@ impl CliError {
         }
     }
 
-    /// An error reply from the daemon, carrying whatever code it sent.
+    /// Build the error of a daemon's error reply, carrying whatever code it sent.
     pub(crate) fn from_daemon(code: Option<ErrorCode>, message: String) -> Self {
         Self {
             code,
@@ -112,7 +113,7 @@ impl CliError {
         }
     }
 
-    /// The daemon could not be reached. Exits distinctly so a script can
+    /// Report that the daemon could not be reached. Exits distinctly so a script can
     /// retry, where a rejected request would fail the same way again.
     pub(crate) fn daemon_unreachable(
         source: impl std::error::Error + Send + Sync + 'static,
@@ -125,7 +126,7 @@ impl CliError {
         }
     }
 
-    /// The configuration is unusable. Exits distinctly so a supervisor can
+    /// Report that the configuration is unusable. Exits distinctly so a supervisor can
     /// stop retrying a start that will fail the same way every time.
     pub(crate) fn configuration(source: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self {
@@ -136,7 +137,7 @@ impl CliError {
         }
     }
 
-    /// The exit status a script branches on. Every code is spelled out, so a
+    /// Return the exit status a script branches on. Every code is spelled out, so a
     /// new one has to choose its class here.
     pub(crate) fn exit_code(&self) -> i32 {
         match self.failure {
@@ -196,8 +197,9 @@ impl CliError {
         }
     }
 
-    /// Every code is spelled out, so a new one has to decide whether it can
-    /// point at a command instead of silently defaulting to no hint.
+    /// Return an actionable hint for the daemon's code. Every code is spelled
+    /// out, so a new one has to decide whether it can point at a command
+    /// instead of silently defaulting to no hint.
     pub(crate) fn hint(&self) -> Option<&'static str> {
         match self.code? {
             ErrorCode::ZoneNotFound => Some("Run 'bindizr zone list' to see available zones."),

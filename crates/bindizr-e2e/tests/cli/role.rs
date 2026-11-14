@@ -99,10 +99,10 @@ async fn role_grants_support_create_list_and_revoke() {
 
     assert!(!listed.contains(&role_name), "{listed}");
 
-    let roles = app.run_cli_success(&["role", "list"], None).await;
+    let listed = app.run_cli_success(&["role", "list"], None).await;
 
     assert!(
-        roles.contains("TOKENS") && roles.contains("TSIG-KEYS"),
-        "{roles}"
+        listed.contains("TOKENS") && listed.contains("TSIG-KEYS"),
+        "{listed}"
     );
 }

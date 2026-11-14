@@ -21,7 +21,7 @@ pub(crate) async fn get_daemon_status(
 
     let counts = async {
         let zones = zone::count_all(cx).await?;
-        let secondaries = secondary::list_enabled(cx).await?.len();
+        let secondaries = secondary::list_enabled(cx).await?.len() as u64;
         Ok::<_, ServiceError>((zones, secondaries))
     };
     let (zones, secondaries, database_error) = match time::timeout(DB_PROBE_TIMEOUT, counts).await {
@@ -42,13 +42,12 @@ pub(crate) async fn get_daemon_status(
     } else {
         "http"
     };
-    let status = DaemonStatusResponse {
+    let response = DaemonStatusResponse {
         pid: Some(process::id()),
         version: env!("CARGO_PKG_VERSION").to_string(),
         started_at_ms: cx.started_at().map_or(0, |at| at.timestamp_millis() as u64),
         api_url: format!(
-            "{}://{}",
-            scheme,
+            "{scheme}://{}",
             SocketAddr::new(config.api.listen_addr, config.api.listen_port)
         ),
         api_authentication: config.api.authentication_required,
@@ -64,7 +63,7 @@ pub(crate) async fn get_daemon_status(
 
     Ok(DaemonResponse {
         message: "Status retrieved successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 

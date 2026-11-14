@@ -96,10 +96,10 @@ async fn record_bulk_insert_rejects_invalid_batch_atomically() {
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_returns_not_found_when_zone_is_unknown() {
     let app = TestApp::start().await;
-    let missing_zone = app.zone_name("missing.example.com");
+    let missing_zone_name = app.zone_name("missing.example.com");
 
     let request = json!({
-        "zone_name": missing_zone,
+        "zone_name": missing_zone_name,
         "records": [ { "name": "a", "type": "A", "value": "192.0.2.1" } ]
     });
 

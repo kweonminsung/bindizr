@@ -6,7 +6,8 @@ use tokio::time;
 
 use super::*;
 
-/// Connected clients accept replies only from the address and port they queried.
+/// Exchange datagrams through connected clients, which accept replies only
+/// from the address and port they queried.
 async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     let socket = tokio::net::UdpSocket::bind((bind_ip, 0)).await.unwrap();
     let port = socket.local_addr().unwrap().port();
@@ -50,12 +51,12 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     // Responses retain their own destination even after other packets arrive.
     let mut replies = JoinSet::new();
 
-    for (target, data) in received.into_iter().rev() {
+    for (target, response) in received.into_iter().rev() {
         let server = server.clone();
 
         replies.spawn(async move {
             server
-                .send_to(&data, target, ResponseLimit::UDP)
+                .send_to(&response, target, ResponseLimit::UDP)
                 .await
                 .unwrap()
         });

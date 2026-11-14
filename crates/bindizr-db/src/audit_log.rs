@@ -55,7 +55,7 @@ pub async fn count_by_filter(db: &Db, filter: &AuditLogFilter) -> Result<u64, Da
     }
 }
 
-/// Delete the rows made before `cutoff`, returning how many.
+/// Prune the rows made before `cutoff`, returning how many.
 pub async fn prune_older_than(db: &Db, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::audit_log::prune_older_than(pool, cutoff).await,

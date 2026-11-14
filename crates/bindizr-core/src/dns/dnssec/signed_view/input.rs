@@ -18,8 +18,8 @@ use crate::model::dnssec_key::DS_DIGEST_TYPE;
 use crate::model::dnssec_policy::DnssecDenial;
 
 impl SignedViewParams<'_> {
-    /// User records, the synthesized SOA, and the apex key record sets in canonical
-    /// order — the exact content the chain and the signatures must cover.
+    /// Collect user records, the synthesized SOA, and the apex key record sets in
+    /// canonical order — the exact content the chain and the signatures must cover.
     pub(crate) fn signing_input(
         self,
         apex: &WireName,
@@ -159,8 +159,8 @@ impl SignedViewParams<'_> {
     }
 }
 
-/// The typed SOA the denial generators require (they read MINIMUM per
-/// RFC 9077), parsed back from the one byte encoding the transfer serves.
+/// Parse the typed SOA the denial generators require (they read MINIMUM per
+/// RFC 9077) back from the one byte encoding the transfer serves.
 fn parse_soa(rdata: &[u8]) -> Result<Soa<WireName>, SignZoneError> {
     let mut parser = Parser::from_ref(rdata);
     Soa::parse(&mut parser)

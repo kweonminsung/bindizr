@@ -86,7 +86,7 @@ pub enum VerifyResponseError {
 }
 
 impl VerifyResponseError {
-    /// Report whether MAC validation authenticated the server error.
+    /// Return whether MAC validation authenticated the server error.
     pub fn is_authenticated(&self) -> bool {
         matches!(self, Self::ServerBadTime(_) | Self::ServerError(_))
     }
@@ -198,7 +198,7 @@ pub fn verify_response(
     Ok(())
 }
 
-/// Bytes a signed message must leave for its TSIG record.
+/// Return the bytes a signed message must leave for its TSIG record.
 pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
     usize::from(signer.key().compose_len())
 }
@@ -321,7 +321,8 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
     }
 }
 
-/// A request's Error is zero; MAC length obeys the algorithm's wire bounds (RFC 8945, Section 4.2).
+/// Return whether a request's Error is zero and its MAC length obeys the
+/// algorithm's wire bounds (RFC 8945, Section 4.2).
 pub(crate) fn is_request_tsig_valid<O: AsRef<[u8]>, N: ToName>(tsig: &Tsig<O, N>) -> bool {
     tsig.error() == TsigRcode::NOERROR
         && is_mac_size_in_bounds(tsig.algorithm(), tsig.mac().as_ref().len())

@@ -33,14 +33,14 @@ impl ZoneName {
         &self.0
     }
 
-    /// The zone's decoded, case-folded octet labels.
+    /// Return the zone's decoded, case-folded octet labels.
     pub fn labels(&self) -> Vec<Vec<u8>> {
         super::decode_name_labels(&self.0)
             .expect("validated zone name")
             .0
     }
 
-    /// The absolute form, with the trailing dot.
+    /// Return the absolute form, with the trailing dot.
     pub fn to_fqdn(&self) -> String {
         super::to_fqdn(&self.0)
     }
@@ -62,7 +62,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }

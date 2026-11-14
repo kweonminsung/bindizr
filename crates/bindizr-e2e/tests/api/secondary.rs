@@ -165,7 +165,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     let zone_name = zone["name"].as_str().unwrap();
 
     // `domain` renders a name without its root dot.
-    let expected_zone = zone_name.to_string();
+    let expected_zone_name = zone_name.to_string();
 
     let key = tsig::create_tsig_key(&app, "notify-key", KeyRole::Own).await;
     let signed_receiver = FakeSecondary::start(Some(&key));
@@ -195,7 +195,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(
         signed_receiver.received(),
         vec![ReceivedNotify {
-            zone: expected_zone.clone(),
+            zone: expected_zone_name.clone(),
             signed: true,
             verified: true,
         }]
@@ -203,7 +203,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(
         plain_receiver.received(),
         vec![ReceivedNotify {
-            zone: expected_zone.clone(),
+            zone: expected_zone_name.clone(),
             signed: false,
             verified: false,
         }]
@@ -246,7 +246,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(
         wrong_receiver.received(),
         vec![ReceivedNotify {
-            zone: expected_zone,
+            zone: expected_zone_name,
             signed: true,
             verified: false,
         }]

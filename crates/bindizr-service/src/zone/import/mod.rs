@@ -49,7 +49,7 @@ async fn import_transfer(
     caller: &Caller,
     zone_name: &ZoneName,
     client: &mut AxfrClient,
-    server: &str,
+    address: &str,
     options: ImportOptions,
 ) -> Result<ImportZoneResponse, ServiceError> {
     // Reject invalid or unauthorized requests before AXFR; recheck in the transaction.
@@ -65,7 +65,7 @@ async fn import_transfer(
         .await
         .map_err(|error| {
             ServiceError::invalid_input_with_source(
-                format!("AXFR from {server} failed: {error}"),
+                format!("AXFR from {address} failed: {error}"),
                 error,
             )
         })?;

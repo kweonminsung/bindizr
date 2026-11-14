@@ -2,9 +2,6 @@
 
 use bindizr_core::dns::name;
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::dnssec_record::DnssecRecord;
-use bindizr_core::model::record::Record;
-use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
@@ -26,7 +23,7 @@ pub async fn export(
     // single consistent view, not stale SOA metadata with newer records.
     let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;
 
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         caller
             .reauthenticate_tx(&mut tx)
@@ -39,7 +36,7 @@ pub async fn export(
             Vec::new()
         };
 
-        Ok::<(Zone, Vec<Record>, Vec<DnssecRecord>), ServiceError>((zone, records, derived))
+        Ok((zone, records, derived))
     }
     .await;
 

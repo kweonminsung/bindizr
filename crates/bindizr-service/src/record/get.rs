@@ -75,10 +75,10 @@ pub async fn list_by_filter_with_zone(
 
     // Scoped callers read unknown and invisible zones alike as empty
     // pages, so skip the 404 probe.
-    if let Some(name) = zone_name.as_ref()
+    if let Some(zone_name) = zone_name.as_ref()
         && scope_role_id.is_none()
     {
-        zone::lookup_by_name(cx, name).await?;
+        zone::lookup_by_name(cx, zone_name).await?;
     }
 
     let name = build_record_name_filter(filter.name.clone(), zone_name.as_ref());

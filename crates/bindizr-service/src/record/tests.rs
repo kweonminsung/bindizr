@@ -1,6 +1,7 @@
 use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
 use bindizr_core::model::role_grant::Action;
+use bindizr_db::Db;
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
@@ -15,7 +16,7 @@ use crate::{Context, role, token, zone};
 async fn context() -> Context {
     let mut config: Config = serde_json::from_str("{}").unwrap();
     config.database.sqlite.file_path = "sqlite::memory:".to_string();
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let db = Db::connect(&config.database).await.unwrap();
     Context::new(
         config,
         String::new(),
@@ -118,8 +119,8 @@ async fn record_write_actions_follow_transactional_grants() {
                 grant(&cx, &["record:delete"]).await;
             }
 
-            let name = zone::normalize_name("example.test").unwrap();
-            let before = zone::get_by_name(&cx, &admin, &name).await.unwrap();
+            let zone_name = zone::normalize_name("example.test").unwrap();
+            let before = zone::get_by_name(&cx, &admin, &zone_name).await.unwrap();
             let count = count_all(&cx).await.unwrap();
             let created = create(
                 &cx,
@@ -161,7 +162,7 @@ async fn record_write_actions_follow_transactional_grants() {
             let updated_by_name = update_by_name(
                 &cx,
                 &caller,
-                &name,
+                &zone_name,
                 "existing",
                 &serde_json::from_value(json!({
                     "value": "192.0.2.5", "dry_run": dry_run
@@ -186,7 +187,10 @@ async fn record_write_actions_follow_transactional_grants() {
             if dry_run {
                 assert_eq!(count_all(&cx).await.unwrap(), count);
                 assert_eq!(
-                    zone::get_by_name(&cx, &admin, &name).await.unwrap().serial,
+                    zone::get_by_name(&cx, &admin, &zone_name)
+                        .await
+                        .unwrap()
+                        .serial,
                     before.serial
                 );
             } else {
@@ -215,8 +219,11 @@ async fn record_writes_reject_revoked_credentials() {
         .unwrap();
         let caller = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
         token::delete(&cx, &admin, "writer-token").await.unwrap();
-        let name = zone::normalize_name("example.test").unwrap();
-        let serial = zone::get_by_name(&cx, &admin, &name).await.unwrap().serial;
+        let zone_name = zone::normalize_name("example.test").unwrap();
+        let serial = zone::get_by_name(&cx, &admin, &zone_name)
+            .await
+            .unwrap()
+            .serial;
         let count = count_all(&cx).await.unwrap();
 
         let error = create(
@@ -265,7 +272,7 @@ async fn record_writes_reject_revoked_credentials() {
         let error = update_by_name(
             &cx,
             &caller,
-            &name,
+            &zone_name,
             "existing",
             &serde_json::from_value(json!({
                 "value": "192.0.2.5", "dry_run": dry_run
@@ -277,7 +284,10 @@ async fn record_writes_reject_revoked_credentials() {
         assert_eq!(error.code(), ErrorCode::InvalidToken);
         assert_eq!(count_all(&cx).await.unwrap(), count);
         assert_eq!(
-            zone::get_by_name(&cx, &admin, &name).await.unwrap().serial,
+            zone::get_by_name(&cx, &admin, &zone_name)
+                .await
+                .unwrap()
+                .serial,
             serial
         );
     }

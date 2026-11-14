@@ -119,7 +119,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
 
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
     assert_eq!(
@@ -140,8 +140,14 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
         .len(),
         1
     );
-    assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
-    assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int())).len(),
+        1
+    );
+    assert_eq!(
+        rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int())).len(),
+        1
+    );
     assert!(rrsigs.iter().all(|record| record.expires_at.is_some()));
     assert!(
         rrsigs
@@ -346,13 +352,16 @@ fn signing_leaves_delegation_ns_and_glue_unsigned() {
 
     // RFC 4035, Section 2.2: delegation NS and glue, including A at the cut,
     // are unsigned. NSEC covers the delegation point, not glue.
-    assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_NS).is_empty());
-    assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_A).is_empty());
-    assert!(rrsigs_covering(&diff.added, &glue, RECORD_TYPE_A).is_empty());
+    assert!(rrsigs_covering(&diff.added, &sub, i32::from(Rtype::NS.to_int())).is_empty());
+    assert!(rrsigs_covering(&diff.added, &sub, i32::from(Rtype::A.to_int())).is_empty());
+    assert!(rrsigs_covering(&diff.added, &glue, i32::from(Rtype::A.to_int())).is_empty());
 
     // The DS record set at the cut is the parent's authoritative data (RFC 4035,
     // Section 2.4), unlike the NS beside it.
-    assert_eq!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_DS).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &sub, i32::from(Rtype::DS.to_int())).len(),
+        1
+    );
     assert!(
         !diff
             .added
@@ -402,11 +411,11 @@ fn signing_excludes_ds_below_an_existing_delegation() {
         });
 
         assert_eq!(
-            rrsigs_covering(&diff.added, &delegation, RECORD_TYPE_DS).len(),
+            rrsigs_covering(&diff.added, &delegation, i32::from(Rtype::DS.to_int())).len(),
             1
         );
         assert!(
-            rrsigs_covering(&diff.added, &below_cut, RECORD_TYPE_DS).is_empty(),
+            rrsigs_covering(&diff.added, &below_cut, i32::from(Rtype::DS.to_int())).is_empty(),
             "{denial:?}"
         );
         assert!(!diff.added.iter().any(|record| record.name == below_cut));
@@ -442,7 +451,7 @@ fn mixed_ttl_record_set_signs_at_the_minimum() {
     });
 
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
-    let rrsig = rrsigs_covering(&diff.added, &www, RECORD_TYPE_A);
+    let rrsig = rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int()));
 
     assert_eq!(rrsig.len(), 1);
     assert_eq!(rrsig[0].ttl, Ttl::from_secs(300));

@@ -22,6 +22,7 @@ pub(crate) async fn resign_zone_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         let Some(signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
@@ -40,6 +41,7 @@ pub(crate) async fn resign_zone_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
+
     let changed = transaction::finish_tx(tx, apply_result, "failed to sign zone").await?;
 
     if changed.is_some() {
@@ -56,6 +58,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
@@ -101,6 +104,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
+
     let changed = transaction::finish_tx(tx, apply_result, "failed to start key rollover").await?;
 
     if changed.is_some() {
@@ -117,6 +121,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
@@ -156,6 +161,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
+
     let changed =
         transaction::finish_tx(tx, apply_result, "failed to advance key rollover").await?;
 
@@ -173,6 +179,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
@@ -189,9 +196,8 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             Ok(delegation) => delegation,
             Err(error) => {
                 log::warn!(
-                    "Parent of zone {} could not be asked for its DS, so the rollover waits: {}",
-                    signed.zone.name.as_str(),
-                    error
+                    "Parent of zone {} could not be asked for its DS, so the rollover waits: {error}",
+                    signed.zone.name
                 );
                 return Ok(None);
             }
@@ -209,7 +215,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
                 log::warn!(
                     "Parent of zone {} answers only in a DS digest bindizr cannot compute, so \
                      the rollover waits",
-                    signed.zone.name.as_str()
+                    signed.zone.name
                 );
             }
 
@@ -235,6 +241,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
+
     let changed =
         transaction::finish_tx(tx, apply_result, "failed to advance key rollover").await?;
 
@@ -277,6 +284,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to remove retired keys").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
@@ -315,6 +323,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
+
     let changed = transaction::finish_tx(tx, apply_result, "failed to remove retired keys").await?;
 
     if changed.is_some() {

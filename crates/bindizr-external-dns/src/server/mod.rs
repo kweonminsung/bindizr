@@ -16,14 +16,7 @@ use serde::Serialize;
 use crate::metrics::AdapterMetrics;
 use crate::upstream::{UpstreamClient, UpstreamError};
 use crate::wire;
-use crate::wire::{Changes, DomainFilter, Endpoint, MEDIA_TYPE};
-
-/// State shared by both routers: the bindizr client every handler forwards to.
-#[derive(Debug)]
-pub(crate) struct AppState {
-    pub(crate) upstream: UpstreamClient,
-    pub(crate) metrics: AdapterMetrics,
-}
+use crate::wire::{ApplyExternalDnsChangesRequest, Changes, DomainFilter, Endpoint, MEDIA_TYPE};
 
 /// Whole-plan and whole-desired-set POSTs outgrow axum's 2 MiB default on
 /// large initial reconciliations; matches the bindizr server's upload cap.
@@ -34,6 +27,13 @@ const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 /// the adapter without a restart.
 const NO_MANAGEABLE_NAMES: &str = "no manageable names: grant the API token's role record \
                                    actions with 'bindizr role grant', or create a zone first";
+
+/// State shared by both routers: the bindizr client every handler forwards to.
+#[derive(Debug)]
+pub(crate) struct AppState {
+    pub(crate) upstream: UpstreamClient,
+    pub(crate) metrics: AdapterMetrics,
+}
 
 /// Build the webhook router served on the (localhost) provider listener.
 pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
@@ -114,7 +114,7 @@ fn result_label(response: &Response) -> &'static str {
     }
 }
 
-/// The endpoint label a route reports under (`AdapterMetrics::new` pre-registers these).
+/// Return the endpoint label a route reports under (`AdapterMetrics::new` pre-registers these).
 /// HEAD serves through `routing::get`; an unrouted method 405s, so `None`.
 fn endpoint_label(method: &Method, route: &str) -> Option<&'static str> {
     match (method.as_str(), route) {
@@ -126,7 +126,7 @@ fn endpoint_label(method: &Method, route: &str) -> Option<&'static str> {
     }
 }
 
-/// Record request count and latency for the matched webhook route.
+/// Count requests and their latency for the matched webhook route.
 async fn track_webhook_metrics(
     State(state): State<Arc<AppState>>,
     request: Request,
@@ -180,7 +180,7 @@ async fn handle_negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap
     }
 }
 
-/// `GET /records` — all managed records as grouped endpoints.
+/// `GET /records` — list all managed records as grouped endpoints.
 async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if !media_type::is_acceptable(&headers) {
         return (
@@ -215,8 +215,8 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
         }
     };
 
-    let bindizr_changes = match changes.to_apply_changes_request() {
-        Ok(bindizr_changes) => bindizr_changes,
+    let request = match ApplyExternalDnsChangesRequest::try_from(&changes) {
+        Ok(request) => request,
         Err(error) => {
             log::warn!("event=records_apply rejected={error}");
             return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
@@ -224,7 +224,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
     };
 
     // Keep the whole plan in one upstream mutation so partial application cannot escape.
-    match state.upstream.apply_changes(&bindizr_changes).await {
+    match state.upstream.apply_changes(&request).await {
         Ok(()) => {
             log::info!(
                 "event=records_apply create={} update={} delete={} ms={:.1}",
@@ -280,8 +280,8 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
     }
 }
 
-/// `GET /healthz` — this process is up, bindizr answers, and it accepts the
-/// adapter's token.
+/// `GET /healthz` — report that this process is up, bindizr answers, and it
+/// accepts the adapter's token.
 async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
     match state.upstream.probe_health().await {
         Ok(()) => (StatusCode::OK, "ok").into_response(),
@@ -299,7 +299,7 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
     }
 }
 
-/// `GET /metrics` — adapter-local Prometheus metrics.
+/// `GET /metrics` — serve adapter-local Prometheus metrics.
 async fn handle_metrics(State(state): State<Arc<AppState>>) -> Response {
     (
         StatusCode::OK,

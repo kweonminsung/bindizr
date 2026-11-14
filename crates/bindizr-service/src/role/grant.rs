@@ -68,6 +68,7 @@ pub async fn create(
     };
 
     let mut tx = transaction::begin_tx(cx, "failed to create role grant").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -113,6 +114,7 @@ pub async fn create(
         Ok(grant)
     }
     .await;
+
     let grant = transaction::finish_tx(tx, apply_result, "failed to create role grant").await?;
 
     Ok(RoleGrantResponse::from_grant(
@@ -122,7 +124,7 @@ pub async fn create(
     ))
 }
 
-/// Every grant of `role_name`, with the zone each covers.
+/// List every grant of `role_name`, with the zone each covers.
 pub async fn list(
     cx: &Context,
     caller: &Caller,
@@ -136,13 +138,14 @@ pub async fn list(
     list_by_role(cx, &role, page).await
 }
 
-/// The grants of `token`'s role; any token may read its own.
+/// List the grants of `token`'s role; any token may read its own.
 pub async fn list_self(
     cx: &Context,
     token: &ApiToken,
     page: PageRequest,
 ) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
     pagination::validate_page_limit(page.limit)?;
+
     let role = bindizr_db::role::get(cx.db(), token.role_id)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(token.role_id))?;
@@ -168,6 +171,7 @@ pub async fn revoke(
         .ok_or_else(|| ServiceError::role_grant_not_found(grant_id))?;
 
     let mut tx = transaction::begin_tx(cx, "failed to revoke role grant").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -204,7 +208,7 @@ pub async fn revoke(
     transaction::finish_tx(tx, apply_result, "failed to revoke role grant").await
 }
 
-/// A grant's audit detail, in the request's field names.
+/// Describe a grant for its audit detail, in the request's field names.
 fn describe_grant(grant: &RoleGrant, zone_name: Option<&str>) -> String {
     format!(
         "zone_name {}, actions {}, record_name_pattern {}, record_types {}",
@@ -215,7 +219,7 @@ fn describe_grant(grant: &RoleGrant, zone_name: Option<&str>) -> String {
     )
 }
 
-/// A role's grants as responses, each with the name of the zone it covers.
+/// List a role's grants as responses, each with the name of the zone it covers.
 async fn list_by_role(
     cx: &Context,
     role: &Role,

@@ -248,8 +248,7 @@ async fn serve(
                     timers.insert((request.deadline, id));
                     ready.push_back(id);
                     log::info!(
-                        "Retransmitting NOTIFY to {} after {:?} of silence",
-                        server_addr,
+                        "Retransmitting NOTIFY to {server_addr} after {:?} of silence",
                         request.timeout
                     );
                 } else {
@@ -259,7 +258,7 @@ async fn serve(
                     let error = if request.waiting {
                         ExchangeMessageError::ResponseTimedOut {
                             what: "NOTIFY",
-                            server: server_addr
+                            addr: server_addr
                         }
                     } else {
                         ExchangeMessageError::SendTimedOut { what: "NOTIFY" }
@@ -303,7 +302,7 @@ async fn serve(
                                 .reply
                                 .send(Err(ExchangeMessageError::IncompleteSend {
                                     what: "NOTIFY",
-                                    server: server_addr,
+                                    addr: server_addr,
                                     sent,
                                     len: request.request.len(),
                                 }
@@ -380,7 +379,7 @@ async fn serve(
     }
 }
 
-/// A connected-socket ICMP/I/O error ends every outstanding request to that peer.
+/// End every outstanding request to a peer on a connected-socket ICMP/I/O error.
 fn fail_requests(requests: &mut HashMap<u16, PendingNotify>, error: io::Error) {
     let error = Arc::new(error);
     for (_, request) in requests.drain() {

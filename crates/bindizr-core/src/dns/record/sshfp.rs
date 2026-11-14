@@ -13,7 +13,7 @@ pub struct SshfpRecordValue {
 }
 
 impl SshfpRecordValue {
-    /// The value is `<algorithm> <fingerprint type> <fingerprint>`; the hex
+    /// Parse `<algorithm> <fingerprint type> <fingerprint>`; the hex
     /// fingerprint may be split into whitespace-separated groups.
     pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         let mut fields = value.split_whitespace();
@@ -72,16 +72,17 @@ impl SshfpRecordValue {
             "{} {} {}",
             self.algorithm,
             self.fingerprint_type,
-            value::hex_upper(&self.fingerprint)
+            hex::encode_upper(&self.fingerprint)
         )
     }
 
-    /// The wire-format RDATA of a stored value (RFC 4255, Section 3.1).
+    /// Encode the stored value as wire RDATA (RFC 4255, Section 3.1).
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(2 + self.fingerprint.len());
         rdata.push(self.algorithm);
         rdata.push(self.fingerprint_type);
         rdata.extend_from_slice(&self.fingerprint);
+
         Rdata::new(rdata)
     }
 }
@@ -116,12 +117,13 @@ mod tests {
     fn validate_pins_the_fingerprint_length_per_type() {
         let short = SshfpRecordValue::parse("4 2 4B9B").unwrap();
 
-        assert!(
-            short
-                .validate()
-                .unwrap_err()
-                .to_string()
-                .contains("32-byte")
+        assert_eq!(
+            short.validate(),
+            Err(ParseRecordValueError::SshfpFingerprintLength {
+                fingerprint_type: 2,
+                expected: 32,
+                len: 2,
+            })
         );
         assert!(
             SshfpRecordValue::parse("4 9 4B9B")

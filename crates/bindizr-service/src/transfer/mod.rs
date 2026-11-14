@@ -141,7 +141,7 @@ async fn save_unserved(
     }
 }
 
-/// The transfers `filter` selects among those answered to any of `clients`,
+/// List the transfers `filter` selects among those answered to any of `clients`,
 /// newest first.
 pub(crate) async fn list_by_clients(
     cx: &Context,
@@ -171,7 +171,7 @@ pub(crate) async fn list_by_clients(
     Ok(logs)
 }
 
-/// The latest transfer of each zone answered to each of `clients`.
+/// List the latest transfer of each zone answered to each of `clients`.
 pub(crate) async fn list_latest_by_clients(
     cx: &Context,
     clients: &[IpAddr],
@@ -191,7 +191,7 @@ pub(crate) async fn list_latest_by_clients(
     Ok(logs)
 }
 
-/// The latest transfer of `zone_name` answered to any of `clients`.
+/// Find the latest transfer of `zone_name` answered to any of `clients`.
 pub(crate) async fn find_by_clients_and_zone_name(
     cx: &Context,
     clients: &[IpAddr],

@@ -79,7 +79,7 @@ pub async fn get_version(
 ) -> Result<GetZoneVersionResponse, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load version").await?;
 
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         let read = caller
             .reauthenticate_tx(&mut tx)
@@ -98,7 +98,7 @@ pub async fn get_version(
             rewind::list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?,
         );
 
-        Ok::<_, ServiceError>((zone, version, records))
+        Ok((zone, version, records))
     }
     .await;
 
@@ -125,7 +125,7 @@ pub async fn diff_versions(
 ) -> Result<DiffZoneVersionsResponse, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to diff versions").await?;
 
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         let read = caller
             .reauthenticate_tx(&mut tx)
@@ -142,7 +142,7 @@ pub async fn diff_versions(
         let to_records =
             rewind::list_records_at_serial_tx(&mut tx, zone.id, to_serial, zone.serial).await?;
 
-        Ok::<_, ServiceError>(DiffZoneVersionsResponse {
+        Ok(DiffZoneVersionsResponse {
             from_serial,
             to_serial,
             diff: diff::build_record_diff(
@@ -181,8 +181,8 @@ pub async fn rollback(
 
         if !zone.serial.is_newer_than(target_serial) {
             return Err(ServiceError::invalid_input(format!(
-                "target serial {} must be less than the current serial {}",
-                target_serial, zone.serial
+                "target serial {target_serial} must be less than the current serial {}",
+                zone.serial,
             )));
         }
 
@@ -374,12 +374,11 @@ pub async fn rollback(
     if applied {
         cx.metrics().track_serial_bumps(1);
         log::info!(
-            "event=zone_rollback zone={} target_serial={} new_serial={} added={} deleted={}",
-            zone_name,
+            "event=zone_rollback zone={zone_name} target_serial={} new_serial={} added={} deleted={}",
             response.target_serial,
             response.new_serial,
             response.summary.added,
-            response.summary.deleted
+            response.summary.deleted,
         );
 
         notify::notify_after_update(cx, &zone_name).await;

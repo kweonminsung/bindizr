@@ -20,6 +20,8 @@ use crate::socket::types::{
     DaemonCommand, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus,
 };
 
+const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Why the API did not answer a probe as a reachable API.
 #[derive(Debug, Error)]
 enum ProbeApiError {
@@ -34,8 +36,6 @@ enum ProbeApiError {
     ServerFault { line: String },
 }
 
-const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
-
 /// Check whether the daemon responds through its control socket.
 pub(crate) async fn check_running(report: &mut Report) -> bool {
     let status = client::send_control_command::<DaemonStatusResponse>(DaemonCommand::Status)
@@ -48,8 +48,8 @@ pub(crate) async fn check_running(report: &mut Report) -> bool {
                 .pid
                 .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
             report.ok(format!(
-                "Daemon running: pid {} (version {})",
-                pid, status.version
+                "Daemon running: pid {pid} (version {})",
+                status.version
             ));
 
             true
@@ -89,8 +89,8 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
     }
 }
 
-/// Minimal HTTP GET returning the status line; a plain-HTTP API needs no full
-/// HTTP client dependency here.
+/// Send a minimal HTTP GET and return the status line; a plain-HTTP API needs
+/// no full HTTP client dependency here.
 async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiError> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -179,15 +179,15 @@ pub(crate) async fn check_services(report: &mut Report) {
     }
 
     // These serials are the catalog zone's, unlike `zone status`, so say so.
-    let catalog_zone = &doctor.catalog_zone_name;
+    let catalog_zone_name = &doctor.catalog_zone_name;
 
     for secondary in &doctor.secondaries {
         let serial = secondary.visible_serial.map_or(0, Serial::as_u32);
 
         match secondary.status {
             SecondaryStatus::InSync | SecondaryStatus::Reachable => report.ok(format!(
-                "Secondary {}: {} (catalog zone {} at serial {})",
-                secondary.status, secondary.address, catalog_zone, serial
+                "Secondary {}: {} (catalog zone {catalog_zone_name} at serial {serial})",
+                secondary.status, secondary.address
             )),
             SecondaryStatus::Unreachable => report.fail(format!(
                 "Secondary {}: {} ({})",
@@ -196,11 +196,9 @@ pub(crate) async fn check_services(report: &mut Report) {
                 secondary.error.as_deref().unwrap_or("unknown error")
             )),
             SecondaryStatus::Lagging | SecondaryStatus::Ahead => report.fail(format!(
-                "Secondary {}: {} (catalog zone {} at serial {}; bindizr serves {})",
+                "Secondary {}: {} (catalog zone {catalog_zone_name} at serial {serial}; bindizr serves {})",
                 secondary.status,
                 secondary.address,
-                catalog_zone,
-                serial,
                 doctor.catalog_serial.map_or(0, Serial::as_u32)
             )),
         }

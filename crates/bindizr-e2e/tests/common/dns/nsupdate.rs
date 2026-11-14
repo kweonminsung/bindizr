@@ -377,8 +377,8 @@ pub(crate) fn build_update(
 /// A record carrying no rdata, built from an rtype the builder need not know.
 type EmptyRecord = Record<Name<Vec<u8>>, UnknownRecordData<Vec<u8>>>;
 
-/// A record with empty rdata and TTL 0 — the shape every delete-record-set and
-/// name-existence entry takes.
+/// Build a record with empty rdata and TTL 0 — the shape every
+/// delete-record-set and name-existence entry takes.
 fn empty_record(owner: &str, rtype: Rtype, class: Class) -> Result<EmptyRecord, String> {
     let data =
         UnknownRecordData::from_octets(rtype, Vec::new()).map_err(|error| error.to_string())?;

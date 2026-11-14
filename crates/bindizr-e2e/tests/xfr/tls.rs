@@ -157,7 +157,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
-    let serial = app.read_zone_serial(&zone_name).await;
+    let base_serial = app.read_zone_serial(&zone_name).await;
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -170,7 +170,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(app.read_zone_serial(&zone_name).await, serial);
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial);
 
     let plain = exchange_signed_boundary_transfer(
         &mut dns::connect_tcp(app.dns_port()).unwrap(),
@@ -670,7 +670,7 @@ async fn truncated_tls_queries_follow_tsig_validation_order() {
 /// Verify that multi-question queries over TLS receive signed FORMERR responses.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn multi_question_queries_receive_signed_formerr_over_tls() {
+async fn multi_question_queries_receive_signed_formerr() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1014,8 +1014,8 @@ async fn tls_update_returns_not_supported() {
             tsig::sign(&mut request, key).unwrap();
         }
 
-        let frame = dns::exchange_tls(app.dns_tls_port(), &request.finish(), dot_client(&app))
-            .expect("XoT");
+        let frame =
+            dns::exchange_tls(app.dns_tls_port(), &request.finish(), dot_client(&app)).unwrap();
 
         let response = Message::from_octets(frame.as_slice()).unwrap();
 

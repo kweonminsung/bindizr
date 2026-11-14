@@ -30,7 +30,7 @@ pub enum EncodeKeyRdataError {
 }
 
 impl DnssecKey {
-    /// The key's DNSKEY RDATA rebuilt from its stored public half.
+    /// Rebuild the key's DNSKEY RDATA from its stored public half.
     pub(crate) fn to_dnskey(&self) -> Result<Dnskey<Vec<u8>>, EncodeKeyRdataError> {
         let public_key = general_purpose::STANDARD
             .decode(&self.public_key)
@@ -44,7 +44,7 @@ impl DnssecKey {
         .map_err(|error| EncodeKeyRdataError::InvalidPublicKey(Box::new(error)))
     }
 
-    /// The key's DS RDATA (RFC 4034, Section 5.1.4) in `digest_type`, one of
+    /// Build the key's DS RDATA (RFC 4034, Section 5.1.4) in `digest_type`, one of
     /// `DS_DIGEST_TYPES`; the zone publishes `DS_DIGEST_TYPE`.
     pub fn ds_rdata(&self, apex: &WireName, digest_type: u8) -> Result<Rdata, EncodeKeyRdataError> {
         use domain::base::rdata::ComposeRecordData;

@@ -10,7 +10,7 @@ use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
 use bindizr_service::types::UpdateZoneRequest;
 use bindizr_service::{Context, secondary};
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::net::UdpSocket;
 use tokio::sync::watch;
 use tokio::{task, time};
@@ -22,7 +22,7 @@ use super::*;
 fn command_rejects_wrongly_typed_fields() {
     let ok: DaemonCommand = serde_json::from_value(json!({
         "command": "create_tsig_key",
-        "data": { "name": "k", "algorithm": null, "secret": null, "role_name": "admin" },
+        "data": { "name": "k", "algorithm": null, "secret": null, "role_name": "admin" }
     }))
     .unwrap();
 
@@ -31,14 +31,14 @@ fn command_rejects_wrongly_typed_fields() {
     // Defaulting invalid input could generate an unwanted key or apply a preview.
     serde_json::from_value::<DaemonCommand>(json!({
         "command": "create_tsig_key",
-        "data": { "name": "k", "secret": 123, "role_name": "admin" },
+        "data": { "name": "k", "secret": 123, "role_name": "admin" }
     }))
     .unwrap_err();
 
     for run in [json!("true"), json!(true), json!(1)] {
         serde_json::from_value::<DaemonCommand>(json!({
             "command": "rollback_zone",
-            "data": { "name": "z", "serial": 7, "run": run },
+            "data": { "name": "z", "serial": 7, "run": run }
         }))
         .unwrap_err();
     }
@@ -197,7 +197,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     let secondary_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let secondary_request = serde_json::from_value(json!({
         "name": "ack-gate",
-        "address": secondary_socket.local_addr().unwrap().to_string(),
+        "address": secondary_socket.local_addr().unwrap().to_string()
     }))
     .unwrap();
 
@@ -219,7 +219,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     let request = serde_json::from_value(json!({
         "name": "example.com",
         "mname": "ns1.example.com",
-        "rname": "admin@example.com",
+        "rname": "admin@example.com"
     }))
     .unwrap();
     let command = serde_json::to_string(&DaemonCommand::CreateZone(request)).unwrap();
@@ -229,11 +229,11 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
         .await
         .unwrap();
 
-    let mut notify = [0; 4096];
+    let mut buffer = [0; 4096];
 
     let (len, peer) = time::timeout(
         Duration::from_secs(2),
-        secondary_socket.recv_from(&mut notify),
+        secondary_socket.recv_from(&mut buffer),
     )
     .await
     .unwrap()
@@ -253,7 +253,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
             .await
             .is_err()
     );
-    let response = ParsedQuery::parse(&notify[..len], Keepalive::None)
+    let response = ParsedQuery::parse(&buffer[..len], Keepalive::None)
         .unwrap()
         .build_signed_error_response(OptRcode::NOERROR, None, None)
         .unwrap();
@@ -270,7 +270,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     .unwrap()
     .unwrap();
 
-    let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+    let response: Value = serde_json::from_str(&response).unwrap();
 
     assert_eq!(response["data"]["zone"]["name"], "example.com");
 

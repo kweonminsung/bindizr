@@ -594,8 +594,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
     Ok(())
 }
 
-/// One `--value` is the record's value; several are the segments of a TXT
-/// record.
+/// Read the `--value` flags: one is the record's value; several are the
+/// segments of a TXT record.
 fn to_record_value_request(mut values: Vec<String>) -> RecordValue {
     if values.len() == 1 {
         RecordValue::Text(values.remove(0))

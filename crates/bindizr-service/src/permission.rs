@@ -66,7 +66,7 @@ pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, S
     Ok(PermissionsResponse { all_zones, zones })
 }
 
-/// The actions a name or type limit can narrow.
+/// Return the actions a name or type limit can narrow.
 fn record_actions() -> impl Iterator<Item = Action> {
     Action::ALL
         .into_iter()

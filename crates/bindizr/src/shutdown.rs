@@ -31,7 +31,7 @@ impl Shutdown {
         self.tx.send_replace(true);
     }
 
-    /// Resolves once [`Shutdown::trigger`] has been called, before or after.
+    /// Resolve once [`Shutdown::trigger`] has been called, before or after.
     pub(crate) fn waiter(&self) -> impl Future<Output = ()> + Send + 'static {
         let mut rx = self.tx.subscribe();
 

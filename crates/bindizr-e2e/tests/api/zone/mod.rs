@@ -1,19 +1,20 @@
-use reqwest::{Method, StatusCode};
-use serde_json::json;
-
-use crate::common::{TestApp, dns};
-
 mod history;
 mod import;
 mod mailbox;
 mod primary_name;
 mod status;
 
+use reqwest::{Method, StatusCode};
+use serde_json::json;
+
+use crate::common::{TestApp, dns};
+
 /// Encode one zone name as a URL path segment without changing its spelling.
-fn zone_path(name: &str) -> String {
+fn zone_path(zone_name: &str) -> String {
     format!(
         "/zones/{}",
-        name.bytes()
+        zone_name
+            .bytes()
             .map(|byte| format!("%{byte:02X}"))
             .collect::<String>()
     )
@@ -38,10 +39,12 @@ async fn escaped_zone_names_round_trip_through_management() {
         assert_eq!(status, StatusCode::CREATED, "{simple:?}: {body}");
         assert_eq!(body["zone"]["name"], canonical);
 
-        for name in [&simple, &canonical] {
-            let (status, body) = app.send_request(Method::GET, &zone_path(name), None).await;
+        for zone_name in [&simple, &canonical] {
+            let (status, body) = app
+                .send_request(Method::GET, &zone_path(zone_name), None)
+                .await;
 
-            assert_eq!(status, StatusCode::OK, "{name:?}: {body}");
+            assert_eq!(status, StatusCode::OK, "{zone_name:?}: {body}");
             assert_eq!(body["zone"]["name"], canonical);
         }
 
@@ -273,7 +276,7 @@ async fn zone_create_accepts_seed_serial_and_rejects_out_of_range() {
 
     // Secondaries compare serials per RFC 1982, Section 3.2, so a takeover has to continue
     // from the previous primary's serial instead of restarting at 1.
-    let seeded_zone = json!({
+    let request = json!({
         "name": zone_name,
         "mname": format!("ns1.{zone_name}"),
         "rname": "hostmaster@example.com",
@@ -282,7 +285,7 @@ async fn zone_create_accepts_seed_serial_and_rejects_out_of_range() {
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/zones", Some(seeded_zone))
+        .send_request(Method::POST, "/zones", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
@@ -304,7 +307,7 @@ async fn zone_create_accepts_seed_serial_and_rejects_out_of_range() {
 
     // Serials span the complete unsigned 32-bit range (RFC 1982, Section 2).
     for out_of_range_serial in [-1i64, i64::from(u32::MAX) + 1] {
-        let out_of_range_zone = json!({
+        let request = json!({
             "name": app.zone_name("out-of-range-serial.example.com"),
             "mname": "ns1.example.com",
             "rname": "hostmaster@example.com",
@@ -313,7 +316,7 @@ async fn zone_create_accepts_seed_serial_and_rejects_out_of_range() {
         });
 
         let (status, _) = app
-            .send_request(Method::POST, "/zones", Some(out_of_range_zone))
+            .send_request(Method::POST, "/zones", Some(request))
             .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -341,20 +344,20 @@ async fn zone_serial_defaults_to_one_and_rejects_explicit_update() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["zone"]["serial"].as_i64().unwrap(), 1);
 
-    let record = json!({
+    let request = json!({
         "name": "www", "type": "A", "value": "192.0.2.70",
         "ttl": 300, "zone_name": zone_name
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/records", Some(record))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED);
 
     assert_eq!(app.read_zone_serial(&zone_name).await, 2);
 
-    let update_with_serial = json!({
+    let request = json!({
         "name": zone_name,
         "mname": format!("ns1.{zone_name}"),
         "rname": "hostmaster@counter.example",
@@ -363,11 +366,7 @@ async fn zone_serial_defaults_to_one_and_rejects_explicit_update() {
     });
 
     let (status, body) = app
-        .send_request(
-            Method::PUT,
-            &format!("/zones/{zone_name}"),
-            Some(update_with_serial),
-        )
+        .send_request(Method::PUT, &format!("/zones/{zone_name}"), Some(request))
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -735,7 +734,7 @@ async fn zone_normalizes_names_and_validates_soa() {
 
     // The second entry is already in SOA-mailbox form: the API accepts email
     // addresses only and must not pass a mailbox through untranslated.
-    for invalid_rname in [
+    for request in [
         json!({
             "name": "invalid-rname.com",
             "mname": "ns1.invalid-rname.com",
@@ -750,7 +749,7 @@ async fn zone_normalizes_names_and_validates_soa() {
         }),
     ] {
         let (status, _) = app
-            .send_request(Method::POST, "/zones", Some(invalid_rname))
+            .send_request(Method::POST, "/zones", Some(request))
             .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -775,7 +774,7 @@ async fn zone_normalizes_names_and_validates_soa() {
     // case-significant and must be preserved.
     assert_eq!(body["zone"]["rname"], "Host.Master@example.com");
 
-    let duplicate_zone_request = json!({
+    let request = json!({
         "name": format!("{zone_name}."),
         "mname": format!("ns2.{zone_name}"),
         "rname": "hostmaster@example.com",
@@ -783,12 +782,12 @@ async fn zone_normalizes_names_and_validates_soa() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/zones", Some(duplicate_zone_request))
+        .send_request(Method::POST, "/zones", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
 
-    let second_zone = json!({
+    let request = json!({
         "name": second_zone_name,
         "mname": format!("ns1.{second_zone_name}"),
         "rname": "hostmaster@example.com",
@@ -796,12 +795,12 @@ async fn zone_normalizes_names_and_validates_soa() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/zones", Some(second_zone))
+        .send_request(Method::POST, "/zones", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED);
 
-    let normalize_update = json!({
+    let request = json!({
         "name": format!(" {}. ", zone_name.to_ascii_uppercase()),
         "mname": format!("NS1.{}.", zone_name.to_ascii_uppercase()),
         "rname": "Host.Master@Example.Com.",
@@ -809,11 +808,7 @@ async fn zone_normalizes_names_and_validates_soa() {
     });
 
     let (status, body) = app
-        .send_request(
-            Method::PUT,
-            &format!("/zones/{zone_name}"),
-            Some(normalize_update),
-        )
+        .send_request(Method::PUT, &format!("/zones/{zone_name}"), Some(request))
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -821,7 +816,7 @@ async fn zone_normalizes_names_and_validates_soa() {
     assert_eq!(body["zone"]["mname"], format!("ns1.{zone_name}"));
     assert_eq!(body["zone"]["rname"], "Host.Master@example.com");
 
-    let rename_onto_existing = json!({
+    let request = json!({
         "name": format!("{}.", second_zone_name.to_ascii_uppercase()),
         "mname": format!("ns1.{zone_name}"),
         "rname": "hostmaster@example.com",
@@ -829,16 +824,12 @@ async fn zone_normalizes_names_and_validates_soa() {
     });
 
     let (status, _) = app
-        .send_request(
-            Method::PUT,
-            &format!("/zones/{zone_name}"),
-            Some(rename_onto_existing),
-        )
+        .send_request(Method::PUT, &format!("/zones/{zone_name}"), Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
 
-    for invalid_update in [
+    for request in [
         json!({
             "name": format!("{}..example.com", app.namespace()),
             "mname": format!("ns1.{zone_name}"),
@@ -853,11 +844,7 @@ async fn zone_normalizes_names_and_validates_soa() {
         }),
     ] {
         let (status, _) = app
-            .send_request(
-                Method::PUT,
-                &format!("/zones/{zone_name}"),
-                Some(invalid_update),
-            )
+            .send_request(Method::PUT, &format!("/zones/{zone_name}"), Some(request))
             .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -870,7 +857,7 @@ async fn zone_normalizes_names_and_validates_soa() {
 async fn zone_rejects_invalid_name_and_ttl() {
     let app = TestApp::start().await;
 
-    for invalid_zone in [
+    for request in [
         json!({
             "name": "*.example.com",
             "mname": "ns1.example.com",
@@ -915,7 +902,7 @@ async fn zone_rejects_invalid_name_and_ttl() {
         }),
     ] {
         let (status, _) = app
-            .send_request(Method::POST, "/zones", Some(invalid_zone))
+            .send_request(Method::POST, "/zones", Some(request))
             .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -923,7 +910,7 @@ async fn zone_rejects_invalid_name_and_ttl() {
 
     // These look suspicious but are legal: an mname outside the zone
     // (out-of-bailiwick) and an NS name unrelated to the zone.
-    for valid_zone in [
+    for request in [
         json!({
             "name": app.zone_name("bailiwick.example.com"),
             "mname": "ns.example.com",
@@ -938,7 +925,7 @@ async fn zone_rejects_invalid_name_and_ttl() {
         }),
     ] {
         let (status, _) = app
-            .send_request(Method::POST, "/zones", Some(valid_zone))
+            .send_request(Method::POST, "/zones", Some(request))
             .await;
 
         assert_eq!(status, StatusCode::CREATED);
@@ -1146,7 +1133,7 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
     assert!(app.list_records(&zone_name).await.is_empty());
     assert_eq!(body["zone"]["enabled"], false, "{body}");
 
-    let serial = app.read_zone_serial(&zone_name).await;
+    let base_serial = app.read_zone_serial(&zone_name).await;
 
     assert!(!dns::probe_zone_soa(app.dns_port(), &zone_name));
     let path = format!("/zones/{zone_name}");
@@ -1156,7 +1143,7 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
-    assert_eq!(app.read_zone_serial(&zone_name).await, serial);
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial);
 
     let (status, body) = app
         .send_request(
@@ -1180,7 +1167,7 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
         let (status, body) = app
             .send_request(
                 Method::POST,
-                &format!("/zones/{zone_name}/versions/{serial}/rollback{suffix}"),
+                &format!("/zones/{zone_name}/versions/{base_serial}/rollback{suffix}"),
                 None,
             )
             .await;

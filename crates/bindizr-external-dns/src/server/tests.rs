@@ -5,6 +5,7 @@ use axum::body;
 use axum::extract::{Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use reqwest::Client;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
@@ -41,7 +42,7 @@ impl MockUpstream {
 }
 
 /// Record a mock upstream request and return its configured response.
-async fn mock_handler(State(state): State<MockState>, request: Request) -> Response {
+async fn handle_mock_request(State(state): State<MockState>, request: Request) -> Response {
     let path = request.uri().path().to_string();
     let authorization = request
         .headers()
@@ -106,7 +107,9 @@ async fn spawn_mock_with_adjust(
         changes: (changes.0, changes.1.to_string()),
         adjust: (adjust.0, adjust.1.to_string()),
     };
-    let router = axum::Router::new().fallback(mock_handler).with_state(state);
+    let router = Router::new()
+        .fallback(handle_mock_request)
+        .with_state(state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -157,7 +160,7 @@ async fn spawn_adapter(upstream_addr: SocketAddr, token: Option<&str>) -> String
 
 /// Send a webhook GET request with the requested Accept header.
 async fn get(url: &str, accept: Option<&str>) -> (StatusCode, Option<String>, String) {
-    let client = reqwest::Client::new();
+    let client = Client::new();
     let mut request = client.get(url);
 
     if let Some(accept) = accept {
@@ -177,7 +180,7 @@ async fn get(url: &str, accept: Option<&str>) -> (StatusCode, Option<String>, St
 
 /// Send a JSON webhook POST request and collect the response.
 async fn post(url: &str, body: Value) -> (StatusCode, String) {
-    let response = reqwest::Client::new()
+    let response = Client::new()
         .post(url)
         .header(header::CONTENT_TYPE, MEDIA_TYPE)
         .body(body.to_string())
@@ -279,12 +282,12 @@ async fn webhook_get_routes_negotiate_equivalent_accept_ranges() {
 /// Verify that `list_records` maps records to endpoints.
 #[tokio::test]
 async fn list_records_maps_records_to_endpoints() {
-    let records = json!({"records": [
-        {"name": "app.example.com", "type": "A", "ttl": 300,
-         "values": ["192.0.2.1", "192.0.2.2"]},
-        {"name": "app.example.com", "type": "TXT", "ttl": 3600,
-         "values": ["\"heritage=external-dns,external-dns/owner=default\""]}
-    ]});
+    let records = json!({ "records": [
+        { "name": "app.example.com", "type": "A", "ttl": 300,
+          "values": ["192.0.2.1", "192.0.2.2"] },
+        { "name": "app.example.com", "type": "TXT", "ttl": 3600,
+          "values": ["\"heritage=external-dns,external-dns/owner=default\""] }
+    ] });
 
     let mock = spawn_mock(
         (200, json!({ "domains": [] })),
@@ -301,11 +304,11 @@ async fn list_records_maps_records_to_endpoints() {
     assert_eq!(
         serde_json::from_str::<Value>(&body).unwrap(),
         json!([
-            {"dnsName": "app.example.com", "targets": ["192.0.2.1", "192.0.2.2"],
-             "recordType": "A", "recordTTL": 300},
-            {"dnsName": "app.example.com",
-             "targets": ["\"heritage=external-dns,external-dns/owner=default\""],
-             "recordType": "TXT", "recordTTL": 3600}
+            { "dnsName": "app.example.com", "targets": ["192.0.2.1", "192.0.2.2"],
+              "recordType": "A", "recordTTL": 300 },
+            { "dnsName": "app.example.com",
+              "targets": ["\"heritage=external-dns,external-dns/owner=default\""],
+              "recordType": "TXT", "recordTTL": 3600 }
         ])
     );
 }
@@ -321,11 +324,11 @@ async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
     let (status, _) = post(
         &format!("{base}/records"),
         json!({
-            "create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"],
-                        "recordType": "A", "recordTTL": 300}],
-            "updateOld": [{"dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A"}],
-            "updateNew": [{"dnsName": "b.example.com", "targets": ["192.0.2.3"], "recordType": "A"}],
-            "delete": [{"dnsName": "c.example.com", "targets": ["\"v=1\""], "recordType": "TXT"}]
+            "create": [{ "dnsName": "a.example.com", "targets": ["192.0.2.1"],
+                         "recordType": "A", "recordTTL": 300 }],
+            "updateOld": [{ "dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A" }],
+            "updateNew": [{ "dnsName": "b.example.com", "targets": ["192.0.2.3"], "recordType": "A" }],
+            "delete": [{ "dnsName": "c.example.com", "targets": ["\"v=1\""], "recordType": "TXT" }]
         }),
     )
     .await;
@@ -344,14 +347,14 @@ async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
     assert_eq!(
         serde_json::from_str::<Value>(&recorded[0].2).unwrap(),
         json!({
-            "creates": [{"name": "a.example.com", "type": "A", "ttl": 300,
-                         "values": ["192.0.2.1"]}],
-            "updates": [{"old": {"name": "b.example.com", "type": "A",
-                                 "values": ["192.0.2.2"]},
-                         "new": {"name": "b.example.com", "type": "A",
-                                 "values": ["192.0.2.3"]}}],
-            "deletes": [{"name": "c.example.com", "type": "TXT",
-                         "values": ["\"v=1\""]}]
+            "creates": [{ "name": "a.example.com", "type": "A", "ttl": 300,
+                          "values": ["192.0.2.1"] }],
+            "updates": [{ "old": { "name": "b.example.com", "type": "A",
+                                   "values": ["192.0.2.2"] },
+                          "new": { "name": "b.example.com", "type": "A",
+                                   "values": ["192.0.2.3"] } }],
+            "deletes": [{ "name": "c.example.com", "type": "TXT",
+                          "values": ["\"v=1\""] }]
         })
     );
 }
@@ -366,7 +369,7 @@ async fn apply_changes_rejects_invalid_input_without_calling_bindizr() {
 
     let (status, body) = post(
         &format!("{base}/records"),
-        json!({ "create": [{"dnsName": "a.example.com", "targets": ["x"], "recordType": "SRV"}] }),
+        json!({ "create": [{ "dnsName": "a.example.com", "targets": ["x"], "recordType": "SRV" }] }),
     )
     .await;
 
@@ -396,7 +399,7 @@ async fn apply_changes_passes_bindizr_4xx_through_as_permanent_error() {
 
     let (status, body) = post(
         &format!("{base}/records"),
-        json!({ "create": [{"dnsName": "api.internal.example.com", "targets": ["192.0.2.1"], "recordType": "A"}] }),
+        json!({ "create": [{ "dnsName": "api.internal.example.com", "targets": ["192.0.2.1"], "recordType": "A" }] }),
     )
     .await;
 
@@ -420,7 +423,7 @@ async fn apply_changes_maps_a_rejected_token_to_a_retryable_503() {
 
     let (status, body) = post(
         &format!("{base}/records"),
-        json!({ "create": [{"dnsName": "api.example.com", "targets": ["192.0.2.1"], "recordType": "A"}] }),
+        json!({ "create": [{ "dnsName": "api.example.com", "targets": ["192.0.2.1"], "recordType": "A" }] }),
     )
     .await;
 
@@ -444,7 +447,7 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
     .await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
-    let changes = json!({ "create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A"}] });
+    let changes = json!({ "create": [{ "dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A" }] });
 
     let (status, _) = post(&format!("{base}/records"), changes.clone()).await;
 
@@ -472,10 +475,10 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
         changes,
         (
             200,
-            json!({"records": [
-                {"name": "a.example.com", "type": "AAAA", "ttl": 300, "values": ["2001:db8::1"]},
-                {"name": "b.example.com", "type": "TXT", "values": ["\"v=spf1 -all\""]}
-            ]}),
+            json!({ "records": [
+                { "name": "a.example.com", "type": "AAAA", "ttl": 300, "values": ["2001:db8::1"] },
+                { "name": "b.example.com", "type": "TXT", "values": ["\"v=spf1 -all\""] }
+            ] }),
         ),
     )
     .await;
@@ -484,9 +487,9 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     let (status, body) = post(
         &format!("{base}/adjustendpoints"),
         json!([
-            {"dnsName": "a.example.com", "targets": ["2001:0DB8::1"], "recordType": "aaaa", "recordTTL": 300, "labels": {"owner": "default"},
-             "providerSpecific": [{"name": "webhook/flag", "value": "on"}]},
-            {"dnsName": "b.example.com", "targets": ["v=spf1 -all"], "recordType": "TXT"}
+            { "dnsName": "a.example.com", "targets": ["2001:0DB8::1"], "recordType": "aaaa", "recordTTL": 300, "labels": { "owner": "default" },
+              "providerSpecific": [{ "name": "webhook/flag", "value": "on" }] },
+            { "dnsName": "b.example.com", "targets": ["v=spf1 -all"], "recordType": "TXT" }
         ]),
     )
     .await;
@@ -498,8 +501,8 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     assert_eq!(
         serde_json::from_str::<Value>(&body).unwrap(),
         json!([
-            {"dnsName": "a.example.com", "targets": ["2001:db8::1"], "recordType": "AAAA", "recordTTL": 300, "labels": {"owner": "default"}},
-            {"dnsName": "b.example.com", "targets": ["\"v=spf1 -all\""], "recordType": "TXT"}
+            { "dnsName": "a.example.com", "targets": ["2001:db8::1"], "recordType": "AAAA", "recordTTL": 300, "labels": { "owner": "default" } },
+            { "dnsName": "b.example.com", "targets": ["\"v=spf1 -all\""], "recordType": "TXT" }
         ])
     );
 
@@ -509,10 +512,10 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     assert_eq!(recorded[0].0, "/external-dns/adjust");
     assert_eq!(
         serde_json::from_str::<Value>(&recorded[0].2).unwrap(),
-        json!({"records": [
-            {"name": "a.example.com", "type": "AAAA", "ttl": 300, "values": ["2001:0DB8::1"]},
-            {"name": "b.example.com", "type": "TXT", "values": ["v=spf1 -all"]}
-        ]})
+        json!({ "records": [
+            { "name": "a.example.com", "type": "AAAA", "ttl": 300, "values": ["2001:0DB8::1"] },
+            { "name": "b.example.com", "type": "TXT", "values": ["v=spf1 -all"] }
+        ] })
     );
 }
 
@@ -526,7 +529,7 @@ async fn adjustendpoints_rejects_invalid_endpoints_without_calling_bindizr() {
 
     let (status, body) = post(
         &format!("{base}/adjustendpoints"),
-        json!([{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "setIdentifier": "weighted"}]),
+        json!([{ "dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "setIdentifier": "weighted" }]),
     )
     .await;
 

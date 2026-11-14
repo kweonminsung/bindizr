@@ -1,7 +1,8 @@
 //! Write all bindizr output without panicking on a closed pipe.
 //! Early readers such as `head` must not crash a command or the daemon.
 
-use std::io::{self, ErrorKind, Write};
+use std::io;
+use std::io::{ErrorKind, Write};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -43,8 +44,8 @@ fn write(closed: &AtomicBool, sink: &mut impl Write, text: &str) {
     }
 }
 
-/// The failure that lost output, for the entry point to report; a closed pipe
-/// is not one.
+/// Return the failure that lost output, for the entry point to report; a closed
+/// pipe is not one.
 pub fn write_failure() -> Option<&'static io::Error> {
     WRITE_FAILURE.get()
 }
@@ -90,7 +91,7 @@ mod tests {
             Err(io::Error::new(self.0, "sink failed"))
         }
 
-        /// Nothing is buffered.
+        /// Return at once; nothing is buffered.
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }

@@ -321,7 +321,7 @@ pub enum DatabaseTlsMode {
 }
 
 impl DatabaseTlsMode {
-    /// Return the canonical spelling, the configuration file's.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Disable => "disable",
@@ -437,7 +437,7 @@ pub struct NotifyConfig {
 }
 
 impl NotifyConfig {
-    /// How long one NOTIFY, probe, or resolution waits for its answer.
+    /// Return how long one NOTIFY, probe, or resolution waits for its answer.
     pub fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
     }
@@ -524,7 +524,7 @@ pub struct ImportConfig {
 }
 
 impl ImportConfig {
-    /// How long the whole transfer may take.
+    /// Return how long the whole transfer may take.
     pub fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
     }
@@ -927,7 +927,7 @@ impl Config {
         })
     }
 
-    /// The settings a reload actually changed, for the line that reports it.
+    /// List the settings a reload actually changed, for the line that reports it.
     pub fn changed_settings(&self, next: &Self) -> Vec<String> {
         let mut changed = Vec::new();
 
@@ -944,8 +944,8 @@ impl Config {
         changed
     }
 
-    /// Settings bound to something built at startup — a listening socket, the
-    /// HTTP router, the database pool — which a reload cannot rebuild.
+    /// List the settings bound to something built at startup — a listening socket,
+    /// the HTTP router, the database pool — which a reload cannot rebuild.
     pub fn fixed_settings_changed(&self, next: &Self) -> Vec<String> {
         let mut fixed = Vec::new();
 
@@ -1072,7 +1072,7 @@ impl ApiConfig {
 }
 
 impl ApiTlsConfig {
-    /// The certificate and key to serve HTTPS with, or `None` for plain HTTP.
+    /// Return the certificate and key to serve HTTPS with, or `None` for plain HTTP.
     pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
         Some(TlsFiles {
             cert_file: self.cert_file.as_deref()?,
@@ -1099,7 +1099,7 @@ impl ApiTlsConfig {
 }
 
 impl DnsTlsConfig {
-    /// The certificate and key to serve XoT with, or `None` while the TLS
+    /// Return the certificate and key to serve XoT with, or `None` while the TLS
     /// listener is off.
     pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
         Some(TlsFiles {
@@ -1145,7 +1145,7 @@ impl DnsConfig {
         ZoneName::parse(zone_name).is_ok_and(|name| name == self.catalog_zone_name)
     }
 
-    /// How long a TCP or TLS connection may sit idle between queries.
+    /// Return how long a TCP or TLS connection may sit idle between queries.
     pub fn tcp_idle_timeout(&self) -> Duration {
         Duration::from_secs(self.tcp_idle_timeout_secs)
     }

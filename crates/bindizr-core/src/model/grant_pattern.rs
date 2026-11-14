@@ -28,7 +28,7 @@ pub fn matches_name(pattern: &str, name: &OwnerName) -> bool {
     *name == OwnerName::from_row(pattern)
 }
 
-/// Whether every name `inner` matches, `outer` matches too.
+/// Return whether every name `inner` matches, `outer` matches too.
 pub fn has_pattern_coverage(outer: &str, inner: &str) -> bool {
     if outer == MATCH_ANY {
         return true;
@@ -47,7 +47,7 @@ pub fn has_pattern_coverage(outer: &str, inner: &str) -> bool {
     }
 }
 
-/// Check whether a grant's type filter permits the requested record type.
+/// Return whether a grant's type filter permits the requested record type.
 pub fn matches_types(types: &str, record_type: Option<RecordType>) -> bool {
     if types == MATCH_ANY {
         return true;

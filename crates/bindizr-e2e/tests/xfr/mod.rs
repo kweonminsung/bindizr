@@ -618,15 +618,15 @@ async fn signed_transfer_replies_with_request_key() {
 #[serial_test::serial(bindizr_e2e)]
 async fn signed_transfer_limits_zones_to_key_role_grants() {
     let app = transfer_app().await;
-    let granted = app.create_test_zone().await;
-    let granted = granted["name"].as_str().unwrap();
-    let narrowed = app.zone_name("narrowed.example");
+    let granted_zone = app.create_test_zone().await;
+    let granted_zone_name = granted_zone["name"].as_str().unwrap();
+    let narrowed_zone_name = app.zone_name("narrowed.example");
 
-    app.create_zone_cli(&narrowed, "3600").await;
+    app.create_zone_cli(&narrowed_zone_name, "3600").await;
 
-    let ungranted = app.zone_name("ungranted.example");
+    let ungranted_zone_name = app.zone_name("ungranted.example");
 
-    app.create_zone_cli(&ungranted, "3600").await;
+    app.create_zone_cli(&ungranted_zone_name, "3600").await;
 
     let key = tsig::create_tsig_key(&app, "xfr-scoped-key", KeyRole::Own).await;
     app.run_cli_success(
@@ -635,7 +635,7 @@ async fn signed_transfer_limits_zones_to_key_role_grants() {
             "grant",
             &key.name,
             "--zone",
-            granted,
+            granted_zone_name,
             "--actions",
             "zone:transfer",
         ],
@@ -650,7 +650,7 @@ async fn signed_transfer_limits_zones_to_key_role_grants() {
             "grant",
             &key.name,
             "--zone",
-            &narrowed,
+            &narrowed_zone_name,
             "--actions",
             "record:read",
         ],
@@ -658,11 +658,12 @@ async fn signed_transfer_limits_zones_to_key_role_grants() {
     )
     .await;
 
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), granted, Some(&key)).expect("granted AXFR");
+    let outcome =
+        dns::fetch_axfr_tcp(app.dns_port(), granted_zone_name, Some(&key)).expect("granted AXFR");
 
     assert!(outcome.records() >= 3);
 
-    for zone_name in [&narrowed, &ungranted] {
+    for zone_name in [&narrowed_zone_name, &ungranted_zone_name] {
         let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
         assert_eq!(outcome.refusal(), Rcode::REFUSED, "zone {zone_name}");
     }
@@ -1528,7 +1529,7 @@ async fn edns_query_returns_opt() {
     let edns = Message::from_octets(edns.as_slice()).unwrap();
 
     assert_eq!(edns.header().rcode(), Rcode::NOERROR);
-    let opt = edns.opt().expect("an EDNS query is answered with an OPT");
+    let opt = edns.opt().unwrap();
 
     assert_eq!(opt.version(), 0);
     assert_eq!(opt.udp_payload_size(), 1232);
@@ -1548,24 +1549,24 @@ async fn edns_query_returns_opt() {
     )
     .unwrap();
     let newer = Message::from_octets(newer.as_slice()).unwrap();
-    let opt = newer.opt().expect("BADVERS travels in an OPT");
+    let opt = newer.opt().unwrap();
 
     assert_eq!(opt.rcode(newer.header()), OptRcode::BADVERS);
     assert_eq!(opt.version(), 0);
 
-    let frame = dns::exchange_tcp(
+    let response = dns::exchange_tcp(
         app.dns_port(),
         &common::build_edns_query(zone_name, Rtype::AXFR, &[(0, false)]).finish(),
     )
-    .expect("AXFR");
-    let envelope = Message::from_octets(frame.as_slice()).unwrap();
+    .unwrap();
+    let envelope = Message::from_octets(response.as_slice()).unwrap();
 
     assert_eq!(envelope.header().rcode(), Rcode::NOERROR);
 
     // RFC 7828, Section 3.3.2: over TCP the OPT carries the idle timeout.
     let keepalive = envelope
         .opt()
-        .expect("the envelope carries the OPT")
+        .unwrap()
         .opt()
         .tcp_keepalive()
         .expect("a TCP answer advertises its idle timeout");
@@ -1633,18 +1634,18 @@ async fn udp_query_truncates_answers_above_limit() {
 #[serial_test::serial(bindizr_e2e)]
 async fn tcp_connection_completes_pipelined_transfers() {
     let app = transfer_app().await;
-    let first = app.create_test_zone().await;
-    let first = first["name"].as_str().unwrap().to_string();
-    let second = app.zone_name("second.example");
+    let first_zone = app.create_test_zone().await;
+    let first_zone_name = first_zone["name"].as_str().unwrap().to_string();
+    let second_zone_name = app.zone_name("second.example");
 
-    app.create_zone_cli(&second, "3600").await;
+    app.create_zone_cli(&second_zone_name, "3600").await;
 
     let mut stream = TcpStream::connect(("127.0.0.1", app.dns_port())).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
 
-    for (id, zone_name) in [(1u16, &first), (2u16, &second)] {
+    for (id, zone_name) in [(1u16, &first_zone_name), (2u16, &second_zone_name)] {
         let mut builder = MessageBuilder::new_vec();
         builder.header_mut().set_id(id);
         let mut question = builder.question();
@@ -1661,7 +1662,7 @@ async fn tcp_connection_completes_pipelined_transfers() {
 
     while soas.values().filter(|&&seen| seen >= 2).count() < 2 {
         let response = dns::read_frame(&mut stream)
-            .expect("read")
+            .unwrap()
             .expect("the server closed before both transfers ended");
         let response = Message::from_octets(response.as_slice()).unwrap();
 
@@ -1773,7 +1774,7 @@ async fn query_returns_notauth_for_unsupported_class() {
         .unwrap();
     let mut additional = question.additional();
     tsig::sign(&mut additional, &key).unwrap();
-    let response = dns::exchange_tcp(app.dns_port(), &additional.finish()).expect("CH query");
+    let response = dns::exchange_tcp(app.dns_port(), &additional.finish()).unwrap();
     let response = Message::from_octets(response).unwrap();
 
     assert_eq!(response.header().rcode(), Rcode::NOTAUTH);

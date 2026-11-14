@@ -62,7 +62,7 @@ pub(crate) struct Endpoint {
     provider_specific: Vec<ProviderSpecificProperty>,
 }
 
-/// Check whether an endpoint TTL uses the unset sentinel.
+/// Return whether an endpoint TTL uses the unset sentinel.
 fn is_ttl_unset(ttl: &i64) -> bool {
     *ttl == 0
 }
@@ -126,7 +126,7 @@ pub(crate) struct BindizrRecordUpdate {
 }
 
 impl From<BindizrRecord> for Endpoint {
-    /// An endpoint for one bindizr record; the server already sorts values.
+    /// Build an endpoint for one bindizr record; the server already sorts values.
     fn from(record: BindizrRecord) -> Self {
         Self {
             dns_name: record.name,
@@ -201,25 +201,25 @@ impl Endpoint {
     }
 }
 
-impl Changes {
-    /// Convert into one bindizr change-set request. `updateOld[i]` and
+impl TryFrom<&Changes> for ApplyExternalDnsChangesRequest {
+    type Error = ConvertChangesError;
+
+    /// Convert a plan into one bindizr change-set request. `updateOld[i]` and
     /// `updateNew[i]` pair positionally, per the plan contract.
-    pub(crate) fn to_apply_changes_request(
-        &self,
-    ) -> Result<ApplyExternalDnsChangesRequest, ConvertChangesError> {
-        if self.update_old.len() != self.update_new.len() {
+    fn try_from(changes: &Changes) -> Result<Self, Self::Error> {
+        if changes.update_old.len() != changes.update_new.len() {
             return Err(ConvertChangesError::UnpairedUpdates {
-                old: self.update_old.len(),
-                new: self.update_new.len(),
+                old: changes.update_old.len(),
+                new: changes.update_new.len(),
             });
         }
 
-        Ok(ApplyExternalDnsChangesRequest {
-            creates: to_bindizr_records(&self.create)?,
-            updates: self
+        Ok(Self {
+            creates: to_bindizr_records(&changes.create)?,
+            updates: changes
                 .update_old
                 .iter()
-                .zip(&self.update_new)
+                .zip(&changes.update_new)
                 .map(
                     |(old, new)| -> Result<BindizrRecordUpdate, ConvertChangesError> {
                         Ok(BindizrRecordUpdate {
@@ -229,7 +229,7 @@ impl Changes {
                     },
                 )
                 .collect::<Result<_, _>>()?,
-            deletes: to_bindizr_records(&self.delete)?,
+            deletes: to_bindizr_records(&changes.delete)?,
         })
     }
 }

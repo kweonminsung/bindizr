@@ -360,7 +360,7 @@ pub(crate) struct SecondaryStatusRow {
 }
 
 impl SecondaryStatusRow {
-    /// One row per secondary, with the lag behind the zone serial that its
+    /// Build one row per secondary, with the lag behind the zone serial that its
     /// `status` was classified against.
     pub(crate) fn rows_from_status(status: &ZoneStatusResponse) -> Vec<Self> {
         status
@@ -374,7 +374,7 @@ impl SecondaryStatusRow {
     fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: Serial) -> Self {
         let detail = match secondary.error.as_deref() {
             Some(error) if secondary.is_unreachable() => {
-                format!("{} ({})", secondary.status, error)
+                format!("{} ({error})", secondary.status)
             }
             _ => secondary.status.to_string(),
         };

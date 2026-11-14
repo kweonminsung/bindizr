@@ -4,7 +4,7 @@
 use std::sync::OnceLock;
 use std::{env, io};
 
-/// Check whether terminal output should use ANSI colors.
+/// Return whether terminal output should use ANSI colors.
 fn is_enabled() -> bool {
     use std::io::IsTerminal;
 
@@ -14,8 +14,8 @@ fn is_enabled() -> bool {
     })
 }
 
-/// Text wrapped in the requested ANSI color, or unchanged when colors are
-/// disabled.
+/// Wrap text in the requested ANSI color, or leave it unchanged when colors
+/// are disabled.
 fn colored(code: &str, text: &str) -> String {
     if is_enabled() {
         format!("\x1b[{code}m{text}\x1b[0m")

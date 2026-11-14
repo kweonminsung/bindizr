@@ -20,7 +20,7 @@ async fn tokens_support_create_list_and_delete() {
     // The zone-name prefix keeps token and role names unique in compose mode.
     let scoped_name = app.zone_name("http-scoped");
     let admin_name = app.zone_name("http-admin");
-    let zone_body = |name: &str| {
+    let zone_request = |name: &str| {
         json!({
             "name": name,
             "mname": format!("ns1.{name}"),
@@ -70,7 +70,7 @@ async fn tokens_support_create_list_and_delete() {
         .send_request(
             Method::POST,
             "/zones",
-            Some(zone_body(&app.zone_name("scoped-zone"))),
+            Some(zone_request(&app.zone_name("scoped-zone"))),
         )
         .await;
 
@@ -97,7 +97,7 @@ async fn tokens_support_create_list_and_delete() {
         .send_request(
             Method::POST,
             "/zones",
-            Some(zone_body(&app.zone_name("admin-zone"))),
+            Some(zone_request(&app.zone_name("admin-zone"))),
         )
         .await;
 

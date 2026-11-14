@@ -57,16 +57,16 @@ async fn root_record_targets_round_trip() {
         .await;
     }
 
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
 
     for record_type in ["NS", "CNAME", "PTR", "DNAME"] {
         assert!(
-            records["items"]
+            listed["items"]
                 .as_array()
-                .unwrap()
+                .expect("items")
                 .iter()
                 .any(|record| record["type"] == record_type && record["value"] == ".")
         );
@@ -121,7 +121,7 @@ async fn escaped_record_targets_round_trip() {
         let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
         let record = listed["items"]
             .as_array()
-            .unwrap()
+            .expect("items")
             .iter()
             .find(|record| {
                 record["type"] == record_type && record["name"] == format!("{owner}.{zone_name}.")
@@ -167,14 +167,14 @@ async fn record_supports_create_read_and_delete() {
         "{created_record}"
     );
 
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let record = records
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let record = listed
         .get("items")
         .and_then(Value::as_array)
-        .and_then(|records| records.iter().find(|record| record["type"] == "A"))
+        .and_then(|listed| listed.iter().find(|record| record["type"] == "A"))
         .expect("CLI did not return the created record");
 
     assert_eq!(record["name"], format!("www.{zone_name}."));
@@ -223,13 +223,13 @@ async fn record_update_changes_only_passed_fields() {
     )
     .await;
 
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let record_id = records["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let record_id = listed["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|record| record["type"] == "A"))
+        .and_then(|listed| listed.iter().find(|record| record["type"] == "A"))
         .and_then(|record| record["id"].as_i64())
         .expect("created record did not contain an ID")
         .to_string();
@@ -283,13 +283,13 @@ async fn record_update_retype_clears_incompatible_priority() {
         None,
     )
     .await;
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let record_id = records["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let record_id = listed["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|record| record["type"] == "MX"))
+        .and_then(|listed| listed.iter().find(|record| record["type"] == "MX"))
         .and_then(|record| record["id"].as_i64())
         .expect("created MX record did not contain an ID")
         .to_string();
@@ -615,17 +615,17 @@ async fn record_update_by_name_rejects_a_name_holding_several_records() {
 #[serial_test::serial(bindizr_e2e)]
 async fn record_listing_filters_by_zone_and_type() {
     let app = TestApp::start().await;
-    let one_zone = app.zone_name("one.example");
-    let two_zone = app.zone_name("two.example");
+    let one_zone_name = app.zone_name("one.example");
+    let two_zone_name = app.zone_name("two.example");
 
-    for zone_name in [&one_zone, &two_zone] {
+    for zone_name in [&one_zone_name, &two_zone_name] {
         app.create_zone_cli(zone_name, "3600").await;
     }
 
     for (name, record_type, value, zone_name) in [
-        ("www", "A", "192.0.2.1", one_zone.as_str()),
-        ("alias", "CNAME", "www.one.example", one_zone.as_str()),
-        ("www", "A", "192.0.2.2", two_zone.as_str()),
+        ("www", "A", "192.0.2.1", one_zone_name.as_str()),
+        ("alias", "CNAME", "www.one.example", one_zone_name.as_str()),
+        ("www", "A", "192.0.2.2", two_zone_name.as_str()),
     ] {
         app.run_cli_success(
             &[
@@ -645,19 +645,25 @@ async fn record_listing_filters_by_zone_and_type() {
         .await;
     }
 
-    let records = app
+    let listed = app
         .run_cli_success(
             &[
-                "record", "list", &one_zone, "--type", "A", "--output", "json",
+                "record",
+                "list",
+                &one_zone_name,
+                "--type",
+                "A",
+                "--output",
+                "json",
             ],
             None,
         )
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let records = records["items"].as_array().expect("missing record items");
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let records = listed["items"].as_array().expect("missing record items");
 
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["name"], format!("www.{one_zone}."));
+    assert_eq!(records[0]["name"], format!("www.{one_zone_name}."));
     assert_eq!(records[0]["value"], "192.0.2.1");
 }
 
@@ -715,13 +721,13 @@ async fn record_update_rejects_retype_without_value() {
         None,
     )
     .await;
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let record_id = records["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let record_id = listed["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|record| record["type"] == "A"))
+        .and_then(|listed| listed.iter().find(|record| record["type"] == "A"))
         .and_then(|record| record["id"].as_i64())
         .expect("created A record did not contain an ID")
         .to_string();

@@ -18,18 +18,19 @@ const RCODE_NXDOMAIN: u16 = 3;
 const RTYPE_DS: u16 = 43;
 const RTYPE_SOA: u16 = 6;
 
-/// Canceling a DS fan-out prevents its child from starting TCP after a late TC reply.
+/// Verify that canceling a DS fan-out prevents its child from starting TCP after a late TC
+/// reply.
 #[tokio::test]
 async fn query_ds_cancels_child_exchanges_with_the_request() {
-    let (udp, tcp) = loop {
-        let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        match TcpListener::bind(udp.local_addr().unwrap()).await {
-            Ok(tcp) => break (udp, tcp),
+    let (socket, listener) = loop {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        match TcpListener::bind(socket.local_addr().unwrap()).await {
+            Ok(listener) => break (socket, listener),
             Err(error) if error.kind() == io::ErrorKind::AddrInUse => continue,
             Err(error) => panic!("binding TCP listener failed: {error}"),
         }
     };
-    let addr = udp.local_addr().unwrap();
+    let addr = socket.local_addr().unwrap();
     let task = tokio::spawn(async move {
         query_ds(
             &ZoneName::parse("example.test").unwrap(),
@@ -39,7 +40,7 @@ async fn query_ds_cancels_child_exchanges_with_the_request() {
         .await
     });
     let mut buffer = [0; 4096];
-    let (len, peer) = time::timeout(TIMEOUT, udp.recv_from(&mut buffer))
+    let (len, peer) = time::timeout(TIMEOUT, socket.recv_from(&mut buffer))
         .await
         .unwrap()
         .unwrap();
@@ -47,9 +48,9 @@ async fn query_ds_cancels_child_exchanges_with_the_request() {
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
     let response = build_response(&buffer[..len], FLAG_TC, 0, &[], &[]);
-    udp.send_to(&response, peer).await.unwrap();
+    socket.send_to(&response, peer).await.unwrap();
     assert!(
-        time::timeout(Duration::from_millis(150), tcp.accept())
+        time::timeout(Duration::from_millis(150), listener.accept())
             .await
             .is_err()
     );
@@ -75,7 +76,7 @@ pub(crate) fn encode_name(name: &str, buffer: &mut Vec<u8>) {
     buffer.push(0);
 }
 
-/// The question's name in presentation form and the offset just past the
+/// Decode the question's name in presentation form and the offset just past the
 /// question section (the EDNS OPT record follows it in our queries).
 fn decode_question(query: &[u8]) -> (String, usize) {
     let mut pos = 12;
@@ -122,7 +123,7 @@ fn build_response(
     buffer
 }
 
-/// The SOA of the queried name's parent zone, as a negative response's
+/// Build the SOA of the queried name's parent zone, as a negative response's
 /// authority section carries it.
 fn build_parent_soa_record(query: &[u8]) -> Vec<u8> {
     let (qname, _) = decode_question(query);
@@ -146,7 +147,7 @@ fn build_parent_soa_record(query: &[u8]) -> Vec<u8> {
     record
 }
 
-/// One answer record owned by the question name (a pointer to offset 12).
+/// Build one answer record owned by the question name (a pointer to offset 12).
 fn build_record(rtype: u16, ttl: u32, rdata: &[u8]) -> Vec<u8> {
     let mut buffer = vec![0xC0, 0x0C];
     buffer.extend_from_slice(&rtype.to_be_bytes());
@@ -166,7 +167,7 @@ fn build_ds_record(key_tag: u16, ttl: u32) -> Vec<u8> {
     build_record(RTYPE_DS, ttl, &rdata)
 }
 
-/// The record `build_ds_record` serves for `key_tag`, as the probe parses it.
+/// Return the record `build_ds_record` serves for `key_tag`, as the probe parses it.
 fn parsed_ds_record(key_tag: u16) -> DsRecord {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
@@ -340,13 +341,13 @@ async fn probe_parent_ds_reports_each_server_apart() {
     );
 }
 
-/// An empty target list cannot establish that the parent serves no DS.
+/// Verify that an empty target list cannot establish that the parent serves no DS.
 #[tokio::test]
 async fn probe_parent_ds_rejects_an_empty_target_list() {
-    let error = probe_parent_ds(&zone_name("example.com"), " , ", TIMEOUT)
-        .await
-        .unwrap_err();
-    assert!(matches!(error, ProbeParentDsError::NoServers));
+    assert!(matches!(
+        probe_parent_ds(&zone_name("example.com"), " , ", TIMEOUT).await,
+        Err(ProbeParentDsError::NoServers)
+    ));
 }
 
 /// Verify that query DS retries a truncated response over TCP.

@@ -277,8 +277,7 @@ pub(crate) async fn get_zone_status(
         "No enabled secondaries".to_string()
     } else {
         format!(
-            "{} of {} secondaries in sync with serial {}",
-            in_sync,
+            "{in_sync} of {} secondaries in sync with serial {}",
             response.secondaries.len(),
             response.serial
         )
@@ -307,8 +306,8 @@ pub(crate) async fn delete_zone(
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!(
-                "Zone '{}' would be deleted with {} record(s) and {} version(s)",
-                zone_name, response.records_deleted, response.versions_deleted
+                "Zone '{zone_name}' would be deleted with {} record(s) and {} version(s)",
+                response.records_deleted, response.versions_deleted
             )
         } else {
             format!("Zone '{zone_name}' deleted successfully")

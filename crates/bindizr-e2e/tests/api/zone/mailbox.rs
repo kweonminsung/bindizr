@@ -56,16 +56,16 @@ async fn mailbox_domain_octets_survive_import_and_rollback() {
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
-        let imported_name = app.zone_name(&format!("imported-{index}.example"));
+        let imported_zone_name = app.zone_name(&format!("imported-{index}.example"));
         let content = body
             .as_str()
             .unwrap()
-            .replace(&format!("{zone_name}."), &format!("{imported_name}."));
+            .replace(&format!("{zone_name}."), &format!("{imported_zone_name}."));
 
         let (status, body) = app
             .send_request(
                 Method::POST,
-                &format!("/zones/{imported_name}/import"),
+                &format!("/zones/{imported_zone_name}/import"),
                 Some(json!({ "content": content, "create": true })),
             )
             .await;
@@ -73,7 +73,7 @@ async fn mailbox_domain_octets_survive_import_and_rollback() {
         assert_eq!(status, StatusCode::OK, "{rname}: {body}");
 
         let (status, body) = app
-            .send_request(Method::GET, &format!("/zones/{imported_name}"), None)
+            .send_request(Method::GET, &format!("/zones/{imported_zone_name}"), None)
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");

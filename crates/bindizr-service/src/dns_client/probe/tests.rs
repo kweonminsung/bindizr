@@ -13,33 +13,34 @@ fn qname() -> Name<Vec<u8>> {
     Name::from_str("example.com").unwrap()
 }
 
-/// SOA probes retry truncated UDP answers over TCP.
+/// Verify that SOA probes retry truncated UDP answers over TCP.
 #[tokio::test]
 async fn soa_probe_returns_serial_after_tcp_fallback() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let (tcp, udp) = loop {
-        let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        if let Ok(udp) = UdpSocket::bind(tcp.local_addr().unwrap()).await {
-            break (tcp, udp);
+    let (listener, socket) = loop {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        if let Ok(socket) = UdpSocket::bind(listener.local_addr().unwrap()).await {
+            break (listener, socket);
         }
     };
-    let addr = tcp.local_addr().unwrap();
+    let addr = listener.local_addr().unwrap();
 
     let server = tokio::spawn(async move {
         let mut buffer = [0; 4096];
 
-        let (len, peer) = udp.recv_from(&mut buffer).await.unwrap();
+        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
 
         let id = u16::from_be_bytes([buffer[0], buffer[1]]);
 
-        udp.send_to(
-            &build_soa_response(id, 0x8600, "example.com", false, 0),
-            peer,
-        )
-        .await
-        .unwrap();
-        let (mut stream, _) = tcp.accept().await.unwrap();
+        socket
+            .send_to(
+                &build_soa_response(id, 0x8600, "example.com", false, 0),
+                peer,
+            )
+            .await
+            .unwrap();
+        let (mut stream, _) = listener.accept().await.unwrap();
         let tcp_len = stream.read_u16().await.unwrap();
         let mut request = vec![0; usize::from(tcp_len)];
 
@@ -92,7 +93,7 @@ fn build_soa_response(
         rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&7200u32.to_be_bytes());
         rdata.extend_from_slice(&3600u32.to_be_bytes());
-        rdata.extend_from_slice(&604_800_u32.to_be_bytes());
+        rdata.extend_from_slice(&604_800u32.to_be_bytes());
         rdata.extend_from_slice(&3600u32.to_be_bytes());
 
         buffer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
@@ -188,7 +189,8 @@ fn extract_soa_serial_rejects_a_cache_or_another_question() {
     ));
 }
 
-/// A malformed, unrelated or wrong-opcode datagram cannot end a live UDP probe.
+/// Verify that a malformed, unrelated or wrong-opcode datagram cannot end a live UDP
+/// probe.
 #[tokio::test]
 async fn udp_probe_discards_invalid_datagrams_without_resending() {
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();

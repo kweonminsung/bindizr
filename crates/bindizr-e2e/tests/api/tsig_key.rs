@@ -41,7 +41,7 @@ async fn tsig_key_supports_create_read_and_delete() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|key| key["name"] == "update-key")
+        .find(|tsig_key| tsig_key["name"] == "update-key")
         .expect("the key is listed");
 
     assert!(listed.get("secret").is_none());
@@ -159,10 +159,13 @@ async fn tsig_key_names_its_role() {
     let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    let keys = body["items"].as_array().unwrap();
-    let key = keys.iter().find(|key| key["name"] == "admin-key").unwrap();
+    let tsig_keys = body["items"].as_array().unwrap();
+    let tsig_key = tsig_keys
+        .iter()
+        .find(|tsig_key| tsig_key["name"] == "admin-key")
+        .unwrap();
 
-    assert_eq!(key["role_name"], "admin");
+    assert_eq!(tsig_key["role_name"], "admin");
 
     let (status, _) = app
         .send_request(Method::DELETE, "/tsig-keys/admin-key", None)

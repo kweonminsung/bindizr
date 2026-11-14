@@ -29,7 +29,7 @@ async fn context(period: u64) -> (Arc<Context>, watch::Receiver<u64>) {
     (cx, period_rx)
 }
 
-/// A disabled scheduler stops even while the context keeps its reload sender alive.
+/// Verify that a disabled scheduler stops even while the context keeps its reload sender alive.
 #[tokio::test]
 async fn stop_joins_disabled_worker_without_starting_a_pass() {
     let (cx, period_rx) = context(0).await;
@@ -47,7 +47,8 @@ async fn stop_joins_disabled_worker_without_starting_a_pass() {
     );
 }
 
-/// Shutdown waits for the current database pass and skips ticks accumulated during that pass.
+/// Verify that shutdown waits for the current database pass and skips ticks
+/// accumulated during that pass.
 #[tokio::test]
 async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
     let (cx, period_rx) = context(1).await;

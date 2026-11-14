@@ -78,7 +78,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -111,17 +111,18 @@ where
     }
 }
 
-/// A wildcard listen address is not connectable; probe it via loopback.
-pub fn loopback_if_unspecified(addr: IpAddr) -> IpAddr {
-    match addr {
+/// Replace a wildcard listen address, which is not connectable, with loopback
+/// so it can be probed.
+pub fn loopback_if_unspecified(ip: IpAddr) -> IpAddr {
+    match ip {
         IpAddr::V4(ip) if ip.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
         IpAddr::V6(ip) if ip.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
-        addr => addr,
+        ip => ip,
     }
 }
 
-/// `host[:port]`, `ip[:port]`, or `[ipv6][:port]`: LDH labels (`_` allowed)
-/// and a numeric, non-zero port, as the resolver takes them.
+/// Return whether text is `host[:port]`, `ip[:port]`, or `[ipv6][:port]`: LDH
+/// labels (`_` allowed) and a numeric, non-zero port, as the resolver takes them.
 pub fn is_address_target(value: &str) -> bool {
     if value.parse::<IpAddr>().is_ok() {
         return true;
@@ -142,7 +143,7 @@ pub fn is_address_target(value: &str) -> bool {
     }
 }
 
-/// Check whether a hostname uses valid domain labels. A resolver target is an
+/// Return whether a hostname uses valid domain labels. A resolver target is an
 /// LDH name with no escapes, so the dot is always a label boundary here.
 fn is_hostname(value: &str) -> bool {
     let name = value.strip_suffix('.').unwrap_or(value);
@@ -153,7 +154,7 @@ fn is_hostname(value: &str) -> bool {
             .all(|label| name::classify_domain_label(label).is_ok())
 }
 
-/// Check whether an address target includes a valid explicit port.
+/// Return whether an address target includes a valid explicit port.
 fn has_explicit_port(value: &str) -> bool {
     if let Some((_, rest)) = value
         .strip_prefix('[')
@@ -168,7 +169,7 @@ fn has_explicit_port(value: &str) -> bool {
     }
 }
 
-/// Check whether text represents a nonzero 16-bit port.
+/// Return whether text represents a nonzero 16-bit port.
 fn is_valid_port(value: &str) -> bool {
     value.parse::<u16>().is_ok_and(|port| port != 0)
 }

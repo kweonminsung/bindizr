@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use reqwest::{Client, StatusCode};
+use reqwest::{Certificate, Client, StatusCode};
 use rustls::pki_types::CertificateDer;
 use tokio::time;
 
@@ -99,8 +99,8 @@ fn reserve_dns_port() -> u16 {
     panic!("failed to reserve a DNS port available for both TCP and UDP");
 }
 
-/// A self-signed certificate for `127.0.0.1`, written beside the config as
-/// `tls.crt`/`tls.key`; returns the certificate a client must trust to reach it.
+/// Write a self-signed certificate for `127.0.0.1` beside the config as
+/// `tls.crt`/`tls.key` and return the certificate a client must trust to reach it.
 fn write_test_certificate(dir: &Path) -> CertificateDer<'static> {
     let certified = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()])
         .expect("generate a test certificate");
@@ -112,9 +112,7 @@ fn write_test_certificate(dir: &Path) -> CertificateDer<'static> {
 /// Build an HTTP client that trusts the test TLS certificate.
 fn tls_client(cert: &CertificateDer<'static>) -> Client {
     Client::builder()
-        .add_root_certificate(
-            reqwest::Certificate::from_der(cert).expect("parse the test certificate"),
-        )
+        .add_root_certificate(Certificate::from_der(cert).expect("parse the test certificate"))
         .build()
         .expect("build the TLS client")
 }

@@ -58,6 +58,7 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create TSIG key").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -102,6 +103,7 @@ pub async fn create(
         Ok(tsig_key)
     }
     .await;
+
     let tsig_key = transaction::finish_tx(tx, apply_result, "failed to create TSIG key").await?;
 
     Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
@@ -158,7 +160,7 @@ pub async fn get(
     Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
 }
 
-/// Fetch one TSIG key by name. This is the unchecked lookup for
+/// Look up one TSIG key by name. This is the unchecked lookup for
 /// service-internal use; front ends go through [`get`].
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<TsigKey, ServiceError> {
     let name = normalize_name(name)?;
@@ -199,6 +201,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete TSIG key").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)

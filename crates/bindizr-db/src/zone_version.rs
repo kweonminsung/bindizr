@@ -120,7 +120,7 @@ pub async fn prune_by_zone_id_older_than_tx(
     }
 }
 
-/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
+/// Prune history outside the unambiguous RFC 1982 half-range behind the current serial.
 pub async fn prune_by_zone_id_outside_serial_window_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,

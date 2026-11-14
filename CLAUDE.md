@@ -1386,6 +1386,9 @@ A value's type decides its name wherever it is bound:
 | A fetched db value | its entity (`token`, `logs`), not `row` / `rows` |
 | A conversion's input | `value` from a primitive or text, the domain name otherwise (`fn from(zone: &Zone)`) |
 | A `#[source]` field | `source` |
+| `OwnerName` | `owner` |
+| `IpAddr` | `ip` |
+| A `CatalogZone` | `catalog_zone`; its name `catalog_zone_name` |
 
 DNS handlers order their parameters state, transport handle, peer, parsed
 `query`, raw `query_data`, then the rest; `query` and `query_data` stay
@@ -1648,6 +1651,20 @@ Where two spellings mean the same thing, the workspace writes one:
 - A test's purpose sentence starts "Verify that …". Within one test file a
   call fails one way: the file's `unwrap()` or its `expect("…")`.
 - Every e2e test carries `#[serial_test::serial(bindizr_e2e)]`.
+- A function's first doc line starts with an imperative verb ("List …",
+  "Return …"); a predicate's with "Return whether …", an `as_str` with
+  "Return the canonical wire spelling.", a `track_*` with "Count …", an
+  unchecked `lookup_*` with "Look up …". Payload and route docs are OpenAPI
+  text and keep their own wording.
+- A format string captures every bare identifier inline, also beside
+  positional expressions.
+- A transaction's `async` block types its error on the binding
+  (`let apply_result: Result<_, ServiceError> = async {`), with one blank line
+  after `begin_tx` and one before `finish_tx`.
+- A typed value implementing `sqlx::Encode` is bound as itself, not through
+  `.as_str()` or `.clone()`.
+- Error enums keep their variants packed; a payload other than a cause is a
+  named field.
 
 The `uninlined_format_args`, `use_self`, `map_unwrap_or`, and
 `semicolon_if_nothing_returned` Clippy lints hold the mechanical part.

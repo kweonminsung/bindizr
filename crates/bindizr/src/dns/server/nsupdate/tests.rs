@@ -9,6 +9,7 @@ use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
 use bindizr_service::types::CreateTsigKeyRequest;
 use bindizr_service::{Context, tsig_key};
+use sqlx::SqliteConnection;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
@@ -27,15 +28,13 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
 
     let db = Db::connect(&config.database).await.unwrap();
 
-    let (notify_jobs, _jobs) = mpsc::unbounded_channel();
-    let (scheduler, _period) = watch::channel(0);
     let cx = Arc::new(Context::new(
         config,
         String::new(),
         db,
         Metrics::new().unwrap(),
-        notify_jobs,
-        scheduler,
+        mpsc::unbounded_channel().0,
+        watch::channel(0).0,
     ));
 
     tsig_key::create(
@@ -67,14 +66,14 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
     );
     let mut request = request.builder().additional();
     let verifier = tsig::sign_request(&mut request, key).unwrap();
-    let request = request.finish();
+    let query_data = request.finish();
     let dns_cx = DnsContext::new(cx.clone());
-    let client_addr = "127.0.0.1:2136".parse().unwrap();
+    let client_addr = "127.0.0.1:2136".parse::<SocketAddr>().unwrap();
 
     let response = handle_nsupdate_request(
         &dns_cx,
         client_addr,
-        &request,
+        &query_data,
         TransferTransport::Udp,
         ResponseLimit::UDP,
     )
@@ -84,7 +83,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
     assert_eq!(response[3] & 15, Rcode::FORMERR.to_int());
     tsig::verify_response(&verifier, &response).unwrap();
 
-    let mut connection = sqlx::SqliteConnection::connect(&format!("sqlite://{}", path.display()))
+    let mut connection = SqliteConnection::connect(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();
 
@@ -93,7 +92,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
             .execute(&mut connection)
             .await
             .unwrap();
-        let error = update::authenticate_tsig_key(&dns_cx, "fault-key", &request)
+        let error = update::authenticate_tsig_key(&dns_cx, &query_data, "fault-key")
             .await
             .unwrap_err();
 
@@ -105,7 +104,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         let response = handle_nsupdate_request(
             &dns_cx,
             client_addr,
-            &request,
+            &query_data,
             TransferTransport::Udp,
             ResponseLimit::UDP,
         )

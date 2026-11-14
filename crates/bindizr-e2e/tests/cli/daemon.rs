@@ -53,7 +53,7 @@ async fn stop_shuts_down_daemon() {
 
     let args = ["status"];
 
-    let after = app.run_cli(&args, None).await;
+    let refused = app.run_cli(&args, None).await;
 
-    assert!(!after.status.success());
+    assert!(!refused.status.success());
 }

@@ -20,6 +20,7 @@ pub async fn withdraw(
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to withdraw the parent DS").await?;
+
     let apply_result = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
@@ -50,7 +51,7 @@ pub async fn withdraw(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::load_status_tx(
+        let response = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -62,6 +63,7 @@ pub async fn withdraw(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
+
     let (response, changed) =
         transaction::finish_tx(tx, apply_result, "failed to withdraw the parent DS").await?;
 
@@ -86,6 +88,7 @@ pub async fn cancel_withdrawal(
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to cancel the DS withdrawal").await?;
+
     let apply_result = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
@@ -114,7 +117,7 @@ pub async fn cancel_withdrawal(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::load_status_tx(
+        let response = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -126,6 +129,7 @@ pub async fn cancel_withdrawal(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
+
     let (response, changed) =
         transaction::finish_tx(tx, apply_result, "failed to cancel the DS withdrawal").await?;
 

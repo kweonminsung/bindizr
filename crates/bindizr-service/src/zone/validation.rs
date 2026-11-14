@@ -5,10 +5,10 @@ use bindizr_core::dns::record::{SoaMailbox, SrvRecordValue};
 use bindizr_core::dns::{Ttl, name};
 use bindizr_core::model::record::{Record, RecordType};
 use bindizr_core::model::zone::{Zone, ZoneId};
-use bindizr_db::{LockLevel, Transaction};
+use bindizr_db::LockLevel;
 
 use crate::error::ServiceError;
-use crate::{Context, ttl};
+use crate::{Context, Transaction, ttl};
 
 const MAX_EMAIL_LEN: usize = 254;
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
@@ -57,10 +57,10 @@ pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
         ));
     }
 
-    let name = normalize_domain_name(value, "zone name")?;
-    validate_name(&name)?;
+    let zone_name = normalize_domain_name(value, "zone name")?;
+    validate_name(&zone_name)?;
 
-    Ok(name)
+    Ok(zone_name)
 }
 
 /// Apply the zone policy to a name already parsed from a request or DNS records.

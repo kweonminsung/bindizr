@@ -10,42 +10,31 @@ use thiserror::Error;
 pub enum DatabaseError {
     #[error("query failed: {0}")]
     QueryFailed(#[source] sqlx::Error),
-
     /// A UNIQUE violation, kept distinct so lost insert races can report conflicts.
     #[error("unique constraint violation: {0}")]
     UniqueViolation(#[source] sqlx::Error),
-
     /// A FOREIGN KEY constraint rejected the statement: the referenced row is
     /// gone, or the row is still referenced.
     #[error("foreign key constraint violation: {0}")]
     ForeignKeyViolation(#[source] sqlx::Error),
-
     #[error("transaction failed: {0}")]
     TransactionFailed(#[source] sqlx::Error),
-
     /// A SQLite rowid past the 32-bit range ids are carried in.
     #[error("row id {id} exceeds the 32-bit id range")]
     IdOutOfRange { id: i64 },
-
     #[error("pool timed out")]
     PoolTimedOut,
-
     /// Each names the setting an operator would fix.
     #[error("MySQL connection failed (check database.mysql.url): {0}")]
     MySqlConnect(#[source] sqlx::Error),
-
     #[error("PostgreSQL connection failed (check database.postgresql.url): {0}")]
     PostgresConnect(#[source] sqlx::Error),
-
     #[error("SQLite open failed (check database.sqlite.file_path): {0}")]
     SqliteOpen(#[source] sqlx::Error),
-
     #[error("invalid SQLite file path: {0}")]
     InvalidSqlitePath(#[source] sqlx::Error),
-
     #[error("file path cannot be empty")]
     EmptySqlitePath,
-
     #[error("failed to create the SQLite directory '{}' (check database.sqlite.file_path): {source}", path.display())]
     CreateSqliteDir {
         path: PathBuf,
@@ -55,12 +44,12 @@ pub enum DatabaseError {
 }
 
 impl DatabaseError {
-    /// Check whether the database error reports a duplicate unique value.
+    /// Return whether the database error reports a duplicate unique value.
     pub fn is_unique_violation(&self) -> bool {
         matches!(self, Self::UniqueViolation(_))
     }
 
-    /// Check whether the database error reports a foreign-key violation.
+    /// Return whether the database error reports a foreign-key violation.
     pub fn is_foreign_key_violation(&self) -> bool {
         matches!(self, Self::ForeignKeyViolation(_))
     }

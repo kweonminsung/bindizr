@@ -109,7 +109,7 @@ pub(crate) async fn count_by_filter(
     Ok(count as u64)
 }
 
-/// Delete the rows made before `cutoff`, returning how many.
+/// Prune the rows made before `cutoff`, returning how many.
 pub(crate) async fn prune_older_than(
     pool: &Pool<Sqlite>,
     cutoff: DateTime<Utc>,

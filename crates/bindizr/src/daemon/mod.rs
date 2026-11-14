@@ -85,7 +85,7 @@ pub(crate) enum DaemonError {
 }
 
 impl DaemonError {
-    /// Whether running the same thing again would fail the same way: the
+    /// Return whether running the same thing again would fail the same way: the
     /// exit class a supervisor stops retrying on.
     pub(crate) fn is_configuration(&self) -> bool {
         matches!(self, Self::Config(_) | Self::Tls(_))
@@ -260,12 +260,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 
             _ = hangup.recv() => {
                 match reload_config(&cx, &tls) {
-                    Ok(changed) if changed.is_empty() => {
-                        log::info!("SIGHUP received, nothing changed.");
-                    }
-                    Ok(changed) => {
-                        log::info!("SIGHUP received, reloaded: {}", changed.join(", "));
-                    }
+                    Ok(changed) if changed.is_empty() => log::info!("SIGHUP received, nothing changed."),
+                    Ok(changed) => log::info!("SIGHUP received, reloaded: {}", changed.join(", ")),
                     Err(error) => log::error!("SIGHUP received, nothing reloaded: {error}"),
                 }
 
@@ -312,7 +308,7 @@ enum RunResult {
 }
 
 impl RunResult {
-    /// The result of a server that stopped on its own, so the exit says what
+    /// Build the result of a server that stopped on its own, so the exit says what
     /// failed.
     fn server_stopped(name: &'static str, result: Result<(), JoinError>) -> Self {
         Self::Failed(match result {

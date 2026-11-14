@@ -75,8 +75,8 @@ pub enum ParseUpdateError {
 
 impl UpdateRequest {
     /// Parse the zone, prerequisites, updates, and TSIG from an UPDATE message.
-    pub fn parse(data: &[u8]) -> Result<Self, ParseUpdateError> {
-        let message = Message::from_octets(data).map_err(|_| ParseUpdateError::TooShort)?;
+    pub fn parse(query_data: &[u8]) -> Result<Self, ParseUpdateError> {
+        let message = Message::from_octets(query_data).map_err(|_| ParseUpdateError::TooShort)?;
 
         if message.header().opcode() != Opcode::UPDATE {
             return Err(ParseUpdateError::InvalidOpcode);
@@ -88,7 +88,7 @@ impl UpdateRequest {
             return Err(ParseUpdateError::InvalidHeader);
         }
 
-        let mut parser = Parser::from_ref(data);
+        let mut parser = Parser::from_ref(query_data);
         parser
             .advance(DNS_HEADER_LEN)
             .map_err(|_| ParseUpdateError::TooShort)?;
@@ -114,13 +114,13 @@ impl UpdateRequest {
         let mut prerequisites = Vec::with_capacity(usize::from(counts.ancount()));
 
         for _ in 0..counts.ancount() {
-            prerequisites.push(parse_record(&mut parser, data)?);
+            prerequisites.push(parse_record(&mut parser, query_data)?);
         }
 
         let mut updates = Vec::with_capacity(usize::from(counts.nscount()));
 
         for _ in 0..counts.nscount() {
-            updates.push(parse_record(&mut parser, data)?);
+            updates.push(parse_record(&mut parser, query_data)?);
         }
 
         let tsig = parse_additional_section(&mut parser, usize::from(counts.arcount()))?;
@@ -148,14 +148,14 @@ fn parse_record(
     let name = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
     let name = to_presentation_name(&name)?;
 
-    let record_type = Rtype::from_int(
+    let rtype = Rtype::from_int(
         parser
             .parse_u16_be()
             .map_err(|_| ParseUpdateError::InvalidRecord)?,
     );
 
     // RFC 8945, Section 5.2 confines TSIG to the Additional section.
-    if record_type == Rtype::TSIG {
+    if rtype == Rtype::TSIG {
         return Err(ParseUpdateError::InvalidTsig);
     }
 
@@ -180,7 +180,7 @@ fn parse_record(
 
     Ok(UpdateRecord {
         name,
-        record_type,
+        record_type: rtype,
         class,
         ttl,
         rdata: data[rdata_start..rdata_start + rdlen].to_vec(),
@@ -197,13 +197,13 @@ fn parse_additional_section(
 
     for index in 0..count {
         let owner = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
-        let record_type = Rtype::from_int(
+        let rtype = Rtype::from_int(
             parser
                 .parse_u16_be()
                 .map_err(|_| ParseUpdateError::InvalidRecord)?,
         );
 
-        if record_type == Rtype::TSIG {
+        if rtype == Rtype::TSIG {
             if tsig.is_some() || index + 1 != count {
                 return Err(ParseUpdateError::InvalidTsig);
             }
@@ -228,7 +228,7 @@ fn parse_additional_section(
     Ok(tsig)
 }
 
-/// Parses a TSIG record from its CLASS field on (owner and TYPE already consumed).
+/// Parse a TSIG record from its CLASS field on (owner and TYPE already consumed).
 fn parse_tsig_record(
     parser: &mut Parser<'_, [u8]>,
     owner: &ParsedName<&[u8]>,
@@ -266,7 +266,7 @@ fn parse_tsig_record(
     })
 }
 
-/// Renders a parsed name in presentation form, escaping a `.` or `\` inside a
+/// Render a parsed name in presentation form, escaping a `.` or `\` inside a
 /// label so the text decodes back to the same labels (RFC 1035, Section 5.1).
 fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateError> {
     let mut labels = Vec::new();

@@ -38,12 +38,12 @@ pub(crate) async fn save_tx(
     .await?)
 }
 
-/// `field old -> new` when an update moved a value, for its detail.
+/// Return `field old -> new` when an update moved a value, for its detail.
 pub(crate) fn changed<T: PartialEq + fmt::Display>(field: &str, old: T, new: T) -> Option<String> {
     (old != new).then(|| format!("{field} {old} -> {new}"))
 }
 
-/// An update's detail: the fields it moved, or none when nothing moved.
+/// Join an update's detail: the fields it moved, or none when nothing moved.
 pub(crate) fn join_changes(changes: impl IntoIterator<Item = Option<String>>) -> Option<String> {
     let changes: Vec<String> = changes.into_iter().flatten().collect();
     (!changes.is_empty()).then(|| changes.join(", "))

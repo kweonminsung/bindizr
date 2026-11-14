@@ -61,6 +61,7 @@ async fn framing_accepts_connection_close_between_messages() {
 
 /// An `AsyncRead` whose peer left without close_notify, as rustls
 /// reports it.
+#[derive(Debug)]
 struct AbruptEof;
 
 impl AsyncRead for AbruptEof {
@@ -114,7 +115,7 @@ async fn framing_reports_expected_length_when_body_is_truncated() {
 async fn framing_accepts_maximum_length_prefix() {
     // Two octets of prefix make this the largest frame there is.
     let mut framed = u16::MAX.to_be_bytes().to_vec();
-    framed.extend(iter::repeat_n(0u8, usize::from(u16::MAX)));
+    framed.extend(iter::repeat_n(0, usize::from(u16::MAX)));
 
     assert_eq!(read(&framed).await.unwrap().len(), usize::from(u16::MAX));
 }

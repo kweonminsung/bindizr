@@ -36,6 +36,7 @@ impl TxtRecordValue {
         if rdata.is_empty() || char_strings(rdata).is_none() {
             return Err(ParseRecordValueError::TxtRdata);
         }
+
         Ok(Self(rdata.to_vec()))
     }
 
@@ -100,8 +101,8 @@ impl TxtRecordValue {
         Self(rdata)
     }
 
-    /// Bounded so the record fits one transfer message; enforced here so a
-    /// stored row cannot poison an AXFR.
+    /// Validate the length bound that lets the record fit one transfer message;
+    /// enforced here so a stored row cannot poison an AXFR.
     pub fn validate(&self) -> Result<(), ParseRecordValueError> {
         if self.0.len() > MAX_RECORD_RDATA {
             return Err(ParseRecordValueError::TxtTooLong {
@@ -113,8 +114,8 @@ impl TxtRecordValue {
         Ok(())
     }
 
-    /// Strict row-form parse: space-separated quoted character-strings only;
-    /// `None` if the value is not in that form.
+    /// Parse the row form strictly: space-separated quoted character-strings
+    /// only; `None` if the value is not in that form.
     pub fn from_presentation(stored: &str) -> Option<Self> {
         let segments = parse_quoted_segments(stored.trim()).ok()?;
         Self::from_octet_segments(segments.iter().map(Vec::as_slice)).ok()
@@ -139,8 +140,8 @@ impl TxtRecordValue {
         }
     }
 
-    /// The row form: each character-string quoted, space-separated, escaped
-    /// per RFC 1035, Section 5.1; canonical, so rows compare as text.
+    /// Render the row form: each character-string quoted, space-separated,
+    /// escaped per RFC 1035, Section 5.1; canonical, so rows compare as text.
     pub fn to_presentation(&self) -> String {
         // Every constructor validated the chain, so the walk cannot fail.
         let chunks = char_strings(&self.0).expect("TXT RDATA validated at construction");

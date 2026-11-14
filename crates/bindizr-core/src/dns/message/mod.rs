@@ -167,21 +167,21 @@ impl DnsMessageBuilder {
         self.signer.take()
     }
 
-    /// Adds an answer from wire-format RDATA bytes, with no per-type parser.
+    /// Add an answer from wire-format RDATA bytes, with no per-type parser.
     pub fn add_raw_rdata(
         &mut self,
         owner: Name<Vec<u8>>,
-        record_type: u16,
+        rtype: u16,
         ttl: u32,
         rdata: Rdata,
     ) -> Result<(), EncodeMessageError> {
-        let data = UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
+        let data = UnknownRecordData::from_octets(Rtype::from_int(rtype), rdata.into_bytes())
             .map_err(|error| EncodeMessageError::RawRdata(Box::new(error)))?;
         self.add_answer(owner, ttl, data);
         Ok(())
     }
 
-    /// Composes one class-IN answer record into its own buffer so it can be
+    /// Compose one class-IN answer record into its own buffer so it can be
     /// popped/reflushed by the chunked TCP writer.
     fn add_answer<N: ToName, D: ComposeRecordData>(&mut self, owner: N, ttl: u32, data: D) {
         let record = Record::new(owner, Class::IN, domain::base::Ttl::from_secs(ttl), data);
@@ -263,7 +263,7 @@ impl DnsMessageBuilder {
         Ok(frame)
     }
 
-    /// The buffered answers as a length-prefixed TCP frame, clearing them;
+    /// Take the buffered answers as a length-prefixed TCP frame, clearing them;
     /// `None` when nothing is buffered.
     pub fn take_frame(&mut self) -> Result<Option<Vec<u8>>, EncodeMessageError> {
         if self.answers.is_empty() {
@@ -274,7 +274,7 @@ impl DnsMessageBuilder {
         Ok(Some(frame))
     }
 
-    /// The error for a buffered answer that exceeds the DNS message limit.
+    /// Build the error for a buffered answer that exceeds the DNS message limit.
     fn answer_too_large(&self) -> EncodeMessageError {
         EncodeMessageError::AnswerTooLarge {
             len: self.message_len(),
@@ -318,7 +318,7 @@ impl DnsMessageBuilder {
         Ok(additional.finish().into_target())
     }
 
-    /// Serializes into a length-prefixed TCP frame.
+    /// Serialize into a length-prefixed TCP frame.
     fn build_tcp_frame(&mut self) -> Result<Vec<u8>, EncodeMessageError> {
         let signer = self.signer.clone();
         let frame = self.build_message().and_then(|message| {

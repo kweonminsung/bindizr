@@ -96,12 +96,12 @@ pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) -> Scheduler
 /// Create the scheduler timer; a zero period never ticks, and `spawn` guards
 /// the arm so a disabled scheduler waits only for a reload.
 fn scheduler_interval(period_secs: u64) -> Interval {
-    let mut interval = time::interval(std::time::Duration::from_secs(period_secs.max(1)));
+    let mut interval = time::interval(time::Duration::from_secs(period_secs.max(1)));
     interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
     interval
 }
 
-/// One scheduler pass: journal retention, signature refresh, and rollover
+/// Run one scheduler pass: journal retention, signature refresh, and rollover
 /// advancement. Failures are logged, never fatal.
 async fn run_scheduler_pass(cx: &Context) {
     let config = cx.config();
@@ -127,9 +127,8 @@ async fn run_scheduler_pass(cx: &Context) {
                         Err(error) => {
                             failed = true;
                             log::error!(
-                                "Zone history pruning for zone id {} failed: {}",
-                                zone.id,
-                                error
+                                "Zone history pruning for zone id {} failed: {error}",
+                                zone.id
                             );
                         }
                     }
@@ -155,10 +154,10 @@ async fn run_scheduler_pass(cx: &Context) {
         let cutoff = Utc::now() - Duration::days(i64::from(audit_max_days));
 
         match bindizr_db::audit_log::prune_older_than(cx.db(), cutoff).await {
-            Ok(rows) => {
-                cx.metrics().track_pruned_audit_log_rows(rows);
-                if rows > 0 {
-                    log::info!("Pruned {rows} audit log rows");
+            Ok(pruned) => {
+                cx.metrics().track_pruned_audit_log_rows(pruned);
+                if pruned > 0 {
+                    log::info!("Pruned {pruned} audit log rows");
                 }
             }
             Err(error) => {
@@ -176,10 +175,10 @@ async fn run_scheduler_pass(cx: &Context) {
         let cutoff = Utc::now() - Duration::days(i64::from(transfer_max_days));
 
         match bindizr_db::transfer_log::prune_older_than(cx.db(), cutoff).await {
-            Ok(rows) => {
-                cx.metrics().track_pruned_transfer_log_rows(rows);
-                if rows > 0 {
-                    log::info!("Pruned {rows} transfer log rows");
+            Ok(pruned) => {
+                cx.metrics().track_pruned_transfer_log_rows(pruned);
+                if pruned > 0 {
+                    log::info!("Pruned {pruned} transfer log rows");
                 }
             }
             Err(error) => {

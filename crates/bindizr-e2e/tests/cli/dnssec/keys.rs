@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::cli::common;
 use crate::common::TestApp;
 
-/// Each key's `(tag, state)` from `dnssec status`, sorted so two runs compare.
+/// Read each key's `(tag, state)` from `dnssec status`, sorted so two runs compare.
 async fn read_key_states(app: &TestApp, zone_name: &str) -> Vec<(u64, String)> {
     let mut states: Vec<(u64, String)> = common::read_dnssec_status(app, zone_name).await["keys"]
         .as_array()

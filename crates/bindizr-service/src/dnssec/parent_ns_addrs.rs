@@ -34,16 +34,15 @@ pub(crate) fn normalize_parent_ns_addrs(entries: &[String]) -> Result<String, Se
 
     if joined.len() > MAX_PARENT_NS_ADDRS_LEN {
         return Err(ServiceError::invalid_input(format!(
-            "parent nameserver list is {} characters; at most {} are stored",
+            "parent nameserver list is {} characters; at most {MAX_PARENT_NS_ADDRS_LEN} are stored",
             joined.len(),
-            MAX_PARENT_NS_ADDRS_LEN
         )));
     }
 
     Ok(joined)
 }
 
-/// The entries of a stored parent nameserver list.
+/// Split a stored parent nameserver list into its entries.
 pub(crate) fn parent_ns_addr_entries(stored: &str) -> Vec<String> {
     stored.split(',').map(str::to_string).collect()
 }

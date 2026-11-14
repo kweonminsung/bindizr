@@ -59,7 +59,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
     }
 
     let before = app.list_records(zone_name).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
     let (status, versions) = app
         .send_request(
             Method::GET,
@@ -68,7 +68,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{versions}");
 
     for record_type in ["NS", "CNAME", "PTR", "DNAME"] {
         for dry_run in [true, false] {
@@ -86,7 +86,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
             assert_eq!(body["applied"], false);
             assert!(!body["errors"].as_array().unwrap().is_empty());
             assert_eq!(app.list_records(zone_name).await, before);
-            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+            assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         }
     }
 
@@ -98,7 +98,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{after}");
     assert_eq!(after, versions);
 }
 
@@ -690,7 +690,7 @@ async fn zone_import_preserves_native_wks_values() {
     let (_, export) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -701,7 +701,7 @@ async fn zone_import_preserves_native_wks_values() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(app.list_records(zone_name).await, records);
-    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
 }
 
 /// Verify that unsupported types reject the whole import without changing data or serial.
@@ -713,7 +713,7 @@ async fn zone_import_rejects_unsupported_types_atomically() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let before = app.list_records(zone_name).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     for record_type in ["TYPE128", "HINFO", "TYPE65280"] {
         for dry_run in [false, true] {
@@ -731,7 +731,7 @@ async fn zone_import_rejects_unsupported_types_atomically() {
             assert_eq!(body["applied"], false, "{body}");
             assert!(!body["errors"].as_array().unwrap().is_empty(), "{body}");
             assert_eq!(app.list_records(zone_name).await, before);
-            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+            assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         }
     }
 }
@@ -1100,7 +1100,7 @@ async fn zone_import_rejects_invalid_naptr_flags_atomically() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let before = app.list_records(zone_name).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     for flags in ["!", r"\000", r"\195\169"] {
         for dry_run in [true, false] {
@@ -1127,7 +1127,7 @@ async fn zone_import_rejects_invalid_naptr_flags_atomically() {
                 "{body}"
             );
             assert_eq!(app.list_records(zone_name).await, before);
-            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+            assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         }
     }
 }
@@ -1270,7 +1270,7 @@ async fn import_zones_reports_each_zone_outcome() {
     app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap().to_string();
-    let missing = app.zone_name("bulk-missing.example");
+    let missing_zone_name = app.zone_name("bulk-missing.example");
 
     let (status, _) = app
         .send_request(
@@ -1289,7 +1289,7 @@ async fn import_zones_reports_each_zone_outcome() {
             "/import",
             Some(json!({
                 "from_server": address,
-                "zone_names": [zone_name, missing],
+                "zone_names": [zone_name, missing_zone_name],
                 "mode": "replace"
             })),
         )
@@ -1306,7 +1306,7 @@ async fn import_zones_reports_each_zone_outcome() {
     assert_eq!(body["zones"][0]["import"]["applied"], true);
     assert_eq!(body["zones"][0]["import"]["summary"]["unchanged"], 2);
     assert!(body["zones"][0]["error"].is_null(), "{body}");
-    assert_eq!(body["zones"][1]["zone_name"], missing);
+    assert_eq!(body["zones"][1]["zone_name"], missing_zone_name);
     assert_eq!(body["zones"][1]["result"], "failed");
     assert!(body["zones"][1]["import"].is_null(), "{body}");
     assert_eq!(body["zones"][1]["error"]["code"], "ZONE_NOT_FOUND");
@@ -1411,8 +1411,8 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, JoinHandle<()
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
-        let query = dns::read_frame(&mut stream).unwrap().unwrap();
-        let message = Message::from_octets(query.as_slice()).unwrap();
+        let query_data = dns::read_frame(&mut stream).unwrap().unwrap();
+        let query = Message::from_octets(query_data.as_slice()).unwrap();
         let owner = dns::parse_name(&zone).unwrap();
         let primary = dns::parse_name(&format!("NS1.{zone}.")).unwrap();
         let mailbox = dns::parse_name(&format!("Hostmaster.{zone}.")).unwrap();
@@ -1435,7 +1435,7 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, JoinHandle<()
             Ttl::from_secs(300),
         );
         let mut builder = MessageBuilder::new_vec();
-        builder.header_mut().set_id(message.header().id());
+        builder.header_mut().set_id(query.header().id());
         builder.header_mut().set_qr(true);
         builder.header_mut().set_tc(true);
         let mut question = builder.question();
@@ -1511,7 +1511,7 @@ fn serve_catalog(
     let server = thread::spawn(move || {
         let mut queries = Vec::new();
 
-        for (index, zone) in iter::once("catalog.example".to_string())
+        for (index, zone_name) in iter::once("catalog.example".to_string())
             .chain(members.iter().cloned())
             .take(1 + member_transfers)
             .enumerate()
@@ -1521,14 +1521,14 @@ fn serve_catalog(
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
-            let query = dns::read_frame(&mut stream).unwrap().unwrap();
-            let message = Message::from_octets(query.as_slice()).unwrap();
-            queries.push(message.sole_question().unwrap().qname().to_string());
-            let owner = dns::parse_name(&zone).unwrap();
-            let primary = dns::parse_name(&format!("ns1.{zone}.")).unwrap();
+            let query_data = dns::read_frame(&mut stream).unwrap().unwrap();
+            let query = Message::from_octets(query_data.as_slice()).unwrap();
+            queries.push(query.sole_question().unwrap().qname().to_string());
+            let owner = dns::parse_name(&zone_name).unwrap();
+            let primary = dns::parse_name(&format!("ns1.{zone_name}.")).unwrap();
             let soa = Soa::new(
                 primary.clone(),
-                dns::parse_name(&format!("hostmaster.{zone}.")).unwrap(),
+                dns::parse_name(&format!("hostmaster.{zone_name}.")).unwrap(),
                 Serial::from(42),
                 Ttl::from_secs(7200),
                 Ttl::from_secs(3600),
@@ -1536,7 +1536,7 @@ fn serve_catalog(
                 Ttl::from_secs(300),
             );
             let mut builder = MessageBuilder::new_vec();
-            builder.header_mut().set_id(message.header().id());
+            builder.header_mut().set_id(query.header().id());
             builder.header_mut().set_qr(true);
             let mut question = builder.question();
             question.push((&owner, Rtype::AXFR)).unwrap();
@@ -1574,7 +1574,7 @@ fn serve_catalog(
                 if split {
                     dns::write_frame(&mut stream, &answer.finish()).unwrap();
                     let mut builder = MessageBuilder::new_vec();
-                    builder.header_mut().set_id(message.header().id());
+                    builder.header_mut().set_id(query.header().id());
                     builder.header_mut().set_qr(true);
                     answer = builder.answer();
                 }
@@ -1600,7 +1600,7 @@ fn serve_catalog(
             } else {
                 answer
                     .push((
-                        &dns::parse_name(&format!("www.{zone}")).unwrap(),
+                        &dns::parse_name(&format!("www.{zone_name}")).unwrap(),
                         Ttl::from_secs(300),
                         A::new("192.0.2.50".parse().unwrap()),
                     ))
@@ -1623,9 +1623,9 @@ fn serve_catalog(
                             .set_read_timeout(Some(Duration::from_secs(1)))
                             .unwrap();
 
-                        if let Some(query) = dns::read_frame(&mut stream).unwrap() {
+                        if let Some(query_data) = dns::read_frame(&mut stream).unwrap() {
                             queries.push(
-                                Message::from_octets(query.as_slice())
+                                Message::from_octets(query_data.as_slice())
                                     .unwrap()
                                     .sole_question()
                                     .unwrap()
@@ -1776,7 +1776,7 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
     }
 
     let before = app.list_records(zone_name).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     let (address, server) = serve_import_transfer(zone_name.to_string(), true);
 
@@ -1799,7 +1799,7 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
     server.join().unwrap();
 
     assert_eq!(app.list_records(zone_name).await, before);
-    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
 }
 
 /// Verify that an invalid catalog structure fails before member reads or changes, including previews.
@@ -1902,7 +1902,9 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     let versions = app.send_request(Method::GET, &versions_path, None).await;
 
     let catalog_serial = || {
-        let (_, response) = dns::exchange_dns_query(app.dns_port(), "catalog.bindizr", 6).unwrap();
+        let (_, response) =
+            dns::exchange_dns_query(app.dns_port(), "catalog.bindizr", Rtype::SOA.to_int())
+                .unwrap();
         let response = Message::from_octets(response.as_slice()).unwrap();
 
         response
@@ -1916,7 +1918,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
             .serial()
             .into_int()
     };
-    let serial = catalog_serial();
+    let base_serial = catalog_serial();
 
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     app.create_secondary("notify", &socket.local_addr().unwrap().to_string())
@@ -1983,7 +1985,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
                     app.send_request(Method::GET, &versions_path, None).await,
                     versions
                 );
-                assert_eq!(catalog_serial(), serial);
+                assert_eq!(catalog_serial(), base_serial);
             }
         }
     }
@@ -2067,15 +2069,15 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                     "{body}"
                 );
 
-                let (status, zone) = app
+                let (status, fetched) = app
                     .send_request(Method::GET, &super::zone_path(member), None)
                     .await;
 
                 if dry_run {
-                    assert_eq!(status, StatusCode::NOT_FOUND, "{zone}");
+                    assert_eq!(status, StatusCode::NOT_FOUND, "{fetched}");
                 } else {
-                    assert_eq!(status, StatusCode::OK, "{zone}");
-                    assert_eq!(zone["zone"]["name"], *member, "{zone}");
+                    assert_eq!(status, StatusCode::OK, "{fetched}");
+                    assert_eq!(fetched["zone"]["name"], *member, "{fetched}");
 
                     let records = app.list_records(member).await;
 

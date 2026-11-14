@@ -74,7 +74,7 @@ pub(crate) async fn probe_parent_ds(
     })
 }
 
-/// The zone's configured parent servers with their addresses; one that
+/// Resolve the zone's configured parent servers to their addresses; one that
 /// does not resolve cannot be asked, so it fails the probe.
 async fn resolve_parent_ns_addrs(
     raw: &str,

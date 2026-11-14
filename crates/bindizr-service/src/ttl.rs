@@ -17,7 +17,7 @@ pub(crate) fn validate_record_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
     Ttl::try_from(ttl).map_err(ServiceError::invalid_input)
 }
 
-/// A zone's default TTL as requested, validated against the supported range.
+/// Validate a zone's default TTL as requested against the supported range.
 pub(crate) fn validate_default_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
     if ttl < MIN_DEFAULT_TTL {
         return Err(ServiceError::invalid_zone_field(format!(

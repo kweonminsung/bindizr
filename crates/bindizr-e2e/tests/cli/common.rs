@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::common::TestApp;
 
-/// The `zone import` summary row: PARSED ADDED DELETED UPDATED UNCHANGED SKIPPED.
+/// Return the `zone import` summary row: PARSED ADDED DELETED UPDATED UNCHANGED SKIPPED.
 pub(crate) fn summary_cells(stdout: &str) -> Vec<&str> {
     stdout
         .lines()
@@ -16,8 +16,8 @@ pub(crate) fn summary_cells(stdout: &str) -> Vec<&str> {
         .collect()
 }
 
-/// The count cells of an import summary table, after its APPLIED and DRY-RUN
-/// flags.
+/// Return the count cells of an import summary table, after its APPLIED and
+/// DRY-RUN flags.
 pub(crate) fn summary_row(stdout: &str) -> Vec<&str> {
     summary_cells(stdout)[2..].to_vec()
 }

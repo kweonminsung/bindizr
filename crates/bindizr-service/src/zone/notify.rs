@@ -67,6 +67,7 @@ pub async fn notify(
 mod tests {
     use bindizr_core::config::Config;
     use bindizr_core::metrics::Metrics;
+    use bindizr_db::Db;
     use serde_json::json;
     use tokio::sync::{mpsc, watch};
 
@@ -79,14 +80,13 @@ mod tests {
     async fn notify_reports_only_serials_it_advanced() {
         let mut config: Config = serde_json::from_str("{}").unwrap();
         config.database.sqlite.file_path = "sqlite::memory:".to_string();
-        let db = bindizr_db::Db::connect(&config.database).await.unwrap();
-        let (jobs, _rx) = mpsc::unbounded_channel();
+        let db = Db::connect(&config.database).await.unwrap();
         let cx = Arc::new(Context::new(
             config,
             String::new(),
             db,
             Metrics::new().unwrap(),
-            jobs,
+            mpsc::unbounded_channel().0,
             watch::channel(0).0,
         ));
         let caller = Caller::socket();
@@ -119,26 +119,37 @@ mod tests {
         }))
         .unwrap();
         zone::create(&cx, &caller, &request).await.unwrap();
-        let name = zone::normalize_name("example.test").unwrap();
-        let original = zone::get_by_name(&cx, &caller, &name).await.unwrap();
+        let zone_name = zone::normalize_name("example.test").unwrap();
+        let original = zone::get_by_name(&cx, &caller, &zone_name).await.unwrap();
 
-        let kept = notify(&cx, &caller, NotifyTarget::Zone(&name), NotifySerial::Keep)
-            .await
-            .unwrap();
+        let kept = notify(
+            &cx,
+            &caller,
+            NotifyTarget::Zone(&zone_name),
+            NotifySerial::Keep,
+        )
+        .await
+        .unwrap();
         assert!(!kept.message.contains("serial bumped"));
         assert_eq!(
-            zone::get_by_name(&cx, &caller, &name).await.unwrap().serial,
+            zone::get_by_name(&cx, &caller, &zone_name)
+                .await
+                .unwrap()
+                .serial,
             original.serial
         );
 
-        for target in [NotifyTarget::Zone(&name), NotifyTarget::All] {
-            let before = zone::get_by_name(&cx, &caller, &name).await.unwrap().serial;
+        for target in [NotifyTarget::Zone(&zone_name), NotifyTarget::All] {
+            let before = zone::get_by_name(&cx, &caller, &zone_name)
+                .await
+                .unwrap()
+                .serial;
             let response = notify(&cx, &caller, target, NotifySerial::Bump)
                 .await
                 .unwrap();
             assert!(response.message.ends_with(" (serial bumped)"));
             assert!(
-                zone::get_by_name(&cx, &caller, &name)
+                zone::get_by_name(&cx, &caller, &zone_name)
                     .await
                     .unwrap()
                     .serial

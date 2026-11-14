@@ -64,14 +64,14 @@ pub(crate) async fn get_tx(
 /// Get a zone by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<MySql>,
-    name: &ZoneName,
+    zone_name: &ZoneName,
 ) -> Result<Option<Zone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let zone = sqlx::query_as::<_, Zone>(
         "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?",
     )
-    .bind(name)
+    .bind(zone_name)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -81,14 +81,14 @@ pub(crate) async fn get_by_name(
 /// Get a zone by name in the current transaction.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, MySql>,
-    name: &ZoneName,
+    zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
     let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
         "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?{}",
         lock_level.clause(),
     )))
-    .bind(name)
+    .bind(zone_name)
     .fetch_optional(&mut **tx)
     .await?;
 

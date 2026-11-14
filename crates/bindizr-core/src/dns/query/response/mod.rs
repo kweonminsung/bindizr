@@ -8,6 +8,7 @@ mod transfer;
 
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::base::{Message, Name, ToName};
+use domain::rdata::AllRecordData;
 pub use ds::{DsRecord, DsRecordSet, extract_ds_record_set};
 pub use keepalive::extract_tcp_keepalive_timeout;
 pub use notify::validate_notify_response;
@@ -73,8 +74,6 @@ pub fn is_truncated(response: &[u8]) -> bool {
 /// Match and structurally validate an incoming datagram before trusting its flags
 /// (RFC 1035, Section 7.3; RFC 5452, Section 9.1).
 pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
-    use domain::rdata::AllRecordData;
-
     let (Ok(request), Ok(response)) = (
         Message::from_octets(request),
         Message::from_octets(response),

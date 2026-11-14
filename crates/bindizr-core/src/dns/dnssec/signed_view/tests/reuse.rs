@@ -204,21 +204,24 @@ fn record_change_reuses_unaffected_signatures() {
         )
         .is_empty()
     );
-    assert!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).is_empty());
-    assert!(rrsigs_covering(&diff.removed, &www, RECORD_TYPE_A).is_empty());
+    assert!(rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int())).is_empty());
+    assert!(rrsigs_covering(&diff.removed, &www, i32::from(Rtype::A.to_int())).is_empty());
 
     // The SOA rdata carries the new serial, so its signature is replaced.
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
     assert_eq!(
-        rrsigs_covering(&diff.removed, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.removed, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
 
     // The new name gets its records; the chain splices it in after www.
-    assert_eq!(rrsigs_covering(&diff.added, &zzz, RECORD_TYPE_A).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &zzz, i32::from(Rtype::A.to_int())).len(),
+        1
+    );
     assert!(
         diff.added
             .iter()

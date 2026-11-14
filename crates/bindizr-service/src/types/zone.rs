@@ -387,12 +387,12 @@ pub struct SecondaryStatusResponse {
 }
 
 impl SecondaryStatusResponse {
-    /// Whether the probed secondary serial matches this status's zone serial.
+    /// Return whether the probed secondary serial matches this status's zone serial.
     pub fn is_in_sync(&self) -> bool {
         self.status == SecondaryStatus::InSync
     }
 
-    /// Check whether the secondary probe failed to obtain a serial.
+    /// Return whether the secondary probe failed to obtain a serial.
     pub fn is_unreachable(&self) -> bool {
         self.status == SecondaryStatus::Unreachable
     }

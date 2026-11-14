@@ -14,6 +14,7 @@ use std::{env, process, time};
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 use compose::ComposeStack;
+use domain::base::iana::Rtype;
 use reqwest::{Client, Method, StatusCode};
 use rustls::crypto::ring;
 use rustls::pki_types::CertificateDer;
@@ -26,6 +27,7 @@ pub(crate) const RECORD_ACTIONS: &str = "record:read,record:create,record:update
 
 /// The most a listing returns in one call; the HTTP API refuses more.
 const RECORD_PAGE_LIMIT: u32 = 1000;
+
 const DNS_VERIFICATION_ENV: &str = "BINDIZR_E2E_VERIFY_DNS";
 static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 static RUN_ID: OnceLock<String> = OnceLock::new();
@@ -106,7 +108,7 @@ impl TestApp {
         }
     }
 
-    /// A locally spawned daemon with the default config, even in compose
+    /// Start a locally spawned daemon with the default config, even in compose
     /// mode — for tests bound to this host's filesystem or default config.
     pub(crate) async fn start_local() -> Self {
         Self::start_with_options(TestAppOptions::default()).await
@@ -117,20 +119,20 @@ impl TestApp {
         &self.base_url
     }
 
-    /// Port bindizr's own DNS listener is bound to; only the local runtime
+    /// Return the port bindizr's own DNS listener is bound to; only the local runtime
     /// picks one, the compose stack fixes it.
     pub(crate) fn dns_port(&self) -> u16 {
         self.dns_port.expect("local runtime binds a DNS port")
     }
 
-    /// Port of bindizr's XoT listener; only a local daemon started with
+    /// Return the port of bindizr's XoT listener; only a local daemon started with
     /// `dns_tls` has one.
     pub(crate) fn dns_tls_port(&self) -> u16 {
         self.dns_tls_port
             .expect("the daemon was started with dns_tls")
     }
 
-    /// The certificate this run's TLS listeners present, for a client to trust.
+    /// Return the certificate this run's TLS listeners present, for a client to trust.
     pub(crate) fn tls_cert(&self) -> &CertificateDer<'static> {
         self.tls_cert
             .as_ref()
@@ -189,8 +191,8 @@ impl TestApp {
         &self.namespace
     }
 
-    /// The config file the local daemon was started from, for tests that
-    /// rewrite it and reload.
+    /// Return the config file the local daemon was started from, for tests
+    /// that rewrite it and reload.
     pub(crate) fn config_path(&self) -> PathBuf {
         let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
             panic!("only the local runtime owns its config file");
@@ -199,18 +201,18 @@ impl TestApp {
         temp_dir.path().join("bindizr.conf.toml")
     }
 
-    /// Check whether this test application includes DNS secondaries.
+    /// Return whether this test application includes DNS secondaries.
     pub(crate) fn has_dns_secondaries(&self) -> bool {
         !self.dns_secondary_ports.is_empty()
     }
 
-    /// Ports of the compose stack's BIND9 secondaries; empty in local mode.
+    /// Return the ports of the compose stack's BIND9 secondaries; empty in local mode.
     pub(crate) fn dns_secondary_ports(&self) -> &[u16] {
         &self.dns_secondary_ports
     }
 
-    /// One API request; in compose mode every mutating call also asserts the
-    /// DNS secondaries match the API.
+    /// Send one API request; in compose mode every mutating call also asserts
+    /// the DNS secondaries match the API.
     pub(crate) async fn send_request(
         &self,
         method: Method,
@@ -225,20 +227,20 @@ impl TestApp {
             .then(|| path.strip_prefix("/zones/"))
             .flatten();
 
-        let response = self.send_http(method, path, body).await;
+        let (status, body) = self.send_http(method, path, body).await;
 
         if let Some(previous_zone_name) = updated_zone_name
-            && response.0.is_success()
-            && response.1["zone"]["name"].as_str() == Some(previous_zone_name)
+            && status.is_success()
+            && body["zone"]["name"].as_str() == Some(previous_zone_name)
         {
             previous_record_key = None;
         }
 
-        if should_verify_dns && response.0.is_success() {
+        if should_verify_dns && status.is_success() {
             self.assert_dns_matches_api(previous_record_key).await;
         }
 
-        response
+        (status, body)
     }
 
     /// Send an authenticated API request and decode its JSON response.
@@ -248,7 +250,7 @@ impl TestApp {
         path: &str,
         body: Option<Value>,
     ) -> (StatusCode, Value) {
-        let url = format!("{}{}", self.base_url, path);
+        let url = format!("{}{path}", self.base_url);
         let mut request = self.client.request(method, url);
 
         if let Some(token) = &self.auth_token {
@@ -403,7 +405,7 @@ impl TestApp {
             ["zone", "delete", zone_name, ..] => Some(PreviousRecordKey {
                 zone_name: verify::to_fqdn(zone_name),
                 name: verify::to_fqdn(zone_name),
-                record_type: 6,
+                record_type: Rtype::SOA.to_int(),
             }),
             _ => None,
         };

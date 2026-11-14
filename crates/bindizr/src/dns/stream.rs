@@ -25,8 +25,8 @@ pub(crate) enum DnsStream {
 }
 
 impl DnsStream {
-    /// The transport the connection arrived over, as the transfer log and
-    /// the metrics record it.
+    /// Return the transport the connection arrived over, as the transfer log
+    /// and the metrics record it.
     pub(crate) fn transport(&self) -> TransferTransport {
         match self {
             Self::Tcp(_) => TransferTransport::Tcp,
@@ -108,7 +108,7 @@ pub(crate) struct ResponseWriter {
 }
 
 impl ResponseWriter {
-    /// The transport the connection arrived over.
+    /// Return the transport the connection arrived over.
     pub(crate) fn transport(&self) -> TransferTransport {
         self.transport
     }
@@ -147,8 +147,8 @@ impl ResponseWriter {
     }
 
     /// Write one DNS message as a TCP frame.
-    pub(crate) async fn write_message(&self, message: &[u8]) -> Result<(), DnsError> {
-        let frame = message::encode_tcp_message(message)?;
+    pub(crate) async fn write_message(&self, response: &[u8]) -> Result<(), DnsError> {
+        let frame = message::encode_tcp_message(response)?;
         self.write_frame(&frame).await
     }
 

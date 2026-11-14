@@ -77,9 +77,8 @@ pub async fn delete(
     let response = transaction::finish_tx(tx, apply_result, "failed to delete zone").await?;
 
     log::info!(
-        "event=zone_delete zone={} applied={}",
-        zone_name,
-        response.applied
+        "event=zone_delete zone={zone_name} applied={}",
+        response.applied,
     );
 
     // Send catalog NOTIFY so secondaries drop the removed zone

@@ -13,7 +13,7 @@ use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 /// Verify that a truncated zone or later section receives only a header, without an invented OPT.
 #[test]
 fn unreadable_update_bodies_receive_header_only_formerr() {
-    let valid = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
+    let valid = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int());
     let mut unreadable_zone = valid[..12].to_vec();
     unreadable_zone.extend_from_slice(&[5, b'x']);
     let mut unreadable_update = valid.clone();
@@ -41,7 +41,7 @@ fn unreadable_update_bodies_receive_header_only_formerr() {
 /// Verify that `build_response` echoes request header and question.
 #[test]
 fn build_response_echoes_request_header_and_question() {
-    let query = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
+    let query = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int());
 
     let response = build_response(
         &query,
@@ -68,7 +68,7 @@ fn build_response_echoes_request_header_and_question() {
 /// carrying the extended rcode (RFC 6891, Section 6.1.1).
 #[test]
 fn build_response_echoes_an_opt_with_the_extended_rcode() {
-    let mut query = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
+    let mut query = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int());
     query[10..12].copy_from_slice(&1u16.to_be_bytes());
     query.extend_from_slice(&[
         0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -94,11 +94,9 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
 /// Verify that `build_response` signs with request mac chain.
 #[test]
 fn build_response_signs_with_request_mac_chain() {
-    let query = crate::dns::tsig::tests::build_signed_update(
-        TsigAlgorithm::HmacSha256,
-        crate::dns::tsig::tests::now_secs(),
-    );
-    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+    let query =
+        tsig::tests::build_signed_update(TsigAlgorithm::HmacSha256, tsig::tests::now_secs());
+    let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
     let signer = tsig::verify_tsig(&query, Some(key)).unwrap();
@@ -148,18 +146,16 @@ fn build_response_signs_with_request_mac_chain() {
     digest.extend_from_slice(&(request_mac.len() as u16).to_be_bytes());
     digest.extend_from_slice(&request_mac);
     digest.extend_from_slice(&unsigned);
-    digest.extend_from_slice(&crate::dns::tsig::tests::encode_name("update-key"));
+    digest.extend_from_slice(&tsig::tests::encode_name("update-key"));
     digest.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
     digest.extend_from_slice(&0u32.to_be_bytes());
-    digest.extend_from_slice(&crate::dns::tsig::tests::encode_name("hmac-sha256"));
-    digest.extend_from_slice(&crate::dns::tsig::tests::encode_u48(u64::from(
-        data.time_signed(),
-    )));
+    digest.extend_from_slice(&tsig::tests::encode_name("hmac-sha256"));
+    digest.extend_from_slice(&tsig::tests::encode_u48(u64::from(data.time_signed())));
     digest.extend_from_slice(&data.fudge().to_be_bytes());
     digest.extend_from_slice(&0u16.to_be_bytes()); // error
     digest.extend_from_slice(&0u16.to_be_bytes()); // other len
 
-    let expected = crate::dns::tsig::tests::hmac_sign(TsigAlgorithm::HmacSha256, &digest);
+    let expected = tsig::tests::hmac_sign(TsigAlgorithm::HmacSha256, &digest);
 
     assert_eq!(*data.mac(), &expected[..]);
 }
@@ -176,7 +172,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
     );
     let key = TsigKey {
         name: name.clone(),
-        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
+        ..tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -227,11 +223,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
                     Time48::now(),
                 )
                 .unwrap();
-            crate::dns::tsig::tests::assert_response_mac(
-                &request,
-                &response,
-                TsigAlgorithm::HmacSha512,
-            );
+            tsig::tests::assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
         }
     }
 }

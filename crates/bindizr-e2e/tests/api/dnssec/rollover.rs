@@ -33,7 +33,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let zone_name = zone_name.as_str();
-    let serial_before = body["zone"]["serial"].as_i64().unwrap();
+    let base_serial = body["zone"]["serial"].as_i64().unwrap();
 
     let (status, body) = app
         .send_request(
@@ -56,7 +56,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
     assert_eq!(ds_records.len(), 1);
     let old_ds = ds_records[0]["presentation"].as_str().unwrap().to_string();
 
-    assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 1);
+    assert_eq!(dnssec["serial"].as_i64().unwrap(), base_serial + 1);
 
     let (status, body) = app
         .send_request(
@@ -97,7 +97,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
 
     // Pre-publishing changes the DNSKEY record set secondaries hold, so each
     // rollover step rides the serial/IXFR mechanics.
-    assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 2);
+    assert_eq!(dnssec["serial"].as_i64().unwrap(), base_serial + 2);
 
     let (status, body) = app
         .send_request(
@@ -151,7 +151,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
 
     assert_eq!(ds_records.len(), 1);
     assert_eq!(ds_records[0]["key_tag"], key_by_id(new_key_id)["key_tag"]);
-    assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 3);
+    assert_eq!(dnssec["serial"].as_i64().unwrap(), base_serial + 3);
 
     let (status, body) = app
         .send_request(

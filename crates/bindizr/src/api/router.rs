@@ -13,6 +13,7 @@ use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 use utoipa::OpenApi;
 
 use crate::api::error::ApiError;
+use crate::api::middleware::auth;
 use crate::api::middleware::body_parser::DEFAULT_BODY_BYTES;
 use crate::api::openapi::ApiDoc;
 use crate::api::{
@@ -48,7 +49,7 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
     if api_config.authentication_required {
         api_router = api_router.layer(middleware::from_fn_with_state(
             cx.clone(),
-            crate::api::middleware::auth::auth_middleware,
+            auth::auth_middleware,
         ));
     } else {
         // Attach the API caller explicitly so a missing caller stays a wiring

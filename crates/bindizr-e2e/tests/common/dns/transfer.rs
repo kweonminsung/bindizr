@@ -20,7 +20,7 @@ pub(crate) enum TransferResult {
 }
 
 impl TransferResult {
-    /// The record count of a transfer that ran, panicking on a refusal.
+    /// Return the record count of a transfer that ran, panicking on a refusal.
     pub(crate) fn records(self) -> usize {
         match self {
             Self::Records(count) => count,
@@ -28,7 +28,7 @@ impl TransferResult {
         }
     }
 
-    /// The RCODE of a refused transfer, panicking if it ran.
+    /// Return the RCODE of a refused transfer, panicking if it ran.
     pub(crate) fn refusal(self) -> Rcode {
         match self {
             Self::Refused { rcode, .. } => rcode,
@@ -36,7 +36,7 @@ impl TransferResult {
         }
     }
 
-    /// Whether a refusal carried TSIG, panicking if the transfer ran.
+    /// Return whether a refusal carried TSIG, panicking if the transfer ran.
     pub(crate) fn refusal_signed(self) -> bool {
         match self {
             Self::Refused { signed, .. } => signed,

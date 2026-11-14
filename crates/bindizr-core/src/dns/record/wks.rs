@@ -67,7 +67,7 @@ impl WksRecordValue {
         })
     }
 
-    /// The identity used when an UPDATE replaces a WKS value (RFC 2136, Section 1.1.5).
+    /// Return the identity used when an UPDATE replaces a WKS value (RFC 2136, Section 1.1.5).
     pub fn address_and_protocol(&self) -> (Ipv4Addr, u8) {
         (self.address, self.protocol)
     }

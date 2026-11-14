@@ -11,7 +11,7 @@ use super::*;
 use crate::error::ErrorCode;
 use crate::types::DsState;
 
-/// Missing parent configuration keeps its service-owned cause and established message.
+/// Verify that missing parent configuration keeps its service-owned cause and established message.
 #[test]
 fn missing_parent_nameservers_remains_a_typed_service_error() {
     use std::error::Error;
@@ -71,7 +71,7 @@ fn csk() -> DnssecKey {
     .unwrap()
 }
 
-/// The DS the parent would serve for `key`, in the digest type given.
+/// Build the DS the parent would serve for `key`, in the digest type given.
 fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRecord {
     let apex = zone().name.to_wire_name().unwrap();
     DsRecord {

@@ -24,7 +24,7 @@ impl Run {
         }
     }
 
-    /// Whether the run writes nothing.
+    /// Return whether the run writes nothing.
     pub fn is_dry_run(self) -> bool {
         self == Self::DryRun
     }

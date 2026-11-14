@@ -11,7 +11,8 @@ use tokio::time;
 use super::*;
 use crate::dns_client;
 
-/// Finish an outstanding transfer, then honor zero and expired keepalive timeouts.
+/// Verify that an outstanding transfer finishes and zero and expired keepalive timeouts
+/// are then honored.
 #[tokio::test]
 async fn fetch_zone_honors_keepalive_timeouts() {
     for (timeout, final_timeout, idle, expected_reuse) in [
@@ -214,7 +215,8 @@ async fn fetch_transfer(
     result.map(|(records, _)| records)
 }
 
-/// Accept equivalent closing SOA names while preserving received RDATA case.
+/// Verify that equivalent closing SOA names are accepted while received RDATA case is
+/// preserved.
 #[tokio::test]
 async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
     let opening = SoaRecordValue {
@@ -251,7 +253,7 @@ async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
     }
 }
 
-/// Reject a closing SOA whose data differs from the opening SOA.
+/// Verify that a closing SOA whose data differs from the opening SOA is rejected.
 #[tokio::test]
 async fn fetch_zone_rejects_changed_closing_soa() {
     let opening = SoaRecordValue {

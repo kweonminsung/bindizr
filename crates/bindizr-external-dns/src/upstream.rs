@@ -187,7 +187,7 @@ impl UpstreamClient {
     fn build_request(&self, method: Method, path: &str) -> RequestBuilder {
         let mut request = self
             .http
-            .request(method, format!("{}{}", self.base_url, path));
+            .request(method, format!("{}{path}", self.base_url));
 
         if let Some(token) = &self.token {
             request = request.bearer_auth(token);

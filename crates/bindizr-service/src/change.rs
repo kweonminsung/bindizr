@@ -10,7 +10,7 @@ pub(crate) struct ChangeOrigin {
 }
 
 impl ChangeOrigin {
-    /// The scheduler, acting on nobody's request.
+    /// Return the scheduler's origin, acting on nobody's request.
     pub(crate) fn system() -> Self {
         Self {
             source: ChangeSource::System,

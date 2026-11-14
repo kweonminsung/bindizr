@@ -13,10 +13,10 @@ use crate::socket;
 use crate::socket::types::{DaemonCommand, DaemonResponse};
 use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 
-/// True only when nothing listens on either socket path; a timeout or
+/// Return whether nothing listens on either socket path; a timeout or
 /// garbled response may come from a live but wedged daemon.
 pub(crate) async fn is_daemon_socket_gone() -> bool {
-    /// Check whether a connection error means no daemon is listening.
+    /// Return whether a connection error means no daemon is listening.
     fn is_missing_listener(error: &io::Error) -> bool {
         matches!(
             error.kind(),
@@ -27,7 +27,7 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
     match try_connect_daemon_socket().await {
         Ok(_) => false,
         // An owner-only socket this user cannot open is a live daemon.
-        Err(ConnectDaemonSocketError { primary: error, .. })
+        Err(ConnectDaemonSocketError { source: error, .. })
             if error.kind() == io::ErrorKind::PermissionDenied =>
         {
             false
@@ -39,7 +39,7 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
         }) => is_missing_listener(&fallback_error),
         // Primary failed in an unexpected way; the fallback was not tried.
         Err(ConnectDaemonSocketError {
-            primary: error,
+            source: error,
             fallback: None,
         }) => is_missing_listener(&error),
     }
@@ -107,7 +107,7 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
 /// user may not drive (a socket another user planted in /tmp).
 async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     let (socket_path, stream) = try_connect_daemon_socket().await.map_err(|error| {
-        let denied_path = if error.primary.kind() == io::ErrorKind::PermissionDenied {
+        let denied_path = if error.source.kind() == io::ErrorKind::PermissionDenied {
             Some(SOCKET_FILE_PATH)
         } else if error
             .fallback
@@ -164,7 +164,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     Ok(stream)
 }
 
-/// Io-level connect attempt, naming the path that answered and preserving
+/// Attempt an io-level connect, naming the path that answered and preserving
 /// the error(s) so callers can tell a vanished socket apart from other failures.
 async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), ConnectDaemonSocketError>
 {
@@ -181,13 +181,13 @@ async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), Conne
             match UnixStream::connect(FALLBACK_SOCKET_FILE_PATH).await {
                 Ok(stream) => Ok((FALLBACK_SOCKET_FILE_PATH, stream)),
                 Err(fallback_error) => Err(ConnectDaemonSocketError {
-                    primary: error,
+                    source: error,
                     fallback: Some(fallback_error),
                 }),
             }
         }
         Err(error) => Err(ConnectDaemonSocketError {
-            primary: error,
+            source: error,
             fallback: None,
         }),
     }
@@ -196,11 +196,11 @@ async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), Conne
 /// Failed connection attempts to the primary and optional fallback socket.
 #[derive(Debug, Error)]
 #[error(
-    "could not connect to the daemon socket at '{SOCKET_FILE_PATH}': {primary}{}; is the bindizr daemon running?",
+    "could not connect to the daemon socket at '{SOCKET_FILE_PATH}': {source}{}; is the bindizr daemon running?",
     fallback.as_ref().map(|error| format!("; fallback '{FALLBACK_SOCKET_FILE_PATH}': {error}")).unwrap_or_default()
 )]
 struct ConnectDaemonSocketError {
     #[source]
-    primary: io::Error,
+    source: io::Error,
     fallback: Option<io::Error>,
 }

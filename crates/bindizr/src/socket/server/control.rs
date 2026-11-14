@@ -14,7 +14,7 @@ pub(crate) enum DaemonControl {
     Restart,
 }
 
-/// The control channel: the sender lives in the socket server, the daemon's
+/// Build the control channel: the sender lives in the socket server, the daemon's
 /// lifecycle loop awaits the receiver.
 pub(crate) fn channel() -> (mpsc::Sender<DaemonControl>, mpsc::Receiver<DaemonControl>) {
     mpsc::channel(1)

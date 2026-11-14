@@ -76,6 +76,7 @@ impl<'a> CaaRecordValue<'a> {
         if self.flags & 0x7f != 0 {
             return Err(ParseRecordValueError::CaaReservedFlags);
         }
+
         Ok(())
     }
 

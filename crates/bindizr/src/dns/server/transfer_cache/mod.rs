@@ -62,7 +62,7 @@ struct Entries {
 }
 
 impl TransferCache {
-    /// An empty cache.
+    /// Build an empty cache.
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -125,7 +125,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
     }
 
     let (zone, version_id) = match zone::authorize_transfer_by_name(cx, caller, zone_name).await? {
-        TransferAccess::Granted(zone) => zone,
+        TransferAccess::Granted(content) => content,
         TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
     };
@@ -203,16 +203,16 @@ impl Entries {
         let mut by_recency: Vec<(u64, ZoneId)> = self
             .zones
             .iter()
-            .map(|(&id, entry)| (entry.last_used, id))
+            .map(|(&zone_id, entry)| (entry.last_used, zone_id))
             .collect();
         by_recency.sort_unstable();
         let mut evicted = 0;
 
-        for (_, lru_id) in by_recency {
+        for (_, lru_zone_id) in by_recency {
             if self.records <= max_records {
                 break;
             }
-            self.remove(lru_id);
+            self.remove(lru_zone_id);
             evicted += 1;
         }
 

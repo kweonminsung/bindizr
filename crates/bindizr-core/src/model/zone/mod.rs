@@ -42,12 +42,12 @@ pub struct Zone {
 }
 
 impl Zone {
-    /// SOA RNAME (mailbox) in presentation form, e.g. `admin.example.com`.
+    /// Return the SOA RNAME (mailbox) in presentation form, e.g. `admin.example.com`.
     pub fn soa_mailbox(&self) -> Result<SoaMailbox, ParseMailboxError> {
         SoaMailbox::from_email(&self.rname)
     }
 
-    /// Whether the SOA metadata differs from `other`, excluding the serial.
+    /// Return whether the SOA metadata differs from `other`, excluding the serial.
     pub fn soa_metadata_differs(&self, other: &Self) -> bool {
         self.mname != other.mname
             || self.rname != other.rname
@@ -58,7 +58,7 @@ impl Zone {
             || self.minimum_ttl != other.minimum_ttl
     }
 
-    /// This zone's wire-format SOA RDATA at `serial`; the SOA is synthesized
+    /// Encode this zone's wire-format SOA RDATA at `serial`; the SOA is synthesized
     /// from zone columns, never stored as a record row.
     pub fn soa_rdata(&self, serial: Serial) -> Result<Rdata, EncodeRdataError> {
         let rname = self.soa_mailbox()?;
@@ -74,7 +74,7 @@ impl Zone {
         .to_rdata()
     }
 
-    /// SOA RDATA in presentation form:
+    /// Render the SOA RDATA in presentation form:
     /// `<mname> <rname> <serial> <refresh> <retry> <expire> <minimum>`.
     pub fn soa_presentation_rdata(&self) -> Result<String, ParseMailboxError> {
         Ok(format!(

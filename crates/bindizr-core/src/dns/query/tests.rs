@@ -162,7 +162,7 @@ fn build_soa_response(query_id: u16, qname: &Name<Vec<u8>>, class: Class) -> Vec
     answer.finish()
 }
 
-/// The record `build_ds_response` serves for `key_tag`, as parsed.
+/// Build the record `build_ds_response` serves for `key_tag`, as parsed.
 fn parsed_ds_record(key_tag: u16) -> DsRecord {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
@@ -223,12 +223,11 @@ fn transfer_rejects_a_non_in_record() {
         .unwrap();
     let wire = answer.finish();
 
-    let error =
-        extract_transfer_records(7, &name, TransferMessagePosition::Following, &wire).unwrap_err();
+    let result = extract_transfer_records(7, &name, TransferMessagePosition::Following, &wire);
 
     assert!(
-        matches!(error, ParseResponseError::ForeignClass { .. }),
-        "{error}"
+        matches!(result, Err(ParseResponseError::ForeignClass { .. })),
+        "{result:?}"
     );
 }
 
@@ -522,12 +521,10 @@ fn extract_ds_record_set_rejects_id_mismatch() {
         Some(("com", Class::IN)),
     );
 
-    assert!(
-        extract_ds_record_set(7, &child, &response)
-            .unwrap_err()
-            .to_string()
-            .contains("ID mismatch")
-    );
+    assert!(matches!(
+        extract_ds_record_set(7, &child, &response),
+        Err(ParseResponseError::IdMismatch { .. })
+    ));
 }
 
 /// Verify that extended errors cannot become successful DS, SOA, AXFR, or NOTIFY responses.

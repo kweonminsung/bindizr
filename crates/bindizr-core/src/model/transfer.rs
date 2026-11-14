@@ -35,7 +35,7 @@ pub enum TransferKind {
 }
 
 impl TransferKind {
-    /// The transfer a query type asks for; the caller checked it is one.
+    /// Return the transfer a query type asks for; the caller checked it is one.
     pub fn from_qtype(qtype: Rtype) -> Self {
         if qtype == Rtype::IXFR {
             Self::Ixfr
@@ -44,7 +44,7 @@ impl TransferKind {
         }
     }
 
-    /// Storage name, as the column and the API spell it.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Axfr => "axfr",
@@ -98,7 +98,7 @@ pub enum TransferResult {
 }
 
 impl TransferResult {
-    /// Storage name, as the column and the API spell it.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -154,7 +154,7 @@ impl TransferTransport {
     /// Every transport, for the metric series registered up front.
     pub const ALL: [Self; 3] = [Self::Udp, Self::Tcp, Self::Tls];
 
-    /// Storage name, as the column, the API, and the metric label spell it.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Udp => "udp",

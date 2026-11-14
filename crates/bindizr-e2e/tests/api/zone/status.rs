@@ -56,10 +56,14 @@ async fn zone_status_reports_secondaries() {
         assert!(secondaries.is_empty());
     }
 
-    let missing_zone = app.zone_name("missing.example");
+    let missing_zone_name = app.zone_name("missing.example");
 
     let (status, body) = app
-        .send_request(Method::GET, &format!("/zones/{missing_zone}/status"), None)
+        .send_request(
+            Method::GET,
+            &format!("/zones/{missing_zone_name}/status"),
+            None,
+        )
         .await;
 
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");

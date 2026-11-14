@@ -29,7 +29,8 @@ pub(crate) async fn find_by_name_tx(
     Ok(bindizr_db::zone::get_by_name_tx(tx, zone_name, lock_level).await?)
 }
 
-/// Cheap database round-trip (limit-1 zones probe), for health checks.
+/// Probe the database with a cheap round-trip (limit-1 zones probe), for
+/// health checks.
 pub async fn probe_table(cx: &Context) -> Result<(), ServiceError> {
     Ok(bindizr_db::zone::probe_table(cx.db()).await?)
 }
@@ -44,7 +45,7 @@ pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
     Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
 }
 
-/// All zones, for the unauthenticated metrics endpoint.
+/// Count all zones, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(
         bindizr_db::zone::count_by_filter(cx.db(), &bindizr_db::zone::ZoneFilter::default())

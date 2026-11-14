@@ -66,24 +66,28 @@ pub async fn get_tx(
 }
 
 /// Get a zone by name.
-pub async fn get_by_name(db: &Db, name: &ZoneName) -> Result<Option<Zone>, DatabaseError> {
+pub async fn get_by_name(db: &Db, zone_name: &ZoneName) -> Result<Option<Zone>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::zone::get_by_name(pool, name).await,
-        Backend::Postgres(pool) => postgres::zone::get_by_name(pool, name).await,
-        Backend::Sqlite(pool) => sqlite::zone::get_by_name(pool, name).await,
+        Backend::MySql(pool) => mysql::zone::get_by_name(pool, zone_name).await,
+        Backend::Postgres(pool) => postgres::zone::get_by_name(pool, zone_name).await,
+        Backend::Sqlite(pool) => sqlite::zone::get_by_name(pool, zone_name).await,
     }
 }
 
 /// Get a zone by name in the current transaction.
 pub async fn get_by_name_tx(
     tx: &mut Transaction<'_>,
-    name: &ZoneName,
+    zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::zone::get_by_name_tx(tx, name, lock_level).await,
-        TransactionKind::Postgres(tx) => postgres::zone::get_by_name_tx(tx, name, lock_level).await,
-        TransactionKind::Sqlite(tx) => sqlite::zone::get_by_name_tx(tx, name, lock_level).await,
+        TransactionKind::MySql(tx) => mysql::zone::get_by_name_tx(tx, zone_name, lock_level).await,
+        TransactionKind::Postgres(tx) => {
+            postgres::zone::get_by_name_tx(tx, zone_name, lock_level).await
+        }
+        TransactionKind::Sqlite(tx) => {
+            sqlite::zone::get_by_name_tx(tx, zone_name, lock_level).await
+        }
     }
 }
 

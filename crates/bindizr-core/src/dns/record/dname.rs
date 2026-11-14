@@ -14,6 +14,7 @@ impl<'a> DnameRecordValue<'a> {
         if value != "." {
             value::validate_domain_record_value("DNAME record value", value)?;
         }
+
         Ok(Self { target: value })
     }
 

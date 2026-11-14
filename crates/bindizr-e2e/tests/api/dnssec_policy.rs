@@ -239,7 +239,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let serial_before = body["serial"].as_i64().unwrap();
+    let base_serial = body["serial"].as_i64().unwrap();
 
     // A policy differing only in algorithm: the move double-signs the zone
     // through an algorithm rollover (RFC 6840, Section 5.11).
@@ -282,7 +282,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
         .expect("the old key keeps signing during the rollover");
 
     assert_eq!(active["algorithm"], "ecdsap256sha256");
-    assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 1);
+    assert_eq!(dnssec["serial"].as_i64().unwrap(), base_serial + 1);
 
     // Moving to the same policy is a no-op that reports the current state.
     let (status, body) = app
@@ -294,7 +294,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["serial"].as_i64().unwrap(), serial_before + 1);
+    assert_eq!(body["serial"].as_i64().unwrap(), base_serial + 1);
 }
 
 /// Verify that zone moves between denial chains without going insecure.

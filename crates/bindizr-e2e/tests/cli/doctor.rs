@@ -79,7 +79,7 @@ async fn doctor_reports_healthy_installation() {
 /// Verify that `doctor` runs the offline checks when no daemon is up.
 #[test]
 #[serial_test::serial(bindizr_e2e)]
-fn doctor_without_a_daemon_runs_the_offline_checks() {
+fn doctor_runs_the_offline_checks_when_no_daemon_runs() {
     // Ports nothing on this host holds, so the port checks have a pass to report.
     let config = VALID_CONFIG
         .replace(

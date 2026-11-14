@@ -200,9 +200,9 @@ pub(crate) async fn delete_record(
 pub(crate) async fn delete_matching_records(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(query): Query<DeleteRecordsRequest>,
+    Query(request): Query<DeleteRecordsRequest>,
 ) -> Result<Response, ApiError> {
-    let response = record::delete_matching(&cx, &caller, &query).await?;
+    let response = record::delete_matching(&cx, &caller, &request).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

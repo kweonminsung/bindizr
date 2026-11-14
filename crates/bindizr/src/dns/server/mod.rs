@@ -39,7 +39,7 @@ pub(crate) struct DnsContext {
 }
 
 impl DnsContext {
-    /// The front end's context over the daemon's, with empty caches.
+    /// Build the front end's context over the daemon's, with empty caches.
     pub(crate) fn new(daemon: Arc<Context>) -> Self {
         Self {
             daemon,
@@ -48,13 +48,13 @@ impl DnsContext {
         }
     }
 
-    /// The daemon's context.
+    /// Return the daemon's context.
     pub(crate) fn daemon(&self) -> &Arc<Context> {
         &self.daemon
     }
 }
 
-/// Check whether a query type requests AXFR or IXFR.
+/// Return whether a query type requests AXFR or IXFR.
 pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
     matches!(qtype, Rtype::AXFR | Rtype::IXFR)
 }

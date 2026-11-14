@@ -14,9 +14,10 @@ use bindizr_service::authorization::Caller;
 use bindizr_service::zone;
 use bindizr_service::zone::TransferAccess;
 
+use super::DnsContext;
 use crate::dns::error::DnsError;
+use crate::dns::server::auth;
 use crate::dns::server::auth::{TransferIdentity, TransferRefusal};
-use crate::dns::server::{DnsContext, auth};
 use crate::dns::stream::ResponseWriter;
 use crate::dns::udp::{ReplyTarget, UdpSocket};
 
@@ -122,7 +123,8 @@ pub(crate) async fn handle_udp_ixfr(
     Ok(())
 }
 
-/// `bindizr doctor` probes over the wire, reaching a concrete `listen_addr` from it.
+/// Return whether the client is `bindizr doctor` probing over the wire,
+/// reaching a concrete `listen_addr` from it.
 fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
     // IPv4-mapped IPv6 addresses use the same self-probe identity as IPv4.
     let client_ip = client_ip.to_canonical();
@@ -212,7 +214,7 @@ async fn handle_soa_request(
             }
         };
         let (catalog_zone, _) = match access {
-            TransferAccess::Granted(zones) => zones,
+            TransferAccess::Granted(content) => content,
             TransferAccess::NotAuth => {
                 return Ok((
                     query.build_signed_error_response(
@@ -304,8 +306,8 @@ async fn handle_soa_request(
     Ok((builder.build()?, SoaResult::Ok))
 }
 
-/// `bindizr doctor`'s own probe carries no key and is not a secondary, so it
-/// passes ahead of both gates.
+/// Authenticate an SOA query. `bindizr doctor`'s own probe carries no key and
+/// is not a secondary, so it passes ahead of both gates.
 async fn authenticate_soa(
     dns_cx: &DnsContext,
     client_ip: IpAddr,

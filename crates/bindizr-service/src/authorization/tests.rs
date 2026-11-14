@@ -176,7 +176,7 @@ fn authorize_rejects_when_any_single_write_is_denied() {
     assert!(error.to_string().contains("other"));
 }
 
-/// Check whether the test caller may read the requested record.
+/// Return whether the test caller may read the requested record.
 fn is_record_visible(caller: &Caller, name: &str, record_type: Option<RecordType>) -> bool {
     caller.sees_record(ZoneId::from(1), &OwnerName::from_row(name), record_type)
 }
@@ -279,8 +279,6 @@ fn authorize_whole_zone_rejects_a_constrained_grant() {
 /// Verify that equally privileged socket and API callers retain distinct request origins.
 #[test]
 fn change_origin_preserves_credential_across_access_scopes() {
-    use bindizr_core::model::change::{ChangeActor, ChangeSource};
-
     let socket = Caller::socket();
     let api = Caller::unauthenticated_api();
 

@@ -7,8 +7,8 @@ use crate::error::ServiceError;
 use crate::text;
 use crate::text::MAX_COLUMN_TEXT_LEN;
 
-/// Lowercased so one name means one secondary on every backend; a plain
-/// identifier, since it travels in URL paths.
+/// Normalize a secondary name: lowercased so one name means one secondary on
+/// every backend; a plain identifier, since it travels in URL paths.
 pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
     text::normalize_identifier(value, "secondary name", MAX_COLUMN_TEXT_LEN)
 }

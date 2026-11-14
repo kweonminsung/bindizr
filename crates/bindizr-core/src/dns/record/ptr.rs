@@ -14,6 +14,7 @@ impl<'a> PtrRecordValue<'a> {
         if value != "." {
             value::validate_domain_record_value("PTR record value", value)?;
         }
+
         Ok(Self { target: value })
     }
 

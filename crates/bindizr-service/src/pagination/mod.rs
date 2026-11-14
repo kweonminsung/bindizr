@@ -34,7 +34,7 @@ where
     }
 }
 
-/// A page already limited and offset at the query layer; an omitted limit
+/// Build a page already limited and offset at the query layer; an omitted limit
 /// reports the whole `total`, saturating at `u32::MAX`.
 pub(crate) fn build_paginated_response<T>(
     items: Vec<T>,
@@ -45,7 +45,7 @@ pub(crate) fn build_paginated_response<T>(
     PaginatedResponse {
         items,
         pagination: PaginationResponse {
-            limit: limit.unwrap_or_else(|| total.min(u64::from(u32::MAX)) as u32),
+            limit: limit.unwrap_or_else(|| u32::try_from(total).unwrap_or(u32::MAX)),
             offset: offset.unwrap_or(0),
             total,
         },

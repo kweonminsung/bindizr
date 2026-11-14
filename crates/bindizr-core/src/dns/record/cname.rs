@@ -14,6 +14,7 @@ impl<'a> CnameRecordValue<'a> {
         if value != "." {
             value::validate_domain_record_value("CNAME record value", value)?;
         }
+
         Ok(Self { target: value })
     }
 

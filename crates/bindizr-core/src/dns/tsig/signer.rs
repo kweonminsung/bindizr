@@ -42,7 +42,7 @@ impl ResponseSigner {
         TransferSigner::from(self).sign_response_with_fudge(additional, now, fudge)
     }
 
-    /// The key whose name and algorithm the response carries.
+    /// Return the key whose name and algorithm the response carries.
     pub fn key(&self) -> &Key {
         self.key.as_ref()
     }
@@ -129,7 +129,7 @@ impl TransferSigner {
         Ok(())
     }
 
-    /// The key used to size and identify the next signature.
+    /// Return the key used to size and identify the next signature.
     pub fn key(&self) -> &Key {
         self.key.as_ref()
     }

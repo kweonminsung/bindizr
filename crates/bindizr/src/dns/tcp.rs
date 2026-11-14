@@ -80,9 +80,7 @@ pub(crate) async fn run_tcp_server(
                     }
                 });
             }
-            Err(error) => {
-                log::error!("Failed to accept DNS TCP connection: {error}");
-            }
+            Err(error) => log::error!("Failed to accept DNS TCP connection: {error}"),
         }
     };
 

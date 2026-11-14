@@ -19,7 +19,7 @@ pub struct NaptrRecordValue<'a> {
 }
 
 impl<'a> NaptrRecordValue<'a> {
-    /// `<order> <preference> "<flags>" "<services>" "<regexp>" <replacement>`
+    /// Parse `<order> <preference> "<flags>" "<services>" "<regexp>" <replacement>`
     /// (RFC 3403, Section 4.1). Both numbers stay inline; NAPTR orders by two
     /// fields, so neither fits the single priority column.
     pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
@@ -45,28 +45,6 @@ impl<'a> NaptrRecordValue<'a> {
             regexp,
             replacement,
         })
-    }
-
-    /// The wire-format RDATA of a stored value (RFC 3403, Section 4.1).
-    pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
-        let mut rdata = Vec::with_capacity(4);
-        rdata.extend_from_slice(&self.order.to_be_bytes());
-        rdata.extend_from_slice(&self.preference.to_be_bytes());
-
-        for (field, text) in [
-            ("NAPTR flags", &self.flags),
-            ("NAPTR services", &self.services),
-            ("NAPTR regexp", &self.regexp),
-        ] {
-            let len = u8::try_from(text.len())
-                .map_err(|_| ParseRecordValueError::CharStringTooLong { field })?;
-            rdata.push(len);
-            rdata.extend_from_slice(text.as_bytes());
-        }
-
-        rdata.extend_from_slice(&name::encode_name(self.replacement)?);
-
-        Rdata::new(rdata)
     }
 
     /// Validate the fields of this NAPTR value.
@@ -104,8 +82,30 @@ impl<'a> NaptrRecordValue<'a> {
         )
     }
 
-    /// A record decoded off the wire, whose character-strings are still the raw
-    /// octets of RFC 3403, Section 4.1.
+    /// Encode the stored value as wire RDATA (RFC 3403, Section 4.1).
+    pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+        let mut rdata = Vec::with_capacity(4);
+        rdata.extend_from_slice(&self.order.to_be_bytes());
+        rdata.extend_from_slice(&self.preference.to_be_bytes());
+
+        for (field, text) in [
+            ("NAPTR flags", &self.flags),
+            ("NAPTR services", &self.services),
+            ("NAPTR regexp", &self.regexp),
+        ] {
+            let len = u8::try_from(text.len())
+                .map_err(|_| ParseRecordValueError::CharStringTooLong { field })?;
+            rdata.push(len);
+            rdata.extend_from_slice(text.as_bytes());
+        }
+
+        rdata.extend_from_slice(&name::encode_name(self.replacement)?);
+
+        Rdata::new(rdata)
+    }
+
+    /// Build a record decoded off the wire, whose character-strings are still
+    /// the raw octets of RFC 3403, Section 4.1.
     pub fn from_wire(
         order: u16,
         preference: u16,
@@ -131,7 +131,7 @@ impl<'a> NaptrRecordValue<'a> {
     }
 }
 
-/// One whitespace-separated field and the rest of the value.
+/// Split off one whitespace-separated field and return the rest of the value.
 fn parse_field<'a>(
     field: &'static str,
     input: &'a str,

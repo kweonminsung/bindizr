@@ -22,7 +22,7 @@ impl Role {
     /// startup so the first token has something to authenticate into.
     pub const ADMIN: &str = "admin";
 
-    /// Whether this is the built-in role, which can be neither changed nor deleted.
+    /// Return whether this is the built-in role, which can be neither changed nor deleted.
     pub fn is_builtin(&self) -> bool {
         self.name == Self::ADMIN
     }

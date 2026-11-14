@@ -24,7 +24,7 @@ pub async fn create(
 
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key = match request.notify_key_name.as_deref() {
-        Some(key_name) => Some(tsig_key::lookup_by_name(cx, key_name).await?),
+        Some(notify_key_name) => Some(tsig_key::lookup_by_name(cx, notify_key_name).await?),
         None => None,
     };
 
@@ -39,12 +39,13 @@ pub async fn create(
     }
     if let Some(other) = bindizr_db::secondary::get_by_address(cx.db(), &address).await? {
         return Err(ServiceError::secondary_conflict(format!(
-            "secondary with address '{}' already exists (name '{}')",
-            address, other.name
+            "secondary with address '{address}' already exists (name '{}')",
+            other.name
         )));
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create secondary").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -91,6 +92,7 @@ pub async fn create(
         Ok(secondary)
     }
     .await;
+
     let secondary = transaction::finish_tx(tx, apply_result, "failed to create secondary").await?;
 
     Ok(SecondaryResponse::from_secondary(

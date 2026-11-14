@@ -30,12 +30,12 @@ impl ResponseLimit {
         }
     }
 
-    /// Whether overflow may use a UDP-specific response or truncation.
+    /// Return whether overflow may use a UDP-specific response or truncation.
     pub fn is_udp(self) -> bool {
         self.udp_payload_size.is_some()
     }
 
-    /// The ceiling after compression, OPT and TSIG have all been composed.
+    /// Return the ceiling after compression, OPT and TSIG have all been composed.
     pub fn max_len(self) -> usize {
         self.udp_payload_size.map_or(DNS_TCP_MAX_SIZE, usize::from)
     }

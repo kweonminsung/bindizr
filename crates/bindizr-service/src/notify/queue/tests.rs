@@ -31,7 +31,7 @@ async fn context(batch_ms: u64) -> Arc<Context> {
     ))
 }
 
-/// A worker must collect later writes while the first NOTIFY waits for an ACK.
+/// Verify that a worker collects later writes while the first NOTIFY waits for an ACK.
 #[tokio::test]
 async fn worker_sends_later_zone_before_silent_secondary_times_out() {
     let cx = context(10).await;
@@ -87,7 +87,7 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
     worker.stop().await.unwrap();
 }
 
-/// Later writes coalesce without extending the first write's batching window.
+/// Verify that later writes coalesce without extending the first write's batching window.
 #[tokio::test]
 async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
     let cx = context(1000).await;
@@ -119,7 +119,8 @@ async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
     assert_eq!(batch.zones, HashSet::from([catalog_zone_name]));
 }
 
-/// Backlogged jobs retain their original age, and the catalog uses its served REFRESH.
+/// Verify that backlogged jobs retain their original age and that the catalog uses its
+/// served REFRESH.
 #[tokio::test]
 async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
     let cx = context(7_200_000).await;
@@ -152,7 +153,8 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
     assert_eq!(batch.zones.len(), 1);
 }
 
-/// A shorter delay advances a pending deadline; shutdown flushes without waiting.
+/// Verify that a shorter delay advances a pending deadline and that shutdown flushes
+/// without waiting.
 #[tokio::test]
 async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
     let cx = context(10000).await;

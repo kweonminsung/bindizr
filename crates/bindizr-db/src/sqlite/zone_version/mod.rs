@@ -218,7 +218,7 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     Ok(result.rows_affected())
 }
 
-/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
+/// Prune history outside the unambiguous RFC 1982 half-range behind the current serial.
 pub(crate) async fn prune_by_zone_id_outside_serial_window_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,

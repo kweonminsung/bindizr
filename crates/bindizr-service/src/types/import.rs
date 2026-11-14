@@ -103,7 +103,7 @@ pub struct ImportZoneResponse {
 }
 
 impl ImportZoneResponse {
-    /// Whether the file was refused whole. `applied` cannot answer this: a
+    /// Return whether the file was refused whole. `applied` cannot answer this: a
     /// clean dry run also leaves it false.
     pub fn was_rejected(&self) -> bool {
         !self.errors.is_empty()
@@ -241,7 +241,7 @@ pub struct ImportZonesResponse {
 }
 
 impl ImportZonesResponse {
-    /// Whether any zone was rejected or failed; not a success for a script.
+    /// Return whether any zone was rejected or failed; not a success for a script.
     pub fn has_rejected_or_failed(&self) -> bool {
         self.summary.rejected > 0 || self.summary.failed > 0
     }

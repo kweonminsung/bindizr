@@ -62,7 +62,7 @@ impl TransferRefusal {
         }
     }
 
-    /// A refusal by policy: REFUSED, prohibited.
+    /// Refuse by policy: REFUSED, prohibited.
     pub(crate) fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
         Self::Dns {
             reason,
@@ -82,7 +82,8 @@ impl TransferRefusal {
         }
     }
 
-    /// A request whose TSIG breaks RFC 8945, Section 5.2: FORMERR, unsigned.
+    /// Refuse a request whose TSIG breaks RFC 8945, Section 5.2: FORMERR,
+    /// unsigned.
     fn malformed(reason: String) -> Self {
         Self::Dns {
             reason,

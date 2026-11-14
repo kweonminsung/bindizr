@@ -34,7 +34,8 @@ async fn send_notify_to_server(
         .await
 }
 
-/// Only oversized signed queries need EDNS; their signature includes the OPT.
+/// Verify that only oversized signed queries need EDNS and that their signature includes
+/// the OPT.
 #[tokio::test]
 async fn signed_notify_advertises_edns_for_long_names() {
     let long_name = |label: &str| {
@@ -124,7 +125,7 @@ async fn signed_notify_advertises_edns_for_long_names() {
     }
 }
 
-/// A NOTIFY response with `flags`, echoing a SOA question for `qname`.
+/// Build a NOTIFY response with `flags`, echoing a SOA question for `qname`.
 fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
     let mut response = Vec::new();
     response.extend_from_slice(&query_id.to_be_bytes());
@@ -145,7 +146,8 @@ fn qname() -> Name<Vec<u8>> {
     Name::from_str("example.com").unwrap()
 }
 
-/// Many silent zones share a socket; wrong or old ACKs cannot finish a different request.
+/// Verify that many silent zones share a socket and that wrong or old ACKs cannot finish a
+/// different request.
 #[tokio::test]
 async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies() {
     let client = NotifyClient::default();
@@ -207,7 +209,7 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
     }
 }
 
-/// Retries retain the bytes and socket while a later zone completes independently.
+/// Verify that retries retain the bytes and socket while a later zone completes independently.
 #[tokio::test]
 async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() {
     let client = NotifyClient::default();
@@ -325,7 +327,8 @@ fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u
     response
 }
 
-/// Ignore untrusted replies; accept valid ACKs or authenticated errors.
+/// Verify that untrusted replies are ignored and valid ACKs or authenticated errors
+/// accepted.
 #[tokio::test]
 async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
     let key = TsigKey {
@@ -405,8 +408,8 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
     }
 }
 
-/// Any matching reply ends the transaction after one attempt (RFC 1996,
-/// Sections 3.6 and 4.8); only silence retains the configured retries.
+/// Verify that any matching reply ends the transaction after one attempt (RFC 1996,
+/// Sections 3.6 and 4.8) and that only silence retains the configured retries.
 #[tokio::test]
 async fn notify_completes_on_any_reply_and_retries_silence() {
     for (rcode, attempts, ok) in [
@@ -458,7 +461,7 @@ async fn notify_completes_on_any_reply_and_retries_silence() {
     }
 }
 
-/// Only a valid signature can make NOTIMP complete a signed transaction.
+/// Verify that only a valid signature can make NOTIMP complete a signed transaction.
 #[tokio::test]
 async fn signed_notify_requires_authenticated_notimp_before_completing() {
     let key = TsigKey {
@@ -519,7 +522,7 @@ async fn signed_notify_requires_authenticated_notimp_before_completing() {
     }
 }
 
-/// Unsigned replies cannot extend the NOTIFY deadline.
+/// Verify that unsigned replies cannot extend the NOTIFY deadline.
 #[tokio::test]
 async fn signed_notify_times_out_under_unsigned_response_flood() {
     let key = TsigKey {

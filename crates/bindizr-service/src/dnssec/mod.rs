@@ -121,8 +121,8 @@ async fn find_zone_policy_tx(
         })
 }
 
-/// The policy a signed zone signs under; a signed zone without one is a
-/// broken invariant, never a caller error.
+/// Look up the policy a signed zone signs under; a signed zone without one
+/// is a broken invariant, never a caller error.
 async fn lookup_zone_policy_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -135,7 +135,7 @@ async fn lookup_zone_policy_tx(
     })
 }
 
-/// Load the zone (locked at `lock_level`), authorized for `action`, with its
+/// Get the zone (locked at `lock_level`), authorized for `action`, with its
 /// policy and keys; a zone with no keys reads as not DNSSEC-enabled.
 async fn get_signed_zone_tx(
     tx: &mut Transaction<'_>,
@@ -160,8 +160,8 @@ async fn get_signed_zone_tx(
     Ok(SignedZone { zone, policy, keys })
 }
 
-/// The scheduler's form of [`get_signed_zone_tx`]: `None` when the
-/// zone was deleted or unsigned since its id was listed.
+/// Find a signed zone by id, the scheduler's form of [`get_signed_zone_tx`]:
+/// `None` when the zone was deleted or unsigned since its id was listed.
 async fn find_signed_zone_by_id_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,

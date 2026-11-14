@@ -9,7 +9,7 @@ use bindizr_db::LockLevel;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
 use crate::record::validation;
-use crate::types::{RecordDiffResponse, RecordResponse, UpdateRecordRequest, WriteRecordResponse};
+use crate::types::{RecordResponse, UpdateRecordRequest, WriteRecordResponse};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, serial, transaction, ttl, zone};
 
@@ -114,14 +114,14 @@ fn resolve_update(
     };
 
     // An omitted name keeps the stored owner, which needs no reparse.
-    let owner_name = match &request.name {
+    let owner = match &request.name {
         Some(name) => validation::normalize_record_owner_name(name, &zone.name)?,
         None => existing_record.name.clone(),
     };
 
     Ok(Record {
         id: existing_record.id,
-        name: owner_name,
+        name: owner,
         record_type,
         value: encoded_value,
         ttl,
@@ -177,7 +177,7 @@ async fn update_locked(
 ) -> Result<WriteRecordResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to update record").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let (zone, existing_record, caller) = match target {
             LockTarget::Id { record_id, zone_id } => {
                 let zone =
@@ -360,9 +360,7 @@ async fn update_locked(
 
         // The merge is resolved and validated, so a dry run stops here.
         if request.dry_run {
-            return Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
-                candidate, zone.name, diff, actions,
-            ));
+            return Ok((candidate, zone.name, diff, actions));
         }
 
         // Store the validated replacement, signatures, and journal under one serial.
@@ -376,12 +374,7 @@ async fn update_locked(
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
-            updated_record,
-            zone_name,
-            diff,
-            actions,
-        ))
+        Ok((updated_record, zone_name, diff, actions))
     }
     .await;
 
@@ -389,8 +382,7 @@ async fn update_locked(
         transaction::finish_tx(tx, apply_result, "failed to update record").await?;
 
     log::info!(
-        "event=record_update zone={} name={} type={} ttl={} priority={} record_id={} dry_run={}",
-        zone_name,
+        "event=record_update zone={zone_name} name={} type={} ttl={} priority={} record_id={} dry_run={}",
         updated_record.name,
         updated_record.record_type,
         updated_record.ttl,
@@ -398,7 +390,7 @@ async fn update_locked(
             .priority
             .map_or("null".to_string(), |value| value.to_string()),
         updated_record.id,
-        request.dry_run
+        request.dry_run,
     );
 
     // Request secondary transfers only after the replacement is committed.

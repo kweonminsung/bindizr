@@ -53,8 +53,8 @@ pub enum EncodeRdataError {
 pub struct Rdata(Vec<u8>);
 
 impl Rdata {
-    /// The presentation form of a derived row's RDATA of `record_type`, as
-    /// `dig` prints it; the base64 row form when it does not parse.
+    /// Render the presentation form of a derived row's RDATA of `record_type`,
+    /// as `dig` prints it; the base64 row form when it does not parse.
     pub fn to_presentation(&self, record_type: DnssecRecordType) -> String {
         let mut parser = Parser::from_ref(self.as_bytes());
 
@@ -73,6 +73,7 @@ impl Rdata {
         if bytes.len() > usize::from(u16::MAX) {
             return Err(EncodeRdataError::TooLong { len: bytes.len() });
         }
+
         Ok(Self(bytes))
     }
 
@@ -86,7 +87,7 @@ impl Rdata {
         self.0
     }
 
-    /// Base64 presentation fallback for rows whose RDATA does not parse.
+    /// Render the base64 presentation fallback for rows whose RDATA does not parse.
     pub fn to_base64(&self) -> String {
         general_purpose::STANDARD.encode(&self.0)
     }
@@ -103,7 +104,7 @@ where
         <Vec<u8> as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <Vec<u8> as sqlx::Type<DB>>::compatible(ty)
     }

@@ -35,7 +35,7 @@ pub(crate) struct AddressCache {
 }
 
 impl AddressCache {
-    /// An empty resolution cache.
+    /// Build an empty resolution cache.
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -145,7 +145,10 @@ mod tests {
         let cache = AddressCache::new();
 
         for ip in ["192.0.2.10", "2001:db8::10"] {
-            assert!(matches_client_address(&cache, addresses.iter(), ip.parse().unwrap()).await);
+            assert!(
+                matches_client_address(&cache, addresses.iter(), ip.parse::<IpAddr>().unwrap())
+                    .await
+            );
         }
 
         assert!(cache.locked().is_empty());
@@ -155,7 +158,7 @@ mod tests {
     #[tokio::test]
     async fn acl_rejects_unconfigured_addresses() {
         let cache = AddressCache::new();
-        let client_ip = "192.0.2.11".parse().unwrap();
+        let client_ip = "192.0.2.11".parse::<IpAddr>().unwrap();
         assert!(!matches_client_address(&cache, targets(&[]).iter(), client_ip).await);
         assert!(!matches_client_address(&cache, targets(&["192.0.2.10"]).iter(), client_ip).await);
     }
@@ -165,7 +168,7 @@ mod tests {
     async fn hostname_entries_reuse_cached_resolutions() {
         let addresses = targets(&["Missing.Example.", "Bind9.Example."]);
         let cache = AddressCache::new();
-        let client_ip = "192.0.2.10".parse().unwrap();
+        let client_ip = "192.0.2.10".parse::<IpAddr>().unwrap();
         let expires_at = Instant::now() + RESOLVED_TTL;
         cache.locked().extend([
             (
@@ -186,7 +189,12 @@ mod tests {
 
         assert!(matches_client_address(&cache, addresses.iter(), client_ip).await);
         assert!(
-            !matches_client_address(&cache, addresses.iter(), "192.0.2.11".parse().unwrap()).await
+            !matches_client_address(
+                &cache,
+                addresses.iter(),
+                "192.0.2.11".parse::<IpAddr>().unwrap()
+            )
+            .await
         );
         assert_eq!(cache.locked()["missing.example:53"].expires_at, expires_at);
         assert_eq!(cache.locked()["bind9.example:53"].expires_at, expires_at);

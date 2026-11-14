@@ -58,11 +58,11 @@ async fn zone_dnssec_rolls_nsec3_keys() {
 
     // The API test covers the far side of the hold-down wait;
     // `--skip-ds-check` skips only the parent check, never the hold-down.
-    let ds_seen = app
+    let refused = app
         .run_cli(&["dnssec", "rollover", "ds-seen", &zone_name], None)
         .await;
 
-    assert!(!ds_seen.status.success());
+    assert!(!refused.status.success());
     let args = [
         "dnssec",
         "rollover",
@@ -71,8 +71,8 @@ async fn zone_dnssec_rolls_nsec3_keys() {
         "--skip-ds-check",
     ];
 
-    let ds_seen = app.run_cli(&args, None).await;
-    common::assert_cli_failure_contains(&args, &ds_seen, "must stay published");
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "must stay published");
 
     // No parent stands in, so both skips promote at once.
     let promoted = app

@@ -6,7 +6,7 @@ use axum::middleware::Next;
 use axum::response::Response;
 use bindizr_service::Context;
 
-/// Record request count and latency, labeled by the route pattern
+/// Count requests and their latency, labeled by the route pattern
 /// (`/zones/{zone_name}`, not the concrete path) to bound label cardinality.
 pub(crate) async fn track_http_metrics(
     State(cx): State<Arc<Context>>,

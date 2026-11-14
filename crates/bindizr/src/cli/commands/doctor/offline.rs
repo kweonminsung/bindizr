@@ -53,38 +53,38 @@ pub(crate) async fn check_database(config: &Config, report: &mut Report) {
 
 /// Try binding the DNS and API listen addresses.
 pub(crate) async fn check_listen_ports(config: &Config, report: &mut Report) {
-    let dns = SocketAddr::new(config.dns.listen_addr, config.dns.listen_port);
+    let dns_addr = SocketAddr::new(config.dns.listen_addr, config.dns.listen_port);
 
     let bound = async {
-        let _tcp = TcpListener::bind(dns).await?;
-        let _udp = UdpSocket::bind(dns).await?;
+        let _tcp = TcpListener::bind(dns_addr).await?;
+        let _udp = UdpSocket::bind(dns_addr).await?;
         Ok::<(), io::Error>(())
     };
     check_port(
         report,
         "DNS",
-        dns,
+        dns_addr,
         bound.await,
         "BIND on this host? change dns.listen_port",
     );
 
     if config.dns.tls.tls_files().is_some() {
-        let dns_tls = SocketAddr::new(config.dns.listen_addr, config.dns.tls.listen_port);
+        let dns_tls_addr = SocketAddr::new(config.dns.listen_addr, config.dns.tls.listen_port);
 
-        let bound = TcpListener::bind(dns_tls).await.map(|_| ());
+        let bound = TcpListener::bind(dns_tls_addr).await.map(|_| ());
         check_port(
             report,
             "DNS TLS",
-            dns_tls,
+            dns_tls_addr,
             bound,
             "change dns.tls.listen_port",
         );
     }
 
-    let api = SocketAddr::new(config.api.listen_addr, config.api.listen_port);
+    let api_addr = SocketAddr::new(config.api.listen_addr, config.api.listen_port);
 
-    let bound = TcpListener::bind(api).await.map(|_| ());
-    check_port(report, "API", api, bound, "change api.listen_port");
+    let bound = TcpListener::bind(api_addr).await.map(|_| ());
+    check_port(report, "API", api_addr, bound, "change api.listen_port");
 }
 
 /// Check one listen address by its bind result; a taken port carries `in_use_hint`.

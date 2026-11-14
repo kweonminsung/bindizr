@@ -42,6 +42,10 @@ use crate::api::error::ApiError;
 use crate::shutdown::Shutdown;
 use crate::tls::TlsCertificate;
 
+/// How long a TLS shutdown waits for in-flight requests before dropping the
+/// connections; the plain-HTTP path waits without a deadline, as axum does.
+const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+
 /// The caller attached by the auth middleware, or by the router's
 /// `Caller::unauthenticated_api()` layer when authentication is disabled. A request without
 /// one reached a handler outside both layers, so extraction fails closed.
@@ -85,10 +89,6 @@ where
         })
     }
 }
-
-/// How long a TLS shutdown waits for in-flight requests before dropping the
-/// connections; the plain-HTTP path waits without a deadline, as axum does.
-const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 
 /// Why the HTTP API could not come up.
 #[derive(Debug, Error)]

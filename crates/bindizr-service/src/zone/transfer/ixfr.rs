@@ -35,6 +35,7 @@ pub async fn authorize_ixfr_plan_by_name(
     client_serial: Serial,
 ) -> Result<TransferAccess<(Zone, IxfrPlan)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load the transfer delta").await?;
+
     let result = async {
         let zone = match super::authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
@@ -104,10 +105,8 @@ pub async fn authorize_ixfr_plan_by_name(
                         Ok(()) => IxfrPlan::Changes { changes, versions },
                         Err(gap) => {
                             log::warn!(
-                                "IXFR of {} from serial {}: {}, answering with AXFR",
-                                zone.name,
-                                client_serial,
-                                gap
+                                "IXFR of {} from serial {client_serial}: {gap}, answering with AXFR",
+                                zone.name
                             );
                             IxfrPlan::Full
                         }
@@ -251,17 +250,18 @@ mod tests {
     #[test]
     fn ixfr_delta_reports_missing_step() {
         // The version proves serial 11 occurred; omitting its changes would corrupt the replay.
-        let gap = validate_delta(
-            Serial::from(10),
-            Serial::from(12),
-            &serials(&[12]),
-            &serials(&[10, 11, 12]),
-        )
-        .unwrap_err();
-
-        assert!(
-            matches!(&gap, ValidateDeltaError::StepsDiffer { journal, steps, .. } if journal == &serials(&[12]) && steps == &serials(&[11, 12])),
-            "{gap}"
+        assert_eq!(
+            validate_delta(
+                Serial::from(10),
+                Serial::from(12),
+                &serials(&[12]),
+                &serials(&[10, 11, 12]),
+            ),
+            Err(ValidateDeltaError::StepsDiffer {
+                journal: serials(&[12]),
+                client: Serial::from(10),
+                steps: serials(&[11, 12]),
+            })
         );
     }
 }

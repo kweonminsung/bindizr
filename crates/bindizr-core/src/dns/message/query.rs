@@ -3,13 +3,13 @@
 use std::time::Duration;
 
 pub use domain::base::iana::exterr::ExtendedErrorCode;
-use domain::base::iana::{Class, Opcode, OptRcode};
+use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::opt::exterr::ExtendedError;
 use domain::base::opt::keepalive::{IdleTimeout, TcpKeepalive};
 use domain::base::opt::{Opt, OptRecord};
 use domain::base::wire::Composer;
-use domain::base::{Message, Name, Rtype};
+use domain::base::{Message, Name};
 use domain::rdata::Soa;
 use thiserror::Error;
 
@@ -43,7 +43,7 @@ pub enum Edns {
 }
 
 impl Edns {
-    /// Whether the requester asks for DNSSEC records (RFC 3225).
+    /// Return whether the requester asks for DNSSEC records (RFC 3225).
     pub fn dnssec_ok(self) -> bool {
         matches!(
             self,
@@ -175,9 +175,9 @@ pub enum ParseQueryError {
     #[error("failed to parse DNS message: {0}")]
     Malformed(#[source] LibraryError),
     #[error("no question in DNS query")]
-    NoQuestion(Box<QueryMetadata>),
+    NoQuestion { query_metadata: Box<QueryMetadata> },
     #[error("unreadable DNS message sections")]
-    UnreadableSections(Box<QueryMetadata>),
+    UnreadableSections { query_metadata: Box<QueryMetadata> },
     #[error("non-IN class {class} in DNS QUERY record")]
     ForeignRecordClass {
         class: Class,
@@ -189,8 +189,8 @@ impl ParseQueryError {
     /// Preserve readable metadata so the listener can authenticate before replying.
     pub fn query_metadata(&self) -> Option<&QueryMetadata> {
         match self {
-            Self::NoQuestion(query_metadata)
-            | Self::UnreadableSections(query_metadata)
+            Self::NoQuestion { query_metadata }
+            | Self::UnreadableSections { query_metadata }
             | Self::ForeignRecordClass { query_metadata, .. } => Some(query_metadata),
             Self::Malformed(_) => None,
         }
@@ -236,16 +236,16 @@ pub struct ParsedQuery {
 
 impl ParsedQuery {
     /// Parse a DNS question and its optional IXFR serial.
-    pub fn parse(data: &[u8], keepalive: Keepalive) -> Result<Self, ParseQueryError> {
+    pub fn parse(query_data: &[u8], keepalive: Keepalive) -> Result<Self, ParseQueryError> {
         use domain::base::ToName;
 
-        let message = Message::from_octets(data)
+        let message = Message::from_octets(query_data)
             .map_err(|error| ParseQueryError::Malformed(Box::new(error)))?;
 
-        if !super::has_readable_sections(data) {
-            return Err(ParseQueryError::UnreadableSections(Box::new(
-                QueryMetadata::from_message(&message, keepalive),
-            )));
+        if !super::has_readable_sections(query_data) {
+            return Err(ParseQueryError::UnreadableSections {
+                query_metadata: Box::new(QueryMetadata::from_message(&message, keepalive)),
+            });
         }
 
         let query_id = message.header().id();
@@ -253,9 +253,11 @@ impl ParsedQuery {
         let rd = message.header().rd();
         let edns = Edns::from_message(&message);
 
-        let question = message.first_question().ok_or_else(|| {
-            ParseQueryError::NoQuestion(Box::new(QueryMetadata::from_message(&message, keepalive)))
-        })?;
+        let question = message
+            .first_question()
+            .ok_or_else(|| ParseQueryError::NoQuestion {
+                query_metadata: Box::new(QueryMetadata::from_message(&message, keepalive)),
+            })?;
 
         let qname = question.qname().to_name::<Vec<u8>>();
         let qtype = question.qtype();
@@ -315,7 +317,7 @@ impl ParsedQuery {
         self.keepalive.response_limit(self.edns)
     }
 
-    /// The response code for an invalid question count or EDNS record.
+    /// Return the response code for an invalid question count or EDNS record.
     pub fn format_error(&self) -> Option<OptRcode> {
         if let Some(rcode) = question_count_error(self.opcode, self.question_count) {
             return Some(rcode);
@@ -323,7 +325,7 @@ impl ParsedQuery {
         self.edns.format_error()
     }
 
-    /// The truncated answer, signed when the question was.
+    /// Build the truncated answer, signed when the question was.
     pub fn build_signed_truncated_response(
         &self,
         signer: Option<&mut TransferSigner>,
@@ -342,7 +344,8 @@ impl ParsedQuery {
     }
 }
 
-/// General QUERY records are IN; OPT and TSIG have their own CLASS semantics.
+/// Return the first non-IN class of an ordinary record: general QUERY records are
+/// IN; OPT and TSIG have their own CLASS semantics.
 fn foreign_record_class(message: &Message<&[u8]>) -> Option<Class> {
     for section in [message.answer(), message.authority(), message.additional()] {
         let Ok(section) = section else {

@@ -28,8 +28,8 @@ pub(crate) async fn check_installation(
         Ok(Ok(total)) => DoctorCheckResponse {
             status: DoctorCheckStatus::Ok,
             message: format!(
-                "Database connected: {} ({} zones)",
-                config.database.database_type, total
+                "Database connected: {} ({total} zones)",
+                config.database.database_type
             ),
         },
         Ok(Err(error)) => DoctorCheckResponse {
@@ -60,8 +60,8 @@ pub(crate) async fn check_installation(
                 DoctorCheckResponse {
                     status: DoctorCheckStatus::Ok,
                     message: format!(
-                        "DNS server reachable: {} (catalog zone {} at serial {})",
-                        dns_addr, config.dns.catalog_zone_name, serial
+                        "DNS server reachable: {dns_addr} (catalog zone {} at serial {serial})",
+                        config.dns.catalog_zone_name
                     ),
                 },
                 Some(serial),

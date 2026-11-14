@@ -145,14 +145,14 @@ fn zone_record_sets(
     derived: &[DnssecRecord],
 ) -> Result<RecordSets, ServiceError> {
     let mut sets = RecordSets::new();
-    let mut insert = |name: OwnerName, record_type: Rtype, rdata: Rdata| {
-        let rdata = rdata.to_canonical(record_type).map_err(|error| {
+    let mut insert = |name: OwnerName, rtype: Rtype, rdata: Rdata| {
+        let rdata = rdata.to_canonical(rtype).map_err(|error| {
             ServiceError::internal_with_source(
                 "failed to decode stored prerequisite content",
                 error,
             )
         })?;
-        sets.entry((name, record_type)).or_default().insert(rdata);
+        sets.entry((name, rtype)).or_default().insert(rdata);
 
         Ok::<(), ServiceError>(())
     };

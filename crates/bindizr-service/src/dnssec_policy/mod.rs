@@ -70,6 +70,7 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create DNSSEC policy").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -149,7 +150,7 @@ pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<DnssecPoli
     lookup_by_name(cx, name).await
 }
 
-/// Fetch one policy by name. This is the unchecked lookup for
+/// Look up one policy by name. This is the unchecked lookup for
 /// service-internal use; front ends go through [`get`].
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<DnssecPolicy, ServiceError> {
     let name = normalize_name(name)?;
@@ -172,6 +173,7 @@ pub async fn update(
     // Read and write under the row lock, or two partial updates would
     // each restore the fields the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC policy").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -262,6 +264,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete DNSSEC policy").await?;
+
     let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
@@ -301,8 +304,9 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     transaction::finish_tx(tx, apply_result, "failed to delete DNSSEC policy").await
 }
 
-/// Lowercased so one name means one policy on every backend (MySQL compares
-/// case-insensitively); a plain identifier, since it travels in URL paths.
+/// Normalize a policy name: lowercased so one name means one policy on every
+/// backend (MySQL compares case-insensitively); a plain identifier, since it
+/// travels in URL paths.
 pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
     text::normalize_identifier(value, "DNSSEC policy name", MAX_POLICY_NAME_LEN)
 }

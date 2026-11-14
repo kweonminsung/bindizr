@@ -17,7 +17,7 @@ pub struct DsRecordSet {
 }
 
 impl DsRecordSet {
-    /// Key tags of the keys the records name, ascending and deduplicated.
+    /// List the key tags of the keys the records name, ascending and deduplicated.
     pub fn key_tags(&self) -> Vec<KeyTag> {
         let mut key_tags: Vec<KeyTag> = self.records.iter().map(|record| record.key_tag).collect();
         key_tags.dedup();

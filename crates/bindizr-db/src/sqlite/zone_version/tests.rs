@@ -210,23 +210,23 @@ async fn catalog_serial_wraps_to_one_when_the_digest_changes_past_max() {
     let (pool, _) = fixture().await;
     let mut tx = pool.begin().await.unwrap();
     let from = Serial::from(u32::MAX);
-    let catalog = ZoneName::parse("catalog.example").unwrap();
+    let catalog_zone_name = ZoneName::parse("catalog.example").unwrap();
 
     assert_eq!(
-        catalog_zone::upsert_tx(&mut tx, &catalog, "one", from)
+        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name, "one", from)
             .await
             .unwrap(),
         from
     );
 
     assert_eq!(
-        catalog_zone::upsert_tx(&mut tx, &catalog, "two", from)
+        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name, "two", from)
             .await
             .unwrap(),
         Serial::from(1)
     );
     assert_eq!(
-        catalog_zone::upsert_tx(&mut tx, &catalog, "two", from)
+        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name, "two", from)
             .await
             .unwrap(),
         Serial::from(1)

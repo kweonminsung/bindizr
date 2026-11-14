@@ -36,9 +36,9 @@ pub(crate) async fn create_many_tx(
                 .bind(change.serial)
                 .bind(change.operation)
                 .bind(&change.record_name)
-                .bind(change.record_type.clone())
-                .bind(change.record_value.clone())
-                .bind(change.record_rdata.clone())
+                .bind(&change.record_type)
+                .bind(&change.record_value)
+                .bind(&change.record_rdata)
                 .bind(change.record_ttl)
                 .bind(change.record_priority)
                 .bind(change.derived)
@@ -110,7 +110,7 @@ pub(crate) async fn list_between_serials_tx(
     Ok(changes)
 }
 
-/// Delete expired whole serials, retaining a contiguous IXFR chain. Older
+/// Prune expired whole serials, retaining a contiguous IXFR chain. Older
 /// requests use AXFR; return the deleted row count.
 pub(crate) async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_, MySql>,
@@ -140,7 +140,7 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     Ok(result.rows_affected())
 }
 
-/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
+/// Prune history outside the unambiguous RFC 1982 half-range behind the current serial.
 pub(crate) async fn prune_by_zone_id_outside_serial_window_tx(
     tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,

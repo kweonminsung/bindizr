@@ -29,7 +29,6 @@ use crate::tls::TlsCertificate;
 pub(crate) enum StartDnsError {
     #[error("failed to enable DNS UDP packet information: {0}")]
     UdpPacketInfo(#[source] io::Error),
-
     /// Names the usual cause when the port is already taken.
     #[error("failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == io::ErrorKind::AddrInUse {
         format!(" (another DNS server on this host? change {setting})")
@@ -66,16 +65,14 @@ pub(crate) async fn start(
 
     // The catalog zone must exist before a secondary asks for it.
     match zone::refresh_catalog(&cx).await {
-        Ok((catalog, _)) => {
+        Ok((catalog_zone, _)) => {
             log::info!(
                 "Catalog zone '{}' is ready (serial: {})",
                 cx.config().dns.catalog_zone_name,
-                catalog.serial
+                catalog_zone.serial
             );
         }
-        Err(error) => {
-            log::warn!("Failed to generate catalog zone: {error}");
-        }
+        Err(error) => log::warn!("Failed to generate catalog zone: {error}"),
     }
 
     let config = cx.config();

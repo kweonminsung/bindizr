@@ -48,7 +48,7 @@ pub enum DnssecAlgorithm {
 }
 
 impl DnssecAlgorithm {
-    /// IANA algorithm number, the storage form.
+    /// Return the IANA algorithm number, the storage form.
     pub fn as_i32(self) -> i32 {
         match self {
             Self::RsaSha256 => 8,
@@ -73,7 +73,7 @@ impl DnssecAlgorithm {
         }
     }
 
-    /// IANA mnemonic in lowercase, the presentation/input form.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::RsaSha256 => "rsasha256",
@@ -85,7 +85,7 @@ impl DnssecAlgorithm {
         }
     }
 
-    /// All supported algorithm names, for error messages.
+    /// List all supported algorithm names, for error messages.
     fn supported_names() -> &'static [&'static str] {
         &[
             "rsasha256",
@@ -145,7 +145,7 @@ pub enum DnssecKeyRole {
 }
 
 impl DnssecKeyRole {
-    /// Return the text representation of this DNSSEC key role.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Csk => "csk",
@@ -154,12 +154,12 @@ impl DnssecKeyRole {
         }
     }
 
-    /// Whether the key is represented in the parent DS set (SEP keys).
+    /// Return whether the key is represented in the parent DS set (SEP keys).
     pub fn is_sep(self) -> bool {
         matches!(self, Self::Csk | Self::Ksk)
     }
 
-    /// DNSKEY flags field: ZONE, plus SEP for keys the parent DS names
+    /// Return the DNSKEY flags field: ZONE, plus SEP for keys the parent DS names
     /// (RFC 4034, Section 2.1.1).
     pub fn flags(self) -> u16 {
         if self.is_sep() {
@@ -218,7 +218,7 @@ pub enum DnssecKeyState {
 }
 
 impl DnssecKeyState {
-    /// Return the text representation of this DNSSEC key state.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Published => "published",
@@ -296,8 +296,9 @@ pub struct DnssecKey {
 }
 
 impl DnssecKey {
-    /// CSK/ZSK keys sign when active, or when their algorithm has no active
-    /// data signer in `keys` (RFC 6840, Section 5.11). KSKs never sign zone data.
+    /// Return whether the key signs zone data: CSK/ZSK keys sign when active, or when
+    /// their algorithm has no active data signer in `keys` (RFC 6840, Section 5.11).
+    /// KSKs never sign zone data.
     pub fn signs_zone_data(&self, keys: &[Self]) -> bool {
         if !matches!(self.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk) {
             return false;
@@ -314,25 +315,25 @@ impl DnssecKey {
         })
     }
 
-    /// Whether the key co-signs the apex key record sets. Every SEP key does, in
+    /// Return whether the key co-signs the apex key record sets. Every SEP key does, in
     /// every state: a validator may arrive via whichever parent DS names it.
     pub fn signs_key_record_sets(&self) -> bool {
         self.role.is_sep()
     }
 
-    /// Whether the key waits for its DS at the parent before promotion:
+    /// Return whether the key waits for its DS at the parent before promotion:
     /// pre-published SEP keys (ZSKs promote without parent interaction).
     pub fn awaits_parent_ds(&self) -> bool {
         self.role.is_sep() && self.state == DnssecKeyState::Published
     }
 
-    /// Whether the key belongs in the CDS/CDNSKEY set; excluding retired keys
+    /// Return whether the key belongs in the CDS/CDNSKEY set; excluding retired keys
     /// tells the parent to drop their DS (RFC 7344).
     pub fn wants_parent_ds(&self) -> bool {
         self.role.is_sep() && self.state != DnssecKeyState::Retired
     }
 
-    /// The retire interval Iret (RFC 7583, Sections 3.2.1 and 3.3.1): the
+    /// Return the retire interval Iret (RFC 7583, Sections 3.2.1 and 3.3.1): the
     /// longest TTL the key signed, a SEP key's parent DS TTL if longer, plus
     /// the propagation delay.
     pub fn retirement_interval_secs(

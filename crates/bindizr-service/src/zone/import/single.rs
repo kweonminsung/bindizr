@@ -41,18 +41,18 @@ pub async fn import(
 
     let source = match (&request.content, &request.from_server) {
         (Some(content), None) => ImportSource::Text(content),
-        (None, Some(server)) => {
-            let server = server.trim();
+        (None, Some(address)) => {
+            let address = address.trim();
 
-            if !address::is_address_target(server) {
+            if !address::is_address_target(address) {
                 return Err(ServiceError::invalid_input(
                     "from_server must name one server as host[:port]",
                 ));
             }
 
-            let mut client = AxfrClient::new(server);
+            let mut client = AxfrClient::new(address);
 
-            return super::import_transfer(cx, caller, zone_name, &mut client, server, options)
+            return super::import_transfer(cx, caller, zone_name, &mut client, address, options)
                 .await;
         }
         (Some(_), Some(_)) => {

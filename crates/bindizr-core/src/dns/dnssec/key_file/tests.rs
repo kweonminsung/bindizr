@@ -127,27 +127,29 @@ fn key_import_defaults_open_schedule_to_dnskey_ttl() {
 /// Verify that a key outside the window bind serves it in is refused.
 #[test]
 fn key_import_rejects_keys_outside_serving_window() {
-    let not_yet = import(&[("Publish", stamp(1)), ("Activate", stamp(2))]).unwrap_err();
+    let not_yet = import(&[("Publish", stamp(1)), ("Activate", stamp(2))]);
 
     assert!(
-        matches!(not_yet, ImportKeyError::NotYetPublished { .. }),
-        "{not_yet}"
+        matches!(not_yet, Err(ImportKeyError::NotYetPublished { .. })),
+        "{not_yet:?}"
     );
 
     let gone = import(&[
         ("Publish", stamp(-48)),
         ("Inactive", stamp(-24)),
         ("Delete", stamp(-1)),
-    ])
-    .unwrap_err();
-
-    assert!(matches!(gone, ImportKeyError::Deleted { .. }), "{gone}");
-
-    let malformed = import(&[("Publish", "not-a-time".to_string())]).unwrap_err();
+    ]);
 
     assert!(
-        matches!(malformed, ImportKeyError::InvalidTime { .. }),
-        "{malformed}"
+        matches!(gone, Err(ImportKeyError::Deleted { .. })),
+        "{gone:?}"
+    );
+
+    let malformed = import(&[("Publish", "not-a-time".to_string())]);
+
+    assert!(
+        matches!(malformed, Err(ImportKeyError::InvalidTime { .. })),
+        "{malformed:?}"
     );
 }
 

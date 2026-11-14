@@ -104,7 +104,7 @@ fn config_check_defaults_omitted_sections() {
 /// Verify that config check uses config path env without argument.
 #[test]
 #[serial_test::serial(bindizr_e2e)]
-fn config_check_uses_config_path_env_without_argument() {
+fn config_check_uses_config_path_env_when_no_argument() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
     fs::write(&config_path, VALID_CONFIG).expect("failed to write config");

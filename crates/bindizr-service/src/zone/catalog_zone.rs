@@ -73,8 +73,8 @@ pub(crate) async fn refresh_catalog_from_zones(
     let member_zones: Vec<String> = zones
         .iter()
         .map(|zone| zone.name.clone())
-        .filter(|name| name != catalog_zone_name)
-        .map(|name| name.to_string())
+        .filter(|zone_name| zone_name != catalog_zone_name)
+        .map(|zone_name| zone_name.to_string())
         .collect();
 
     log::info!("Catalog zone contains {} member zones", member_zones.len());

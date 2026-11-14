@@ -10,7 +10,8 @@ use domain::base::name::ParsedName;
 use domain::base::rdata::ParseRecordData;
 use domain::dep::octseq::parse::Parser;
 use domain::rdata::ZoneRecordData;
-use domain::zonefile::inplace::{self, Entry, Zonefile};
+use domain::zonefile::inplace;
+use domain::zonefile::inplace::{Entry, Zonefile};
 
 use crate::dns::name::ZoneName;
 use crate::dns::query::TransferRecord;

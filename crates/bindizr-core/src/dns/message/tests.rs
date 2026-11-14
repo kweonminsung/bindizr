@@ -78,7 +78,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
     );
     let key = TsigKey {
         name: long_name.clone(),
-        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
+        ..tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -137,11 +137,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                     Time48::now(),
                 )
                 .unwrap();
-            crate::dns::tsig::tests::assert_response_mac(
-                &request,
-                &response,
-                TsigAlgorithm::HmacSha512,
-            );
+            tsig::tests::assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
         }
 
         let response = query
@@ -155,17 +151,13 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                 .header()
                 .tc()
         );
-        crate::dns::tsig::tests::assert_response_mac(
-            &request,
-            &response,
-            TsigAlgorithm::HmacSha512,
-        );
+        tsig::tests::assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
 
         let mut builder = DnsMessageBuilder::new(&query, Rtype::SOA).sign_with(signer);
         builder
             .add_raw_rdata(
                 query.qname.clone(),
-                16,
+                Rtype::TXT.to_int(),
                 3600,
                 Rdata::new(vec![0; 1400]).unwrap(),
             )
@@ -177,15 +169,11 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         assert_eq!(message.header_counts().ancount(), 0);
         assert!(response.len() <= query.response_limit().max_len());
         client.answer(&mut message.clone(), Time48::now()).unwrap();
-        crate::dns::tsig::tests::assert_response_mac(
-            &request,
-            &response,
-            TsigAlgorithm::HmacSha512,
-        );
+        tsig::tests::assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
     }
 }
 
-/// A question for example.com and `qtype`, with one OPT record per entry
+/// Build a question for example.com and `qtype`, with one OPT record per entry
 /// of `opt_versions`, each advertising 4096 octets.
 fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
@@ -208,7 +196,7 @@ fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
     additional.finish()
 }
 
-/// The parsed form of a plain AXFR question.
+/// Build the parsed form of a plain AXFR question.
 fn axfr_query() -> ParsedQuery {
     ParsedQuery::parse(
         &build_question(Rtype::AXFR, &[]),
@@ -464,7 +452,7 @@ fn strip_frame_length(frame: Vec<u8>) -> Vec<u8> {
 /// Verify that every envelope of a signed transfer carries a verifiable mac.
 #[test]
 fn signed_transfer_authenticates_every_envelope() {
-    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+    let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
     let (query_data, mut client) = build_signed_axfr_query(key.clone(), Some(true));
@@ -511,7 +499,7 @@ fn signed_transfer_authenticates_every_envelope() {
 /// Verify that a signed message reserves room for its TSIG record.
 #[test]
 fn signed_message_reserves_space_for_tsig() {
-    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+    let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
     let (query, _) = build_signed_axfr_query(key.clone(), None);
@@ -540,7 +528,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
     let qname = zone_name.to_wire_name().unwrap();
     let key = TsigKey {
         name: longest_name(['k', 'l', 'm', 'n']),
-        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
+        ..tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -915,7 +903,7 @@ fn oversized_response_does_not_advance_the_signer() {
     .unwrap();
     let key = TsigKey {
         name: format!("{}.{}.{}.k", "d".repeat(63), "e".repeat(63), "f".repeat(63)),
-        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
+        ..tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -945,7 +933,7 @@ fn oversized_response_does_not_advance_the_signer() {
 /// Verify that a rejected TCP frame leaves the signer usable for the following error response.
 #[test]
 fn oversized_frame_does_not_advance_the_signer() {
-    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+    let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
     let query = axfr_query();

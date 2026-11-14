@@ -85,7 +85,7 @@ pub enum ExtractMemberZonesError {
 /// Reject conflicting versions, targets, or member nodes (RFC 9432, Sections 4.1–4.3).
 pub fn extract_member_zones(
     records: &[TransferRecord],
-    catalog: &ZoneName,
+    catalog_zone_name: &ZoneName,
 ) -> Result<Vec<ZoneName>, ExtractMemberZonesError> {
     let mut version = None;
     let mut apex_ns = false;
@@ -93,12 +93,12 @@ pub fn extract_member_zones(
     let mut listed: HashSet<&ZoneName> = HashSet::new();
 
     for record in records {
-        let owner = OwnerName::parse_absolute_in_zone(&record.name, catalog).map_err(|source| {
-            ExtractMemberZonesError::OwnerName {
+        let owner = OwnerName::parse_absolute_in_zone(&record.name, catalog_zone_name).map_err(
+            |source| ExtractMemberZonesError::OwnerName {
                 name: record.name.clone(),
                 source,
-            }
-        })?;
+            },
+        )?;
         let labels = owner.labels();
 
         match record.rtype {

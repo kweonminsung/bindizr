@@ -51,7 +51,7 @@ pub enum ChangeOperation {
 }
 
 impl ChangeOperation {
-    /// Return the text representation of this change operation.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Add => "ADD",
@@ -81,6 +81,34 @@ impl TryFrom<String> for ChangeOperation {
     /// Validate and convert the stored value into a change operation.
     fn try_from(value: String) -> Result<Self, Self::Error> {
         value.parse()
+    }
+}
+
+impl<DB: sqlx::Database> sqlx::Type<DB> for ChangeOperation
+where
+    String: sqlx::Type<DB>,
+{
+    /// Return the SQL type used to store this value.
+    fn type_info() -> DB::TypeInfo {
+        <String as sqlx::Type<DB>>::type_info()
+    }
+
+    /// Return whether the SQL type can store this value.
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <String as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for ChangeOperation
+where
+    String: sqlx::Encode<'q, DB>,
+{
+    /// Encode this value using its database representation.
+    fn encode_by_ref(
+        &self,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<IsNull, BoxDynError> {
+        self.as_str().to_string().encode_by_ref(buffer)
     }
 }
 
@@ -129,34 +157,6 @@ impl TryFrom<String> for JournalRecordType {
     }
 }
 
-impl<DB: sqlx::Database> sqlx::Type<DB> for ChangeOperation
-where
-    String: sqlx::Type<DB>,
-{
-    /// Return the SQL type used to store this value.
-    fn type_info() -> DB::TypeInfo {
-        <String as sqlx::Type<DB>>::type_info()
-    }
-
-    /// Check whether the SQL type can store this value.
-    fn compatible(ty: &DB::TypeInfo) -> bool {
-        <String as sqlx::Type<DB>>::compatible(ty)
-    }
-}
-
-impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for ChangeOperation
-where
-    String: sqlx::Encode<'q, DB>,
-{
-    /// Encode this value using its database representation.
-    fn encode_by_ref(
-        &self,
-        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
-        self.as_str().to_string().encode_by_ref(buffer)
-    }
-}
-
 impl<DB: sqlx::Database> sqlx::Type<DB> for JournalRecordType
 where
     String: sqlx::Type<DB>,
@@ -166,7 +166,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }

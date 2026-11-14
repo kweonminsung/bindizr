@@ -58,7 +58,7 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    /// Return the text representation of this error code.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InvalidInput => "INVALID_INPUT",
@@ -104,7 +104,7 @@ impl ErrorCode {
         }
     }
 
-    /// Whether the failure is the server's, not the requester's: what a
+    /// Return whether the failure is the server's, not the requester's: what a
     /// transport reports as a server fault (SERVFAIL, 500) rather than a
     /// refusal.
     pub fn is_internal(self) -> bool {
@@ -217,7 +217,7 @@ pub enum ServiceError {
 }
 
 impl ServiceError {
-    /// The machine-readable code of this error, the wire's classification.
+    /// Return the machine-readable code of this error, the wire's classification.
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::InvalidInput { .. } => ErrorCode::InvalidInput,

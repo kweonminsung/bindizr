@@ -2,14 +2,13 @@ use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::{Zone, ZoneId};
-use bindizr_db::Transaction;
 use chrono::Utc;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse};
 use crate::zone::validation;
-use crate::{Context, notify, serial, text, transaction, ttl};
+use crate::{Context, Transaction, notify, serial, text, transaction, ttl};
 
 /// Create a zone and NOTIFY the catalog; add an ordinary apex NS naming MNAME
 /// unless opted out. Additional NS records are caller-managed.
@@ -23,13 +22,13 @@ pub async fn create(
     // Parent/child zones are allowed; only the same normalized zone name is rejected.
     // Names are stored normalized, so an exact lookup is enough to detect a collision.
     let candidate = prepare_create(cx, request)?;
-    let name = &candidate.name;
+    let zone_name = &candidate.name;
 
-    match bindizr_db::zone::get_by_name(cx.db(), name).await {
+    match bindizr_db::zone::get_by_name(cx.db(), zone_name).await {
         Ok(Some(_)) => {
-            log::error!("Zone with name {name} already exists");
+            log::error!("Zone with name {zone_name} already exists");
             return Err(ServiceError::zone_conflict(format!(
-                "zone with name '{name}' already exists"
+                "zone with name '{zone_name}' already exists"
             )));
         }
         Ok(None) => {}
@@ -111,8 +110,8 @@ pub async fn create(
 
 /// Resolve creation defaults once, before opening the transaction.
 fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
-    let name = validation::normalize_name(&request.name)?;
-    validation::reject_catalog_zone_name(cx, &name)?;
+    let zone_name = validation::normalize_name(&request.name)?;
+    validation::reject_catalog_zone_name(cx, &zone_name)?;
     let defaults = &cx.config().dns.zone_defaults;
     let soa = validation::normalize_soa(
         &request.mname,
@@ -122,7 +121,7 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
 
     Ok(Zone {
         id: ZoneId::UNWRITTEN,
-        name,
+        name: zone_name,
         mname: soa.mname,
         rname: soa.rname,
         dnssec_policy_id: None,
@@ -149,12 +148,12 @@ pub(crate) async fn create_tx(
     tx: &mut Transaction<'_>,
     candidate: Zone,
 ) -> Result<Zone, ServiceError> {
-    let name = candidate.name.clone();
+    let zone_name = candidate.name.clone();
     bindizr_db::zone::create_tx(tx, candidate)
         .await
         .map_err(|error| {
             if error.is_unique_violation() {
-                ServiceError::zone_conflict(format!("zone with name '{name}' already exists"))
+                ServiceError::zone_conflict(format!("zone with name '{zone_name}' already exists"))
             } else {
                 ServiceError::internal_with_source("failed to create zone", error)
             }

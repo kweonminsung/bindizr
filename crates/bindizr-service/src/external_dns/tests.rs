@@ -6,6 +6,7 @@ use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::metrics::Metrics;
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::zone::{Zone, ZoneId};
+use bindizr_db::Db;
 use chrono::Utc;
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
@@ -24,7 +25,7 @@ use crate::{record, role, token, zone};
 async fn context() -> Context {
     let mut config: Config = serde_json::from_str("{}").unwrap();
     config.database.sqlite.file_path = "sqlite::memory:".to_string();
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let db = Db::connect(&config.database).await.unwrap();
     Context::new(
         config,
         String::new(),
@@ -36,14 +37,14 @@ async fn context() -> Context {
 }
 
 /// Create a zone with no ordinary records for authorization and rollback checks.
-async fn create_zone(cx: &Context, name: &str) {
+async fn create_zone(cx: &Context, zone_name: &str) {
     zone::create(
         cx,
         &Caller::socket(),
         &serde_json::from_value(json!({
-            "name": name,
-            "mname": format!("ns.{name}"),
-            "rname": format!("hostmaster@{name}"),
+            "name": zone_name,
+            "mname": format!("ns.{zone_name}"),
+            "rname": format!("hostmaster@{zone_name}"),
             "apex_ns": false
         }))
         .unwrap(),
@@ -123,8 +124,8 @@ async fn apply_changes_uses_transactional_zone_visibility() {
     role::grant::revoke(&cx, &Caller::socket(), "external-dns", permission.id)
         .await
         .unwrap();
-    let name = zone::normalize_name("example.test").unwrap();
-    let serial = zone::get_by_name(&cx, &Caller::socket(), &name)
+    let zone_name = zone::normalize_name("example.test").unwrap();
+    let serial = zone::get_by_name(&cx, &Caller::socket(), &zone_name)
         .await
         .unwrap()
         .serial;
@@ -140,7 +141,7 @@ async fn apply_changes_uses_transactional_zone_visibility() {
     );
     assert_eq!(record::count_all(&cx).await.unwrap(), 1);
     assert_eq!(
-        zone::get_by_name(&cx, &Caller::socket(), &name)
+        zone::get_by_name(&cx, &Caller::socket(), &zone_name)
             .await
             .unwrap()
             .serial,
@@ -191,12 +192,12 @@ async fn apply_changes_rejects_hidden_subzones_and_rolls_back_all_zones() {
 }
 
 /// Build a zone fixture for the test.
-fn test_zone(id: i32, name: &str) -> Zone {
+fn test_zone(id: i32, zone_name: &str) -> Zone {
     Zone {
         id: ZoneId::from(id),
-        name: ZoneName::from_row(name),
-        mname: format!("ns1.{name}"),
-        rname: format!("hostmaster@{name}"),
+        name: ZoneName::from_row(zone_name),
+        mname: format!("ns1.{zone_name}"),
+        rname: format!("hostmaster@{zone_name}"),
         default_ttl: Ttl::from_secs(3600),
         serial: Serial::from(1),
         refresh: SoaInterval::from_secs(7200),

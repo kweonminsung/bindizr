@@ -1,3 +1,6 @@
+mod bulk;
+mod dname_targets;
+
 use std::slice;
 
 use domain::base::Name;
@@ -6,9 +9,6 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::common::{TestApp, dns};
-
-mod bulk;
-mod dname_targets;
 
 /// Verify that root targets can be created and replaced, and malformed names are rejected.
 #[tokio::test]
@@ -73,7 +73,7 @@ async fn root_record_targets_round_trip_through_management() {
             [vec![0]]
         );
 
-        let serial = app.read_zone_serial(zone_name).await;
+        let base_serial = app.read_zone_serial(zone_name).await;
 
         for invalid in ["", ".."] {
             let (status, body) = app
@@ -89,7 +89,7 @@ async fn root_record_targets_round_trip_through_management() {
                 StatusCode::BAD_REQUEST,
                 "{record_type} {invalid:?}: {body}"
             );
-            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+            assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         }
     }
 
@@ -285,7 +285,7 @@ async fn caa_values_preserve_empty_and_binary_properties() {
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["record"]["value"], "0 custom \"\"");
 
-        let serial = app.read_zone_serial(zone_name).await;
+        let base_serial = app.read_zone_serial(zone_name).await;
 
         for invalid in [
             "0 custom",
@@ -299,7 +299,7 @@ async fn caa_values_preserve_empty_and_binary_properties() {
                 .await;
 
             assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}: {body}");
-            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+            assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         }
 
         let (_, body) = app.send_request(Method::GET, &path, None).await;
@@ -502,7 +502,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
             .await;
         body["items"][0]["serial"].as_i64().unwrap()
     };
-    let before = serial_of(&app).await;
+    let base_serial = serial_of(&app).await;
 
     let (status, body) = app
         .send_request(
@@ -515,7 +515,11 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["deleted"], 3, "{body}");
     assert_eq!(body["applied"], false, "{body}");
-    assert_eq!(serial_of(&app).await, before, "a dry run must not move it");
+    assert_eq!(
+        serial_of(&app).await,
+        base_serial,
+        "a dry run must not move it"
+    );
 
     let (status, body) = app
         .send_request(
@@ -529,7 +533,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     assert_eq!(body["deleted"], 3, "{body}");
 
     // Row by row would bump it three times and serve the half-removed record set.
-    assert_eq!(serial_of(&app).await, before + 1);
+    assert_eq!(serial_of(&app).await, base_serial + 1);
 
     let (_, body) = app
         .send_request(
@@ -562,7 +566,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["deleted"], 0, "{body}");
-    assert_eq!(serial_of(&app).await, before + 1);
+    assert_eq!(serial_of(&app).await, base_serial + 1);
 }
 
 /// Verify that record delete matching rejects what would widen it.
@@ -687,7 +691,7 @@ async fn record_listing_filters_by_zone() {
     let first_zone_name = zone["name"].as_str().unwrap();
     let second_zone_name = app.zone_name("example.net");
 
-    let second_zone = json!({
+    let request = json!({
         "name": second_zone_name,
         "mname": format!("ns1.{second_zone_name}"),
         "rname": "admin@example.net",
@@ -695,7 +699,7 @@ async fn record_listing_filters_by_zone() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/zones", Some(second_zone))
+        .send_request(Method::POST, "/zones", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED);
@@ -1129,7 +1133,7 @@ async fn record_listing_ignores_empty_name_filter() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{empty}");
     assert_eq!(count(&empty), count(&unfiltered), "{empty}");
     assert!(count(&empty) > 1, "expected apex plus the two A records");
 }
@@ -1278,7 +1282,7 @@ async fn record_storage_preserves_non_ascii_label_octets() {
     let zone_name = zone["name"].as_str().unwrap();
 
     // UTF-8 input denotes its literal octets; A-labels remain accepted as well.
-    for (name, record_type, value, expected) in [
+    for (name, record_type, value, expected_status) in [
         ("caf\u{e9}", "A", "192.0.2.1", StatusCode::CREATED),
         ("alias", "CNAME", "caf\u{e9}.example.", StatusCode::CREATED),
         ("xn--caf-dma", "A", "192.0.2.1", StatusCode::CREATED),
@@ -1302,7 +1306,10 @@ async fn record_storage_preserves_non_ascii_label_octets() {
             )
             .await;
 
-        assert_eq!(status, expected, "{name} {record_type} {value}: {body}");
+        assert_eq!(
+            status, expected_status,
+            "{name} {record_type} {value}: {body}"
+        );
     }
 }
 
@@ -1370,7 +1377,7 @@ async fn naptr_record_validates_flags_on_create_and_update() {
     let id = body["record"]["id"].as_i64().unwrap();
 
     let before = app.list_records(zone_name).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     for flags in ["!", "S-", " ", r"\000", r"\033", "é"] {
         for replacement in [".", "target.example."] {
@@ -1403,7 +1410,7 @@ async fn naptr_record_validates_flags_on_create_and_update() {
     }
 
     assert_eq!(app.list_records(zone_name).await, before);
-    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
 
     let (status, body) = app
         .send_request(
@@ -1430,7 +1437,7 @@ async fn naptr_record_rejects_invalid_regexp() {
 
     // BIND rejects the whole transfer for an invalid regexp. Literal backslashes
     // use `\\` in quoted text (RFC 1035, Section 5.1).
-    for (value, expected) in [
+    for (value, expected_status) in [
         (
             "10 10 \"u\" \"E2U+sip\" \"garbage\" .",
             StatusCode::BAD_REQUEST,
@@ -1465,9 +1472,9 @@ async fn naptr_record_rejects_invalid_regexp() {
             )
             .await;
 
-        assert_eq!(status, expected, "{value}: {body}");
+        assert_eq!(status, expected_status, "{value}: {body}");
 
-        if expected == StatusCode::BAD_REQUEST {
+        if expected_status == StatusCode::BAD_REQUEST {
             assert!(
                 body["error"].as_str().unwrap().contains("NAPTR regexp"),
                 "{body}"
@@ -1514,7 +1521,7 @@ async fn record_rejects_invalid_values() {
         );
     }
 
-    let valid_request = json!({
+    let request = json!({
         "name": "valid",
         "type": "A",
         "value": "192.0.2.10",
@@ -1523,13 +1530,13 @@ async fn record_rejects_invalid_values() {
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/records", Some(valid_request))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
 
-    let invalid_update = json!({
+    let request = json!({
         "name": "valid",
         "type": "AAAA",
         "value": "not-ipv6",
@@ -1537,11 +1544,7 @@ async fn record_rejects_invalid_values() {
     });
 
     let (status, body) = app
-        .send_request(
-            Method::PUT,
-            &format!("/records/{record_id}"),
-            Some(invalid_update),
-        )
+        .send_request(Method::PUT, &format!("/records/{record_id}"), Some(request))
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -1556,7 +1559,7 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let first = json!({
+    let request = json!({
         "name": "www",
         "type": "A",
         "value": "192.0.2.1",
@@ -1565,13 +1568,13 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/records", Some(first))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED);
 
     // RFC 2181, Section 5.2: one TTL per record set.
-    let differing_ttl = json!({
+    let request = json!({
         "name": "www",
         "type": "A",
         "value": "192.0.2.2",
@@ -1580,7 +1583,7 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/records", Some(differing_ttl))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
@@ -1590,7 +1593,7 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
         body["error"]
     );
 
-    let matching_ttl = json!({
+    let request = json!({
         "name": "www",
         "type": "A",
         "value": "192.0.2.2",
@@ -1599,13 +1602,13 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/records", Some(matching_ttl))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED);
 
     // A different type at the same owner name is a separate record set.
-    let other_record_set = json!({
+    let request = json!({
         "name": "www",
         "type": "TXT",
         "value": "hello",
@@ -1614,7 +1617,7 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/records", Some(other_record_set))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED);
@@ -1705,7 +1708,7 @@ async fn record_rejects_priority_on_types_without_one() {
             .send_request(Method::POST, "/records", Some(request))
             .await;
 
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{record_type}");
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{record_type}: {body}");
         assert!(
             body["error"].as_str().unwrap().contains("priority"),
             "unexpected error for {record_type}: {}",
@@ -1713,7 +1716,7 @@ async fn record_rejects_priority_on_types_without_one() {
         );
     }
 
-    let mx = json!({
+    let request = json!({
         "name": "@",
         "type": "MX",
         "value": "mail.example.com",
@@ -1722,12 +1725,14 @@ async fn record_rejects_priority_on_types_without_one() {
         "zone_name": zone_name
     });
 
-    let (status, _) = app.send_request(Method::POST, "/records", Some(mx)).await;
+    let (status, _) = app
+        .send_request(Method::POST, "/records", Some(request))
+        .await;
 
     assert_eq!(status, StatusCode::CREATED);
 
     // An update is held to the same rule.
-    let a_record = json!({
+    let request = json!({
         "name": "prio",
         "type": "A",
         "value": "192.0.2.1",
@@ -1736,7 +1741,7 @@ async fn record_rejects_priority_on_types_without_one() {
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/records", Some(a_record))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
@@ -1797,7 +1802,7 @@ async fn record_preserves_txt_segments_and_case() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["value"], "Token=abc");
 
-    let segmented = json!({
+    let request = json!({
         "name": "segmented",
         "type": "TXT",
         "value": ["a", "bc"],
@@ -1806,13 +1811,13 @@ async fn record_preserves_txt_segments_and_case() {
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/records", Some(segmented))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["record"]["value"], json!(["a", "bc"]));
 
-    let empty_segments = json!({
+    let request = json!({
         "name": "empty-segment-list",
         "type": "TXT",
         "value": [],
@@ -1821,7 +1826,7 @@ async fn record_preserves_txt_segments_and_case() {
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/records", Some(empty_segments))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -1834,7 +1839,7 @@ async fn record_preserves_txt_segments_and_case() {
 
     // A DNS character-string holds at most 255 octets (RFC 1035, Section 3.3), so a
     // 300-char value must be stored split into 255 + 45.
-    let long_txt = json!({
+    let request = json!({
         "name": "long-txt",
         "type": "TXT",
         "value": "a".repeat(300),
@@ -1843,7 +1848,7 @@ async fn record_preserves_txt_segments_and_case() {
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/records", Some(long_txt))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
@@ -1878,7 +1883,7 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
 
     // The FQDN spelling resolves to the same stored owner as the relative
     // "a1" above, so it must be detected as a duplicate.
-    let in_bailiwick_duplicate = json!({
+    let request = json!({
         "name": format!("a1.{zone_name}."),
         "type": "A",
         "value": "127.0.0.1",
@@ -1887,12 +1892,12 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/records", Some(in_bailiwick_duplicate))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
 
-    let in_bailiwick_different_value = json!({
+    let request = json!({
         "name": format!("a1.{zone_name}"),
         "type": "A",
         "value": "127.0.0.2",
@@ -1901,7 +1906,7 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/records", Some(in_bailiwick_different_value))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
@@ -1915,7 +1920,7 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
         "a1.other.com.",
         "badexample.com.",
     ] {
-        let out_of_bailiwick = json!({
+        let request = json!({
             "name": name,
             "type": "A",
             "value": "127.0.0.3",
@@ -1924,13 +1929,13 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
         });
 
         let (status, _) = app
-            .send_request(Method::POST, "/records", Some(out_of_bailiwick))
+            .send_request(Method::POST, "/records", Some(request))
             .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST, "{name} should be rejected");
     }
 
-    let update_out_of_bailiwick = json!({
+    let request = json!({
         "name": "a1.",
         "type": "A",
         "value": "127.0.0.4",
@@ -1939,11 +1944,7 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
     let record_id = body["record"]["id"].as_i64().unwrap();
 
     let (status, _) = app
-        .send_request(
-            Method::PUT,
-            &format!("/records/{record_id}"),
-            Some(update_out_of_bailiwick),
-        )
+        .send_request(Method::PUT, &format!("/records/{record_id}"), Some(request))
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -2045,7 +2046,7 @@ async fn record_rejects_cname_conflicts() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let a_record_request = json!({
+    let request = json!({
         "name": "test",
         "type": "A",
         "value": "1.1.1.1",
@@ -2054,12 +2055,12 @@ async fn record_rejects_cname_conflicts() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/records", Some(a_record_request))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED);
 
-    let cname_record_request = json!({
+    let request = json!({
         "name": "test",
         "type": "CNAME",
         "value": "other.example.com",
@@ -2068,12 +2069,12 @@ async fn record_rejects_cname_conflicts() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/records", Some(cname_record_request))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
 
-    let cname_record_request = json!({
+    let request = json!({
         "name": "cname-test",
         "type": "CNAME",
         "value": "another.example.com",
@@ -2082,13 +2083,13 @@ async fn record_rejects_cname_conflicts() {
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/records", Some(cname_record_request))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let cname_record_id = body["record"]["id"].as_i64().unwrap();
 
-    let a_record_request = json!({
+    let request = json!({
         "name": "cname-test",
         "type": "A",
         "value": "2.2.2.2",
@@ -2097,14 +2098,14 @@ async fn record_rejects_cname_conflicts() {
     });
 
     let (status, _) = app
-        .send_request(Method::POST, "/records", Some(a_record_request))
+        .send_request(Method::POST, "/records", Some(request))
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
 
     // Renaming the CNAME onto an owner that already holds an A record must
     // hit the same exclusivity check through the update path.
-    let update_cname_request = json!({
+    let request = json!({
         "name": "test",
         "type": "CNAME",
         "value": "updated.example.com",
@@ -2115,7 +2116,7 @@ async fn record_rejects_cname_conflicts() {
         .send_request(
             Method::PUT,
             &format!("/records/{cname_record_id}"),
-            Some(update_cname_request),
+            Some(request),
         )
         .await;
 
@@ -2259,7 +2260,7 @@ async fn record_enforces_dname_and_alias_target_rules() {
         ),
     ];
 
-    for (name, record_type, value, priority, expected) in cases {
+    for (name, record_type, value, priority, expected_status) in cases {
         for dry_run in [true, false] {
             let mut request = create(name, record_type, value.clone(), priority);
             request["dry_run"] = json!(dry_run);
@@ -2268,14 +2269,14 @@ async fn record_enforces_dname_and_alias_target_rules() {
                 .send_request(Method::POST, "/records", Some(request))
                 .await;
 
-            let expected = if dry_run && expected == StatusCode::CREATED {
+            let expected_status = if dry_run && expected_status == StatusCode::CREATED {
                 StatusCode::OK
             } else {
-                expected
+                expected_status
             };
 
             assert_eq!(
-                status, expected,
+                status, expected_status,
                 "{name} {record_type} {value}, dry_run={dry_run}: {body}"
             );
         }
@@ -2296,7 +2297,7 @@ async fn record_enforces_dname_and_alias_target_rules() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    for (name, record_type, expected) in [
+    for (name, record_type, expected_status) in [
         ("@", "DNAME", StatusCode::CREATED),
         ("host", "A", StatusCode::CONFLICT),
     ] {
@@ -2320,7 +2321,7 @@ async fn record_enforces_dname_and_alias_target_rules() {
             )
             .await;
 
-        assert_eq!(status, expected, "{name} {record_type}: {body}");
+        assert_eq!(status, expected_status, "{name} {record_type}: {body}");
     }
 }
 
@@ -2350,7 +2351,7 @@ async fn record_mutations_validate_the_complete_proposed_state() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let ns_id = body["records"][0]["id"].as_i64().unwrap();
 
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     for dry_run in [true, false] {
         let (status, body) = app
@@ -2398,7 +2399,7 @@ async fn record_mutations_validate_the_complete_proposed_state() {
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
         assert_eq!(body["applied"], false);
         assert!(!body["errors"].as_array().unwrap().is_empty());
-        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
     }
 
     // Removing the delegation and its DS together leaves a valid final state.
@@ -2636,7 +2637,7 @@ async fn record_writes_reject_unsupported_types_without_changes() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let before = app.list_records(zone_name).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     let record_id = before[0]["id"].as_i64().unwrap();
 
@@ -2656,7 +2657,7 @@ async fn record_writes_reject_unsupported_types_without_changes() {
 
             assert!(status.is_client_error(), "{record_type}: {body}");
             assert_eq!(app.list_records(zone_name).await, before);
-            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+            assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         }
     }
 }
@@ -2665,6 +2666,8 @@ async fn record_writes_reject_unsupported_types_without_changes() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn binary_txt_and_wks_round_trip() {
+    use std::str::FromStr;
+
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -2701,7 +2704,7 @@ async fn binary_txt_and_wks_round_trip() {
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
-        let rtype = record_type.parse::<Rtype>().unwrap();
+        let rtype = Rtype::from_str(record_type).unwrap();
 
         assert_eq!(
             &dns::fetch_exported_record_sets(&app, zone_name).await
@@ -2834,7 +2837,7 @@ async fn record_ttl_preserves_unsigned_boundaries() {
         assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
     }
 
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     for ttl in [-1i64, i64::from(u32::MAX) + 1] {
         let (status, body) = app
@@ -2848,7 +2851,7 @@ async fn record_ttl_preserves_unsigned_boundaries() {
             .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
     }
 
     app.create_secondary("ttl-loopback", "127.0.0.1").await;

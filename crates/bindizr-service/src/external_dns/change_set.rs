@@ -66,7 +66,8 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
     })
 }
 
-/// ExternalDNS sends TTL 0 for "not configured"; both resolve to the zone TTL.
+/// Normalize an omitted TTL: ExternalDNS sends TTL 0 for "not configured";
+/// both resolve to the zone TTL.
 fn normalize_ttl(ttl: Option<i64>) -> Result<Option<Ttl>, ServiceError> {
     match ttl {
         Some(0) | None => Ok(None),
@@ -81,8 +82,8 @@ fn validate_record_set_shape(
 ) -> Result<(), ServiceError> {
     if record.values.is_empty() {
         return Err(ServiceError::invalid_input(format!(
-            "record '{}' {} must have at least one value",
-            record.name, record_type
+            "record '{}' {record_type} must have at least one value",
+            record.name,
         )));
     }
     if record_type == RecordType::Cname && record.values.len() > 1 {
@@ -187,7 +188,7 @@ pub(crate) fn group_operations_by_zone(
         let (RecordSetOperation::Add(record_set) | RecordSetOperation::Delete(record_set)) =
             &pending;
         // From all zones, so a hidden subzone still shadows a granted parent.
-        let (zone, name) =
+        let (zone, owner) =
             policy::authoritative_zone(zones, &record_set.name).ok_or_else(|| {
                 ServiceError::ZoneNotFound(format!(
                     "no zone is authoritative for '{}'",
@@ -207,7 +208,7 @@ pub(crate) fn group_operations_by_zone(
             RecordSetOperation::Add(record_set) => (&mut entry.adds, record_set),
         };
         destination.push(ZoneRecordSet {
-            name,
+            name: owner,
             record_type: record_set.record_type,
             ttl: record_set.ttl,
             values: record_set.values,

@@ -31,7 +31,8 @@ async fn context() -> Arc<Context> {
     ))
 }
 
-/// Serial ordering survives wraparound; half-range differences remain unordered.
+/// Verify that serial ordering survives wraparound and that half-range differences remain
+/// unordered.
 #[test]
 fn secondary_status_uses_rfc1982_order() {
     for (expected, visible, status) in [
@@ -52,14 +53,14 @@ fn secondary_status_uses_rfc1982_order() {
     }
 }
 
-/// Canceling the aggregate cancels its child exchange before any TCP fallback.
+/// Verify that canceling the aggregate cancels its child exchange before any TCP fallback.
 #[tokio::test]
 async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
     let cx = context().await;
-    let (udp, tcp) = loop {
-        let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        match TcpListener::bind(udp.local_addr().unwrap()).await {
-            Ok(tcp) => break (udp, tcp),
+    let (socket, listener) = loop {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        match TcpListener::bind(socket.local_addr().unwrap()).await {
+            Ok(listener) => break (socket, listener),
             Err(error) if error.kind() == io::ErrorKind::AddrInUse => continue,
             Err(error) => panic!("binding TCP listener failed: {error}"),
         }
@@ -68,7 +69,7 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
         &cx,
         &Caller::socket(),
         &serde_json::from_value(json!({
-            "name":"secondary", "address":udp.local_addr().unwrap().to_string(),
+            "name":"secondary", "address":socket.local_addr().unwrap().to_string(),
         }))
         .unwrap(),
     )
@@ -78,7 +79,7 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
     let task_cx = cx.clone();
     let task = tokio::spawn(async move { probe_secondaries(&task_cx, &zone_name, None).await });
     let mut buffer = [0; 4096];
-    let (len, peer) = time::timeout(Duration::from_secs(2), udp.recv_from(&mut buffer))
+    let (len, peer) = time::timeout(Duration::from_secs(2), socket.recv_from(&mut buffer))
         .await
         .unwrap()
         .unwrap();
@@ -86,21 +87,21 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
     buffer[2] = 0x82; // QR and TC would otherwise start a TCP exchange.
-    udp.send_to(&buffer[..len], peer).await.unwrap();
+    socket.send_to(&buffer[..len], peer).await.unwrap();
     assert!(
-        time::timeout(Duration::from_millis(150), tcp.accept())
+        time::timeout(Duration::from_millis(150), listener.accept())
             .await
             .is_err()
     );
 }
 
-/// Faster later targets do not reorder the secondary report.
+/// Verify that faster later targets do not reorder the secondary report.
 #[tokio::test]
 async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
     let cx = context().await;
-    let first = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let second = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    for (name, socket) in [("a-first", &first), ("b-second", &second)] {
+    let first_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let second_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    for (name, socket) in [("a-first", &first_socket), ("b-second", &second_socket)] {
         secondary::create(
             &cx,
             &Caller::socket(),
@@ -117,38 +118,45 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
     let task = tokio::spawn(async move { probe_secondaries(&task_cx, &zone_name, None).await });
     let mut first_buffer = [0; 4096];
     let mut second_buffer = [0; 4096];
-    let (first_len, first_peer) =
-        time::timeout(Duration::from_secs(2), first.recv_from(&mut first_buffer))
-            .await
-            .unwrap()
-            .unwrap();
-    let (second_len, second_peer) =
-        time::timeout(Duration::from_secs(2), second.recv_from(&mut second_buffer))
-            .await
-            .unwrap()
-            .unwrap();
+    let (first_len, first_peer) = time::timeout(
+        Duration::from_secs(2),
+        first_socket.recv_from(&mut first_buffer),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let (second_len, second_peer) = time::timeout(
+        Duration::from_secs(2),
+        second_socket.recv_from(&mut second_buffer),
+    )
+    .await
+    .unwrap()
+    .unwrap();
 
     // Refusals complete a probe without requiring an SOA fixture.
     second_buffer[2] = 0x84;
     second_buffer[3] = 5;
-    second
+    second_socket
         .send_to(&second_buffer[..second_len], second_peer)
         .await
         .unwrap();
     time::sleep(Duration::from_millis(20)).await;
     first_buffer[2] = 0x84;
     first_buffer[3] = 5;
-    first
+    first_socket
         .send_to(&first_buffer[..first_len], first_peer)
         .await
         .unwrap();
 
     let statuses = task.await.unwrap().unwrap();
     assert_eq!(statuses.len(), 2);
-    assert_eq!(statuses[0].address, first.local_addr().unwrap().to_string());
+    assert_eq!(
+        statuses[0].address,
+        first_socket.local_addr().unwrap().to_string()
+    );
     assert_eq!(
         statuses[1].address,
-        second.local_addr().unwrap().to_string()
+        second_socket.local_addr().unwrap().to_string()
     );
     assert!(
         statuses

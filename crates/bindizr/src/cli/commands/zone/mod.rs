@@ -5,8 +5,9 @@ mod version;
 
 use bindizr_core::dns::Serial;
 use bindizr_core::{errln, out, outln};
+use bindizr_service::types;
 use bindizr_service::types::{
-    self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, ImportZoneRequest,
+    CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, ImportZoneRequest,
     ImportZoneResponse, ImportZonesRequest, ImportZonesResponse, MessageResponse, NotifySerial,
     PaginatedResponse, Run, SingleZoneResponse, UpdateZoneRequest, WriteZoneResponse, ZoneFilter,
     ZoneResponse, ZoneStatusResponse, ZoneView,

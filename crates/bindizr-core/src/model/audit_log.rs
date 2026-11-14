@@ -53,7 +53,7 @@ impl AuditEntity {
         Self::Zone,
     ];
 
-    /// Storage and API form.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Token => "token",
@@ -66,7 +66,7 @@ impl AuditEntity {
         }
     }
 
-    /// The names an entity parses from, for messages that list them.
+    /// List the names an entity parses from, for messages that list them.
     pub fn supported_names() -> Vec<&'static str> {
         Self::ALL.into_iter().map(Self::as_str).collect()
     }
@@ -112,7 +112,7 @@ pub enum AuditOperation {
 }
 
 impl AuditOperation {
-    /// Storage and API form.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Create => "create",

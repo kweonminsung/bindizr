@@ -1,4 +1,5 @@
-use domain::base::{Message, MessageBuilder, Rtype, UnknownRecordData};
+use domain::base::iana::Rtype;
+use domain::base::{Message, MessageBuilder, UnknownRecordData};
 use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
@@ -93,7 +94,7 @@ async fn root_primary_name_round_trips_through_management_and_dns() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    let serial = app.read_zone_serial(&zone_name).await;
+    let base_serial = app.read_zone_serial(&zone_name).await;
     let (status, body) = app
         .send_request(
             Method::PUT,
@@ -103,7 +104,7 @@ async fn root_primary_name_round_trips_through_management_and_dns() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(app.read_zone_serial(&zone_name).await, serial);
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial);
 
     for dry_run in [true, false] {
         let (status, body) = app

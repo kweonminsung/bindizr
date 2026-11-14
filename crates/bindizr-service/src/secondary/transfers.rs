@@ -15,7 +15,7 @@ use crate::types::{
 };
 use crate::{Context, dns_client, pagination, transfer, zone};
 
-/// The transfers Bindizr answered `name`, newest first, with how each zone
+/// List the transfers Bindizr answered `name`, newest first, with how each zone
 /// was last served.
 pub async fn list_transfers(
     cx: &Context,
@@ -64,7 +64,7 @@ pub async fn list_transfers(
     })
 }
 
-/// How Bindizr last served `secondary` each zone, for the check and doctor.
+/// Summarize how Bindizr last served `secondary` each zone, for the check and doctor.
 pub(crate) async fn summarize_transfers(
     cx: &Context,
     secondary: &Secondary,
@@ -106,7 +106,7 @@ fn build_transfer_summary(logs: &[TransferLogWithZone]) -> TransferSummaryRespon
     summary
 }
 
-/// The addresses the secondary resolves to now, which key the transfer log
+/// Resolve the addresses the secondary resolves to now, which key the transfer log
 /// rows; none when it does not resolve.
 async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
     let timeout = cx.config().dns.notify.timeout();
