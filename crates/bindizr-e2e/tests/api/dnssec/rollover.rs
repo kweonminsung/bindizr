@@ -6,7 +6,7 @@ use tokio::time;
 
 use crate::common::TestApp;
 
-/// Verify a complete rollover with combined signing keys.
+/// Verify that a rollover with combined signing keys completes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_csk_rollover_preserves_signed_zone() {
@@ -26,12 +26,12 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
                 "rname": "admin@example.com",
                 "default_ttl": 60,
                 "refresh": 1,
-                "serial": 10,
+                "serial": 10
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let zone_name = zone_name.as_str();
     let serial_before = body["zone"]["serial"].as_i64().unwrap();
 
@@ -39,11 +39,11 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let dnssec = &body;
     let keys = dnssec["keys"].as_array().unwrap();
 
@@ -66,7 +66,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let dnssec = &body;
     let keys = dnssec["keys"].as_array().unwrap();
 
@@ -107,7 +107,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_ROLLOVER_IN_PROGRESS");
 
     // A replacement resolvers cannot have learned yet may not sign;
@@ -117,6 +117,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
         format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_ds_check=true"),
     ] {
         let (status, _) = app.send_request(Method::POST, &path, None).await;
+
         assert_eq!(status, StatusCode::BAD_REQUEST, "{path}");
     }
 
@@ -131,7 +132,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let dnssec = &body;
     let keys = dnssec["keys"].as_array().unwrap();
 
@@ -160,6 +161,6 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_NO_ROLLOVER_IN_PROGRESS");
 }

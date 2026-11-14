@@ -1,5 +1,7 @@
 //! Outbound NOTIFY transport and acknowledgement errors.
+
 mod client;
+
 use std::io;
 use std::sync::Arc;
 

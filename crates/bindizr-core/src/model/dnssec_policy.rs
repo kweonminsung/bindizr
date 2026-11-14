@@ -9,7 +9,7 @@ use sqlx::error::BoxDynError;
 use thiserror::Error;
 use utoipa::ToSchema;
 
-use super::dnssec_key::DnssecAlgorithm;
+use crate::model::dnssec_key::DnssecAlgorithm;
 
 /// Name of the policy seeded at startup, used when `enable` names none.
 pub const DEFAULT_DNSSEC_POLICY_NAME: &str = "default";
@@ -172,11 +172,11 @@ impl TryFrom<u32> for Days {
     type Error = ConvertDaysError;
 
     /// Take a payload's count, refused past the maximum.
-    fn try_from(days: u32) -> Result<Self, Self::Error> {
-        if days > Self::MAX.0 {
-            return Err(ConvertDaysError::TooLarge { days });
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value > Self::MAX.0 {
+            return Err(ConvertDaysError::TooLarge { days: value });
         }
-        Ok(Self(days))
+        Ok(Self(value))
     }
 }
 
@@ -184,10 +184,10 @@ impl TryFrom<i32> for Days {
     type Error = ConvertDaysError;
 
     /// Read a row's count; a negative one is corrupt data.
-    fn try_from(days: i32) -> Result<Self, Self::Error> {
-        u32::try_from(days)
-            .map(Days)
-            .map_err(|_| ConvertDaysError::Negative { days })
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        u32::try_from(value)
+            .map(Self)
+            .map_err(|_| ConvertDaysError::Negative { days: value })
     }
 }
 

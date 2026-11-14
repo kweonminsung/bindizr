@@ -6,12 +6,11 @@ use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::metrics::Metrics;
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::zone::{Zone, ZoneId};
-use change_set::{self, ZoneChangeSet, ZoneOperations};
 use chrono::Utc;
-use policy;
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
+use super::change_set::{ZoneChangeSet, ZoneOperations};
 use super::*;
 use crate::authorization::Caller;
 use crate::error::ErrorCode;
@@ -23,28 +22,34 @@ use crate::{record, role, token, zone};
 
 /// Build isolated SQLite service state without listeners or workers.
 async fn context() -> Context {
-    let config: Config = serde_json::from_value(json!({
-        "database":{"sqlite":{"file_path":"sqlite::memory:"}},
-    }))
-    .unwrap();
+    let mut config: Config = serde_json::from_str("{}").unwrap();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
     let db = bindizr_db::Db::connect(&config.database).await.unwrap();
-    let (jobs, _rx) = mpsc::unbounded_channel();
-    let (period, _rx) = watch::channel(0);
     Context::new(
         config,
         String::new(),
         db,
         Metrics::new().unwrap(),
-        jobs,
-        period,
+        mpsc::unbounded_channel().0,
+        watch::channel(0).0,
     )
 }
 
 /// Create a zone with no ordinary records for authorization and rollback checks.
 async fn create_zone(cx: &Context, name: &str) {
-    zone::create(cx, &Caller::socket(), &serde_json::from_value(json!({
-        "name":name, "mname":format!("ns.{name}"), "rname":format!("hostmaster@{name}"), "apex_ns":false,
-    })).unwrap()).await.unwrap();
+    zone::create(
+        cx,
+        &Caller::socket(),
+        &serde_json::from_value(json!({
+            "name": name,
+            "mname": format!("ns.{name}"),
+            "rname": format!("hostmaster@{name}"),
+            "apex_ns": false
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
 }
 
 /// Issue a credential in a role that starts without any grant.
@@ -82,7 +87,7 @@ async fn grant(cx: &Context, name: &str, actions: &[&str]) -> RoleGrantResponse 
         &Caller::socket(),
         "external-dns",
         &CreateRoleGrantRequest {
-            zone_name: Some(name.into()),
+            zone_name: Some(name.to_string()),
             actions: actions.iter().map(ToString::to_string).collect(),
             record_name_pattern: None,
             record_types: None,
@@ -92,7 +97,8 @@ async fn grant(cx: &Context, name: &str, actions: &[&str]) -> RoleGrantResponse 
     .unwrap()
 }
 
-/// Zone visibility changes after request authentication are decided under the zone lock.
+/// Verify that zone visibility changes after request authentication are decided under the zone
+/// lock.
 #[tokio::test]
 async fn apply_changes_uses_transactional_zone_visibility() {
     let cx = context().await;
@@ -142,7 +148,8 @@ async fn apply_changes_uses_transactional_zone_visibility() {
     );
 }
 
-/// A hidden child shadows its granted parent and a later refusal rolls earlier zones back.
+/// Verify that a hidden child shadows its granted parent and a later refusal rolls earlier zones
+/// back.
 #[tokio::test]
 async fn apply_changes_rejects_hidden_subzones_and_rolls_back_all_zones() {
     let cx = context().await;
@@ -242,15 +249,15 @@ fn authoritative_zone_picks_most_specific_match() {
     ];
 
     assert_eq!(
-        policy::authoritative_zone(&zones, "api.internal.example.com").map(|(z, _)| z.id),
+        policy::authoritative_zone(&zones, "api.internal.example.com").map(|(zone, _)| zone.id),
         Some(ZoneId::from(2))
     );
     assert_eq!(
-        policy::authoritative_zone(&zones, "www.example.com").map(|(z, _)| z.id),
+        policy::authoritative_zone(&zones, "www.example.com").map(|(zone, _)| zone.id),
         Some(ZoneId::from(1))
     );
     assert_eq!(
-        policy::authoritative_zone(&zones, "internal.example.com").map(|(z, _)| z.id),
+        policy::authoritative_zone(&zones, "internal.example.com").map(|(zone, _)| zone.id),
         Some(ZoneId::from(2))
     );
 }
@@ -466,7 +473,7 @@ fn adjust_record_set_rejects_unsupported_shapes() {
 
 /// Verify that group operations resolves subzone without parent fallback.
 #[test]
-fn group_ops_resolves_subzone_without_parent_fallback() {
+fn group_operations_by_zone_resolves_subzone_without_parent_fallback() {
     let zones = vec![
         test_zone(1, "example.com"),
         test_zone(2, "internal.example.com"),
@@ -499,7 +506,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
 
 /// Verify that group operations rejects names without authoritative zone.
 #[test]
-fn group_ops_rejects_names_without_authoritative_zone() {
+fn group_operations_by_zone_rejects_names_without_authoritative_zone() {
     let zones = vec![test_zone(1, "example.com")];
     let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set("app.other.org", "A", None, &["192.0.2.1"])],
@@ -531,7 +538,7 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
         deletes: Vec::new(),
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &[]).unwrap();
+    let change_set = ZoneChangeSet::compute(&zone, &zone_operations(&request, &zone), &[]).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert_eq!(change_set.creates.len(), 1);
@@ -553,7 +560,7 @@ fn change_set_skips_existing_values_regardless_of_ttl() {
     for ttl in [3600, 300] {
         let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", ttl)];
         let change_set =
-            ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
+            ZoneChangeSet::compute(&zone, &zone_operations(&request, &zone), &existing).unwrap();
         assert!(change_set.deletes.is_empty(), "TTL {ttl}");
         assert!(change_set.creates.is_empty(), "TTL {ttl}");
     }
@@ -575,7 +582,7 @@ fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
     };
 
     let change_set =
-        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
+        ZoneChangeSet::compute(&zone, &zone_operations(&request, &zone), &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 1);
     assert_eq!(change_set.deletes[0].id, RecordId::from(10));
@@ -593,7 +600,7 @@ fn change_set_skips_deletes_of_absent_records() {
         deletes: vec![record_set("gone.example.com", "A", None, &["192.0.2.9"])],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &[]).unwrap();
+    let change_set = ZoneChangeSet::compute(&zone, &zone_operations(&request, &zone), &[]).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -617,7 +624,7 @@ fn change_set_cancels_unchanged_updates_even_with_reordered_targets() {
     };
 
     let change_set =
-        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
+        ZoneChangeSet::compute(&zone, &zone_operations(&request, &zone), &existing).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -641,7 +648,7 @@ fn change_set_replaces_rows_when_update_changes_targets() {
     };
 
     let change_set =
-        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
+        ZoneChangeSet::compute(&zone, &zone_operations(&request, &zone), &existing).unwrap();
 
     assert_eq!(
         change_set
@@ -683,7 +690,7 @@ fn change_set_replaces_whole_record_set_when_ttl_changes() {
     };
 
     let change_set =
-        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
+        ZoneChangeSet::compute(&zone, &zone_operations(&request, &zone), &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 2);
     assert_eq!(change_set.creates.len(), 2);
@@ -712,7 +719,7 @@ fn change_set_enforces_cname_exclusivity() {
     };
 
     let error =
-        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap_err();
+        ZoneChangeSet::compute(&zone, &zone_operations(&request, &zone), &existing).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::RecordConflict);
 }
@@ -734,7 +741,7 @@ fn change_set_allows_cname_when_conflicting_row_is_deleted_in_same_request() {
     };
 
     let change_set =
-        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
+        ZoneChangeSet::compute(&zone, &zone_operations(&request, &zone), &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 1);
     assert_eq!(change_set.creates.len(), 1);

@@ -50,7 +50,7 @@ pub(crate) fn parent_ns_addr_entries(stored: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-
+    use super::*;
     use crate::error::ErrorCode;
 
     /// Turn string literals into the owned entries the normalizer takes.
@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn normalize_parent_ns_addrs_trims_entries() {
         assert_eq!(
-            super::normalize_parent_ns_addrs(&entries(&[
+            normalize_parent_ns_addrs(&entries(&[
                 " ns1.parent.example ",
                 "",
                 " ns2.parent.example:5353 "
@@ -75,15 +75,15 @@ mod tests {
     /// Verify that `normalize_parent_ns_addrs` rejects an empty list.
     #[test]
     fn normalize_parent_ns_addrs_rejects_an_empty_list() {
-        let error = super::normalize_parent_ns_addrs(&entries(&[" ", ""])).unwrap_err();
+        let error = normalize_parent_ns_addrs(&entries(&[" ", ""])).unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
 
     /// Verify that `normalize_parent_ns_addrs` rejects an entry that is not an address target.
     #[test]
     fn normalize_parent_ns_addrs_rejects_an_entry_that_is_not_an_address_target() {
-        let error = super::normalize_parent_ns_addrs(&entries(&["ns.parent.example:not-a-port"]))
-            .unwrap_err();
+        let error =
+            normalize_parent_ns_addrs(&entries(&["ns.parent.example:not-a-port"])).unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
 
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn normalize_parent_ns_addrs_rejects_a_list_wider_than_the_column() {
         let entry = format!("{}.parent.example", "n".repeat(60));
-        let error = super::normalize_parent_ns_addrs(&vec![entry; 20]).unwrap_err();
+        let error = normalize_parent_ns_addrs(&vec![entry; 20]).unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
 
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn parent_ns_addr_entries_splits_the_stored_form() {
         assert_eq!(
-            super::parent_ns_addr_entries("ns1.parent.example,ns2.parent.example:5353"),
+            parent_ns_addr_entries("ns1.parent.example,ns2.parent.example:5353"),
             entries(&["ns1.parent.example", "ns2.parent.example:5353"])
         );
     }

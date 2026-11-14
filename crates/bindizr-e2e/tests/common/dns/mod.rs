@@ -1,4 +1,7 @@
+pub(crate) mod notify;
+pub(crate) mod nsupdate;
 mod parent;
+mod tests;
 mod transfer;
 mod transport;
 pub(crate) mod tsig;
@@ -8,10 +11,11 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 use std::{process, str};
 
-use domain::base::iana::Rcode;
+use domain::base::iana::{Rcode, Rtype};
 use domain::base::name::ParsedName;
-use domain::base::{CharStr, Message, MessageBuilder, Name, Rtype};
+use domain::base::{CharStr, Message, MessageBuilder, Name};
 use domain::rdata::AllRecordData;
+use domain::zonefile::inplace::{Entry, Zonefile};
 pub(crate) use parent::{DsRecord, FakeParent};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -23,10 +27,6 @@ pub(crate) use transport::{
 };
 
 use super::TestApp;
-
-pub(crate) mod notify;
-pub(crate) mod nsupdate;
-mod tests;
 
 /// Build the DNS comparison form of an API record value.
 pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Value {
@@ -40,7 +40,7 @@ pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Valu
         return value;
     };
 
-    let fields = target.split_whitespace().collect::<Vec<_>>();
+    let fields: Vec<_> = target.split_whitespace().collect();
     let expects_priority_fallback = match record_type {
         15 => fields.len() == 1,
         33 => fields.len() == 3,
@@ -92,7 +92,7 @@ pub(crate) async fn wait_for_dns_records(
             Ok(records)
                 if records
                     .iter()
-                    .filter(|answer| answer.record_type == record_type)
+                    .filter(|record| record.record_type == record_type)
                     .count()
                     == expected_count
                     && matches_dns_values(record_type, expected, &records) =>
@@ -147,12 +147,12 @@ fn matches_dns_values(record_type: u16, expected: &[Value], records: &[DnsRecord
             value
         }
     };
-    let mut expected = expected.iter().map(normalize).collect::<Vec<_>>();
-    let mut actual = records
+    let mut expected: Vec<_> = expected.iter().map(normalize).collect();
+    let mut actual: Vec<_> = records
         .iter()
-        .filter(|answer| answer.record_type == record_type)
-        .filter_map(|answer| answer.value.as_ref().map(normalize))
-        .collect::<Vec<_>>();
+        .filter(|record| record.record_type == record_type)
+        .filter_map(|record| record.value.as_ref().map(normalize))
+        .collect();
     expected.sort();
     actual.sort();
 
@@ -350,14 +350,11 @@ fn decode_dns_value(
             to_presentation_name(srv.target())
         )),
         AllRecordData::Txt(txt) => {
-            let segments = txt
-                .iter_charstrs()
-                .map(CharStr::as_slice)
-                .collect::<Vec<_>>();
-            let text = segments
+            let segments: Vec<_> = txt.iter_charstrs().map(CharStr::as_slice).collect();
+            let text: Result<Vec<_>, _> = segments
                 .iter()
                 .map(|segment| str::from_utf8(segment))
-                .collect::<Result<Vec<_>, _>>();
+                .collect();
 
             if let Ok(text) = text {
                 if let [value] = text.as_slice() {
@@ -495,13 +492,12 @@ fn to_quoted_string(bytes: &[u8]) -> String {
     out
 }
 
-/// Read published RRsets with an independent zone-file parser.
+/// Read published record sets with an independent zone-file parser.
 pub(crate) async fn fetch_exported_record_sets(
     app: &TestApp,
     zone_name: &str,
 ) -> BTreeMap<(String, Rtype), Vec<Vec<u8>>> {
     use domain::base::rdata::ComposeRecordData;
-    use domain::zonefile::inplace::{Entry, Zonefile};
 
     let (status, body) = app
         .send_request(
@@ -514,7 +510,7 @@ pub(crate) async fn fetch_exported_record_sets(
     assert_eq!(status, StatusCode::OK, "{body}");
     let mut file = Zonefile::new();
     file.extend_from_slice(generic_wks_export(body.as_str().unwrap()).as_bytes());
-    let mut sets = BTreeMap::<_, Vec<_>>::new();
+    let mut sets: BTreeMap<_, Vec<_>> = BTreeMap::new();
 
     while let Some(entry) = file.next_entry().unwrap() {
         if let Entry::Record(record) = entry {
@@ -541,7 +537,7 @@ fn generic_wks_export(text: &str) -> String {
 
             let address: Ipv4Addr = fields[4].parse().unwrap();
             let protocol: u8 = fields[5].parse().unwrap();
-            let mut bitmap = vec![0u8; 8192];
+            let mut bitmap = vec![0; 8192];
 
             for port in &fields[6..] {
                 let port = usize::from(port.parse::<u16>().unwrap());
@@ -557,7 +553,7 @@ fn generic_wks_export(text: &str) -> String {
             let mut bytes = address.octets().to_vec();
             bytes.push(protocol);
             bytes.extend(bitmap);
-            let hex: String = bytes.iter().map(|byte| format!("{byte:02X}")).collect();
+            let hex = hex_upper(&bytes);
 
             format!(r"{} \# {} {}", fields[..4].join(" "), bytes.len(), hex)
         })

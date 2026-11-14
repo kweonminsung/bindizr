@@ -62,14 +62,14 @@ fn config_check_accepts_a_config_flag() {
     assert!(stdout.contains("valid"));
 }
 
-/// Environment overrides accept wildcard DNS listeners for either address family.
+/// Verify that environment overrides accept wildcard DNS listeners for either address family.
 #[test]
 #[serial_test::serial(bindizr_e2e)]
 fn config_check_accepts_wildcard_dns_addresses() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    fs::write(&config_path, VALID_CONFIG).unwrap();
-    let path = config_path.to_str().unwrap();
+    fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
+    let path = config_path.to_str().expect("config path was not UTF-8");
 
     for addr in ["0.0.0.0", "::"] {
         let output = run_config_check(Some(path), &[("BINDIZR_DNS_LISTEN_ADDR", addr)]);
@@ -77,23 +77,23 @@ fn config_check_accepts_wildcard_dns_addresses() {
     }
 }
 
-/// Configuration checks accept omitted listener, backend, and logging settings.
+/// Verify that configuration checks accept omitted listener, backend, and logging settings.
 #[test]
 #[serial_test::serial(bindizr_e2e)]
 fn config_check_defaults_omitted_sections() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    let path = config_path.to_str().unwrap();
+    let path = config_path.to_str().expect("config path was not UTF-8");
     fs::write(
         &config_path,
         "[database.sqlite]\nfile_path = \"bindizr.sqlite\"\n",
     )
-    .unwrap();
+    .expect("failed to write config");
     let output = run_config_check(Some(path), &[]);
     common::assert_cli_success(&["config", "check"], &output);
 
     // With no sections in the file, the database location can come from the environment.
-    fs::write(&config_path, "").unwrap();
+    fs::write(&config_path, "").expect("failed to write config");
     let output = run_config_check(
         Some(path),
         &[("BINDIZR_DATABASE_SQLITE_FILE_PATH", "bindizr.sqlite")],
@@ -182,10 +182,10 @@ async fn config_list_and_get_show_loaded_config() {
     common::assert_cli_failure_contains(&args, &missing, "unknown configuration key");
 }
 
-/// Verify that config reload takes the file again and refuses what it cannot adopt.
+/// Verify that config reload takes the file again and rejects what it cannot adopt.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
+async fn config_reload_takes_the_file_again_and_rejects_what_it_cannot_adopt() {
     let app = TestApp::start_local().await;
     let path = app.config_path();
     let original = fs::read_to_string(&path).expect("config file");

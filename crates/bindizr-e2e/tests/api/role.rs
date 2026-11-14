@@ -1,12 +1,12 @@
 use reqwest::{Method, StatusCode};
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::io;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 
 use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
 
-/// Verify role and grant management over HTTP, and the guards on both.
+/// Verify that roles and grants can be managed over HTTP, and that both are guarded.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn role_grants_support_create_list_and_revoke_over_http() {
@@ -21,18 +21,18 @@ async fn role_grants_support_create_list_and_revoke_over_http() {
     let zone_name = app.zone_name("example.com");
 
     app.create_named_zone(&zone_name).await;
-    let (role_name, _) = app.create_scoped_api_token().await;
-    let grants = format!("/roles/{role_name}/grants");
+    let (scoped_name, _) = app.create_scoped_api_token().await;
+    let grants_path = format!("/roles/{scoped_name}/grants");
 
     let (status, body) = app
         .send_request(
             Method::POST,
-            &grants,
+            &grants_path,
             Some(json!({
                 "zone_name": zone_name,
                 "actions": ["record:create", "record:read"],
                 "record_name_pattern": "*.dyn",
-                "record_types": "a,AAAA",
+                "record_types": "a,AAAA"
             })),
         )
         .await;
@@ -40,8 +40,8 @@ async fn role_grants_support_create_list_and_revoke_over_http() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let grant_id = body["role_grant"]["id"].as_i64().unwrap();
 
-    assert_eq!(body["role_grant"]["role_name"], json!(role_name));
-    assert_eq!(body["role_grant"]["zone_name"], json!(zone_name));
+    assert_eq!(body["role_grant"]["role_name"], scoped_name);
+    assert_eq!(body["role_grant"]["zone_name"], zone_name);
 
     // Stored in one spelling: actions in their fixed order, types uppercase.
     assert_eq!(
@@ -54,18 +54,18 @@ async fn role_grants_support_create_list_and_revoke_over_http() {
     let (status, body) = app
         .send_request(
             Method::POST,
-            &grants,
+            &grants_path,
             Some(json!({ "actions": ["zone:read"] })),
         )
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_eq!(body["role_grant"]["zone_name"], json!(null));
+    assert!(body["role_grant"]["zone_name"].is_null(), "{body}");
     assert_eq!(body["role_grant"]["record_name_pattern"], "*");
 
-    let (status, body) = app.send_request(Method::GET, &grants, None).await;
+    let (status, body) = app.send_request(Method::GET, &grants_path, None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["items"].as_array().unwrap().len(), 2, "{body}");
 
     for invalid in [
@@ -79,8 +79,9 @@ async fn role_grants_support_create_list_and_revoke_over_http() {
         json!({ "zone_name": zone_name, "actions": ["zone:create"] }),
     ] {
         let (status, _) = app
-            .send_request(Method::POST, &grants, Some(invalid.clone()))
+            .send_request(Method::POST, &grants_path, Some(invalid.clone()))
             .await;
+
         assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}");
     }
 
@@ -129,7 +130,7 @@ async fn role_grants_support_create_list_and_revoke_over_http() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, _) = app
-        .send_request(Method::DELETE, &format!("{grants}/{grant_id}"), None)
+        .send_request(Method::DELETE, &format!("{grants_path}/{grant_id}"), None)
         .await;
 
     assert_eq!(status, StatusCode::OK);
@@ -138,7 +139,7 @@ async fn role_grants_support_create_list_and_revoke_over_http() {
     let (status, _) = app
         .send_request(
             Method::POST,
-            &grants,
+            &grants_path,
             Some(json!({ "zone_name": zone_name, "actions": ["zone:read"] })),
         )
         .await;
@@ -151,31 +152,31 @@ async fn role_grants_support_create_list_and_revoke_over_http() {
 
     assert_eq!(status, StatusCode::OK);
 
-    let (status, body) = app.send_request(Method::GET, &grants, None).await;
+    let (status, body) = app.send_request(Method::GET, &grants_path, None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
 
     // A role is refused while a token holds it, and freed once none does.
     let (status, _) = app
-        .send_request(Method::DELETE, &format!("/roles/{role_name}"), None)
+        .send_request(Method::DELETE, &format!("/roles/{scoped_name}"), None)
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
 
     let (status, _) = app
-        .send_request(Method::DELETE, &format!("/tokens/{role_name}"), None)
+        .send_request(Method::DELETE, &format!("/tokens/{scoped_name}"), None)
         .await;
 
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .send_request(Method::DELETE, &format!("/roles/{role_name}"), None)
+        .send_request(Method::DELETE, &format!("/roles/{scoped_name}"), None)
         .await;
 
     assert_eq!(status, StatusCode::OK);
 
-    let (status, _) = app.send_request(Method::GET, &grants, None).await;
+    let (status, _) = app.send_request(Method::GET, &grants_path, None).await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -193,14 +194,14 @@ async fn role_credentials_report_names_and_counts() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token);
 
-    let (role_name, _) = app.create_scoped_api_token().await;
-    let key_name = format!("{role_name}-key");
+    let (scoped_name, _) = app.create_scoped_api_token().await;
+    let key_name = format!("{scoped_name}-key");
 
     let (status, body) = app
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": key_name, "role_name": role_name })),
+            Some(json!({ "name": key_name, "role_name": scoped_name })),
         )
         .await;
 
@@ -209,7 +210,7 @@ async fn role_credentials_report_names_and_counts() {
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/roles/{role_name}/grants"),
+            &format!("/roles/{scoped_name}/grants"),
             Some(json!({ "actions": ["zone:read"] })),
         )
         .await;
@@ -224,24 +225,28 @@ async fn role_credentials_report_names_and_counts() {
     assert!(body["pagination"]["total"].as_u64().unwrap() >= 2, "{body}");
 
     let (status, body) = app
-        .send_request(Method::GET, &format!("/tokens?role_name={role_name}"), None)
-        .await;
-
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["pagination"]["total"], 1, "{body}");
-    assert_eq!(body["items"][0]["name"], json!(role_name));
-
-    let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/tsig-keys?role_name={role_name}"),
+            &format!("/tokens?role_name={scoped_name}"),
             None,
         )
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["pagination"]["total"], 1, "{body}");
-    assert_eq!(body["items"][0]["name"], json!(key_name));
+    assert_eq!(body["items"][0]["name"], scoped_name);
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/tsig-keys?role_name={scoped_name}"),
+            None,
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["pagination"]["total"], 1, "{body}");
+    assert_eq!(body["items"][0]["name"], key_name);
 
     let (status, body) = app
         .send_request(Method::GET, "/tsig-keys?role_name=admin", None)
@@ -257,7 +262,7 @@ async fn role_credentials_report_names_and_counts() {
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
 
     let (status, body) = app
-        .send_request(Method::GET, &format!("/roles/{role_name}"), None)
+        .send_request(Method::GET, &format!("/roles/{scoped_name}"), None)
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -272,7 +277,7 @@ async fn role_credentials_report_names_and_counts() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|role| role["name"] == json!(role_name))
+        .find(|role| role["name"] == scoped_name)
         .unwrap_or_else(|| panic!("{body}"));
 
     assert_eq!(listed["grant_count"], 1, "{body}");
@@ -280,14 +285,14 @@ async fn role_credentials_report_names_and_counts() {
     assert_eq!(listed["tsig_key_count"], 1, "{body}");
 
     let (status, body) = app
-        .send_request(Method::DELETE, &format!("/roles/{role_name}"), None)
+        .send_request(Method::DELETE, &format!("/roles/{scoped_name}"), None)
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     let error = body["error"].as_str().unwrap();
 
     assert!(
-        error.contains(&format!("API token {role_name}"))
+        error.contains(&format!("API token {scoped_name}"))
             && error.contains(&format!("TSIG key {key_name}")),
         "{error}"
     );
@@ -317,7 +322,7 @@ async fn tokens_self_grants_lists_the_bearers_role_grants() {
                 "zone_name": granted_zone,
                 "actions": ["record:read"],
                 "record_name_pattern": "*.dyn",
-                "record_types": "A,AAAA",
+                "record_types": "A,AAAA"
             })),
         )
         .await;
@@ -334,8 +339,8 @@ async fn tokens_self_grants_lists_the_bearers_role_grants() {
     let grants = body["items"].as_array().unwrap();
 
     assert_eq!(grants.len(), 1, "{body}");
-    assert_eq!(grants[0]["role_name"], json!(scoped_name));
-    assert_eq!(grants[0]["zone_name"], json!(granted_zone));
+    assert_eq!(grants[0]["role_name"], scoped_name);
+    assert_eq!(grants[0]["zone_name"], granted_zone);
     assert_eq!(grants[0]["record_name_pattern"], "*.dyn");
     assert_eq!(grants[0]["record_types"], "A,AAAA");
 
@@ -355,16 +360,16 @@ async fn tokens_self_grants_lists_the_bearers_role_grants() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["items"][0]["role_name"], "admin", "{body}");
-    assert_eq!(body["items"][0]["zone_name"], json!(null), "{body}");
+    assert!(body["items"][0]["zone_name"].is_null(), "{body}");
 }
 
 /// Build a record creation request for authorization tests.
-fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> serde_json::Value {
+fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> Value {
     json!({
         "name": name,
         "type": record_type,
         "value": value,
-        "zone_name": zone_name,
+        "zone_name": zone_name
     })
 }
 
@@ -389,8 +394,8 @@ async fn scoped_token_hides_zones_when_grants_are_absent() {
 
     let (status, body) = app.send_request(Method::GET, "/zones", None).await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["pagination"]["total"], json!(0));
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["pagination"]["total"], 0);
 
     let (status, _) = app
         .send_request(
@@ -442,7 +447,7 @@ async fn zone_lookup_hides_existence_across_name_spellings() {
 
     for zone in [&hidden_zone, &absent_zone] {
         let spelled = format!("{}.", zone.to_uppercase());
-        let expected = json!(format!("zone with name '{zone}' not found"));
+        let expected = format!("zone with name '{zone}' not found");
 
         let (status, body) = app
             .send_request(Method::GET, &format!("/zones/{spelled}"), None)
@@ -488,7 +493,7 @@ async fn narrowed_grant_reads_only_matching_records() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let granted_id = body["record"]["id"].as_i64().unwrap();
 
     let (status, body) = app
@@ -499,7 +504,7 @@ async fn narrowed_grant_reads_only_matching_records() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let outside_id = body["record"]["id"].as_i64().unwrap();
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
@@ -529,7 +534,7 @@ async fn narrowed_grant_reads_only_matching_records() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let listed_ids: Vec<i64> = body["items"]
         .as_array()
         .unwrap()
@@ -597,7 +602,7 @@ async fn record_count_respects_grant_patterns_and_types() {
                 "name": zone_name,
                 "mname": format!("ns1.{zone_name}"),
                 "rname": "admin@example.com",
-                "apex_ns": false,
+                "apex_ns": false
             })),
         )
         .await;
@@ -732,7 +737,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let ungranted_record_id = body["record"]["id"].as_i64().unwrap();
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
@@ -755,7 +760,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     // Zone listing is filtered to grants; ungranted zones read as 404.
     let (status, body) = app.send_request(Method::GET, "/zones", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let names: Vec<&str> = body["items"]
         .as_array()
         .unwrap()
@@ -765,7 +770,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 
     assert!(names.contains(&granted_zone.as_str()));
     assert!(!names.contains(&other_zone.as_str()));
-    assert_eq!(body["pagination"]["total"], json!(1));
+    assert_eq!(body["pagination"]["total"], 1);
 
     let (status, _) = app
         .send_request(Method::GET, &format!("/zones/{other_zone}"), None)
@@ -782,7 +787,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
 
     let (status, body) = app
@@ -793,7 +798,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 
     // Record listing only surfaces granted zones.
@@ -805,7 +810,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let listed_ids: Vec<i64> = body["items"]
         .as_array()
         .unwrap()
@@ -827,7 +832,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
                 "name": new_zone,
                 "mname": format!("ns1.{new_zone}"),
                 "rname": "admin@example.com",
-                "default_ttl": 3600,
+                "default_ttl": 3600
             })),
         )
         .await;
@@ -993,12 +998,13 @@ async fn record_delete_rejects_out_of_grant_filter_even_without_matches() {
     .await;
 
     // The answer must not depend on whether the record exists.
-    let filter = format!("/records?zone_name={zone_name}&name=www&type=A");
-    let paths = [filter.clone(), format!("{filter}&dry_run=true")];
+    let filter_path = format!("/records?zone_name={zone_name}&name=www&type=A");
+    let paths = [filter_path.clone(), format!("{filter_path}&dry_run=true")];
     app.set_auth_token(scoped_token.clone());
 
     for path in &paths {
         let (status, body) = app.send_request(Method::DELETE, path, None).await;
+
         assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
     }
 
@@ -1019,6 +1025,7 @@ async fn record_delete_rejects_out_of_grant_filter_even_without_matches() {
 
     for path in &paths {
         let (status, body) = app.send_request(Method::DELETE, path, None).await;
+
         assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
     }
 
@@ -1080,12 +1087,12 @@ async fn record_bulk_rejects_ungranted_request_before_zone_lookup() {
                     "records": [
                         { "name": "app", "type": "A", "value": "192.0.2.1" }
                     ],
-                    "dry_run": dry_run,
+                    "dry_run": dry_run
                 })),
             )
             .await;
 
-        assert_eq!(status, StatusCode::NOT_FOUND, "dry_run={dry_run}: {body}");
+        assert_eq!(status, StatusCode::NOT_FOUND, "{dry_run}: {body}");
         assert!(
             !body.to_string().contains("already exists"),
             "dry_run={dry_run} leaked the existing record: {body}"
@@ -1155,7 +1162,7 @@ async fn record_read_grant_allows_zone_read_without_write() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
@@ -1245,14 +1252,14 @@ async fn permissions_report_what_each_zone_allows() {
         app.create_named_zone(zone).await;
     }
 
-    let (role, scoped_token) = app.create_scoped_api_token().await;
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
 
     for args in [
-        vec!["role", "grant", &role, "--actions", "zone:read"],
+        vec!["role", "grant", &scoped_name, "--actions", "zone:read"],
         vec![
             "role",
             "grant",
-            &role,
+            &scoped_name,
             "--zone",
             &narrowed,
             "--actions",
@@ -1263,7 +1270,7 @@ async fn permissions_report_what_each_zone_allows() {
         vec![
             "role",
             "grant",
-            &role,
+            &scoped_name,
             "--zone",
             &whole,
             "--actions",
@@ -1293,12 +1300,12 @@ async fn permissions_report_what_each_zone_allows() {
             json!({
                 "zone_name": narrowed,
                 "actions": ["zone:read", "record:read", "record:create"],
-                "whole_zone": [],
+                "whole_zone": []
             }),
             json!({
                 "zone_name": whole,
                 "actions": ["zone:read", "record:read"],
-                "whole_zone": ["record:read"],
+                "whole_zone": ["record:read"]
             }),
         ],
         "{body}"
@@ -1346,7 +1353,7 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
         assert_eq!(status, StatusCode::CREATED, "{name} {record_type}: {body}");
     }
 
-    let ids = |body: &serde_json::Value| -> Vec<i64> {
+    let ids = |body: &Value| -> Vec<i64> {
         let mut ids: Vec<i64> = body["items"]
             .as_array()
             .unwrap()
@@ -1357,9 +1364,9 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
 
         ids
     };
-    let listing = format!("/records?zone_name={zone_name}&limit=1000");
+    let listing_path = format!("/records?zone_name={zone_name}&limit=1000");
 
-    let (_, body) = app.send_request(Method::GET, &listing, None).await;
+    let (_, body) = app.send_request(Method::GET, &listing_path, None).await;
     let every_id = ids(&body);
 
     for (index, (pattern, types)) in [
@@ -1377,7 +1384,7 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
         let role = app.zone_name(&format!("parity{index}"));
         app.set_auth_token(admin_token.clone());
 
-        app.run_cli_success(&["role", "create", &role], None).await;
+        let secret = create_role_with_token(&app, &role).await;
         app.run_cli_success(
             &[
                 "role",
@@ -1395,18 +1402,9 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
             None,
         )
         .await;
-        let created = app
-            .run_cli_success(
-                &[
-                    "token", "create", &role, "--role", &role, "--output", "json",
-                ],
-                None,
-            )
-            .await;
-        let created: serde_json::Value = serde_json::from_str(&created).unwrap();
-        app.set_auth_token(created["secret"].as_str().unwrap().to_string());
+        app.set_auth_token(secret);
 
-        let (status, body) = app.send_request(Method::GET, &listing, None).await;
+        let (status, body) = app.send_request(Method::GET, &listing_path, None).await;
 
         assert_eq!(status, StatusCode::OK, "{pattern} {types}: {body}");
         let listed = ids(&body);
@@ -1462,7 +1460,7 @@ async fn write_only_grant_changes_matching_records() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let outside_id = body["record"]["id"].as_i64().unwrap();
 
     // Neighbours at the challenge name the grant cannot read: their values must
@@ -1516,7 +1514,7 @@ async fn write_only_grant_changes_matching_records() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
-    let leaks = |body: &serde_json::Value| {
+    let leaks = |body: &Value| {
         let text = body.to_string();
         text.contains("neighbour-secret") || text.contains("192.0.2.77")
     };
@@ -1552,7 +1550,8 @@ async fn write_only_grant_changes_matching_records() {
     assert!(
         body["error"]
             .as_str()
-            .is_some_and(|message| message.contains("missing: name, type, ttl")),
+            .unwrap()
+            .contains("missing: name, type, ttl"),
         "{body}"
     );
 
@@ -1561,7 +1560,7 @@ async fn write_only_grant_changes_matching_records() {
             Method::PUT,
             &format!("/records/{record_id}"),
             Some(json!({
-                "name": "_acme-challenge", "type": "TXT", "value": "token-2", "ttl": 3600,
+                "name": "_acme-challenge", "type": "TXT", "value": "token-2", "ttl": 3600
             })),
         )
         .await;
@@ -1587,7 +1586,7 @@ async fn write_only_grant_changes_matching_records() {
 /// Create role `name` and a token in it, returning the token's secret.
 async fn create_role_with_token(app: &TestApp, name: &str) -> String {
     app.run_cli_success(&["role", "create", name], None).await;
-    let created: serde_json::Value = serde_json::from_str(
+    let created: Value = serde_json::from_str(
         &app.run_cli_success(
             &["token", "create", name, "--role", name, "--output", "json"],
             None,
@@ -1753,31 +1752,30 @@ async fn responses_hide_records_outside_read_grants() {
     )
     .await;
 
-    let zone = &zone_name;
-    let rename = json!({ "name": format!("renamed.{zone}"), "dry_run": true });
-    let rollback = format!("/zones/{zone}/versions/{first_serial}/rollback?dry_run=true");
-    let mut requests: Vec<(Method, String, Option<serde_json::Value>)> = vec![
+    let rename = json!({ "name": format!("renamed.{zone_name}"), "dry_run": true });
+    let rollback_path = format!("/zones/{zone_name}/versions/{first_serial}/rollback?dry_run=true");
+    let mut requests: Vec<(Method, String, Option<Value>)> = vec![
         (Method::GET, "/zones".to_string(), None),
-        (Method::GET, format!("/zones/{zone}"), None),
-        (Method::GET, format!("/zones/{zone}/export"), None),
-        (Method::GET, format!("/zones/{zone}/versions"), None),
+        (Method::GET, format!("/zones/{zone_name}"), None),
+        (Method::GET, format!("/zones/{zone_name}/export"), None),
+        (Method::GET, format!("/zones/{zone_name}/versions"), None),
         (
             Method::GET,
-            format!("/zones/{zone}/versions/{serial}"),
+            format!("/zones/{zone_name}/versions/{serial}"),
             None,
         ),
         (
             Method::GET,
-            format!("/zones/{zone}/versions/diff?from={first_serial}"),
+            format!("/zones/{zone_name}/versions/diff?from={first_serial}"),
             None,
         ),
-        (Method::GET, format!("/zones/{zone}/dnssec"), None),
+        (Method::GET, format!("/zones/{zone_name}/dnssec"), None),
         (Method::GET, "/records".to_string(), None),
-        (Method::GET, format!("/records?zone_name={zone}"), None),
+        (Method::GET, format!("/records?zone_name={zone_name}"), None),
         (Method::GET, "/records?search=leak".to_string(), None),
         (
             Method::GET,
-            format!("/records?zone_name={zone}&name=_acme-challenge"),
+            format!("/records?zone_name={zone_name}&name=_acme-challenge"),
             None,
         ),
         (Method::GET, "/permissions".to_string(), None),
@@ -1788,39 +1786,39 @@ async fn responses_hide_records_outside_read_grants() {
             Method::POST,
             "/records".to_string(),
             Some(json!({
-                "zone_name": zone, "name": "_acme-challenge", "type": "TXT",
-                "value": "probe", "dry_run": true,
+                "zone_name": zone_name, "name": "_acme-challenge", "type": "TXT",
+                "value": "probe", "dry_run": true
             })),
         ),
         (
             Method::POST,
             "/records".to_string(),
-            Some(record_body(zone, "_acme-challenge", "TXT", "token-1")),
+            Some(record_body(&zone_name, "_acme-challenge", "TXT", "token-1")),
         ),
         (
             Method::POST,
             "/records/bulk".to_string(),
             Some(json!({
-                "zone_name": zone,
+                "zone_name": zone_name,
                 "records": [{ "name": "_acme-challenge", "type": "TXT", "value": "token-2" }],
-                "dry_run": true,
+                "dry_run": true
             })),
         ),
         (
             Method::DELETE,
-            format!("/records?zone_name={zone}&name=_acme-challenge&type=TXT&dry_run=true"),
+            format!("/records?zone_name={zone_name}&name=_acme-challenge&type=TXT&dry_run=true"),
             None,
         ),
         (
             Method::POST,
-            format!("/zones/{zone}/import"),
+            format!("/zones/{zone_name}/import"),
             Some(json!({
                 // Joining an existing set puts that set on both sides of the diff.
                 "content": format!(
-                    "$ORIGIN {zone}.\n$TTL 3600\n_acme-challenge IN TXT \"fresh\"\n"
+                    "$ORIGIN {zone_name}.\n$TTL 3600\n_acme-challenge IN TXT \"fresh\"\n"
                 ),
                 "mode": "append",
-                "dry_run": true,
+                "dry_run": true
             })),
         ),
         (
@@ -1828,36 +1826,40 @@ async fn responses_hide_records_outside_read_grants() {
             "/external-dns/changes".to_string(),
             Some(json!({
                 "creates": [{
-                    "name": format!("_acme-challenge.{zone}"), "type": "TXT",
-                    "values": ["\"token-3\""],
-                }],
+                    "name": format!("_acme-challenge.{zone_name}"), "type": "TXT",
+                    "values": ["\"token-3\""]
+                }]
             })),
         ),
-        (Method::PUT, format!("/zones/{zone}"), Some(rename.clone())),
-        (Method::POST, rollback.clone(), None),
+        (
+            Method::PUT,
+            format!("/zones/{zone_name}"),
+            Some(rename.clone()),
+        ),
+        (Method::POST, rollback_path.clone(), None),
     ];
 
     for id in &secret_ids {
         requests.push((Method::GET, format!("/records/{id}"), None));
 
         // A partial update would echo the fields it inherits.
-        for body in [
+        for request in [
             json!({ "dry_run": true }),
             json!({ "ttl": 60 }),
             json!({ "value": "overwrite" }),
             json!({
                 "name": "_acme-challenge", "type": "TXT", "value": "overwrite", "ttl": 3600,
-                "dry_run": true,
+                "dry_run": true
             }),
         ] {
-            requests.push((Method::PUT, format!("/records/{id}"), Some(body)));
+            requests.push((Method::PUT, format!("/records/{id}"), Some(request)));
         }
 
         // Previewed, so every role meets every record.
         requests.push((Method::DELETE, format!("/records/{id}?dry_run=true"), None));
     }
 
-    let leaks = |body: &serde_json::Value| {
+    let leaks = |body: &Value| {
         let text = body.to_string();
         text.contains("leak-marker") || text.contains("192.0.2.201")
     };
@@ -1871,11 +1873,14 @@ async fn responses_hide_records_outside_read_grants() {
         app.set_auth_token(token.clone());
         let mut succeeded = 0;
 
-        for (method, path, body) in &requests {
-            let (status, response) = app.send_request(method.clone(), path, body.clone()).await;
+        for (method, path, request) in &requests {
+            let (status, body) = app
+                .send_request(method.clone(), path, request.clone())
+                .await;
+
             assert!(
-                !leaks(&response),
-                "{role}: {method} {path} answered {status} with an unreadable record: {response}"
+                !leaks(&body),
+                "{role}: {method} {path} answered {status} with an unreadable record: {body}"
             );
             succeeded += usize::from(status.is_success());
         }
@@ -1902,13 +1907,11 @@ async fn responses_hide_records_outside_read_grants() {
     assert!(!leaks(&body), "a delete by id named its record: {body}");
 
     // A rollback reads the version it restores.
-    let (status, body) = app.send_request(Method::POST, &rollback, None).await;
+    let (status, body) = app.send_request(Method::POST, &rollback_path, None).await;
 
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     assert!(
-        body["error"]
-            .as_str()
-            .is_some_and(|message| message.contains("'record:read'")),
+        body["error"].as_str().unwrap().contains("'record:read'"),
         "{body}"
     );
 
@@ -1916,14 +1919,14 @@ async fn responses_hide_records_outside_read_grants() {
     app.set_auth_token(renamer_token);
 
     let (status, body) = app
-        .send_request(Method::PUT, &format!("/zones/{zone}"), Some(rename))
+        .send_request(Method::PUT, &format!("/zones/{zone_name}"), Some(rename))
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(!leaks(&body), "a rename named a record: {body}");
 }
 
-/// Verify all-zone record permissions before fetching a new zone; `zone:create` alone is insufficient.
+/// Verify that all-zone record permissions are checked before fetching a new zone; `zone:create` alone is insufficient.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_checks_record_permissions_before_fetching() {
@@ -1935,9 +1938,9 @@ async fn zone_import_checks_record_permissions_before_fetching() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token.clone());
 
-    let (role_name, scoped_token) = app.create_scoped_api_token().await;
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(
-        &["role", "grant", &role_name, "--actions", "zone:create"],
+        &["role", "grant", &scoped_name, "--actions", "zone:create"],
         None,
     )
     .await;
@@ -1961,7 +1964,8 @@ async fn zone_import_checks_record_permissions_before_fetching() {
     assert!(
         body["error"]
             .as_str()
-            .is_some_and(|message| message.contains("'record:create' over all zones whole")),
+            .unwrap()
+            .contains("'record:create' over all zones whole"),
         "{body}"
     );
 
@@ -1972,7 +1976,7 @@ async fn zone_import_checks_record_permissions_before_fetching() {
         &[
             "role",
             "grant",
-            &role_name,
+            &scoped_name,
             "--actions",
             "record:create,record:delete",
         ],
@@ -1994,7 +1998,8 @@ async fn zone_import_checks_record_permissions_before_fetching() {
     assert!(
         body["error"]
             .as_str()
-            .is_some_and(|message| message.starts_with("AXFR from 127.0.0.1:1 failed")),
+            .unwrap()
+            .starts_with("AXFR from 127.0.0.1:1 failed"),
         "{body}"
     );
 }
@@ -2020,12 +2025,12 @@ async fn zone_rename_requires_zone_create() {
 
     app.create_named_zone(&other_zone).await;
 
-    let (role_name, scoped_token) = app.create_scoped_api_token().await;
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(
         &[
             "role",
             "grant",
-            &role_name,
+            &scoped_name,
             "--zone",
             &zone_name,
             "--actions",
@@ -2051,7 +2056,8 @@ async fn zone_rename_requires_zone_create() {
         assert!(
             body["error"]
                 .as_str()
-                .is_some_and(|message| message.contains("'zone:create' in all zones")),
+                .unwrap()
+                .contains("'zone:create' in all zones"),
             "{body}"
         );
     }
@@ -2070,7 +2076,7 @@ async fn zone_rename_requires_zone_create() {
     app.set_auth_token(admin_token);
 
     app.run_cli_success(
-        &["role", "grant", &role_name, "--actions", "zone:create"],
+        &["role", "grant", &scoped_name, "--actions", "zone:create"],
         None,
     )
     .await;
@@ -2088,7 +2094,7 @@ async fn zone_rename_requires_zone_create() {
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
-/// Verify revocation or token deletion during a slow import is enforced when its transaction begins.
+/// Verify that revocation or token deletion during a slow import is enforced when its transaction begins.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_rejects_credential_revoked_during_transfer() {
@@ -2128,7 +2134,7 @@ async fn zone_import_rejects_credential_revoked_during_transfer() {
             None,
         )
         .await;
-        let granted: serde_json::Value = serde_json::from_str(
+        let granted: Value = serde_json::from_str(
             &app.run_cli_success(
                 &[
                     "role",
@@ -2155,7 +2161,7 @@ async fn zone_import_rejects_credential_revoked_during_transfer() {
         // A relay that holds the transfer until the credential is revoked.
         let relay = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let relay_addr = relay.local_addr().unwrap();
-        let upstream = format!("127.0.0.1:{}", app.dns_port());
+        let address = format!("127.0.0.1:{}", app.dns_port());
         let (accepted_tx, accepted_rx) = oneshot::channel();
         let (release_tx, release_rx) = oneshot::channel::<()>();
 
@@ -2163,7 +2169,7 @@ async fn zone_import_rejects_credential_revoked_during_transfer() {
             let (mut client, _) = relay.accept().await.unwrap();
             accepted_tx.send(()).unwrap();
             release_rx.await.unwrap();
-            let mut server = TcpStream::connect(upstream).await.unwrap();
+            let mut server = TcpStream::connect(address).await.unwrap();
             let _ = io::copy_bidirectional(&mut client, &mut server).await;
         });
 

@@ -35,10 +35,13 @@ pub(crate) fn normalize_soa(
 
 /// Refuse storing a zone at the virtual catalog name, which shadows SOA and transfer queries
 /// and is excluded from catalog membership. Lookups remain allowed.
-pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<(), ServiceError> {
-    if name == &cx.config().dns.catalog_zone_name {
+pub(crate) fn reject_catalog_zone_name(
+    cx: &Context,
+    zone_name: &ZoneName,
+) -> Result<(), ServiceError> {
+    if zone_name == &cx.config().dns.catalog_zone_name {
         return Err(ServiceError::invalid_zone_field(format!(
-            "'{name}' is the catalog zone name (dns.catalog_zone_name); a zone cannot take it"
+            "'{zone_name}' is the catalog zone name (dns.catalog_zone_name); a zone cannot take it"
         )));
     }
 
@@ -50,7 +53,7 @@ pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<
 pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
     if value.trim() == "." {
         return Err(ServiceError::invalid_zone_field(
-            "zone name must not be the root zone".to_string(),
+            "zone name must not be the root zone",
         ));
     }
 
@@ -61,10 +64,14 @@ pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
 }
 
 /// Apply the zone policy to a name already parsed from a request or DNS records.
-pub(crate) fn validate_name(name: &ZoneName) -> Result<(), ServiceError> {
-    if name.labels().first().is_some_and(|label| label == b"*") {
+pub(crate) fn validate_name(zone_name: &ZoneName) -> Result<(), ServiceError> {
+    if zone_name
+        .labels()
+        .first()
+        .is_some_and(|label| label == b"*")
+    {
         return Err(ServiceError::invalid_zone_field(
-            "wildcard zone names are not allowed".to_string(),
+            "wildcard zone names are not allowed",
         ));
     }
 
@@ -91,26 +98,24 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
     let value = value.trim();
 
     if value.is_empty() {
-        return Err(ServiceError::invalid_zone_field(
-            "rname must not be empty".to_string(),
-        ));
+        return Err(ServiceError::invalid_zone_field("rname must not be empty"));
     }
 
     if name::has_whitespace_or_control(value) {
         return Err(ServiceError::invalid_zone_field(
-            "rname must not contain whitespace or control characters".to_string(),
+            "rname must not contain whitespace or control characters",
         ));
     }
 
     let Some((local, domain)) = value.split_once('@') else {
         return Err(ServiceError::invalid_zone_field(
-            "rname must contain exactly one @".to_string(),
+            "rname must contain exactly one @",
         ));
     };
 
     if domain.contains('@') {
         return Err(ServiceError::invalid_zone_field(
-            "rname must contain exactly one @".to_string(),
+            "rname must contain exactly one @",
         ));
     }
 
@@ -121,7 +126,7 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
 
     if normalized.len() > MAX_EMAIL_LEN {
         return Err(ServiceError::invalid_zone_field(
-            "rname must be 254 bytes or fewer".to_string(),
+            "rname must be 254 bytes or fewer",
         ));
     }
 
@@ -135,25 +140,25 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     if local.is_empty() {
         return Err(ServiceError::invalid_zone_field(
-            "rname local part must not be empty".to_string(),
+            "rname local part must not be empty",
         ));
     }
 
     if local.len() > MAX_EMAIL_LOCAL_LEN {
         return Err(ServiceError::invalid_zone_field(
-            "rname local part must be 64 bytes or fewer".to_string(),
+            "rname local part must be 64 bytes or fewer",
         ));
     }
 
     if local.starts_with('.') || local.ends_with('.') || local.contains("..") {
         return Err(ServiceError::invalid_zone_field(
-            "rname local part must not start, end, or contain consecutive dots".to_string(),
+            "rname local part must not start, end, or contain consecutive dots",
         ));
     }
 
     if !local.chars().all(is_valid_email_local_char) {
         return Err(ServiceError::invalid_zone_field(
-            "rname local part contains invalid characters".to_string(),
+            "rname local part contains invalid characters",
         ));
     }
 
@@ -340,47 +345,46 @@ pub(crate) async fn validate_record_changes_tx(
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::dns::name::ZoneName;
+    use super::*;
 
-    /// Root MNAME is valid without loosening zone-name or label parsing.
+    /// Verify that a root MNAME is valid without loosening zone-name or label parsing.
     #[test]
     fn primary_name_preserves_root_and_literal_dot() {
-        assert_eq!(super::normalize_mname(" . ").unwrap(), ".");
-        assert_eq!(super::normalize_mname(r"\.").unwrap(), r"\046");
-        assert_eq!(
-            super::normalize_mname(" NS.Example. ").unwrap(),
-            "ns.example"
-        );
+        assert_eq!(normalize_mname(" . ").unwrap(), ".");
+        assert_eq!(normalize_mname(r"\.").unwrap(), r"\046");
+        assert_eq!(normalize_mname(" NS.Example. ").unwrap(), "ns.example");
 
         for invalid in ["", "..", "host..example"] {
-            assert!(super::normalize_mname(invalid).is_err(), "{invalid:?}");
+            assert!(normalize_mname(invalid).is_err(), "{invalid:?}");
         }
 
-        assert!(super::normalize_name(".").is_err());
+        assert!(normalize_name(".").is_err());
     }
 
-    /// Preserve escaped trailing whitespace while tolerating ordinary surrounding padding.
+    /// Verify that escaped trailing whitespace is preserved while ordinary surrounding padding is
+    /// tolerated.
     #[test]
     fn zone_name_preserves_escaped_whitespace() {
         for byte in [9u8, 10, 11, 12, 13, 32] {
             let input = format!(" tail\\{} \t", char::from(byte));
             let expected = ZoneName::parse(&format!("tail\\{byte:03}")).unwrap();
-            assert_eq!(super::normalize_name(&input).unwrap(), expected);
+            assert_eq!(normalize_name(&input).unwrap(), expected);
         }
 
         assert_eq!(
-            super::normalize_name(" example.com \t").unwrap().as_str(),
+            normalize_name(" example.com \t").unwrap().as_str(),
             "example.com"
         );
         assert!(
-            super::normalize_name(" . ")
+            normalize_name(" . ")
                 .unwrap_err()
                 .to_string()
                 .contains("root zone")
         );
     }
 
-    /// Apply the wildcard-zone policy to decoded labels for every equivalent spelling.
+    /// Verify that the wildcard-zone policy applies to decoded labels for every equivalent
+    /// spelling.
     #[test]
     fn zone_name_rejects_equivalent_wildcards() {
         for label in ["*", r"\*", r"\042"] {
@@ -388,7 +392,7 @@ mod tests {
                 let input = format!("{label}{suffix}");
 
                 assert!(
-                    super::normalize_name(&input)
+                    normalize_name(&input)
                         .unwrap_err()
                         .to_string()
                         .contains("wildcard"),
@@ -398,7 +402,7 @@ mod tests {
         }
 
         for input in ["a*.example", "a.*.example", r"\042\046example"] {
-            assert!(super::normalize_name(input).is_ok(), "{input:?}");
+            assert!(normalize_name(input).is_ok(), "{input:?}");
         }
     }
 }

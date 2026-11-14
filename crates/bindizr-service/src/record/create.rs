@@ -53,23 +53,17 @@ pub async fn create(
 
         // Only records sharing the owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name = match bindizr_db::record::list_by_name_tx(
+        let records_at_name = bindizr_db::record::list_by_name_tx(
             &mut tx,
             zone.id,
             &owner_name,
             LockLevel::Exclusive,
         )
         .await
-        {
-            Ok(records) => records,
-            Err(error) => {
-                log::error!("Failed to check existing records: {error}");
-                return Err(ServiceError::internal_with_source(
-                    "failed to create record",
-                    error,
-                ));
-            }
-        };
+        .map_err(|error| {
+            log::error!("Failed to check existing records: {error}");
+            ServiceError::internal_with_source("failed to create record", error)
+        })?;
 
         // Fixed at write time: a later zone TTL change will not move it.
         let ttl = ttl.unwrap_or(zone.default_ttl);

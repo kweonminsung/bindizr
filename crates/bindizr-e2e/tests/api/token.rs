@@ -1,5 +1,5 @@
-use reqwest::{Method, StatusCode};
-use serde_json::json;
+use reqwest::{Client, Method, StatusCode};
+use serde_json::{Value, json};
 
 use crate::common::{TestApp, TestAppOptions};
 
@@ -25,7 +25,7 @@ async fn tokens_support_create_list_and_delete_over_http() {
             "name": name,
             "mname": format!("ns1.{name}"),
             "rname": "admin@example.com",
-            "default_ttl": 3600,
+            "default_ttl": 3600
         })
     };
 
@@ -53,18 +53,15 @@ async fn tokens_support_create_list_and_delete_over_http() {
             Some(json!({
                 "name": scoped_name,
                 "role_name": scoped_name,
-                "description": "created over HTTP",
+                "description": "created over HTTP"
             })),
         )
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_eq!(body["token"]["name"], json!(scoped_name));
-    assert_eq!(body["token"]["role_name"], json!(scoped_name));
-    let scoped_secret = body["secret"]
-        .as_str()
-        .expect("create response carries the secret")
-        .to_string();
+    assert_eq!(body["token"]["name"], scoped_name);
+    assert_eq!(body["token"]["role_name"], scoped_name);
+    let scoped_secret = body["secret"].as_str().unwrap().to_string();
 
     // The new token authenticates, and its role holds no grant yet.
     app.set_auth_token(scoped_secret.clone());
@@ -110,7 +107,7 @@ async fn tokens_support_create_list_and_delete_over_http() {
 
     let (status, body) = app.send_request(Method::GET, "/tokens", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let tokens = body["items"].as_array().unwrap();
 
     for name in [&first_token_name, &scoped_name, &admin_name] {
@@ -134,7 +131,7 @@ async fn tokens_support_create_list_and_delete_over_http() {
         .send_request(Method::GET, "/tokens?limit=1&offset=1", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
     assert_eq!(body["pagination"]["limit"], 1, "{body}");
     assert_eq!(body["pagination"]["offset"], 1, "{body}");
@@ -158,7 +155,7 @@ async fn tokens_support_create_list_and_delete_over_http() {
             Some(json!({
                 "name": app.zone_name("never"),
                 "role_name": "admin",
-                "expires_in_days": i64::MAX,
+                "expires_in_days": i64::MAX
             })),
         )
         .await;
@@ -172,7 +169,7 @@ async fn tokens_support_create_list_and_delete_over_http() {
             Some(json!({
                 "name": app.zone_name("verbose"),
                 "role_name": "admin",
-                "description": "x".repeat(256),
+                "description": "x".repeat(256)
             })),
         )
         .await;
@@ -266,9 +263,10 @@ async fn tokens_self_describes_the_bearer() {
     ] {
         app.set_auth_token(token);
         let (status, body) = app.send_request(Method::GET, "/tokens/self", None).await;
+
         assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["token"]["name"], json!(name));
-        assert_eq!(body["token"]["role_name"], json!(role));
+        assert_eq!(body["token"]["name"], name);
+        assert_eq!(body["token"]["role_name"], role);
         assert!(body.get("secret").is_none(), "{body}");
     }
 }
@@ -283,7 +281,7 @@ async fn cors_preflight_allows_the_authorization_header() {
         ..Default::default()
     })
     .await;
-    let response = reqwest::Client::new()
+    let response = Client::new()
         .request(Method::OPTIONS, format!("{}/zones", app.base_url()))
         .header("origin", "https://ui.example")
         .header("access-control-request-method", "GET")
@@ -318,7 +316,7 @@ async fn tokens_self_has_no_token_when_authentication_is_disabled() {
     .await;
 
     for path in ["/tokens/self", "/tokens/self/grants"] {
-        let response = reqwest::Client::new()
+        let response = Client::new()
             .get(format!("{}{path}", app.base_url()))
             .send()
             .await
@@ -330,13 +328,13 @@ async fn tokens_self_has_no_token_when_authentication_is_disabled() {
             "{path}"
         );
 
-        let body: serde_json::Value = response.json().await.unwrap();
+        let body: Value = response.json().await.unwrap();
 
         assert_eq!(body["code"], "TOKEN_NOT_FOUND", "{body}");
     }
 }
 
-/// Authenticate equivalent schemes and SP separators without changing token bytes.
+/// Verify that equivalent schemes and SP separators authenticate without changing token bytes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn bearer_authentication_obeys_http_grammar_and_challenges_failures() {
@@ -345,14 +343,14 @@ async fn bearer_authentication_obeys_http_grammar_and_challenges_failures() {
         ..Default::default()
     })
     .await;
-    let (_, token) = app.create_api_token().await;
+    let (_, admin_token) = app.create_api_token().await;
 
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
     for prefix in ["Bearer ", "bearer ", "BEARER ", "bEaReR   "] {
         let response = client
             .get(format!("{}/tokens/self", app.base_url()))
-            .header("authorization", format!("{prefix}{token}"))
+            .header("authorization", format!("{prefix}{admin_token}"))
             .send()
             .await
             .unwrap();
@@ -366,9 +364,9 @@ async fn bearer_authentication_obeys_http_grammar_and_challenges_failures() {
         Some("Basic ignored".to_string()),
         Some("Bearer".to_string()),
         Some("Bearer   ".to_string()),
-        Some(format!("Bearer\t{token}")),
-        Some(format!("Bearer invalid-{token}")),
-        Some(format!("Bearer {token} extra")),
+        Some(format!("Bearer\t{admin_token}")),
+        Some(format!("Bearer invalid-{admin_token}")),
+        Some(format!("Bearer {admin_token} extra")),
     ] {
         let mut request = client.get(format!("{}/tokens/self", app.base_url()));
 
@@ -387,7 +385,7 @@ async fn bearer_authentication_obeys_http_grammar_and_challenges_failures() {
             .unwrap()
             .to_string();
 
-        let body: serde_json::Value = response.json().await.unwrap();
+        let body: Value = response.json().await.unwrap();
 
         match body["code"].as_str() {
             Some("UNAUTHORIZED") => assert_eq!(challenge, "Bearer realm=\"bindizr\"", "{body}"),

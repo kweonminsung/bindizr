@@ -32,13 +32,13 @@ pub(crate) const KEEPALIVE_OPTION_LEN: usize = 6;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edns {
     Absent,
-    /// One readable OPT; sizes under 512 read as 512 (Section 6.2.3).
+    /// One readable OPT; sizes under 512 read as 512 (RFC 6891, Section 6.2.3).
     Present {
         udp_payload_size: u16,
         version: u8,
         dnssec_ok: bool,
     },
-    /// More than one OPT, or one that does not parse: FORMERR (Section 6.1.1).
+    /// More than one OPT, or one that does not parse: FORMERR (RFC 6891, Section 6.1.1).
     Malformed,
 }
 
@@ -74,7 +74,6 @@ impl Edns {
         };
         let mut opts = additional.limit_to::<Opt<_>>();
         let first = match opts.next() {
-            None => return Self::Absent,
             Some(Err(_)) => return Self::Malformed,
             Some(Ok(record)) => {
                 if !record.owner().is_root() {
@@ -82,6 +81,7 @@ impl Edns {
                 }
                 OptRecord::from(record)
             }
+            None => return Self::Absent,
         };
 
         if opts.next().is_some() {
@@ -105,9 +105,9 @@ impl Edns {
     }
 
     /// Append response EDNS metadata and options when requested (RFC 6891, Section 6.1.1).
-    pub(crate) fn push_response_opt<Target: Composer>(
+    pub(crate) fn push_response_opt<T: Composer>(
         self,
-        additional: &mut AdditionalBuilder<Target>,
+        additional: &mut AdditionalBuilder<T>,
         rcode: OptRcode,
         ede: Option<ExtendedErrorCode>,
         keepalive: Option<TcpKeepalive>,
@@ -122,13 +122,7 @@ impl Edns {
                 opt.set_rcode(rcode);
 
                 // RFC 3225, Section 3: copy DO, leaving reserved flags clear.
-                opt.set_dnssec_ok(matches!(
-                    self,
-                    Self::Present {
-                        dnssec_ok: true,
-                        ..
-                    }
-                ));
+                opt.set_dnssec_ok(self.dnssec_ok());
 
                 if let Some(code) = ede {
                     opt.push(&ExtendedError::<Vec<u8>>::from(code))?;
@@ -156,9 +150,7 @@ impl Keepalive {
         let Self::IdleTimeout(idle_timeout) = self else {
             return None;
         };
-        let Ok(timeout) = IdleTimeout::try_from(idle_timeout) else {
-            return None;
-        };
+        let timeout = IdleTimeout::try_from(idle_timeout).ok()?;
 
         Some(TcpKeepalive::new(Some(timeout)))
     }

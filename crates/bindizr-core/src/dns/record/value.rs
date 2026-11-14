@@ -37,20 +37,17 @@ pub(crate) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
         }
 
         let mut escaped = false;
-        let end = rest
-            .char_indices()
-            .find_map(|(index, ch)| {
-                if escaped {
-                    escaped = false;
-                    None
-                } else if ch == '\\' {
-                    escaped = true;
-                    None
-                } else {
-                    ch.is_whitespace().then_some(index)
-                }
-            })
-            .unwrap_or(rest.len());
+        let mut end = rest.len();
+        for (index, ch) in rest.char_indices() {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch.is_whitespace() {
+                end = index;
+                break;
+            }
+        }
         let (field, remaining) = rest.split_at(end);
         rest = remaining;
 
@@ -105,8 +102,8 @@ pub(crate) fn parse_hex_record_field<'a>(
     hex.as_bytes()
         .chunks(2)
         .map(|pair| {
-            let hi = (pair[0] as char).to_digit(16);
-            let lo = (pair[1] as char).to_digit(16);
+            let hi = char::from(pair[0]).to_digit(16);
+            let lo = char::from(pair[1]).to_digit(16);
             hi.zip(lo)
                 .map(|(hi, lo)| (hi * 16 + lo) as u8)
                 .ok_or(ParseRecordValueError::NotHex { field })
@@ -242,6 +239,7 @@ pub(crate) fn validate_domain_record_value(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     /// Verify that record-value names accept non-LDH owner labels under
     /// RFC 2181, Section 11.
@@ -255,12 +253,12 @@ mod tests {
             "_dmarc.example.com.",
             "host-name.example.com",
         ] {
-            super::validate_domain_record_value("CNAME record value", value)
+            validate_domain_record_value("CNAME record value", value)
                 .unwrap_or_else(|error| panic!("{value} was rejected: {error}"));
         }
     }
 
-    /// Verify rejection of record names that cannot round-trip through presentation text.
+    /// Verify that record names that cannot round-trip through presentation text are rejected.
     #[test]
     fn record_value_rejects_names_without_reversible_presentation() {
         for value in [
@@ -274,7 +272,7 @@ mod tests {
             r"short\09.example.com",
         ] {
             assert!(
-                super::validate_domain_record_value("CNAME record value", value).is_err(),
+                validate_domain_record_value("CNAME record value", value).is_err(),
                 "{value} was accepted"
             );
         }

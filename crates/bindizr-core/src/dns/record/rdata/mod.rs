@@ -8,6 +8,11 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use base64::Engine;
 use base64::engine::general_purpose;
 pub use canonical::ParseRdataError;
+use domain::base::iana::Rtype;
+use domain::base::name::ParsedName;
+use domain::base::rdata::ParseRecordData;
+use domain::dep::octseq::parse::Parser;
+use domain::rdata::AllRecordData;
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 use thiserror::Error;
@@ -51,12 +56,6 @@ impl Rdata {
     /// The presentation form of a derived row's RDATA of `record_type`, as
     /// `dig` prints it; the base64 row form when it does not parse.
     pub fn to_presentation(&self, record_type: DnssecRecordType) -> String {
-        use domain::base::iana::Rtype;
-        use domain::base::name::ParsedName;
-        use domain::base::rdata::ParseRecordData;
-        use domain::dep::octseq::parse::Parser;
-        use domain::rdata::AllRecordData;
-
         let mut parser = Parser::from_ref(self.as_bytes());
 
         AllRecordData::<_, ParsedName<_>>::parse_rdata(
@@ -130,7 +129,7 @@ where
     /// Decode the stored bytes into record data.
     fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as sqlx::Decode<'r, DB>>::decode(value)?;
-        Self::new(bytes).map_err(Into::into)
+        Ok(Self::new(bytes)?)
     }
 }
 
@@ -156,11 +155,11 @@ impl EncodedRdata {
         let rdata = match record_type {
             RecordType::Wks => WksRecordValue::parse(value)?.to_rdata()?,
             RecordType::A => {
-                let addr: Ipv4Addr = value.parse().map_err(|_| stored_address())?;
+                let addr = value.parse::<Ipv4Addr>().map_err(|_| stored_address())?;
                 Rdata::new(addr.octets().to_vec())?
             }
             RecordType::Aaaa => {
-                let addr: Ipv6Addr = value.parse().map_err(|_| stored_address())?;
+                let addr = value.parse::<Ipv6Addr>().map_err(|_| stored_address())?;
                 Rdata::new(addr.octets().to_vec())?
             }
             RecordType::Caa => CaaRecordValue::parse(value)?.to_rdata()?,

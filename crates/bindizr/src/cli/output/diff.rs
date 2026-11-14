@@ -1,4 +1,5 @@
 //! Render structured record diffs as zone-file `+`/`-`/`~` patches.
+
 use std::slice;
 
 use bindizr_core::dns::record;
@@ -37,17 +38,18 @@ fn display_rdata(diff_value: &RecordDiffValueResponse, record_type: &str) -> Str
 /// Render the `+`/`-`/`~` lines for a diff's entries (no summary footer). A
 /// changed entry stacks its removed records above its added ones.
 fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
-    let mut out = String::new();
+    let mut rendered = String::new();
 
     for entry in entries {
         let sign = entry.change.to_string();
-        let rtype = entry.record_type.as_str();
+        let record_type = entry.record_type.as_str();
 
         // Show only the delta: records removed, then records added.
-        let rendered =
-            |value: &RecordDiffValueResponse| (value.ttl.to_string(), display_rdata(value, rtype));
-        let from_lines: Vec<(String, String)> = entry.from.iter().map(rendered).collect();
-        let to_lines: Vec<(String, String)> = entry.to.iter().map(rendered).collect();
+        let render_line = |value: &RecordDiffValueResponse| {
+            (value.ttl.to_string(), display_rdata(value, record_type))
+        };
+        let from_lines: Vec<(String, String)> = entry.from.iter().map(render_line).collect();
+        let to_lines: Vec<(String, String)> = entry.to.iter().map(render_line).collect();
         let mut lines: Vec<(String, String)> = from_lines
             .iter()
             .filter(|line| !to_lines.contains(line))
@@ -69,51 +71,51 @@ fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
             } else {
                 " "
             };
-            let name_col = if index == 0 {
+            let name_cell = if index == 0 {
                 entry.name.as_str()
             } else {
                 ""
             };
-            let line = format!("{head} {name_col:<24} {ttl:>5} IN {rtype:<6} {data}");
+            let line = format!("{head} {name_cell:<24} {ttl:>5} IN {record_type:<6} {data}");
             let line = if index < removed {
                 color::red(&line)
             } else {
                 color::green(&line)
             };
-            out.push_str(&line);
-            out.push('\n');
+            rendered.push_str(&line);
+            rendered.push('\n');
         }
     }
 
-    out
+    rendered
 }
 
 /// Render a preview of a diff: the change lines plus a summary footer.
 pub(crate) fn render_change_preview(diff: &RecordDiffResponse) -> String {
-    let mut out = render_diff_lines(&diff.entries);
+    let mut rendered = render_diff_lines(&diff.entries);
     let summary = &diff.summary;
-    out.push('\n');
-    out.push_str(&format!(
+    rendered.push('\n');
+    rendered.push_str(&format!(
         "By name and type: {} {} {}\n",
         color::green(&format!("{}{}", RecordChange::Added, summary.added)),
         color::red(&format!("{}{}", RecordChange::Removed, summary.removed)),
         color::yellow(&format!("{}{}", RecordChange::Changed, summary.changed))
     ));
 
-    out
+    rendered
 }
 
 /// Render a version diff: the `+`/`-`/`~` lines plus SOA-serial and count footers.
 pub(crate) fn render_version_diff(response: &DiffZoneVersionsResponse) -> String {
-    let mut out = render_diff_lines(&response.diff.entries);
+    let mut rendered = render_diff_lines(&response.diff.entries);
     let summary = &response.diff.summary;
 
-    out.push('\n');
-    out.push_str(&format!(
+    rendered.push('\n');
+    rendered.push_str(&format!(
         "SOA serial: {} -> {}\n",
         response.from_serial, response.to_serial
     ));
-    out.push_str(&format!(
+    rendered.push_str(&format!(
         "By name and type: {}{} {}{} {}{}\n",
         RecordChange::Added,
         summary.added,
@@ -123,5 +125,5 @@ pub(crate) fn render_version_diff(response: &DiffZoneVersionsResponse) -> String
         summary.changed
     ));
 
-    out
+    rendered
 }

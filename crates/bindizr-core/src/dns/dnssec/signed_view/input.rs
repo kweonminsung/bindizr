@@ -2,9 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use domain::base::UnknownRecordData;
 use domain::base::iana::{Class, Rtype};
 use domain::base::name::FlattenInto;
-use domain::base::{Ttl, UnknownRecordData};
 use domain::dep::octseq::Parser;
 use domain::dnssec::sign::denial::nsec::GenerateNsecConfig;
 use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3Records};
@@ -33,7 +33,7 @@ impl SignedViewParams<'_> {
         input.push(WireRecord::new(
             apex.clone(),
             Class::IN,
-            Ttl::from_secs(zone.default_ttl.as_secs()),
+            domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
             ZoneRecordData::Soa(parse_soa(soa_bytes.as_bytes())?),
         ));
 
@@ -41,7 +41,7 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
-                Ttl::from_secs(zone.default_ttl.as_secs()),
+                domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Dnskey(signer.dnskey.clone()),
             ));
 
@@ -57,7 +57,7 @@ impl SignedViewParams<'_> {
                 input.push(WireRecord::new(
                     apex.clone(),
                     Class::IN,
-                    Ttl::from_secs(zone.default_ttl.as_secs()),
+                    domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                     ZoneRecordData::Unknown(cds),
                 ));
                 let cdnskey = UnknownRecordData::from_octets(
@@ -71,7 +71,7 @@ impl SignedViewParams<'_> {
                 input.push(WireRecord::new(
                     apex.clone(),
                     Class::IN,
-                    Ttl::from_secs(zone.default_ttl.as_secs()),
+                    domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                     ZoneRecordData::Unknown(cdnskey),
                 ));
             }
@@ -89,7 +89,7 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
-                Ttl::from_secs(zone.default_ttl.as_secs()),
+                domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Unknown(cds),
             ));
             let cdnskey = UnknownRecordData::from_octets(Rtype::CDNSKEY, vec![0, 0, 3, 0, 0])
@@ -100,7 +100,7 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
-                Ttl::from_secs(zone.default_ttl.as_secs()),
+                domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Unknown(cdnskey),
             ));
         }
@@ -109,33 +109,34 @@ impl SignedViewParams<'_> {
         for record in self.records {
             let EncodedRdata { record_type, rdata } =
                 EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
-            let record_type = Rtype::from_int(record_type);
+            let rtype = Rtype::from_int(record_type);
 
             // UnknownRecordData cannot canonicalize embedded names for signing.
             let rdata = rdata
-                .to_canonical(record_type)
+                .to_canonical(rtype)
                 .map_err(|error| SignZoneError::Rdata {
                     rtype: "record",
                     source: Box::new(error),
                 })?;
-            let data = UnknownRecordData::from_octets(record_type, rdata.into_bytes()).map_err(
-                |error| SignZoneError::Rdata {
-                    rtype: "record",
-                    source: Box::new(error),
-                },
-            )?;
+            let data =
+                UnknownRecordData::from_octets(rtype, rdata.into_bytes()).map_err(|error| {
+                    SignZoneError::Rdata {
+                        rtype: "record",
+                        source: Box::new(error),
+                    }
+                })?;
             let owner = record.name.to_wire_name(&zone.name)?;
             input.push(WireRecord::new(
                 owner,
                 Class::IN,
-                Ttl::from_secs(record.ttl.as_secs()),
+                domain::base::Ttl::from_secs(record.ttl.as_secs()),
                 ZoneRecordData::Unknown(data),
             ));
         }
 
         // A record set shares one TTL (RFC 2181, Section 5.2); normalize stragglers to
         // the set's minimum so record set construction and Original TTL are well-defined.
-        let mut record_set_ttls: BTreeMap<(Vec<u8>, u16), Ttl> = BTreeMap::new();
+        let mut record_set_ttls: BTreeMap<(Vec<u8>, u16), domain::base::Ttl> = BTreeMap::new();
 
         for record in &input {
             let key = (record.owner().as_slice().to_vec(), record.rtype().to_int());

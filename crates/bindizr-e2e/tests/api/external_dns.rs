@@ -81,12 +81,12 @@ impl Drop for ExternalDnsAdapter {
 const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
 /// Grant the test token access to a zone.
-async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
+async fn grant_zone(app: &TestApp, zone_name: &str, role_name: &str) {
     app.run_cli_success(
         &[
             "role",
             "grant",
-            token_name,
+            role_name,
             "--zone",
             zone_name,
             "--actions",
@@ -155,7 +155,7 @@ async fn external_dns_domain_listing_reflects_role_grants() {
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let domains = body["domains"].as_array().expect("domains array");
 
     assert!(domains.contains(&json!(granted_zone)));
@@ -168,7 +168,7 @@ async fn external_dns_domain_listing_reflects_role_grants() {
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["domains"], json!([granted_zone]));
 }
 
@@ -230,7 +230,7 @@ async fn external_dns_domain_listing_unions_split_grants() {
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body["domains"],
         json!([format!("k8s.{split_zone}")]),
@@ -367,9 +367,9 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         .send_request(Method::POST, "/external-dns/changes", Some(create.clone()))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["changed_zones"], json!([zone_name]));
-    assert_eq!(body["added"], json!(3));
+    assert_eq!(body["added"], 3);
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 1);
 
     // Same create again: no-op, no serial bump.
@@ -377,7 +377,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         .send_request(Method::POST, "/external-dns/changes", Some(create))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["changed_zones"], json!([]));
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 1);
 
@@ -385,7 +385,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         .send_request(Method::GET, "/external-dns/records", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let app_fqdn = format!("app.{zone_name}");
 
     assert_eq!(
@@ -415,9 +415,9 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["added"], json!(1));
-    assert_eq!(body["deleted"], json!(1));
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["added"], 1);
+    assert_eq!(body["deleted"], 1);
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 2);
 
     // Delete, then delete again as a no-op.
@@ -430,15 +430,15 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         .send_request(Method::POST, "/external-dns/changes", Some(delete.clone()))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["deleted"], json!(2));
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted"], 2);
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 3);
 
     let (status, body) = app
         .send_request(Method::POST, "/external-dns/changes", Some(delete))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["changed_zones"], json!([]));
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 3);
 }
@@ -474,20 +474,20 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
             "/external-dns/changes",
             Some(json!({
                 "creates": [
-                    {"name": format!("a.{granted_zone}"), "type": "A", "values": ["192.0.2.1"]},
-                    {"name": format!("b.{ungranted_zone}"), "type": "A", "values": ["192.0.2.2"]}
+                    { "name": format!("a.{granted_zone}"), "type": "A", "values": ["192.0.2.1"] },
+                    { "name": format!("b.{ungranted_zone}"), "type": "A", "values": ["192.0.2.2"] }
                 ]
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 
     // Worded as for a name no zone covers, so the hidden zone stays hidden.
     assert_eq!(
         body["error"],
-        json!(format!("no zone is authoritative for 'b.{ungranted_zone}'"))
+        format!("no zone is authoritative for 'b.{ungranted_zone}'")
     );
 
     // Nothing was applied for the granted zone either.
@@ -538,7 +538,7 @@ async fn external_dns_rejects_ungranted_subzone_without_parent_fallback() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert!(
         body["error"]
             .as_str()
@@ -558,7 +558,7 @@ async fn external_dns_rejects_ungranted_subzone_without_parent_fallback() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }
 
@@ -600,7 +600,7 @@ async fn external_dns_changes_enforce_record_validation() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "RECORD_CONFLICT");
 
     // Unsupported record types are rejected explicitly.
@@ -640,17 +640,17 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
     grant_zone(&app, &zone_name, &scoped_name).await;
 
     // Without a token, the provider API itself rejects the request.
-    let unauthenticated = reqwest::Client::new()
+    let unauthenticated = Client::new()
         .get(format!("{}/external-dns/domains", app.base_url()))
         .send()
         .await
         .unwrap();
 
-    assert_eq!(unauthenticated.status().as_u16(), 401);
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
 
     let adapter = ExternalDnsAdapter::spawn(app.base_url(), &scoped_token).await;
 
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
     // Negotiation: exact media type and the granted zones as DomainFilter.
     let response = client
@@ -660,7 +660,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response
             .headers()
@@ -688,7 +688,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 204);
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
     // Records through the adapter come back as grouped endpoints.
     let response = client
@@ -698,20 +698,20 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let endpoints: Value = response.json().await.unwrap();
     let endpoint = endpoints
         .as_array()
         .unwrap()
         .iter()
-        .find(|error| {
-            error["dnsName"] == json!(format!("app.{zone_name}")) && error["recordType"] == "A"
+        .find(|endpoint| {
+            endpoint["dnsName"] == format!("app.{zone_name}") && endpoint["recordType"] == "A"
         })
         .expect("created endpoint is listed");
 
     assert_eq!(endpoint["targets"], json!(["192.0.2.1"]));
-    assert_eq!(endpoint["recordTTL"], json!(300));
+    assert_eq!(endpoint["recordTTL"], 300);
 
     // AdjustEndpoints canonicalizes on the server: type case, address
     // spelling, and equivalent duplicates resolve to the stored form.
@@ -727,7 +727,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let adjusted: Value = response.json().await.unwrap();
 
@@ -748,7 +748,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 503);
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 
     // The same token failure turns the adapter unready, instead of leaving it
     // green on bindizr's unauthenticated health endpoint.
@@ -758,7 +758,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(health.status().as_u16(), 503);
+    assert_eq!(health.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 /// Verify that external DNS record listing spans read pages.
@@ -803,7 +803,7 @@ async fn external_dns_record_listing_spans_read_pages() {
         .send_request(Method::GET, "/external-dns/records", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
 
     let listed = body["records"].as_array().expect("records array");
     let a_records = listed.iter().filter(|record| record["type"] == "A").count();

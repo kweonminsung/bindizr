@@ -1,6 +1,6 @@
 //! Canonical wire RDATA for comparison and DNSSEC signing.
 
-use domain::base::Rtype;
+use domain::base::iana::Rtype;
 use domain::base::name::ParsedName;
 use domain::base::rdata::ParseAnyRecordData;
 use domain::base::wire::ParseError;
@@ -27,7 +27,7 @@ impl Rdata {
     /// Parse `len` RDATA bytes at `start`, resolving compressed names in `message`.
     /// Canonicalize names but preserve opaque bytes (RFC 2136, Section 1.1; RFC 3597, Sections 6–7).
     pub fn parse_canonical(
-        record_type: Rtype,
+        rtype: Rtype,
         message: &[u8],
         start: usize,
         len: usize,
@@ -37,7 +37,7 @@ impl Rdata {
         let mut parser = Parser::from_ref(message);
         parser.advance(start)?;
         let mut rdata = parser.parse_parser(len)?;
-        let data = AllRecordData::<_, ParsedName<_>>::parse_any_rdata(record_type, &mut rdata)?;
+        let data = AllRecordData::<_, ParsedName<_>>::parse_any_rdata(rtype, &mut rdata)?;
 
         if rdata.remaining() != 0 {
             return Err(ParseRdataError::TrailingBytes);
@@ -50,7 +50,7 @@ impl Rdata {
     }
 
     /// Canonicalize uncompressed RDATA for comparison or DNSSEC signing.
-    pub fn to_canonical(&self, record_type: Rtype) -> Result<Self, ParseRdataError> {
-        Self::parse_canonical(record_type, self.as_bytes(), 0, self.as_bytes().len())
+    pub fn to_canonical(&self, rtype: Rtype) -> Result<Self, ParseRdataError> {
+        Self::parse_canonical(rtype, self.as_bytes(), 0, self.as_bytes().len())
     }
 }

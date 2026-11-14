@@ -105,7 +105,7 @@ ordinary change rather than seeing the serial go backwards.")]
     },
 }
 
-/// Run the requested zone history or rollback command.
+/// Handle the `zone version` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(), CliError> {
     match subcommand {
         ZoneVersionCommand::List {
@@ -124,7 +124,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                 },
             )
             .await?;
-            output::print_page(&response.data, output, |item| VersionRow::from(item))?;
+            output::print_page(&response.data, output, |version| VersionRow::from(version))?;
         }
         ZoneVersionCommand::Get {
             name,

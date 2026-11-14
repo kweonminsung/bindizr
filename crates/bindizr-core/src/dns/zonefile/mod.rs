@@ -18,6 +18,9 @@ use crate::dns::record::{NaptrRecordValue, WksRecordValue};
 use crate::dns::{Serial, SoaInterval, Ttl, name, record};
 use crate::model::record::RecordType;
 
+/// Directives `ParsedZoneFile::parse` prepends before handing the text to the parser.
+const PRELUDE_LINES: usize = 2;
+
 /// A record's value as the zone file spells it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ZoneFileValue {
@@ -145,7 +148,7 @@ impl ParsedZoneFile {
             soa: None,
             errors: Vec::new(),
         };
-        let origin = zone_name.to_fqdn();
+        let origin_fqdn = zone_name.to_fqdn();
 
         for (index, record) in records.iter().enumerate() {
             if matches!(
@@ -179,7 +182,7 @@ impl ParsedZoneFile {
 
             match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(record.rtype, &mut parser) {
                 Ok(Some(data)) if parser.remaining() == 0 => parsed.push_record(
-                    &origin,
+                    &origin_fqdn,
                     record.name.clone(),
                     record.rtype,
                     record.ttl,
@@ -188,7 +191,7 @@ impl ParsedZoneFile {
                 Ok(_) => parsed
                     .errors
                     .push(format!("{}: trailing RDATA bytes", record.name)),
-                Err(error) => parsed.errors.push(format!("{}: {}", record.name, error)),
+                Err(error) => parsed.errors.push(format!("{}: {error}", record.name)),
             }
         }
 
@@ -237,8 +240,7 @@ impl ParsedZoneFile {
                     match to_zone_file_soa(data) {
                         Some(soa) => self.soa = Some(soa),
                         None => self.errors.push(format!(
-                            "SOA for '{}' has a refresh, retry or expire past {} seconds",
-                            owner,
+                            "SOA for '{owner}' has a refresh, retry or expire past {} seconds",
                             SoaInterval::MAX
                         )),
                     }
@@ -380,9 +382,6 @@ fn to_zone_file_soa<Octs, N: ToName + fmt::Display>(
     })
 }
 
-/// Directives `ParsedZoneFile::parse` prepends before handing the text to the parser.
-const PRELUDE_LINES: usize = 2;
-
 /// Restate a parser error in the submitted text's line numbering. `Error` keeps
 /// its position private, so its `{line}:{col}: {reason}` rendering is all there is.
 fn to_input_line_message(error: &inplace::Error) -> String {
@@ -390,7 +389,7 @@ fn to_input_line_message(error: &inplace::Error) -> String {
 
     match message.split_once(':') {
         Some((line, rest)) => match line.parse::<usize>() {
-            Ok(line) if line > PRELUDE_LINES => format!("{}:{}", line - PRELUDE_LINES, rest),
+            Ok(line) if line > PRELUDE_LINES => format!("{}:{rest}", line - PRELUDE_LINES),
             _ => message,
         },
         None => message,

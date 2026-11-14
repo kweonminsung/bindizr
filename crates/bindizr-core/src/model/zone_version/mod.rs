@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use crate::dns::{Serial, SoaInterval, Ttl};
@@ -7,7 +7,7 @@ use crate::model::change::{ChangeActor, ChangeActorColumns, ChangeSource};
 use crate::model::zone::ZoneId;
 
 /// Select stored versions by journal content, independently of who made the change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VersionFilter {
     /// Exclude past versions with nonempty journals containing only derived DNSSEC changes.
@@ -24,6 +24,14 @@ impl VersionFilter {
             Self::All
         } else {
             Self::ExcludePastSignerOnly
+        }
+    }
+
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExcludePastSignerOnly => "exclude_past_signer_only",
+            Self::All => "all",
         }
     }
 }
@@ -57,44 +65,19 @@ pub struct ZoneVersion {
     pub created_at: DateTime<Utc>,
 }
 
-impl VersionFilter {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ExcludePastSignerOnly => "exclude_past_signer_only",
-            Self::All => "all",
-        }
-    }
-}
-
-impl serde::Serialize for VersionFilter {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Verify the canonical spelling and round-trip of every VersionFilter variant.
+    /// Verify that `VersionFilter` has one spelling across `as_str` and serde.
     #[test]
     fn version_filter_spells_itself_once() {
-        for (value, expected) in [
-            (
-                VersionFilter::ExcludePastSignerOnly,
-                "exclude_past_signer_only",
-            ),
-            (VersionFilter::All, "all"),
-        ] {
-            assert_eq!(value.as_str(), expected);
+        for value in [VersionFilter::ExcludePastSignerOnly, VersionFilter::All] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<VersionFilter>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<VersionFilter>(json!(value.as_str())).unwrap(),
                 value
             );
         }

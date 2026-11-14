@@ -54,7 +54,7 @@ pub(crate) fn exchange_udp(port: u16, message: &[u8]) -> Result<Vec<u8>, String>
     socket
         .send_to(message, ("127.0.0.1", port))
         .map_err(|error| error.to_string())?;
-    let mut response = vec![0u8; usize::from(u16::MAX)];
+    let mut response = vec![0; usize::from(u16::MAX)];
     let (len, _) = socket
         .recv_from(&mut response)
         .map_err(|error| error.to_string())?;
@@ -110,15 +110,15 @@ pub(crate) fn connect_tls(
 
 /// Write a DNS message with its two-byte TCP length prefix.
 pub(crate) fn write_frame<W: Write>(stream: &mut W, message: &[u8]) -> Result<(), String> {
-    let length = u16::try_from(message.len()).map_err(|error| error.to_string())?;
-    let mut frame = length.to_be_bytes().to_vec();
+    let len = u16::try_from(message.len()).map_err(|error| error.to_string())?;
+    let mut frame = len.to_be_bytes().to_vec();
     frame.extend_from_slice(message);
     stream.write_all(&frame).map_err(|error| error.to_string())
 }
 
 /// Read the next length-prefixed DNS frame.
 pub(crate) fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, String> {
-    let mut len = [0u8; 2];
+    let mut len = [0; 2];
 
     match stream.read_exact(&mut len) {
         Ok(()) => {}
@@ -126,7 +126,7 @@ pub(crate) fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, Str
         Err(error) => return Err(error.to_string()),
     }
 
-    let mut frame = vec![0u8; usize::from(u16::from_be_bytes(len))];
+    let mut frame = vec![0; usize::from(u16::from_be_bytes(len))];
     stream
         .read_exact(&mut frame)
         .map_err(|error| error.to_string())?;

@@ -78,10 +78,10 @@ pub struct DnssecRecordWithZone {
 /// A derived record type bindizr does not generate, by number or mnemonic.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseDnssecRecordTypeError {
-    #[error("unknown derived record type {0}")]
-    Number(i32),
-    #[error("unknown derived record type '{0}'")]
-    Name(String),
+    #[error("unknown derived record type {value}")]
+    Number { value: i32 },
+    #[error("unknown derived record type '{value}'")]
+    Name { value: String },
 }
 
 /// The record types the signer derives; rows store the wire record type number
@@ -148,7 +148,7 @@ impl TryFrom<i32> for DnssecRecordType {
             51 => Ok(Self::Nsec3param),
             59 => Ok(Self::Cds),
             60 => Ok(Self::Cdnskey),
-            other => Err(ParseDnssecRecordTypeError::Number(other)),
+            _ => Err(ParseDnssecRecordTypeError::Number { value }),
         }
     }
 }
@@ -166,7 +166,9 @@ impl FromStr for DnssecRecordType {
             "NSEC3PARAM" => Ok(Self::Nsec3param),
             "CDS" => Ok(Self::Cds),
             "CDNSKEY" => Ok(Self::Cdnskey),
-            other => Err(ParseDnssecRecordTypeError::Name(other.to_string())),
+            _ => Err(ParseDnssecRecordTypeError::Name {
+                value: value.to_string(),
+            }),
         }
     }
 }

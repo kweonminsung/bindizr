@@ -17,12 +17,12 @@ static WRITE_FAILURE: OnceLock<io::Error> = OnceLock::new();
 /// Write to stdout, ignoring a closed pipe. Both writers are `pub` only
 /// because `outln!`/`errln!` expand to them in other crates.
 pub fn write_stdout(text: &str) {
-    write(&STDOUT_CLOSED, &mut std::io::stdout(), text);
+    write(&STDOUT_CLOSED, &mut io::stdout(), text);
 }
 
 /// Write to stderr on the same terms; `2>&1` puts both on one pipe.
 pub fn write_stderr(text: &str) {
-    write(&STDERR_CLOSED, &mut std::io::stderr(), text);
+    write(&STDERR_CLOSED, &mut io::stderr(), text);
 }
 
 /// Write unless this stream's reader already left.
@@ -78,9 +78,6 @@ macro_rules! errln {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Error, ErrorKind, Write};
-    use std::sync::atomic::AtomicBool;
-
     use super::*;
 
     /// A sink whose every write fails with one kind.
@@ -89,12 +86,12 @@ mod tests {
 
     impl Write for FailingSink {
         /// Fail with this sink's kind.
-        fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
-            Err(Error::new(self.0, "sink failed"))
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(self.0, "sink failed"))
         }
 
         /// Nothing is buffered.
-        fn flush(&mut self) -> std::io::Result<()> {
+        fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
     }

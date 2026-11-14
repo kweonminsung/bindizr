@@ -34,7 +34,7 @@ pub(crate) async fn create_tx(
     Ok(grant)
 }
 
-/// Find a role grant by ID.
+/// Get a role grant by ID.
 pub(crate) async fn get(
     pool: &Pool<Sqlite>,
     id: RoleGrantId,
@@ -64,7 +64,7 @@ pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<RoleGrant>, Data
     Ok(grants)
 }
 
-/// List every grant of a role.
+/// List every grant of a role, which bounds what a credential of it may see.
 pub(crate) async fn list_by_role_id(
     pool: &Pool<Sqlite>,
     role_id: RoleId,
@@ -81,8 +81,8 @@ pub(crate) async fn list_by_role_id(
     Ok(grants)
 }
 
-/// List every grant of a role in the current transaction; SQLite's writer
-/// reservation stands in for a row lock.
+/// List every grant of a role in the current transaction, locked at
+/// `lock_level`, for a mutation to authorize against.
 pub(crate) async fn list_by_role_id_tx(
     tx: &mut Transaction<'_, Sqlite>,
     role_id: RoleId,

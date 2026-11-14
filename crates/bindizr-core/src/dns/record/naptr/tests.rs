@@ -2,7 +2,7 @@ use super::*;
 use crate::dns::record;
 use crate::dns::record::ParseRecordValueError;
 
-/// Reject invalid flags with either replacement form.
+/// Verify that invalid flags are rejected with either replacement form.
 #[test]
 fn naptr_flags_reject_non_alphanumeric_characters() {
     let invalid = (0..=127u8)
@@ -34,7 +34,7 @@ fn naptr_flags_reject_non_alphanumeric_characters() {
     }
 }
 
-/// Preserve empty and application-defined flags.
+/// Verify that empty and application-defined flags are preserved.
 #[test]
 fn naptr_flags_allow_empty_and_application_defined_values() {
     for flags in [
@@ -62,7 +62,7 @@ fn naptr_flags_allow_empty_and_application_defined_values() {
     assert_eq!(escaped.canonical(), r#"1 1 "uZ9" "app" "" ."#);
 }
 
-/// Verify NAPTR parsing and replacement-name canonicalization.
+/// Verify that NAPTR parsing canonicalizes the replacement name.
 #[test]
 fn naptr_parse_canonicalizes_replacement_name() {
     let parsed =
@@ -84,7 +84,7 @@ fn naptr_accepts_root_replacement() {
     assert_eq!(parsed.canonical(), value);
 }
 
-/// Verify conversion of NAPTR wire data into its stored form.
+/// Verify that NAPTR wire data converts into its stored form and back.
 #[test]
 fn naptr_round_trips_wire_data_through_stored_form() {
     assert_eq!(
@@ -132,7 +132,7 @@ fn naptr_validation_rejects_regexp_with_replacement_name() {
     assert!(parsed.validate().is_err());
 }
 
-/// Verify rejection of NAPTR values with missing fields.
+/// Verify that NAPTR values with missing fields are rejected.
 #[test]
 fn naptr_parse_rejects_missing_fields() {
     for value in [

@@ -1,4 +1,4 @@
-//! The MySql SQL, one module per entity; the crate root dispatches here.
+//! The MySQL SQL, one module per entity; the crate root dispatches here.
 
 pub(crate) mod api_token;
 pub(crate) mod audit_log;

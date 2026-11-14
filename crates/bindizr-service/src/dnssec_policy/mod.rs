@@ -22,8 +22,11 @@ use crate::{Context, audit, pagination, text, transaction};
 /// RFC 1982 serial arithmetic is only unambiguous while expiration -
 /// inception stays under 2^31 seconds (RFC 4034, Section 3.1.5).
 const MAX_SIGNATURE_VALIDITY_DAYS: u32 = 24855;
+
 /// Cap on scheduled-roll lifetimes: a typo must not park a ZSK for decades.
 const MAX_ZSK_LIFETIME_DAYS: u32 = 3650;
+
+/// Longest policy name, in characters.
 const MAX_POLICY_NAME_LEN: usize = 64;
 
 /// Create a policy; omitted fields take the built-in defaults.
@@ -139,7 +142,7 @@ pub async fn list(
     ))
 }
 
-/// Load a named DNSSEC policy for an authorized caller.
+/// Get a named DNSSEC policy for an authorized caller.
 pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<DnssecPolicy, ServiceError> {
     caller.authorize_action(Action::DnssecRead)?;
 
@@ -356,36 +359,34 @@ fn validate_timings(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     /// Verify that `normalize_policy_name` lowercases and trims.
     #[test]
     fn normalize_policy_name_lowercases_and_trims() {
-        assert_eq!(
-            super::normalize_policy_name("  Strict-1 ").unwrap(),
-            "strict-1"
-        );
+        assert_eq!(normalize_policy_name("  Strict-1 ").unwrap(), "strict-1");
     }
 
     /// Verify that `normalize_policy_name` rejects empty and odd characters.
     #[test]
     fn normalize_policy_name_rejects_empty_and_odd_characters() {
-        assert!(super::normalize_policy_name("   ").is_err());
-        assert!(super::normalize_policy_name("a b").is_err());
-        assert!(super::normalize_policy_name("a/b").is_err());
-        assert!(super::normalize_policy_name(&"x".repeat(65)).is_err());
+        assert!(normalize_policy_name("   ").is_err());
+        assert!(normalize_policy_name("a b").is_err());
+        assert!(normalize_policy_name("a/b").is_err());
+        assert!(normalize_policy_name(&"x".repeat(65)).is_err());
     }
 
     /// Verify that `validate_timings` requires refresh below validity.
     #[test]
     fn validate_timings_requires_refresh_below_validity() {
-        assert!(super::validate_timings(14, 5, 0).is_ok());
-        assert!(super::validate_timings(5, 5, 0).is_err());
-        assert!(super::validate_timings(0, 1, 0).is_err());
-        assert!(super::validate_timings(14, 0, 0).is_err());
+        assert!(validate_timings(14, 5, 0).is_ok());
+        assert!(validate_timings(5, 5, 0).is_err());
+        assert!(validate_timings(0, 1, 0).is_err());
+        assert!(validate_timings(14, 0, 0).is_err());
 
         // RFC 4034, Section 3.1.5: serial arithmetic wraps at 2^31 seconds.
-        assert!(super::validate_timings(24856, 5, 0).is_err());
-        assert!(super::validate_timings(24855, 5, 0).is_ok());
-        assert!(super::validate_timings(14, 5, 3651).is_err());
+        assert!(validate_timings(24856, 5, 0).is_err());
+        assert!(validate_timings(24855, 5, 0).is_ok());
+        assert!(validate_timings(14, 5, 3651).is_err());
     }
 }

@@ -1372,6 +1372,25 @@ value that waits for the result and keeps the target socket alive, and `task` or
 `worker` for spawned work. Carry concept renames through error variants, tests,
 comments, and documentation.
 
+A value's type decides its name wherever it is bound:
+
+| Value | Name |
+| --- | --- |
+| `ZoneName` or a zone-name string | `zone_name` (`other_zone_name`, `catalog_zone_name`); `zone` is a `Zone` row, or the zone JSON in e2e tests |
+| `ZoneId`, `RecordId`, … | `zone_id`, `record_id` |
+| `RecordType` | `record_type`; a wire `Rtype` is `rtype`, a question's `qtype` |
+| `TsigKey` | `tsig_key` / `tsig_keys` / `tsig_key_id`; `key` is a DNSSEC key or a signing key |
+| `SocketAddr` | `addr` / `addrs` (`server_addr` as a client parameter); `address` is an `AddressTarget` or `host[:port]` text; a datagram's sender is `peer` |
+| Request bytes / parsed request / reply bytes on the DNS plane | `query_data` / `query` / `response`; a receive buffer is `buffer` |
+| A service answer in a front-end handler | `response`; `status` is the HTTP `StatusCode` |
+| A fetched db value | its entity (`token`, `logs`), not `row` / `rows` |
+| A conversion's input | `value` from a primitive or text, the domain name otherwise (`fn from(zone: &Zone)`) |
+| A `#[source]` field | `source` |
+
+DNS handlers order their parameters state, transport handle, peer, parsed
+`query`, raw `query_data`, then the rest; `query` and `query_data` stay
+adjacent.
+
 ### Control flow and calls
 
 Within functions, separate changes of responsibility with one blank line:
@@ -1612,6 +1631,23 @@ Where two spellings mean the same thing, the workspace writes one:
   shorter one does not (`86400`), and a date-form serial stays whole
   (`2026072501`).
 - `const` and `use` items inside a function open its body.
+- A `collect()` that ends a `let` takes its type from the binding
+  (`let names: Vec<_> = …collect();`); `parse` and sqlx `query_as` /
+  `query_scalar` take the turbofish.
+- A `Display` value is passed as itself (`&zone.name`, `{zone_name}`), not
+  through `.as_str()`.
+- A `PartialEq` value is compared with `==` and asserted with `assert_eq!`;
+  `matches!` is for types without `PartialEq` and patterns with bindings.
+- An `Option` match lists `Some` first; a single-expression or single-`return`
+  arm is unbraced.
+- A lossless conversion uses `From` (`char::from(byte)`); a checked narrowing
+  uses `try_from`, not a bound check followed by `as`.
+- A zeroed buffer is `[0; N]`; a suffixed literal is `0u64`.
+- `#[cfg(test)] mod tests;` is the last item of its file, and a test module
+  imports the module under test with `use super::*;`.
+- A test's purpose sentence starts "Verify that …". Within one test file a
+  call fails one way: the file's `unwrap()` or its `expect("…")`.
+- Every e2e test carries `#[serial_test::serial(bindizr_e2e)]`.
 
 The `uninlined_format_args`, `use_self`, `map_unwrap_or`, and
 `semicolon_if_nothing_returned` Clippy lints hold the mechanical part.

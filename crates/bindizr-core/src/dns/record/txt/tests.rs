@@ -36,8 +36,8 @@ fn txt_segments_round_trip_wire_encoding() {
 #[test]
 fn txt_segments_reject_empty_lists() {
     assert_eq!(
-        TxtRecordValue::from_segments(iter::empty()).unwrap_err(),
-        ParseRecordValueError::TxtNoCharString
+        TxtRecordValue::from_segments(iter::empty()),
+        Err(ParseRecordValueError::TxtNoCharString)
     );
 }
 

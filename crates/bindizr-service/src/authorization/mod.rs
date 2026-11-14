@@ -16,6 +16,10 @@ use crate::change::ChangeOrigin;
 use crate::error::ServiceError;
 use crate::{Context, Transaction, token};
 
+/// How long a `last_used_at` stamp stays fresh; stamping every request would
+/// put a database write on the hot path for no added precision.
+const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
+
 /// A request's access rights and change origin, kept as independent facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Caller {
@@ -208,9 +212,7 @@ impl Caller {
         let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
             Ok(Some(token)) => token,
             Ok(None) => {
-                return Err(ServiceError::invalid_token(
-                    "invalid or expired token".to_string(),
-                ));
+                return Err(ServiceError::invalid_token("invalid or expired token"));
             }
             Err(error) => {
                 log::error!("Failed to validate token: {error}");
@@ -221,8 +223,8 @@ impl Caller {
             }
         };
 
-        if let Some(expires_at) = &stored_token.expires_at
-            && Utc::now() >= *expires_at
+        if let Some(expires_at) = stored_token.expires_at
+            && Utc::now() >= expires_at
         {
             return Err(ServiceError::invalid_token("token has expired"));
         }
@@ -294,8 +296,8 @@ impl Caller {
         self.authorize_zone_visible(zone)?;
 
         Err(ServiceError::forbidden(format!(
-            "role does not permit '{}' in zone '{}'",
-            action, zone.name
+            "role does not permit '{action}' in zone '{}'",
+            zone.name
         )))
     }
 
@@ -326,10 +328,10 @@ impl Caller {
     /// existence.
     pub(crate) fn authorize_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
         if self.sees_zone(zone.id) {
-            Ok(())
-        } else {
-            Err(ServiceError::zone_not_found(zone.name.as_str()))
+            return Ok(());
         }
+
+        Err(ServiceError::zone_not_found(&zone.name))
     }
 
     /// Re-read the credential and grants in `tx`, after locking the zone.
@@ -341,11 +343,11 @@ impl Caller {
         let (role_id, credential) = match &self.scope {
             CallerScope::Global => return Ok(self.clone()),
             CallerScope::Role {
-                credential: Credential::TsigKey(key_id),
+                credential: Credential::TsigKey(tsig_key_id),
                 ..
             } => {
                 // Lock the key so deletion waits for this transaction.
-                let tsig_key = bindizr_db::tsig_key::get_tx(tx, *key_id, LockLevel::Shared)
+                let tsig_key = bindizr_db::tsig_key::get_tx(tx, *tsig_key_id, LockLevel::Shared)
                     .await?
                     .ok_or_else(|| ServiceError::invalid_token("TSIG key no longer exists"))?;
                 (tsig_key.role_id, Credential::TsigKey(tsig_key.id))
@@ -393,7 +395,7 @@ impl Caller {
         // Ahead of the per-write loop, which a batch resolving to no writes
         // would otherwise pass vacuously.
         if !grants.reaches_zone(zone.id) {
-            return Err(ServiceError::zone_not_found(zone.name.as_str()));
+            return Err(ServiceError::zone_not_found(&zone.name));
         }
 
         authorize_with_grants(grants, zone, writes)
@@ -504,8 +506,8 @@ impl Caller {
         self.authorize_zone_visible(zone)?;
 
         Err(ServiceError::forbidden(format!(
-            "role does not permit '{}' over zone '{}' whole",
-            action, zone.name
+            "role does not permit '{action}' over zone '{}' whole",
+            zone.name
         )))
     }
 }
@@ -529,9 +531,7 @@ fn authorize_with_grants(
                 write.relative_name,
                 write
                     .record_type
-                    .map_or("records".to_string(), |record_type| record_type
-                        .as_str()
-                        .to_string()),
+                    .map_or("records".to_string(), ToString::to_string),
                 zone.name
             )));
         }
@@ -539,10 +539,6 @@ fn authorize_with_grants(
 
     Ok(())
 }
-
-/// How long a `last_used_at` stamp stays fresh; stamping every request would
-/// put a database write on the hot path for no added precision.
-const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
 
 #[cfg(test)]
 mod tests;

@@ -7,6 +7,10 @@ use sqlx::error::BoxDynError;
 
 use super::{MAX_DNS_LABEL_LEN, MAX_WIRE_NAME_LEN, ParseNameError, ZoneName};
 
+/// Escape separators, backslashes, the origin marker `@`, and master-file
+/// metacharacters (RFC 1035, Section 5.1).
+const ESCAPED_IN_LABEL: &[u8] = b".\\@;()\"$";
+
 /// Decoded zone-relative labels; the apex is empty and in-label dots remain data.
 /// Construction lowercases labels for case-insensitive `Eq`/`Hash` (RFC 4343).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -32,10 +36,10 @@ impl OwnerName {
         &self.0
     }
 
-    /// Parse `@`, relative names, or absolute names inside `zone` into octet labels.
+    /// Parse `@`, relative names, or absolute names inside `zone_name` into octet labels.
     /// Validate wire lengths without imposing hostname character rules.
-    pub fn parse_in_zone(input: &str, zone_name: &ZoneName) -> Result<Self, ParseNameError> {
-        let trimmed = super::trim_presentation_name(input);
+    pub fn parse_in_zone(value: &str, zone_name: &ZoneName) -> Result<Self, ParseNameError> {
+        let trimmed = super::trim_presentation_name(value);
 
         if trimmed.trim_end_matches('.').is_empty() {
             return Err(ParseNameError::Empty);
@@ -60,13 +64,13 @@ impl OwnerName {
         }
     }
 
-    /// Parse an absolute name inside `zone`, even without a trailing root dot.
+    /// Parse an absolute name inside `zone_name`, even without a trailing root dot.
     /// Relative client input belongs to [`Self::parse_in_zone`].
     pub fn parse_absolute_in_zone(
-        input: &str,
+        value: &str,
         zone_name: &ZoneName,
     ) -> Result<Self, ParseNameError> {
-        let trimmed = super::trim_presentation_name(input);
+        let trimmed = super::trim_presentation_name(value);
 
         if trimmed == Self::APEX {
             return Ok(Self::apex());
@@ -74,7 +78,7 @@ impl OwnerName {
 
         let (labels, _) = decode_name_labels(trimmed)?;
 
-        relative_labels(&labels, zone_name.labels().as_slice())
+        relative_labels(&labels, &zone_name.labels())
             .map(Self)
             .ok_or(ParseNameError::OutsideZone)
     }
@@ -106,7 +110,7 @@ impl OwnerName {
         self.to_presentation()
     }
 
-    /// The wire form within `zone`: this owner's labels, the zone's, then the
+    /// The wire form within `zone_name`: this owner's labels, the zone's, then the
     /// root.
     pub fn to_wire(&self, zone_name: &ZoneName) -> Result<Vec<u8>, ParseNameError> {
         let zone_labels = zone_name.labels();
@@ -118,7 +122,7 @@ impl OwnerName {
         )
     }
 
-    /// The absolute form within `zone`.
+    /// The absolute form within `zone_name`.
     pub fn to_fqdn(&self, zone_name: &ZoneName) -> String {
         if self.is_apex() {
             return zone_name.to_fqdn();
@@ -238,9 +242,8 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
             }
             '.' => labels.push(mem::take(&mut label)),
             '\\' => match chars.peek() {
-                None => return Err(ParseNameError::DanglingEscape),
-                Some(d) if d.is_ascii_digit() => {
-                    let mut octet: u32 = 0;
+                Some(digit) if digit.is_ascii_digit() => {
+                    let mut octet = 0u32;
 
                     for _ in 0..3 {
                         let digit = chars
@@ -254,12 +257,13 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
                 }
                 Some(&escaped) => {
                     chars.next();
-                    let mut buffer = [0u8; 4];
+                    let mut buffer = [0; 4];
                     label.extend_from_slice(escaped.encode_utf8(&mut buffer).as_bytes());
                 }
+                None => return Err(ParseNameError::DanglingEscape),
             },
             ch => {
-                let mut buffer = [0u8; 4];
+                let mut buffer = [0; 4];
                 label.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
             }
         }
@@ -285,7 +289,7 @@ fn classify_owner_label(label: &[u8]) -> Result<(), ParseNameError> {
 /// Check the DNS wire-length limit in RFC 1035, Section 2.3.4, including each label's length
 /// octet and the root terminator.
 fn classify_wire_len(owner: &[Vec<u8>], zone: &[Vec<u8>]) -> Result<(), ParseNameError> {
-    let wire_len: usize = owner
+    let wire_len = owner
         .iter()
         .chain(zone)
         .map(|label| label.len() + 1)
@@ -298,10 +302,6 @@ fn classify_wire_len(owner: &[Vec<u8>], zone: &[Vec<u8>]) -> Result<(), ParseNam
 
     Ok(())
 }
-
-/// Escape separators, backslashes, the origin marker `@`, and master-file
-/// metacharacters (RFC 1035, Section 5.1).
-const ESCAPED_IN_LABEL: &[u8] = b".\\@;()\"$";
 
 /// Escape a label without changing its octets; dots use decimal escapes so
 /// a stored dot is always a label boundary (RFC 1035, Section 5.1).

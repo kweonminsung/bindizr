@@ -1,17 +1,23 @@
 //! Error responses to messages without a question, over every DNS transport.
 
+use std::io;
+use std::net::UdpSocket;
+use std::time::Duration;
+
 use domain::base::iana::{Class, ExtendedErrorCode, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
 use domain::base::opt::exterr::ExtendedError;
 use domain::base::{Message, MessageBuilder, Ttl};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::{Algorithm, ClientTransaction};
+use reqwest::{Method, StatusCode};
+use serde_json::json;
 
 use super::{common, tls};
 use crate::common::dns::tsig;
-use crate::common::dns::tsig::KeyRole;
+use crate::common::dns::tsig::{KeyRole, SigningKey};
 use crate::common::{TestApp, TestAppOptions, dns};
 
-/// TSIG error metrics follow the final RCODE, including overflow fallback.
+/// Verify that TSIG error metrics follow the final RCODE, including overflow fallback.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tsig_error_metrics_follow_the_encoded_response() {
@@ -74,11 +80,11 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
                     },
                 )
             };
-            let mut labels = vec![format!("result=\"{outcome}\"")];
+            let mut labels = vec![format!(r#"result="{outcome}""#)];
 
             if metric == "bindizr_xfr_total" {
-                labels.push(format!("type=\"{}\"", qtype.to_string().to_lowercase()));
-                labels.push("transport=\"udp\"".to_string());
+                labels.push(format!(r#"type="{}""#, qtype.to_string().to_lowercase()));
+                labels.push(r#"transport="udp""#.to_string());
             }
 
             let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
@@ -126,7 +132,7 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
     }
 }
 
-/// UPDATE parse failures retain SERVFAIL when TSIG error encoding fails.
+/// Verify that UPDATE parse failures retain SERVFAIL when TSIG error encoding fails.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
@@ -148,7 +154,7 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
         "d".repeat(61),
     ))
     .unwrap();
-    let labels = ["result=\"servfail\""];
+    let labels = [r#"result="servfail""#];
 
     let before = common::counter(&app, "bindizr_nsupdate_requests_total", &labels).await;
 
@@ -191,19 +197,10 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
     );
 }
 
-/// Signed UDP AXFR encoding failures count as failed transfers.
+/// Verify that signed UDP AXFR encoding failures count as failed transfers.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn udp_axfr_counts_encoding_failure_before_truncation() {
-    use std::io;
-    use std::net::UdpSocket;
-    use std::time::Duration;
-
-    use reqwest::{Method, StatusCode};
-    use serde_json::json;
-
-    use crate::common::dns::tsig::SigningKey;
-
     let app = TestApp::start_local().await;
 
     let key_name = format!("{}.{}.{}.k", "d".repeat(63), "e".repeat(63), "f".repeat(63));
@@ -215,7 +212,7 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
             Some(json!({
                 "name": key_name,
                 "role_name": "admin",
-                "algorithm": "hmac-sha512",
+                "algorithm": "hmac-sha512"
             })),
         )
         .await;
@@ -235,8 +232,12 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
     .unwrap();
 
     for advertised in [512, 1232] {
-        let failed = ["type=\"axfr\"", "transport=\"udp\"", "result=\"failed\""];
-        let truncated = ["type=\"axfr\"", "transport=\"udp\"", "result=\"truncated\""];
+        let failed = [r#"type="axfr""#, r#"transport="udp""#, r#"result="failed""#];
+        let truncated = [
+            r#"type="axfr""#,
+            r#"transport="udp""#,
+            r#"result="truncated""#,
+        ];
 
         let failed_before = common::counter(&app, "bindizr_xfr_total", &failed).await;
         let truncated_before = common::counter(&app, "bindizr_xfr_total", &truncated).await;
@@ -245,22 +246,22 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
         builder.header_mut().set_id(5936);
         let mut question = builder.question();
         question.push((&qname, Rtype::AXFR)).unwrap();
-        let mut request = question.additional();
-        request
+        let mut query = question.additional();
+        query
             .opt(|opt| {
                 opt.set_udp_payload_size(advertised);
                 Ok(())
             })
             .unwrap();
         let client =
-            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut request, Time48::now())
+            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut query, Time48::now())
                 .unwrap();
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(1)))
             .unwrap();
         socket
-            .send_to(&request.finish(), ("127.0.0.1", app.dns_port()))
+            .send_to(&query.finish(), ("127.0.0.1", app.dns_port()))
             .unwrap();
         let mut response = vec![0; 4096];
         let received = socket.recv_from(&mut response);
@@ -298,7 +299,8 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
     }
 }
 
-/// UPDATE validation failures still use readable EDNS when their TSIG error exceeds 512 bytes.
+/// Verify that UPDATE validation failures still use readable EDNS when their TSIG error
+/// exceeds 512 bytes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn questionless_updates_use_readable_edns_for_tsig_errors() {
@@ -350,12 +352,13 @@ async fn questionless_updates_use_readable_edns_for_tsig_errors() {
             request.push((&owner, Class::ANY, Ttl::ZERO, tsig)).unwrap();
             let request = request.finish();
 
-            for wire in [
-                dns::exchange_udp(app.dns_port(), &request),
-                crate::common::exchange_tcp(app.dns_port(), &request),
-                crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app)),
+            for response in [
+                dns::exchange_udp(app.dns_port(), &request).unwrap(),
+                crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
+                crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
+                    .unwrap(),
             ] {
-                let response = Message::from_octets(wire.unwrap()).unwrap();
+                let response = Message::from_octets(response).unwrap();
 
                 assert!(response.as_slice().len() > 512);
                 assert!(response.as_slice().len() <= 1232);
@@ -379,7 +382,7 @@ async fn questionless_updates_use_readable_edns_for_tsig_errors() {
     }
 }
 
-/// A readable first question does not make a truncated later section usable.
+/// Verify that a readable first question does not make a truncated later section usable.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn unreadable_bodies_receive_header_only_responses_on_every_transport() {
@@ -396,10 +399,7 @@ async fn unreadable_bodies_receive_header_only_responses_on_every_transport() {
         builder.header_mut().set_opcode(opcode);
         let mut question = builder.question();
         question
-            .push((
-                dns::parse_name("example.com").unwrap(),
-                domain::base::Rtype::SOA,
-            ))
+            .push((dns::parse_name("example.com").unwrap(), Rtype::SOA))
             .unwrap();
         let complete = question.finish();
         let mut truncated_record = complete.clone();
@@ -416,21 +416,21 @@ async fn unreadable_bodies_receive_header_only_responses_on_every_transport() {
                 crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
                     .unwrap(),
             ] {
-                let message = Message::from_octets(response.as_slice()).unwrap();
+                let response = Message::from_octets(response).unwrap();
 
-                assert_eq!(message.header().id(), 6891);
-                assert_eq!(message.header().opcode(), opcode);
-                assert!(message.header().qr() && message.header().rd());
-                assert_eq!(message.header().rcode(), Rcode::FORMERR);
-                assert_eq!(response.len(), 12);
-                assert_eq!(message.header_counts().qdcount(), 0);
-                assert_eq!(message.header_counts().arcount(), 0);
+                assert_eq!(response.header().id(), 6891);
+                assert_eq!(response.header().opcode(), opcode);
+                assert!(response.header().qr() && response.header().rd());
+                assert_eq!(response.header().rcode(), Rcode::FORMERR);
+                assert_eq!(response.as_slice().len(), 12);
+                assert_eq!(response.header_counts().qdcount(), 0);
+                assert_eq!(response.header_counts().arcount(), 0);
             }
         }
     }
 }
 
-/// Readable Additional sections remain meaningful when QDCOUNT is zero.
+/// Verify that readable Additional sections remain meaningful when QDCOUNT is zero.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn questionless_queries_preserve_edns_and_tsig() {
@@ -475,22 +475,22 @@ async fn questionless_queries_preserve_edns_and_tsig() {
 
                     for (response, expected) in [
                         (
-                            dns::exchange_request(request.clone(), key, |wire| {
-                                dns::exchange_udp(app.dns_port(), wire)
+                            dns::exchange_request(request.clone(), key, |message| {
+                                dns::exchange_udp(app.dns_port(), message)
                             }),
                             plain_rcode,
                         ),
                         (
-                            dns::exchange_request(request.clone(), key, |wire| {
-                                crate::common::exchange_tcp(app.dns_port(), wire)
+                            dns::exchange_request(request.clone(), key, |message| {
+                                crate::common::exchange_tcp(app.dns_port(), message)
                             }),
                             plain_rcode,
                         ),
                         (
-                            dns::exchange_request(request, key, |wire| {
+                            dns::exchange_request(request, key, |message| {
                                 crate::common::exchange_xot(
                                     app.dns_tls_port(),
-                                    wire,
+                                    message,
                                     tls::dot_client(&app),
                                 )
                             }),
@@ -529,7 +529,7 @@ async fn questionless_queries_preserve_edns_and_tsig() {
     }
 }
 
-/// An unsupported opcode needs only a header, not a QUERY-shaped body.
+/// Verify that an unsupported opcode needs only a header, not a QUERY-shaped body.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn unsupported_opcodes_return_refusals_without_questions() {
@@ -556,20 +556,21 @@ async fn unsupported_opcodes_return_refusals_without_questions() {
 
         let request = request.finish();
 
-        for wire in [
-            dns::exchange_udp(app.dns_port(), &request),
-            crate::common::exchange_tcp(app.dns_port(), &request),
+        for response in [
+            dns::exchange_udp(app.dns_port(), &request).unwrap(),
+            crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
         ] {
-            let response = Message::from_octets(wire.unwrap()).unwrap();
+            let response = Message::from_octets(response).unwrap();
             assert_eq!(response.header().opcode(), Opcode::from_int(15));
             assert_eq!(response.header().rcode(), Rcode::NOTIMP);
             assert_eq!(response.header_counts().qdcount(), 0);
             assert_eq!(response.opt().is_some(), edns);
         }
 
-        let wire = crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
-            .unwrap();
-        let response = Message::from_octets(wire).unwrap();
+        let response =
+            crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
+                .unwrap();
+        let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::REFUSED);
         assert_eq!(response.header_counts().qdcount(), 0);
@@ -589,7 +590,7 @@ async fn unsupported_opcodes_return_refusals_without_questions() {
     }
 }
 
-/// TSIG validation precedes question-count, EDNS-version, and opcode refusals.
+/// Verify that TSIG validation precedes question-count, EDNS-version, and opcode refusals.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn questionless_tsig_failures_keep_their_specific_errors() {
@@ -647,16 +648,17 @@ async fn questionless_tsig_failures_keep_their_specific_errors() {
                     request[mac_end] ^= 1;
                 }
 
-                for wire in [
-                    dns::exchange_udp(app.dns_port(), &request),
-                    crate::common::exchange_tcp(app.dns_port(), &request),
+                for response in [
+                    dns::exchange_udp(app.dns_port(), &request).unwrap(),
+                    crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
                     crate::common::exchange_xot(
                         app.dns_tls_port(),
                         &request,
                         tls::dot_client(&app),
-                    ),
+                    )
+                    .unwrap(),
                 ] {
-                    let response = Message::from_octets(wire.unwrap()).unwrap();
+                    let response = Message::from_octets(response).unwrap();
 
                     assert_eq!(response.header().id(), 8945);
                     assert_eq!(response.header().opcode(), opcode);
@@ -701,7 +703,7 @@ async fn questionless_tsig_failures_keep_their_specific_errors() {
     }
 }
 
-/// A nonstandard opcode body cannot be mistaken for a malformed QUERY or TSIG.
+/// Verify that a nonstandard opcode body cannot be mistaken for a malformed QUERY or TSIG.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
@@ -720,20 +722,20 @@ async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
             request[4..6].copy_from_slice(&count.to_be_bytes());
             request.extend_from_slice(body);
 
-            for wire in [
-                dns::exchange_udp(app.dns_port(), &request),
-                crate::common::exchange_tcp(app.dns_port(), &request),
+            for response in [
+                dns::exchange_udp(app.dns_port(), &request).unwrap(),
+                crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
             ] {
-                let response = Message::from_octets(wire.unwrap()).unwrap();
+                let response = Message::from_octets(response).unwrap();
                 assert_eq!(response.header().rcode(), Rcode::NOTIMP);
                 assert_eq!(response.header_counts().qdcount(), 0);
                 assert_eq!(response.as_slice().len(), 12);
             }
 
-            let wire =
+            let response =
                 crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
                     .unwrap();
-            let response = Message::from_octets(wire).unwrap();
+            let response = Message::from_octets(response).unwrap();
 
             assert_eq!(response.header().rcode(), Rcode::REFUSED);
             assert_eq!(response.header_counts().qdcount(), 0);
@@ -742,7 +744,7 @@ async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
     }
 }
 
-/// Invalid OPT/TSIG metadata remains FORMERR even when no question is present.
+/// Verify that invalid OPT/TSIG metadata remains FORMERR even when no question is present.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn questionless_malformed_extensions_receive_formerr() {
@@ -789,12 +791,13 @@ async fn questionless_malformed_extensions_receive_formerr() {
             request[class_start..class_start + 2].copy_from_slice(&0u16.to_be_bytes());
         }
 
-        for wire in [
-            dns::exchange_udp(app.dns_port(), &request),
-            crate::common::exchange_tcp(app.dns_port(), &request),
-            crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app)),
+        for response in [
+            dns::exchange_udp(app.dns_port(), &request).unwrap(),
+            crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
+            crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
+                .unwrap(),
         ] {
-            let response = Message::from_octets(wire.unwrap()).unwrap();
+            let response = Message::from_octets(response).unwrap();
 
             assert_eq!(response.header().rcode(), Rcode::FORMERR);
             assert_eq!(response.header_counts().qdcount(), 0);
@@ -803,13 +806,14 @@ async fn questionless_malformed_extensions_receive_formerr() {
                 !response
                     .additional()
                     .unwrap()
-                    .any(|record| record.unwrap().rtype() == domain::base::Rtype::TSIG)
+                    .any(|record| record.unwrap().rtype() == Rtype::TSIG)
             );
         }
     }
 }
 
-/// A refused message leaves both framed transports available for another request.
+/// Verify that a refused message leaves both framed transports available for another
+/// request.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn questionless_refusals_allow_connection_reuse() {

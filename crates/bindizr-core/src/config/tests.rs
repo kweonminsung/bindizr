@@ -1,8 +1,6 @@
+use serde_json::json;
+
 use super::*;
-use crate::config;
-use crate::config::{BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel};
-use crate::dns::SoaInterval;
-use crate::dns::name::ZoneName;
 
 /// Deviations from the base config TOML; the default renders a minimal valid
 /// sqlite config.
@@ -96,17 +94,14 @@ fn from_toml_accepts_valid_config() {
 
     assert_eq!(parsed.api.listen_addr.to_string(), "127.0.0.1");
     assert_eq!(parsed.dns.listen_addr.to_string(), "127.0.0.1");
-    assert!(matches!(
-        parsed.database.database_type,
-        DatabaseType::Sqlite
-    ));
+    assert_eq!(parsed.database.database_type, DatabaseType::Sqlite);
     assert_eq!(parsed.api.listen_port, 3000);
     assert_eq!(parsed.dns.notify.retries, 4);
     assert_eq!(parsed.dns.notify.timeout_secs, 9);
     assert!(!parsed.dns.nsupdate.tsig_required);
 }
 
-/// Both front ends accept wildcard addresses as well as specific local addresses.
+/// Verify that both front ends accept wildcard addresses as well as specific local addresses.
 #[test]
 fn dns_listener_accepts_wildcard_and_specific_addresses() {
     for addr in [
@@ -154,7 +149,7 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.logging.format, LogFormat::Text);
 }
 
-/// Omitted fields and omitted sections produce the same listener and backend defaults.
+/// Verify that omitted fields and omitted sections produce the same listener and backend defaults.
 #[test]
 fn from_toml_defaults_listeners_backend_and_logging() {
     let minimal = "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n";
@@ -177,7 +172,8 @@ fn from_toml_defaults_listeners_backend_and_logging() {
     assert!(omitted.dns.nsupdate.tsig_required);
 }
 
-/// Environment variables can supply omitted settings before validation, including the database.
+/// Verify that environment variables can supply omitted settings before validation, including the
+/// database.
 #[test]
 fn from_toml_overrides_defaults_before_validation() {
     let parsed = Config::from_toml("", |name| {
@@ -209,7 +205,7 @@ fn from_toml_overrides_defaults_before_validation() {
     assert_eq!(parsed.logging.level, LogLevel::Debug);
 }
 
-/// Defaults do not turn an explicitly invalid value into a valid configuration.
+/// Verify that defaults do not turn an explicitly invalid value into a valid configuration.
 #[test]
 fn from_toml_rejects_empty_values_and_missing_database_location() {
     let base = "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n";
@@ -268,8 +264,7 @@ fn from_toml_rejects_an_unknown_key() {
 
     assert!(
         error.to_string().contains("unknown field `listen_prot`"),
-        "{}",
-        error
+        "{error}"
     );
 }
 
@@ -372,10 +367,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         Some("/tls/api.crt")
     );
     assert_eq!(overridden.api.tls.key_file.as_deref(), Some("/tls/api.key"));
-    assert!(matches!(
-        overridden.database.database_type,
-        DatabaseType::MySql
-    ));
+    assert_eq!(overridden.database.database_type, DatabaseType::MySql);
     assert_eq!(
         overridden.database.mysql.url,
         "mysql://user:p#ss&word@mysql:3306/bindizr"
@@ -409,7 +401,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.history.audit.max_days, 30);
     assert_eq!(overridden.history.transfer.save, SavedTransfers::Unserved);
     assert_eq!(overridden.history.transfer.max_days, 7);
-    assert!(matches!(overridden.logging.level, LogLevel::Info));
+    assert_eq!(overridden.logging.level, LogLevel::Info);
     assert_eq!(overridden.logging.format, LogFormat::Json);
 }
 
@@ -442,16 +434,13 @@ fn resolve_config_path_prefers_argument_then_env_then_default() {
     let env = |name: &str| (name == "BINDIZR_CONFIG_PATH").then(|| "/env/path.toml".to_string());
 
     assert_eq!(
-        config::resolve_config_path_with_env(Some("/arg/path.toml"), env),
+        resolve_config_path_with_env(Some("/arg/path.toml"), env),
         "/arg/path.toml"
     );
+    assert_eq!(resolve_config_path_with_env(None, env), "/env/path.toml");
     assert_eq!(
-        config::resolve_config_path_with_env(None, env),
-        "/env/path.toml"
-    );
-    assert_eq!(
-        config::resolve_config_path_with_env(None, |_| None),
-        BINDIZR_CONF_PATH
+        resolve_config_path_with_env(None, |_| None),
+        DEFAULT_CONFIG_PATH
     );
 }
 
@@ -479,24 +468,19 @@ fn from_toml_rejects_a_database_ca_file_without_a_verifying_mode() {
 /// Verify that the database TLS mode is spelled once across its forms.
 #[test]
 fn database_tls_mode_spells_itself_once() {
-    for (value, expected) in [
-        (DatabaseTlsMode::Disable, "disable"),
-        (DatabaseTlsMode::Prefer, "prefer"),
-        (DatabaseTlsMode::Require, "require"),
-        (DatabaseTlsMode::VerifyCa, "verify-ca"),
-        (DatabaseTlsMode::VerifyFull, "verify-full"),
+    for value in [
+        DatabaseTlsMode::Disable,
+        DatabaseTlsMode::Prefer,
+        DatabaseTlsMode::Require,
+        DatabaseTlsMode::VerifyCa,
+        DatabaseTlsMode::VerifyFull,
     ] {
-        assert_eq!(value.as_str(), expected);
-        assert_eq!(value.to_string(), expected);
-        assert_eq!(expected.parse::<DatabaseTlsMode>().unwrap(), value);
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
         assert_eq!(
-            serde_json::to_value(value).unwrap(),
-            serde_json::json!(expected)
-        );
-        assert_eq!(
-            serde_json::from_value::<DatabaseTlsMode>(serde_json::json!(expected)).unwrap(),
+            serde_json::from_value::<DatabaseTlsMode>(json!(value.as_str())).unwrap(),
             value
         );
+        assert_eq!(value.as_str().parse::<DatabaseTlsMode>().unwrap(), value);
     }
 }
 
@@ -512,8 +496,7 @@ fn from_toml_rejects_port_zero() {
 
     assert!(
         error.to_string().contains("dns.listen_port must not be 0"),
-        "{}",
-        error
+        "{error}"
     );
 
     let error = parse_config(&TestConfigToml {
@@ -524,8 +507,7 @@ fn from_toml_rejects_port_zero() {
 
     assert!(
         error.to_string().contains("api.listen_port must not be 0"),
-        "{}",
-        error
+        "{error}"
     );
 
     let error = parse_config(&TestConfigToml {
@@ -538,8 +520,7 @@ fn from_toml_rejects_port_zero() {
         error
             .to_string()
             .contains("dns.tls.listen_port must not be 0"),
-        "{}",
-        error
+        "{error}"
     );
 }
 
@@ -557,8 +538,7 @@ fn from_toml_rejects_the_ports_rfc_7858_reserves() {
         error
             .to_string()
             .contains("dns.listen_port must not be 853: it carries DNS over TLS"),
-        "{}",
-        error
+        "{error}"
     );
 
     let error = parse_config(&TestConfigToml {
@@ -571,8 +551,7 @@ fn from_toml_rejects_the_ports_rfc_7858_reserves() {
         error
             .to_string()
             .contains("dns.tls.listen_port must not be 53: it carries cleartext DNS"),
-        "{}",
-        error
+        "{error}"
     );
 }
 
@@ -590,8 +569,7 @@ fn from_toml_rejects_a_tls_half_pair() {
         error
             .to_string()
             .contains("api.tls.cert_file needs api.tls.key_file"),
-        "{}",
-        error
+        "{error}"
     );
 
     let error = parse_config(&TestConfigToml {
@@ -604,8 +582,7 @@ fn from_toml_rejects_a_tls_half_pair() {
         error
             .to_string()
             .contains("api.tls.key_file needs api.tls.cert_file"),
-        "{}",
-        error
+        "{error}"
     );
 
     let error = parse_config(&TestConfigToml {
@@ -618,8 +595,7 @@ fn from_toml_rejects_a_tls_half_pair() {
         error
             .to_string()
             .contains("dns.tls.cert_file needs dns.tls.key_file"),
-        "{}",
-        error
+        "{error}"
     );
 
     let error = parse_config(&TestConfigToml {
@@ -632,8 +608,7 @@ fn from_toml_rejects_a_tls_half_pair() {
         error
             .to_string()
             .contains("dns.tls.key_file needs dns.tls.cert_file"),
-        "{}",
-        error
+        "{error}"
     );
 }
 
@@ -651,8 +626,7 @@ fn from_toml_rejects_listeners_sharing_a_port() {
         error
             .to_string()
             .contains("api and dns cannot share port 5353"),
-        "{}",
-        error
+        "{error}"
     );
 }
 
@@ -681,8 +655,7 @@ fn from_toml_checks_the_tls_port_only_while_the_listener_is_on() {
         error
             .to_string()
             .contains("api and dns.tls cannot share port 853"),
-        "{}",
-        error
+        "{error}"
     );
 
     // The TLS listener shares the DNS address, so equal ports always collide.
@@ -697,8 +670,7 @@ fn from_toml_checks_the_tls_port_only_while_the_listener_is_on() {
         error
             .to_string()
             .contains("dns and dns.tls cannot share port 8853"),
-        "{}",
-        error
+        "{error}"
     );
 }
 
@@ -784,7 +756,7 @@ fn is_catalog_zone_matches_the_configured_name_ignoring_case() {
     assert!(!parsed.dns.is_catalog_zone("catalog.prod.example"));
 }
 
-/// Match equivalent DNS escapes without confusing in-label dots with boundaries.
+/// Verify that equivalent DNS escapes match without in-label dots being confused with boundaries.
 #[test]
 fn is_catalog_zone_compares_decoded_labels() {
     for (configured, question, other) in [
@@ -816,7 +788,7 @@ fn is_catalog_zone_compares_decoded_labels() {
     }
 }
 
-/// Reject catalog names whose generated member owners exceed the DNS wire limit.
+/// Verify that catalog names whose generated member owners exceed the DNS wire limit are rejected.
 #[test]
 fn from_toml_checks_catalog_member_owner_lengths_after_overrides() {
     for last_len in [22, 23, 53, 54, 61] {
@@ -938,43 +910,33 @@ fn dns_validate_rejects_a_zero_zone_default() {
     );
 }
 
-/// Verify the canonical spelling and round-trip of every DatabaseType variant.
+/// Verify that every DatabaseType variant keeps one canonical spelling and round-trips.
 #[test]
 fn database_type_spells_itself_once() {
-    for (value, expected) in [
-        (DatabaseType::MySql, "mysql"),
-        (DatabaseType::Sqlite, "sqlite"),
-        (DatabaseType::Postgres, "postgresql"),
+    for value in [
+        DatabaseType::MySql,
+        DatabaseType::Sqlite,
+        DatabaseType::Postgres,
     ] {
-        assert_eq!(value.as_str(), expected);
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
         assert_eq!(
-            serde_json::to_value(value).unwrap(),
-            serde_json::json!(expected)
-        );
-        assert_eq!(
-            serde_json::from_value::<DatabaseType>(serde_json::json!(expected)).unwrap(),
+            serde_json::from_value::<DatabaseType>(json!(value.as_str())).unwrap(),
             value
         );
+        assert_eq!(value.as_str().parse::<DatabaseType>().unwrap(), value);
     }
 }
 
-/// Verify the canonical spelling and round-trip of every SavedTransfers variant.
+/// Verify that every SavedTransfers variant keeps one canonical spelling and round-trips.
 #[test]
 fn saved_transfers_spells_itself_once() {
-    for (value, expected) in [
-        (SavedTransfers::All, "all"),
-        (SavedTransfers::Unserved, "unserved"),
-    ] {
-        assert_eq!(value.as_str(), expected);
-        assert_eq!(expected.parse::<SavedTransfers>().unwrap(), value);
+    for value in [SavedTransfers::All, SavedTransfers::Unserved] {
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
         assert_eq!(
-            serde_json::to_value(value).unwrap(),
-            serde_json::json!(expected)
-        );
-        assert_eq!(
-            serde_json::from_value::<SavedTransfers>(serde_json::json!(expected)).unwrap(),
+            serde_json::from_value::<SavedTransfers>(json!(value.as_str())).unwrap(),
             value
         );
+        assert_eq!(value.as_str().parse::<SavedTransfers>().unwrap(), value);
     }
 }
 
@@ -996,41 +958,35 @@ fn from_toml_reads_history_tables() {
     assert_eq!(parsed.history.transfer.max_days, 14);
 }
 
-/// Verify the canonical spelling and round-trip of every LogFormat variant.
+/// Verify that every LogFormat variant keeps one canonical spelling and round-trips.
 #[test]
 fn log_format_spells_itself_once() {
-    for (value, expected) in [(LogFormat::Text, "text"), (LogFormat::Json, "json")] {
-        assert_eq!(value.as_str(), expected);
+    for value in [LogFormat::Text, LogFormat::Json] {
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
         assert_eq!(
-            serde_json::to_value(value).unwrap(),
-            serde_json::json!(expected)
-        );
-        assert_eq!(
-            serde_json::from_value::<LogFormat>(serde_json::json!(expected)).unwrap(),
+            serde_json::from_value::<LogFormat>(json!(value.as_str())).unwrap(),
             value
         );
+        assert_eq!(value.as_str().parse::<LogFormat>().unwrap(), value);
     }
 }
 
-/// Verify the canonical spelling and round-trip of every LogLevel variant.
+/// Verify that every LogLevel variant keeps one canonical spelling and round-trips.
 #[test]
 fn log_level_spells_itself_once() {
-    for (value, expected) in [
-        (LogLevel::Trace, "trace"),
-        (LogLevel::Debug, "debug"),
-        (LogLevel::Info, "info"),
-        (LogLevel::Warn, "warn"),
-        (LogLevel::Error, "error"),
+    for value in [
+        LogLevel::Trace,
+        LogLevel::Debug,
+        LogLevel::Info,
+        LogLevel::Warn,
+        LogLevel::Error,
     ] {
-        assert_eq!(value.as_str(), expected);
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
         assert_eq!(
-            serde_json::to_value(value).unwrap(),
-            serde_json::json!(expected)
-        );
-        assert_eq!(
-            serde_json::from_value::<LogLevel>(serde_json::json!(expected)).unwrap(),
+            serde_json::from_value::<LogLevel>(json!(value.as_str())).unwrap(),
             value
         );
+        assert_eq!(value.as_str().parse::<LogLevel>().unwrap(), value);
     }
 }
 
@@ -1048,8 +1004,7 @@ fn from_toml_requires_the_tls_listener_to_require_tls() {
         error
             .to_string()
             .contains("dns.transfer.require_tls needs dns.tls.cert_file and dns.tls.key_file"),
-        "{}",
-        error
+        "{error}"
     );
 
     let parsed = parse_config(&TestConfigToml {
@@ -1061,7 +1016,7 @@ fn from_toml_requires_the_tls_listener_to_require_tls() {
     assert!(parsed.dns.transfer.require_tls);
 }
 
-/// Verify the TCP limits and the `[dns.import]` block, their bounds, and
+/// Verify that the TCP limits and the `[dns.import]` block are read with their bounds and
 /// their environment variables.
 #[test]
 fn from_toml_reads_the_tcp_limits_and_the_import_block() {

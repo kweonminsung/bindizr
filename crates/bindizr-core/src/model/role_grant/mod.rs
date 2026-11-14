@@ -153,7 +153,7 @@ impl Action {
 
     /// The names an action parses from, for messages that list them.
     pub fn supported_names() -> Vec<&'static str> {
-        Self::ALL.iter().map(|action| action.as_str()).collect()
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 
@@ -292,7 +292,7 @@ impl RoleZoneScope {
 impl From<Option<ZoneId>> for RoleZoneScope {
     /// Read the row form, where NULL means all zones.
     fn from(zone_id: Option<ZoneId>) -> Self {
-        zone_id.map_or(Self::All, RoleZoneScope::Zone)
+        zone_id.map_or(Self::All, Self::Zone)
     }
 }
 

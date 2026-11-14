@@ -1,4 +1,5 @@
 //! Secondary SOA status and transfer history.
+
 use std::collections::HashMap;
 use std::net::IpAddr;
 
@@ -16,10 +17,7 @@ use crate::{Context, secondary, transfer};
 impl From<ProbeSoaError> for ServiceError {
     /// Preserve probe setup failures as internal error sources.
     fn from(error: ProbeSoaError) -> Self {
-        Self::Internal {
-            message: error.to_string(),
-            source: Some(Box::new(error)),
-        }
+        Self::internal_with_source(error.to_string(), error)
     }
 }
 
@@ -84,7 +82,7 @@ pub async fn probe_secondaries(
         targets.insert(task.id(), (index, address));
     }
 
-    let mut probes = Vec::new();
+    let mut statuses = Vec::new();
 
     // The set owns every exchange, including when this request is cancelled.
     while let Some(result) = tasks.join_next_with_id().await {
@@ -108,11 +106,11 @@ pub async fn probe_secondaries(
                 last_transfer: None,
             },
         };
-        probes.push((*index, status));
+        statuses.push((*index, status));
     }
 
-    probes.sort_unstable_by_key(|(index, _)| *index);
-    Ok(probes.into_iter().map(|(_, probe)| probe).collect())
+    statuses.sort_unstable_by_key(|(index, _)| *index);
+    Ok(statuses.into_iter().map(|(_, status)| status).collect())
 }
 
 /// Probe one secondary and attach its serial status and transfer history.
@@ -132,14 +130,14 @@ pub async fn probe_secondary(
 async fn attach_last_transfer(
     cx: &Context,
     zone_name: &ZoneName,
-    mut probe: SecondaryStatusResponse,
+    mut status: SecondaryStatusResponse,
     clients: &[IpAddr],
 ) -> SecondaryStatusResponse {
     if clients.is_empty() {
-        return probe;
+        return status;
     }
 
-    probe.last_transfer =
+    status.last_transfer =
         match transfer::find_by_clients_and_zone_name(cx, clients, zone_name).await {
             Ok(transfer) => transfer.as_ref().map(TransferResponse::from),
             Err(error) => {
@@ -148,7 +146,7 @@ async fn attach_last_transfer(
             }
         };
 
-    probe
+    status
 }
 
 #[cfg(test)]

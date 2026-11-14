@@ -4,8 +4,8 @@ use sqlx::{Postgres, Transaction};
 
 use crate::error::DatabaseError;
 
-/// Store a catalog digest and advance its serial when the digest changes in the current
-/// transaction.
+/// Upsert the catalog digest, advancing the serial only when `digest` changed;
+/// return the serial in effect after the upsert.
 pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, Postgres>,
     name: &ZoneName,
@@ -14,7 +14,7 @@ pub(crate) async fn upsert_tx(
 ) -> Result<Serial, DatabaseError> {
     // Advance the catalog serial only when the digest changes, so secondaries
     // re-transfer on real changes; past the maximum it wraps to one (RFC 2136, Section 7.11).
-    sqlx::query_scalar::<_, Serial>(
+    let serial = sqlx::query_scalar::<_, Serial>(
         r#"
         INSERT INTO catalog_zones (name, digest, serial)
         VALUES ($1, $2, $3)
@@ -33,6 +33,7 @@ pub(crate) async fn upsert_tx(
     .bind(digest)
     .bind(base_serial)
     .fetch_one(&mut **tx)
-    .await
-    .map_err(DatabaseError::from)
+    .await?;
+
+    Ok(serial)
 }

@@ -220,10 +220,21 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
 async fn prune_older_than_keeps_the_newest_row_of_each_client_and_zone() {
     let (cx, zone_ids) = context(SavedTransfers::All, &["a.test", "b.test"]).await;
     let now = Utc::now();
-    let (a, b) = (zone_ids[0], zone_ids[1]);
+    let (a_zone_id, b_zone_id) = (zone_ids[0], zone_ids[1]);
 
     // a.test has a recent transfer; b.test's newest is older than the cutoff.
-    save_at(&cx, now, &[(a, 40), (b, 35), (a, 30), (b, 20), (a, 1)]).await;
+    save_at(
+        &cx,
+        now,
+        &[
+            (a_zone_id, 40),
+            (b_zone_id, 35),
+            (a_zone_id, 30),
+            (b_zone_id, 20),
+            (a_zone_id, 1),
+        ],
+    )
+    .await;
 
     let cutoff = now - Duration::days(10);
     let pruned = bindizr_db::transfer_log::prune_older_than(cx.db(), cutoff)

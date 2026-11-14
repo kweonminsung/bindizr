@@ -68,7 +68,7 @@ impl AuditEntity {
 
     /// The names an entity parses from, for messages that list them.
     pub fn supported_names() -> Vec<&'static str> {
-        Self::ALL.iter().map(|entity| entity.as_str()).collect()
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 

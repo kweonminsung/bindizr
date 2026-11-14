@@ -1,4 +1,3 @@
-use std::io::ErrorKind;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{io, iter};
@@ -57,7 +56,7 @@ async fn framing_accepts_connection_close_between_messages() {
     // transfers reads as EOF rather than a malformed length prefix.
     let error = read(b"").await.unwrap_err();
 
-    assert!(matches!(error, DnsError::PeerClosed), "{error:?}");
+    assert!(matches!(&error, DnsError::PeerClosed), "{error:?}");
 }
 
 /// An `AsyncRead` whose peer left without close_notify, as rustls
@@ -72,13 +71,13 @@ impl AsyncRead for AbruptEof {
         _buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         Poll::Ready(Err(io::Error::new(
-            ErrorKind::UnexpectedEof,
+            io::ErrorKind::UnexpectedEof,
             "peer closed connection without sending TLS close_notify",
         )))
     }
 }
 
-/// An abrupt TLS EOF is a transport failure even between frames.
+/// Verify that an abrupt TLS EOF is a transport failure even between frames.
 #[tokio::test]
 async fn framing_rejects_peer_close_without_close_notify() {
     let error = read_tcp_message(&mut AbruptEof, &mut Vec::new())
@@ -86,7 +85,7 @@ async fn framing_rejects_peer_close_without_close_notify() {
         .unwrap_err();
 
     assert!(
-        matches!(error, DnsError::Io(ref source) if source.kind() == ErrorKind::UnexpectedEof),
+        matches!(&error, DnsError::Io(source) if source.kind() == io::ErrorKind::UnexpectedEof),
         "{error:?}"
     );
 }
@@ -126,12 +125,10 @@ async fn framing_times_out_when_peer_does_not_read() {
     // One byte of buffer, and nothing draining the far end.
     let (mut writer, _unread) = tokio::io::duplex(1);
 
-    let error = write_frame(&mut writer, &vec![0u8; 4096])
-        .await
-        .expect_err("the write should have timed out");
+    let error = write_frame(&mut writer, &vec![0; 4096]).await.unwrap_err();
 
     assert!(
         matches!(&error, DnsError::WriteTimeout { secs: 30 }),
-        "{error}"
+        "{error:?}"
     );
 }

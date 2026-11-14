@@ -19,6 +19,8 @@ pub struct ApiToken {
     /// The role whose grants decide what the token may do; the token itself carries no rights.
     pub role_id: RoleId,
     pub created_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>, // None means the token never expires
-    pub last_used_at: Option<DateTime<Utc>>, // None until the token is first used
+    /// `None` means the token never expires.
+    pub expires_at: Option<DateTime<Utc>>,
+    /// `None` until the token is first used.
+    pub last_used_at: Option<DateTime<Utc>>,
 }

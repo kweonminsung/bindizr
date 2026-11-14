@@ -42,8 +42,8 @@ impl Ttl {
 
 impl From<u32> for Ttl {
     /// Take a wire TTL without narrowing its range.
-    fn from(ttl: u32) -> Self {
-        Self::from_secs(ttl)
+    fn from(value: u32) -> Self {
+        Self::from_secs(value)
     }
 }
 
@@ -51,8 +51,8 @@ impl TryFrom<i32> for Ttl {
     type Error = ConvertTtlError;
 
     /// Accept a nonnegative signed 32-bit value.
-    fn try_from(ttl: i32) -> Result<Self, Self::Error> {
-        Self::try_from(i64::from(ttl))
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Self::try_from(i64::from(value))
     }
 }
 
@@ -60,13 +60,13 @@ impl TryFrom<i64> for Ttl {
     type Error = ConvertTtlError;
 
     /// Validate a request or stored value against the unsigned wire range.
-    fn try_from(ttl: i64) -> Result<Self, Self::Error> {
-        if ttl < 0 {
-            return Err(ConvertTtlError::Negative { ttl });
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        if value < 0 {
+            return Err(ConvertTtlError::Negative { ttl: value });
         }
-        u32::try_from(ttl)
-            .map(Ttl)
-            .map_err(|_| ConvertTtlError::TooLarge { ttl })
+        u32::try_from(value)
+            .map(Self)
+            .map_err(|_| ConvertTtlError::TooLarge { ttl: value })
     }
 }
 
@@ -99,7 +99,7 @@ impl utoipa::PartialSchema for Ttl {
         ObjectBuilder::new()
             .schema_type(Type::Integer)
             .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
-            .minimum(Some(0_u64))
+            .minimum(Some(0u64))
             .maximum(Some(u64::from(Self::MAX.as_secs())))
             .examples([serde_json::json!(3600)])
             .into()
@@ -150,9 +150,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::Ttl;
+    use super::*;
 
-    /// TTL conversion preserves every boundary of the unsigned wire range.
+    /// Verify that TTL conversion preserves every boundary of the unsigned wire range.
     #[test]
     fn ttl_preserves_unsigned_boundaries() {
         for value in [0, 2_147_483_647, 2_147_483_648, u32::MAX] {

@@ -8,31 +8,31 @@ use crate::dns::name::ZoneName;
 use crate::dns::query::TransferRecord;
 use crate::dns::record::Rdata;
 
-/// Preserve TXT octets that cannot be represented as UTF-8 segments.
+/// Verify that TXT octets that cannot be represented as UTF-8 segments are preserved.
 #[test]
 fn txt_preserves_non_utf8_octets() {
     let parsed = ParsedZoneFile::parse(
         r#"weird IN TXT "\255\254""#,
         &ZoneName::parse("example.com").unwrap(),
-        Ttl::try_from(3600).unwrap(),
+        Ttl::from_secs(3600),
     );
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(
         parsed.records[0].value,
-        ZoneFileValue::Rdata(r#""\255\254""#.into())
+        ZoneFileValue::Rdata(r#""\255\254""#.to_string())
     );
 }
 
-/// Read a known type spelled generically as that type (RFC 3597, Section 5),
-/// and refuse octets that do not encode it.
+/// Verify that a known type spelled generically is read as that type (RFC 3597, Section 5),
+/// and octets that do not encode it are refused.
 #[test]
 fn parse_reads_generic_rdata_of_known_types() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     let parsed = ParsedZoneFile::parse(
         "www IN A \\# 4 c0000201\nmail IN MX \\# 20 000a 046d61696c 076578616d706c65 03636f6d 00\n",
-        &zone,
-        Ttl::try_from(3600).unwrap(),
+        &zone_name,
+        Ttl::from_secs(3600),
     );
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
@@ -48,11 +48,7 @@ fn parse_reads_generic_rdata_of_known_types() {
     );
     assert_eq!(parsed.records[1].priority, Some(10));
 
-    let parsed = ParsedZoneFile::parse(
-        "www IN A \\# 3 c00002\n",
-        &zone,
-        Ttl::try_from(3600).unwrap(),
-    );
+    let parsed = ParsedZoneFile::parse("www IN A \\# 3 c00002\n", &zone_name, Ttl::from_secs(3600));
 
     assert!(
         parsed
@@ -72,7 +68,7 @@ fn parse_error_names_the_line_of_the_submitted_text() {
     let parsed = ParsedZoneFile::parse(
         "ok IN A 192.0.2.1\nbad !!! IN A 192.0.2.2\n",
         &ZoneName::parse("example.com").unwrap(),
-        Ttl::try_from(3600).unwrap(),
+        Ttl::from_secs(3600),
     );
 
     assert!(
@@ -84,11 +80,11 @@ fn parse_error_names_the_line_of_the_submitted_text() {
 
 /// Verify that TXT UTF8 multi segment parses as segments.
 #[test]
-fn txt_parser_preserves_utf8_segments() {
+fn txt_preserves_utf8_segments() {
     let parsed = ParsedZoneFile::parse(
         "multi IN TXT \"foo\" \"bar\"\n",
         &ZoneName::parse("example.com").unwrap(),
-        Ttl::try_from(3600).unwrap(),
+        Ttl::from_secs(3600),
     );
 
     assert!(
@@ -100,12 +96,13 @@ fn txt_parser_preserves_utf8_segments() {
         .records
         .iter()
         .find(|record| record.record_type == RecordType::Txt)
-        .expect("a TXT record");
+        .unwrap();
 
-    match &record.value {
-        ZoneFileValue::Segments(segments) => assert_eq!(segments, &["foo", "bar"]),
-        other => panic!("expected segments, got {other:?}"),
-    }
+    let ZoneFileValue::Segments(segments) = &record.value else {
+        panic!("expected segments, got {:?}", record.value);
+    };
+
+    assert_eq!(segments, &["foo", "bar"]);
 }
 
 /// Verify that a TTL written with a BIND unit suffix is refused on its line.
@@ -116,7 +113,7 @@ fn zonefile_rejects_ttl_units() {
     let parsed = ParsedZoneFile::parse(
         "www IN A 192.0.2.1\nmail 1h IN A 192.0.2.2\n",
         &ZoneName::parse("example.com").unwrap(),
-        Ttl::try_from(300).unwrap(),
+        Ttl::from_secs(300),
     );
 
     assert_eq!(parsed.records.len(), 1);
@@ -128,7 +125,7 @@ fn zonefile_rejects_ttl_units() {
     );
 }
 
-/// Verify zone-file parsing of NAPTR presentation data.
+/// Verify that zone-file parsing preserves NAPTR presentation data.
 #[test]
 fn zonefile_preserves_naptr_presentation() {
     // `domain` renders a root replacement as `..`, so the value comes from
@@ -139,7 +136,7 @@ fn zonefile_preserves_naptr_presentation() {
             "sip IN NAPTR 100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM.\n",
         ),
         &ZoneName::parse("example.com").unwrap(),
-        Ttl::try_from(300).unwrap(),
+        Ttl::from_secs(300),
     );
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
@@ -165,7 +162,7 @@ fn zonefile_rejects_non_apex_soa() {
         "other.example. IN SOA ns1.other.example. host.other.example. (99 1 2 3 4)\n\
          www IN A 192.0.2.1\n",
         &ZoneName::parse("example.com").unwrap(),
-        Ttl::try_from(3600).unwrap(),
+        Ttl::from_secs(3600),
     );
 
     assert!(
@@ -184,10 +181,10 @@ fn zonefile_rejects_non_apex_soa() {
     let parsed = ParsedZoneFile::parse(
         "@ IN SOA ns1.example.com. host.example.com. (99 1 2 3 4)\n",
         &ZoneName::parse("example.com").unwrap(),
-        Ttl::try_from(3600).unwrap(),
+        Ttl::from_secs(3600),
     );
 
-    assert_eq!(parsed.soa.expect("apex SOA").serial, Serial::from(99));
+    assert_eq!(parsed.soa.unwrap().serial, Serial::from(99));
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
 
     // Two apex SOAs leave the serial and timers ambiguous, so taking the first
@@ -196,7 +193,7 @@ fn zonefile_rejects_non_apex_soa() {
         "@ IN SOA ns1.example.com. host.example.com. (99 1 2 3 4)\n\
          @ IN SOA ns2.example.com. host.example.com. (7 1 2 3 4)\n",
         &ZoneName::parse("example.com").unwrap(),
-        Ttl::try_from(3600).unwrap(),
+        Ttl::from_secs(3600),
     );
 
     assert!(
@@ -229,10 +226,10 @@ fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
     }
 }
 
-/// Preserve root, escaped-dot, and mixed-case targets across import sources.
+/// Verify that root, escaped-dot, and mixed-case targets are preserved across import sources.
 #[test]
 fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     for (kind, rtype) in [
         ("NS", Rtype::NS),
@@ -242,10 +239,10 @@ fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
     ] {
         for target in [".", r"\046.", "Mixed.Example.NET."] {
             let text = format!("target.example.com. 300 IN {kind} {target}\n");
-            let parsed = ParsedZoneFile::parse(&text, &zone, Ttl::try_from(300).unwrap());
+            let parsed = ParsedZoneFile::parse(&text, &zone_name, Ttl::from_secs(300));
             let transferred = ParsedZoneFile::from_transfer(
                 &[transfer_record("target.example.com.", rtype, target)],
-                &zone,
+                &zone_name,
             );
 
             assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
@@ -260,7 +257,7 @@ fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
     }
 }
 
-/// Keep the opening SOA and discard its closing delimiter.
+/// Verify that the opening SOA is kept and its closing delimiter discarded.
 #[test]
 fn transfer_keeps_one_soa_for_creation() {
     // The closing SOA is a transfer delimiter, not a second zone definition.
@@ -274,13 +271,13 @@ fn transfer_keeps_one_soa_for_creation() {
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
-    assert_eq!(parsed.soa.expect("the opening SOA").serial, Serial::from(7));
+    assert_eq!(parsed.soa.unwrap().serial, Serial::from(7));
 
     // The SOA is the zone's own, never one of its records.
     assert_eq!(parsed.records.len(), 1);
 }
 
-/// Unsupported ordinary types reject the transferred zone.
+/// Verify that unsupported ordinary types reject the transferred zone.
 #[test]
 fn transfer_rejects_unsupported_ordinary_types() {
     let records = [
@@ -294,7 +291,7 @@ fn transfer_rejects_unsupported_ordinary_types() {
     assert!(parsed.errors.iter().any(|error| error.contains("HINFO")));
 }
 
-/// Wire conversion preserves label boundaries.
+/// Verify that wire conversion preserves label boundaries.
 #[test]
 fn transfer_preserves_escaped_names() {
     let records = [
@@ -341,10 +338,10 @@ fn transfer_preserves_escaped_names() {
     );
 }
 
-/// Preserve TXT segments and root targets across import sources.
+/// Verify that TXT segments and root targets are preserved across import sources.
 #[test]
 fn transfer_preserves_record_values_and_arbitrary_octets() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     let records = [
         transfer_record(
             "txt.example.com.",
@@ -359,7 +356,7 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         ),
         transfer_record("example.com.", Rtype::MX, "0 ."),
     ];
-    let parsed = ParsedZoneFile::from_transfer(&records, &zone);
+    let parsed = ParsedZoneFile::from_transfer(&records, &zone_name);
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(
@@ -383,7 +380,7 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         ZoneFileValue::Rdata(".".to_string())
     );
     assert_eq!(parsed.records[3].priority, Some(0));
-    let text = ParsedZoneFile::parse("@ 300 IN MX 0 .\n", &zone, Ttl::try_from(300).unwrap());
+    let text = ParsedZoneFile::parse("@ 300 IN MX 0 .\n", &zone_name, Ttl::from_secs(300));
 
     assert_eq!(text.records, parsed.records[3..]);
 
@@ -393,19 +390,19 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         ttl: 300,
         rdata: Rdata::new(vec![1, 255]).unwrap(),
     };
-    let parsed = ParsedZoneFile::from_transfer(&[invalid], &zone);
+    let parsed = ParsedZoneFile::from_transfer(&[invalid], &zone_name);
 
     assert!(parsed.errors.is_empty());
     assert_eq!(
         parsed.records[0].value,
-        ZoneFileValue::Rdata(r#""\255""#.into())
+        ZoneFileValue::Rdata(r#""\255""#.to_string())
     );
 }
 
-/// Match closing SOA case-insensitively without changing received RDATA.
+/// Verify that the closing SOA matches case-insensitively without received RDATA changing.
 #[test]
-fn transfer_import_accepts_case_varied_closing_soa() {
-    let zone = ZoneName::parse("example.com").unwrap();
+fn transfer_accepts_case_varied_closing_soa() {
+    let zone_name = ZoneName::parse("example.com").unwrap();
     let opening = transfer_record(
         "example.com.",
         Rtype::SOA,
@@ -422,7 +419,7 @@ fn transfer_import_accepts_case_varied_closing_soa() {
         transfer_record("example.com.", Rtype::NS, "ns1.example.com."),
         closing,
     ];
-    let parsed = ParsedZoneFile::from_transfer(&records, &zone);
+    let parsed = ParsedZoneFile::from_transfer(&records, &zone_name);
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert!(parsed.soa.is_some());

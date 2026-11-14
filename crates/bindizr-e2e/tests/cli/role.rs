@@ -3,7 +3,7 @@ use serde_json::Value;
 use crate::common;
 use crate::common::TestApp;
 
-/// Verify role grant creation, listing, and revocation through the CLI.
+/// Verify that the CLI creates, lists, and revokes role grants.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn role_grants_support_create_list_and_revoke_via_cli() {
@@ -50,19 +50,19 @@ async fn role_grants_support_create_list_and_revoke_via_cli() {
     assert!(grants.contains("record:read,record:create"), "{grants}");
 
     // The built-in role cannot be changed or deleted.
-    let grant_args = ["role", "grant", "admin", "--actions", "zone:read"];
+    let args = ["role", "grant", "admin", "--actions", "zone:read"];
 
-    let refused = app.run_cli(&grant_args, None).await;
-    common::assert_cli_failure_contains(&grant_args, &refused, "built in");
-    let delete_args = ["role", "delete", "admin"];
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "built in");
+    let args = ["role", "delete", "admin"];
 
-    let refused = app.run_cli(&delete_args, None).await;
-    common::assert_cli_failure_contains(&delete_args, &refused, "built in");
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "built in");
 
-    let revoke_args = ["role", "revoke", &role_name, "999999"];
+    let args = ["role", "revoke", &role_name, "999999"];
 
-    let refused = app.run_cli(&revoke_args, None).await;
-    common::assert_cli_failure_contains(&revoke_args, &refused, "not found");
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "not found");
 
     let revoked = app
         .run_cli_success(&["role", "revoke", &role_name, &grant_id], None)
@@ -80,11 +80,11 @@ async fn role_grants_support_create_list_and_revoke_via_cli() {
     assert!(!grants.contains(&zone_name), "{grants}");
 
     // The token in the role keeps it from being deleted.
-    let delete_args = ["role", "delete", &role_name];
+    let args = ["role", "delete", &role_name];
 
-    let refused = app.run_cli(&delete_args, None).await;
-    common::assert_cli_failure_contains(&delete_args, &refused, "still held");
-    common::assert_cli_failure_contains(&delete_args, &refused, &format!("API token {role_name}"));
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "still held");
+    common::assert_cli_failure_contains(&args, &refused, &format!("API token {role_name}"));
 
     // The role's own listing holds its token and no other.
     let listed = app

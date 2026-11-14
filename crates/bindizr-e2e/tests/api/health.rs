@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use reqwest::tls::Certificate;
-use reqwest::{Method, StatusCode};
+use reqwest::{Client, Method, StatusCode};
 
 use crate::common::{TestApp, TestAppOptions};
 
@@ -12,7 +12,8 @@ async fn health_reports_healthy_with_database_available() {
     let app = TestApp::start().await;
 
     let (status, body) = app.send_request(Method::GET, "/health", None).await;
-    assert_eq!(status, StatusCode::OK);
+
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["status"], "healthy");
 }
 
@@ -23,7 +24,8 @@ async fn home_reports_running_message() {
     let app = TestApp::start().await;
 
     let (status, body) = app.send_request(Method::GET, "/", None).await;
-    assert_eq!(status, StatusCode::OK);
+
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["message"], "bindizr API running");
 }
 
@@ -46,8 +48,11 @@ async fn api_tls_accepts_https_and_rejects_plain_http() {
     assert_eq!(body["status"], "healthy", "{body}");
 
     // A bearer token must not have a plaintext path to the same port.
-    let plain = reqwest::Client::new()
-        .get(app.base_url().replace("https://", "http://") + "/health")
+    let plain = Client::new()
+        .get(format!(
+            "{}/health",
+            app.base_url().replace("https://", "http://")
+        ))
         .timeout(Duration::from_secs(5))
         .send()
         .await;
@@ -55,7 +60,7 @@ async fn api_tls_accepts_https_and_rejects_plain_http() {
     assert!(plain.is_err(), "plain HTTP answered: {plain:?}");
 
     // An untrusted client is refused rather than downgraded.
-    let untrusted = reqwest::Client::new()
+    let untrusted = Client::new()
         .get(format!("{}/health", app.base_url()))
         .timeout(Duration::from_secs(5))
         .send()
@@ -79,21 +84,21 @@ async fn config_reload_replaces_api_certificate() {
     .await;
 
     let trusting = |cert: &Certificate| {
-        reqwest::Client::builder()
+        Client::builder()
             .add_root_certificate(cert.clone())
             .timeout(Duration::from_secs(5))
             .build()
             .unwrap()
     };
-    let started_with = reqwest::Certificate::from_der(app.tls_cert()).unwrap();
+    let started_with = Certificate::from_der(app.tls_cert()).unwrap();
 
     let renewed = app.renew_test_certificate();
 
-    let output = app.run_cli_success(&["config", "reload"], None).await;
+    let reloaded = app.run_cli_success(&["config", "reload"], None).await;
 
-    assert!(output.contains("api.tls certificate"), "{output}");
+    assert!(reloaded.contains("api.tls certificate"), "{reloaded}");
 
-    let renewed = reqwest::Certificate::from_der(&renewed).unwrap();
+    let renewed = Certificate::from_der(&renewed).unwrap();
 
     let response = trusting(&renewed)
         .get(format!("{}/health", app.base_url()))

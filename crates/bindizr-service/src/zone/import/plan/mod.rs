@@ -106,7 +106,7 @@ impl<'a> ImportPlan<'a> {
             }
         }
 
-        ImportPlan {
+        Self {
             deletes,
             ttl_deletes,
             adds,

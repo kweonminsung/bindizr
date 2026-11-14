@@ -1,3 +1,8 @@
+mod keys;
+mod reuse;
+mod rollover;
+mod signing;
+
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Duration, Utc};
@@ -11,6 +16,11 @@ use crate::model::dnssec_policy::DnssecDenial;
 use crate::model::dnssec_record::{DnssecRecord, DnssecRecordType};
 use crate::model::record::{Record, RecordType};
 use crate::model::zone::Zone;
+
+const RECORD_TYPE_SOA: i32 = 6;
+const RECORD_TYPE_NS: i32 = 2;
+const RECORD_TYPE_A: i32 = 1;
+const RECORD_TYPE_DS: i32 = 43;
 
 /// Build a signing-key fixture for the test.
 fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {
@@ -112,13 +122,3 @@ fn rrsigs_covering<'a>(
         })
         .collect()
 }
-
-const RECORD_TYPE_SOA: i32 = 6;
-const RECORD_TYPE_NS: i32 = 2;
-const RECORD_TYPE_A: i32 = 1;
-const RECORD_TYPE_DS: i32 = 43;
-
-mod keys;
-mod reuse;
-mod rollover;
-mod signing;

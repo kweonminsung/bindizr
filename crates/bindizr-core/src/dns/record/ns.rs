@@ -24,10 +24,10 @@ impl<'a> NsRecordValue<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::NsRecordValue;
+    use super::*;
     use crate::dns::name;
 
-    /// Root and a literal dot label retain different wire names.
+    /// Verify that the root and a literal dot label retain different wire names.
     #[test]
     fn ns_accepts_root_target_and_preserves_literal_dot() {
         for (input, expected) in [(".", vec![0]), (r"\.", vec![1, b'.', 0])] {

@@ -1,16 +1,19 @@
-use domain::base::Message;
-use domain::base::iana::{Class, Opcode, OptRcode, Rcode, TsigRcode};
+use std::str::FromStr;
+
+use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
+use domain::base::{Message, Name};
 use domain::rdata::tsig::Tsig;
+use domain::tsig::ClientTransaction;
 
 use super::*;
 use crate::dns::message::ResponseLimit;
-use crate::dns::tsig;
-use crate::model::tsig_key::TsigAlgorithm;
+use crate::dns::{message, tsig};
+use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
-/// A truncated zone or later section receives only a header, without an invented OPT.
+/// Verify that a truncated zone or later section receives only a header, without an invented OPT.
 #[test]
 fn unreadable_update_bodies_receive_header_only_formerr() {
-    let valid = super::parser::tests::build_minimal_update_with_ztype(6);
+    let valid = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
     let mut unreadable_zone = valid[..12].to_vec();
     unreadable_zone.extend_from_slice(&[5, b'x']);
     let mut unreadable_update = valid.clone();
@@ -38,7 +41,7 @@ fn unreadable_update_bodies_receive_header_only_formerr() {
 /// Verify that `build_response` echoes request header and question.
 #[test]
 fn build_response_echoes_request_header_and_question() {
-    let query = super::parser::tests::build_minimal_update_with_ztype(6);
+    let query = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
 
     let response = build_response(
         &query,
@@ -50,7 +53,7 @@ fn build_response_echoes_request_header_and_question() {
     )
     .unwrap();
 
-    let message = Message::from_octets(&response[..]).unwrap();
+    let message = Message::from_octets(response.as_slice()).unwrap();
     let header = message.header();
 
     assert_eq!(header.id(), 0x1234);
@@ -65,7 +68,7 @@ fn build_response_echoes_request_header_and_question() {
 /// carrying the extended rcode (RFC 6891, Section 6.1.1).
 #[test]
 fn build_response_echoes_an_opt_with_the_extended_rcode() {
-    let mut query = super::parser::tests::build_minimal_update_with_ztype(6);
+    let mut query = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
     query[10..12].copy_from_slice(&1u16.to_be_bytes());
     query.extend_from_slice(&[
         0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -81,8 +84,8 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
     )
     .unwrap();
 
-    let message = Message::from_octets(&response[..]).unwrap();
-    let opt = message.opt().expect("the OPT is echoed");
+    let message = Message::from_octets(response.as_slice()).unwrap();
+    let opt = message.opt().unwrap();
 
     assert_eq!(opt.rcode(message.header()), OptRcode::BADVERS);
     assert_eq!(opt.udp_payload_size(), 1232);
@@ -110,7 +113,7 @@ fn build_response_signs_with_request_mac_chain() {
     )
     .unwrap();
 
-    let message = Message::from_octets(&response[..]).unwrap();
+    let message = Message::from_octets(response.as_slice()).unwrap();
 
     assert_eq!(message.header().rcode(), Rcode::NOERROR);
     let tsig_record = message
@@ -160,16 +163,10 @@ fn build_response_signs_with_request_mac_chain() {
 
     assert_eq!(*data.mac(), &expected[..]);
 }
-/// UPDATE replies preserve MACs within the UDP limit.
+
+/// Verify that UPDATE replies preserve MACs within the UDP limit.
 #[test]
 fn update_responses_fit_udp_with_long_compressed_key_names() {
-    use std::str::FromStr;
-
-    use domain::base::{Name, Rtype};
-    use domain::tsig::ClientTransaction;
-
-    use crate::dns::message;
-    use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
     let name = format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
@@ -223,7 +220,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
             )
             .unwrap();
 
-            assert!(response.len() <= size.unwrap_or(512) as usize);
+            assert!(response.len() <= usize::from(size.unwrap_or(512)));
             client
                 .answer(
                     &mut Message::from_octets(response.clone()).unwrap(),

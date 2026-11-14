@@ -3,44 +3,11 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::{CATALOG_SOA_REFRESH, CatalogZone, Serial, SoaInterval, Ttl};
 use bindizr_core::model::zone::Zone;
-use ring::digest::{self, SHA256};
+use ring::digest;
+use ring::digest::SHA256;
 
 use crate::error::ServiceError;
 use crate::{Context, transaction};
-
-/// Refuse to start while a stored zone holds the configured catalog zone
-/// name, which a write would be rejected for taking.
-pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError> {
-    let name = &cx.config().dns.catalog_zone_name;
-
-    if bindizr_db::zone::get_by_name(cx.db(), name)
-        .await?
-        .is_some()
-    {
-        return Err(ServiceError::zone_conflict(format!(
-            "zone '{name}' has the name dns.catalog_zone_name gives the catalog; rename either one"
-        )));
-    }
-
-    Ok(())
-}
-
-/// Advance the catalog zone serial when its content `digest` has changed;
-/// a no-op otherwise.
-async fn advance_catalog_serial(
-    cx: &Context,
-    name: &ZoneName,
-    digest: &str,
-    base_serial: Serial,
-) -> Result<Serial, ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "failed to update catalog state").await?;
-
-    let apply_result = bindizr_db::catalog_zone::upsert_tx(&mut tx, name, digest, base_serial)
-        .await
-        .map_err(ServiceError::from);
-
-    transaction::finish_tx(tx, apply_result, "failed to update catalog state").await
-}
 
 /// TTL used by the generated catalog's records.
 const DEFAULT_TTL: Ttl = Ttl::from_secs(3600);
@@ -53,6 +20,40 @@ const SOA_EXPIRE: SoaInterval = SoaInterval::from_secs(86400);
 
 /// Negative caching TTL of the generated catalog.
 const MINIMUM_TTL: Ttl = Ttl::from_secs(60);
+
+/// Refuse to start while a stored zone holds the configured catalog zone
+/// name, which a write would be rejected for taking.
+pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError> {
+    let catalog_zone_name = &cx.config().dns.catalog_zone_name;
+
+    if bindizr_db::zone::get_by_name(cx.db(), catalog_zone_name)
+        .await?
+        .is_some()
+    {
+        return Err(ServiceError::zone_conflict(format!(
+            "zone '{catalog_zone_name}' has the name dns.catalog_zone_name gives the catalog; rename either one"
+        )));
+    }
+
+    Ok(())
+}
+
+/// Advance the catalog zone serial when its content `digest` has changed;
+/// a no-op otherwise.
+async fn advance_catalog_serial(
+    cx: &Context,
+    zone_name: &ZoneName,
+    digest: &str,
+    base_serial: Serial,
+) -> Result<Serial, ServiceError> {
+    let mut tx = transaction::begin_tx(cx, "failed to update catalog state").await?;
+
+    let apply_result = bindizr_db::catalog_zone::upsert_tx(&mut tx, zone_name, digest, base_serial)
+        .await
+        .map_err(ServiceError::from);
+
+    transaction::finish_tx(tx, apply_result, "failed to update catalog state").await
+}
 
 /// Refresh the catalog at startup from every enabled managed zone.
 pub async fn refresh_catalog(cx: &Context) -> Result<(CatalogZone, Vec<String>), ServiceError> {
@@ -68,10 +69,8 @@ pub(crate) async fn refresh_catalog_from_zones(
     let catalog_zone_name = &config.dns.catalog_zone_name;
     log::info!("Generating catalog zone: {catalog_zone_name}");
 
-    let all_zones = zones;
-
     // The catalog zone is not a member of itself.
-    let member_zones: Vec<String> = all_zones
+    let member_zones: Vec<String> = zones
         .iter()
         .map(|zone| zone.name.clone())
         .filter(|name| name != catalog_zone_name)
@@ -82,7 +81,7 @@ pub(crate) async fn refresh_catalog_from_zones(
 
     // The catalog zone is virtual (no DB row).
     let digest = catalog_digest(&member_zones);
-    let base_serial = all_zones
+    let base_serial = zones
         .iter()
         .map(|zone| zone.serial)
         .max()

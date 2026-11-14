@@ -3,7 +3,7 @@ use serde_json::Value;
 use crate::common;
 use crate::common::TestApp;
 
-/// Verify secondary management through the CLI.
+/// Verify that the CLI manages secondaries.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn secondary_supports_create_update_and_delete_via_cli() {
@@ -101,7 +101,10 @@ async fn secondary_supports_create_update_and_delete_via_cli() {
         .await;
     let cleared: Value = serde_json::from_str(&cleared).expect("CLI did not return valid JSON");
 
-    assert_eq!(cleared["secondary"]["notify_key_name"], Value::Null);
+    assert!(
+        cleared["secondary"]["notify_key_name"].is_null(),
+        "{cleared}"
+    );
 
     app.run_cli_success(&["tsig-key", "delete", &key_name], None)
         .await;

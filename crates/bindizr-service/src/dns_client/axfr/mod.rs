@@ -221,7 +221,7 @@ async fn connect_to_server(
 ) -> Result<(SocketAddr, TcpStream), FetchZoneError> {
     let entries = super::resolve_address_entries(server, import.timeout()).await;
 
-    let mut last = None;
+    let mut last_error = None;
 
     for (entry, result) in entries {
         let addrs = result.map_err(|source| FetchZoneError::Unresolved { entry, source })?;
@@ -230,7 +230,7 @@ async fn connect_to_server(
             match TcpStream::connect(addr).await {
                 Ok(stream) => return Ok((addr, stream)),
                 Err(error) => {
-                    last = Some(FetchZoneError::Server {
+                    last_error = Some(FetchZoneError::Server {
                         addr,
                         source: Box::new(FetchZoneError::Connect(error)),
                     });
@@ -239,7 +239,7 @@ async fn connect_to_server(
         }
     }
 
-    Err(last.unwrap_or(FetchZoneError::NoAddress))
+    Err(last_error.unwrap_or(FetchZoneError::NoAddress))
 }
 
 /// One AXFR on an open connection: read length-prefixed messages until the

@@ -12,9 +12,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::record;
-use super::record::RecordValue;
 use crate::error::ServiceError;
+use crate::types::record;
+use crate::types::record::RecordValue;
 
 /// One entry of a zone's serial history, with SOA metadata in API form
 /// (`rname` converted back from SOA mailbox form).
@@ -48,7 +48,7 @@ impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
     type Error = ServiceError;
 
     /// Render stored version metadata; an invalid SOA mailbox is a server fault.
-    fn try_from(version: &ZoneVersion) -> Result<Self, ServiceError> {
+    fn try_from(version: &ZoneVersion) -> Result<Self, Self::Error> {
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
             .map_err(|error| {
@@ -122,12 +122,23 @@ pub struct RecordDiffValueResponse {
 }
 
 /// Which way the records of one name and type differ between two serials.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RecordChange {
     Added,
     Removed,
     Changed,
+}
+
+impl RecordChange {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Added => "added",
+            Self::Removed => "removed",
+            Self::Changed => "changed",
+        }
+    }
 }
 
 impl fmt::Display for RecordChange {
@@ -213,43 +224,23 @@ pub struct RollbackZoneResponse {
     pub summary: RollbackZoneSummaryResponse,
 }
 
-impl RecordChange {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Added => "added",
-            Self::Removed => "removed",
-            Self::Changed => "changed",
-        }
-    }
-}
-
-impl serde::Serialize for RecordChange {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Verify the canonical spelling and round-trip of every RecordChange variant.
+    /// Verify that every `RecordChange` variant has one spelling across `as_str` and serde.
     #[test]
     fn record_change_spells_itself_once() {
-        for (value, expected) in [
-            (RecordChange::Added, "added"),
-            (RecordChange::Removed, "removed"),
-            (RecordChange::Changed, "changed"),
+        for value in [
+            RecordChange::Added,
+            RecordChange::Removed,
+            RecordChange::Changed,
         ] {
-            assert_eq!(value.as_str(), expected);
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<RecordChange>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<RecordChange>(json!(value.as_str())).unwrap(),
                 value
             );
         }

@@ -53,7 +53,7 @@ mod tests {
 
     use super::*;
 
-    /// A trigger remains visible even when the first subscriber arrives afterward.
+    /// Verify that a trigger remains visible even when the first subscriber arrives afterward.
     #[tokio::test]
     async fn waiter_observes_triggers_before_and_after_subscription() {
         let late = Shutdown::new();

@@ -221,13 +221,13 @@ impl ZoneChangeSet {
     /// Resolve one zone's operations against its current records; idempotent
     /// operations cancel out, so an effect-free request yields an empty set.
     pub(crate) fn compute(
-        operations: &ZoneOperations,
         zone: &Zone,
-        existing: &[Record],
+        operations: &ZoneOperations,
+        existing_records: &[Record],
     ) -> Result<Self, ServiceError> {
         let mut existing_by_key: HashMap<RecordKey, Vec<&Record>> = HashMap::new();
 
-        for record in existing {
+        for record in existing_records {
             existing_by_key
                 .entry(record.match_key())
                 .or_default()
@@ -305,7 +305,7 @@ impl ZoneChangeSet {
         let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
         let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
 
-        for record in existing {
+        for record in existing_records {
             if !deleted_ids.contains(&record.id) {
                 simulated_by_name
                     .entry(record.name.clone())

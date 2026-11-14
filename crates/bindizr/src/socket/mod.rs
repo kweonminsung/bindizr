@@ -1,12 +1,12 @@
 //! Unix-socket control channel between the CLI and the running daemon.
 
-use std::io;
-
-use tokio::net::UnixStream;
-
 pub(crate) mod client;
 pub(crate) mod server;
 pub(crate) mod types;
+
+use std::io;
+
+use tokio::net::UnixStream;
 
 /// Primary path for the daemon's Unix socket.
 pub(crate) const SOCKET_FILE_PATH: &str = "/run/bindizr/bindizr.sock";

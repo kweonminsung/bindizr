@@ -26,20 +26,20 @@ impl ResponseSigner {
     /// Sign one response with the suggested TSIG fudge (RFC 8945, Section 10).
     pub fn sign_response<T: Composer>(
         self,
-        message: &mut AdditionalBuilder<T>,
+        additional: &mut AdditionalBuilder<T>,
         now: Time48,
     ) -> Result<(), SignResponseError> {
-        self.sign_response_with_fudge(message, now, 300)
+        self.sign_response_with_fudge(additional, now, 300)
     }
 
     /// Sign one response with the caller's accepted clock tolerance.
     pub fn sign_response_with_fudge<T: Composer>(
         self,
-        message: &mut AdditionalBuilder<T>,
+        additional: &mut AdditionalBuilder<T>,
         now: Time48,
         fudge: u16,
     ) -> Result<(), SignResponseError> {
-        TransferSigner::from(self).sign_response_with_fudge(message, now, fudge)
+        TransferSigner::from(self).sign_response_with_fudge(additional, now, fudge)
     }
 
     /// The key whose name and algorithm the response carries.
@@ -68,19 +68,19 @@ impl From<ResponseSigner> for TransferSigner {
 }
 
 impl TransferSigner {
-    /// Sign the next transfer message with the suggested TSIG fudge.
+    /// Sign the next transfer additional with the suggested TSIG fudge.
     pub fn sign_response<T: Composer>(
         &mut self,
-        message: &mut AdditionalBuilder<T>,
+        additional: &mut AdditionalBuilder<T>,
         now: Time48,
     ) -> Result<(), SignResponseError> {
-        self.sign_response_with_fudge(message, now, 300)
+        self.sign_response_with_fudge(additional, now, 300)
     }
 
     /// Advance the chain only after the signed record fits the builder.
     pub fn sign_response_with_fudge<T: Composer>(
         &mut self,
-        message: &mut AdditionalBuilder<T>,
+        additional: &mut AdditionalBuilder<T>,
         now: Time48,
         fudge: u16,
     ) -> Result<(), SignResponseError> {
@@ -91,7 +91,7 @@ impl TransferSigner {
         let mut digest = hmac::Context::with_key(&self.key.hmac);
         digest.update(&(self.previous_mac.len() as u16).to_be_bytes());
         digest.update(&self.previous_mac);
-        digest.update(message.as_slice());
+        digest.update(additional.as_slice());
 
         if self.first {
             digest.update(name.as_slice());
@@ -108,7 +108,7 @@ impl TransferSigner {
         }
 
         let mac = digest.sign();
-        message.push((
+        additional.push((
             &name,
             Class::ANY,
             0,
@@ -117,7 +117,7 @@ impl TransferSigner {
                 now,
                 fudge,
                 mac.as_ref(),
-                message.header().id(),
+                additional.header().id(),
                 TsigRcode::NOERROR,
                 b"",
             )

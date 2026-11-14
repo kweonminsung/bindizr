@@ -14,7 +14,7 @@ pub(crate) async fn create_tx(
 ) -> Result<Secondary, DatabaseError> {
     let now = Utc::now();
 
-    let result = sqlx::query(
+    let row = sqlx::query(
         r#"
         INSERT INTO secondaries (name, address, enabled, notify_tsig_key_id, created_at)
         VALUES ($1, $2, $3, $4, $5)
@@ -29,13 +29,13 @@ pub(crate) async fn create_tx(
     .fetch_one(&mut **tx)
     .await?;
 
-    secondary.id = SecondaryId::from(result.get::<i32, _>(0));
+    secondary.id = SecondaryId::from(row.get::<i32, _>(0));
     secondary.created_at = now;
 
     Ok(secondary)
 }
 
-/// Find a secondary by name.
+/// Get a secondary by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Postgres>,
     name: &str,
@@ -52,7 +52,7 @@ pub(crate) async fn get_by_name(
     Ok(secondary)
 }
 
-/// Find a secondary by name in the current transaction.
+/// Get a secondary by name in the current transaction.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, Postgres>,
     name: &str,
@@ -60,7 +60,7 @@ pub(crate) async fn get_by_name_tx(
 ) -> Result<Option<Secondary>, DatabaseError> {
     let secondary = sqlx::query_as::<_, Secondary>(AssertSqlSafe(format!(
         "SELECT id, name, address, enabled, notify_tsig_key_id, created_at FROM secondaries WHERE name = $1{}",
-        lock_level.clause()
+        lock_level.clause(),
     )))
     .bind(name)
     .fetch_optional(&mut **tx)
@@ -69,7 +69,7 @@ pub(crate) async fn get_by_name_tx(
     Ok(secondary)
 }
 
-/// Find a secondary by address.
+/// Get a secondary by address.
 pub(crate) async fn get_by_address(
     pool: &Pool<Postgres>,
     address: &AddressTarget,
@@ -117,18 +117,18 @@ pub(crate) async fn update_tx(
     Ok(secondary)
 }
 
-/// Secondaries whose NOTIFY the key signs: the in-use check before a key
-/// delete.
+/// Count the secondaries whose NOTIFY the key signs: the in-use check before a
+/// key delete.
 pub(crate) async fn count_by_notify_tsig_key_id(
     pool: &Pool<Postgres>,
-    tsig_key_id: TsigKeyId,
+    notify_tsig_key_id: TsigKeyId,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM secondaries WHERE notify_tsig_key_id = $1",
     )
-    .bind(tsig_key_id)
+    .bind(notify_tsig_key_id)
     .fetch_one(&mut *connection)
     .await?;
 

@@ -146,7 +146,9 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             )
             .await?;
             log::debug!("DNSSEC policy list result: {response:?}");
-            output::print_page(&response.data, output, |item| DnssecPolicyRow::from(item))?;
+            output::print_page(&response.data, output, |policy| {
+                DnssecPolicyRow::from(policy)
+            })?;
         }
         DnssecPolicyCommand::Get { name, output } => {
             let response = client::send_command::<SingleDnssecPolicyResponse>(

@@ -44,11 +44,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
                 .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
 
             if output == OutputFormat::Table {
-                outln!(
-                    "Bindizr restarted: pid {} (version {})",
-                    pid,
-                    status.version
-                );
+                outln!("Bindizr restarted: pid {pid} (version {})", status.version);
             } else {
                 output::print_payload(&status, output)?;
             }

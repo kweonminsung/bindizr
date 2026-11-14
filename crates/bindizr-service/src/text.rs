@@ -6,22 +6,22 @@ use crate::error::ServiceError;
 pub(crate) const MAX_COLUMN_TEXT_LEN: usize = 255;
 
 /// Trim and lowercase a single URL path segment for consistent backend matching.
-/// `what` names the field in errors.
+/// `field` names the field in errors.
 pub(crate) fn normalize_identifier(
     value: &str,
-    what: &str,
+    field: &str,
     max_len: usize,
 ) -> Result<String, ServiceError> {
     let name = value.trim().to_lowercase();
 
     if name.is_empty() {
         return Err(ServiceError::invalid_input(format!(
-            "{what} must not be empty"
+            "{field} must not be empty"
         )));
     }
     if name.len() > max_len {
         return Err(ServiceError::invalid_input(format!(
-            "{what} must be {max_len} characters or fewer"
+            "{field} must be {max_len} characters or fewer"
         )));
     }
     if !name
@@ -29,7 +29,7 @@ pub(crate) fn normalize_identifier(
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
     {
         return Err(ServiceError::invalid_input(format!(
-            "{what} may contain only letters, digits, '.', '_', and '-'"
+            "{field} may contain only letters, digits, '.', '_', and '-'"
         )));
     }
 
@@ -62,14 +62,14 @@ pub(crate) fn normalize_description(
 
 #[cfg(test)]
 mod tests {
-
-    use crate::error::{ErrorCode, ServiceError};
+    use super::*;
+    use crate::error::ErrorCode;
 
     /// Verify that an identifier is trimmed and lowercased.
     #[test]
     fn normalize_identifier_trims_and_lowercases() {
         assert_eq!(
-            super::normalize_identifier("  NS2.Example ", "name", 64).unwrap(),
+            normalize_identifier("  NS2.Example ", "name", 64).unwrap(),
             "ns2.example"
         );
     }
@@ -78,7 +78,7 @@ mod tests {
     #[test]
     fn normalize_identifier_rejects_empty_long_and_invalid_names() {
         for value in ["", "  ", "a b", "a/b", &"n".repeat(65)] {
-            let error = super::normalize_identifier(value, "name", 64).unwrap_err();
+            let error = normalize_identifier(value, "name", 64).unwrap_err();
             assert_eq!(error.code(), ErrorCode::InvalidInput, "{value:?}");
         }
     }
@@ -87,7 +87,7 @@ mod tests {
     /// characters, and refused with NUL.
     #[test]
     fn normalize_description_trims_counts_characters_and_rejects_nul() {
-        let normalize = |value| super::normalize_description(value, ServiceError::invalid_input);
+        let normalize = |value| normalize_description(value, ServiceError::invalid_input);
         let widest = "é".repeat(255);
         let over = "é".repeat(256);
 

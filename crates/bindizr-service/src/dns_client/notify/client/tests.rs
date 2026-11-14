@@ -24,13 +24,13 @@ async fn shared_socket_failure_preserves_original_io_error() {
     ] {
         let code = original.raw_os_error();
         let message = original.to_string();
-        let name = Name::from_str("example.com").unwrap();
+        let qname = Name::from_str("example.com").unwrap();
         let mut requests = HashMap::new();
         let mut replies = Vec::new();
 
         for id in 0..2 {
             let (reply, response) = oneshot::channel();
-            let (_, builder) = query::build_notify_query(&name, None);
+            let (_, builder) = query::build_notify_query(&qname, None);
             requests.insert(
                 id,
                 PendingNotify {
@@ -42,7 +42,7 @@ async fn shared_socket_failure_preserves_original_io_error() {
                     deadline: Instant::now(),
                     waiting: true,
                     sent: true,
-                    qname: name.clone(),
+                    qname: qname.clone(),
                     reply,
                 },
             );
@@ -81,21 +81,21 @@ async fn shared_socket_failure_preserves_original_io_error() {
 async fn id_exhaustion_rotates_the_socket() {
     let client = NotifyClient::default();
 
-    let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let address = server.local_addr().unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let addr = socket.local_addr().unwrap();
 
-    let (first, id) = client.reserve(address).await.unwrap();
+    let (first, id) = client.reserve(addr).await.unwrap();
     let mut ids = HashSet::from([id]);
 
     for _ in 0..u16::MAX {
-        let (target, id) = client.reserve(address).await.unwrap();
+        let (target, id) = client.reserve(addr).await.unwrap();
         assert!(Arc::ptr_eq(&target, &first));
         assert!(ids.insert(id));
     }
 
     assert_eq!(ids.len(), 65536);
 
-    let (next, _) = client.reserve(address).await.unwrap();
+    let (next, _) = client.reserve(addr).await.unwrap();
 
     assert!(!Arc::ptr_eq(&next, &first));
 }
@@ -105,18 +105,18 @@ async fn id_exhaustion_rotates_the_socket() {
 async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
     let client = NotifyClient::default();
 
-    let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let address = server.local_addr().unwrap();
-    let name = Name::from_str("example.com").unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let addr = socket.local_addr().unwrap();
+    let qname = Name::from_str("example.com").unwrap();
 
     let mut first = client
-        .start(&name, address, Duration::from_secs(1), 0, None)
+        .send(&qname, addr, Duration::from_secs(1), 0, None)
         .await
         .unwrap();
 
     let mut buffer = [0; 4096];
 
-    let (len, peer) = server.recv_from(&mut buffer).await.unwrap();
+    let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
     let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
     let old_ack = query
         .build_signed_error_response(Rcode::NOERROR.into(), None, None)
@@ -134,20 +134,20 @@ async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
     // Hold the socket across completion to exercise retired IDs on the same peer port.
     let held = first.target.clone();
 
-    server.send_to(&old_ack, peer).await.unwrap();
+    socket.send_to(&old_ack, peer).await.unwrap();
     first.wait().await.unwrap();
     let mut second = client
-        .start(&name, address, Duration::from_secs(1), 0, None)
+        .send(&qname, addr, Duration::from_secs(1), 0, None)
         .await
         .unwrap();
-    let (len, second_peer) = server.recv_from(&mut buffer).await.unwrap();
+    let (len, second_peer) = socket.recv_from(&mut buffer).await.unwrap();
 
     assert_eq!(peer, second_peer);
     let next = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
 
     assert_ne!(query.query_id, next.query_id);
 
-    server.send_to(&old_ack, peer).await.unwrap();
+    socket.send_to(&old_ack, peer).await.unwrap();
     time::sleep(Duration::from_millis(10)).await;
 
     assert!(matches!(
@@ -155,7 +155,7 @@ async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
         Err(oneshot::error::TryRecvError::Empty)
     ));
 
-    server
+    socket
         .send_to(
             &next
                 .build_signed_error_response(Rcode::NOERROR.into(), None, None)
@@ -175,14 +175,14 @@ async fn oversized_ack_is_ignored_until_a_bounded_ack_arrives() {
     for size in [513, 4096] {
         let client = NotifyClient::default();
 
-        let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
 
-        let name = Name::from_str("example.com").unwrap();
+        let qname = Name::from_str("example.com").unwrap();
 
         let mut handle = client
-            .start(
-                &name,
-                server.local_addr().unwrap(),
+            .send(
+                &qname,
+                socket.local_addr().unwrap(),
                 Duration::from_secs(1),
                 0,
                 None,
@@ -192,7 +192,7 @@ async fn oversized_ack_is_ignored_until_a_bounded_ack_arrives() {
 
         let mut buffer = [0; 1232];
 
-        let (len, peer) = server.recv_from(&mut buffer).await.unwrap();
+        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
         let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
         let ack = query
             .build_signed_error_response(Rcode::NOERROR.into(), None, None)
@@ -200,7 +200,7 @@ async fn oversized_ack_is_ignored_until_a_bounded_ack_arrives() {
         let mut oversized = ack.clone();
         oversized.resize(size, 0);
 
-        server.send_to(&oversized, peer).await.unwrap();
+        socket.send_to(&oversized, peer).await.unwrap();
         time::sleep(Duration::from_millis(20)).await;
 
         assert!(matches!(
@@ -208,7 +208,7 @@ async fn oversized_ack_is_ignored_until_a_bounded_ack_arrives() {
             Err(oneshot::error::TryRecvError::Empty)
         ));
 
-        server.send_to(&ack, peer).await.unwrap();
+        socket.send_to(&ack, peer).await.unwrap();
         handle.wait().await.unwrap();
     }
 }

@@ -14,7 +14,7 @@ use crate::error::{ErrorCode, ServiceError};
 /// instead of tripping the record set TTL rule.
 const RECORD_SET_TTL: i64 = 3600;
 
-/// WKS values may coexist only when their IPv4 address or protocol differs.
+/// Verify that WKS values may coexist only when their IPv4 address or protocol differs.
 #[test]
 fn add_rejects_duplicate_wks_address_and_protocol() {
     let existing = [test_record(
@@ -336,15 +336,17 @@ fn add_enforces_the_dname_rules() {
     assert_eq!(ns_beside.code(), ErrorCode::RecordConflict);
 
     // Other data at the DNAME's own name is allowed; only names below it are not.
-    validate_add(
-        &dname_at_sub,
-        "sub",
-        &RecordType::A,
-        "192.0.2.1",
-        RECORD_SET_TTL,
-        None,
-    )
-    .unwrap();
+    assert!(
+        validate_add(
+            &dname_at_sub,
+            "sub",
+            &RecordType::A,
+            "192.0.2.1",
+            RECORD_SET_TTL,
+            None,
+        )
+        .is_ok()
+    );
 
     let ns_at_del = [test_record(
         2,
@@ -367,13 +369,15 @@ fn add_enforces_the_dname_rules() {
 
     // The apex NS set is the zone's own, not a delegation.
     let ns_at_apex = [test_record(3, "", RecordType::Ns, "ns.example.net.", None)];
-    validate_add(
-        &ns_at_apex,
-        "",
-        &RecordType::Dname,
-        "one.example.net.",
-        RECORD_SET_TTL,
-        None,
-    )
-    .unwrap();
+    assert!(
+        validate_add(
+            &ns_at_apex,
+            "",
+            &RecordType::Dname,
+            "one.example.net.",
+            RECORD_SET_TTL,
+            None,
+        )
+        .is_ok()
+    );
 }

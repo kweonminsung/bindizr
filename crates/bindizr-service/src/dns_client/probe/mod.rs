@@ -1,4 +1,5 @@
 //! SOA network probes for explicitly supplied targets.
+
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 

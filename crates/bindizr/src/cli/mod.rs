@@ -171,7 +171,7 @@ pub async fn execute() {
     if let Err(error) = result {
         errln!("Error: {}", error.message);
         if let Some(hint) = error.hint() {
-            errln!("Hint: {}", hint);
+            errln!("Hint: {hint}");
         }
         process::exit(error.exit_code());
     }

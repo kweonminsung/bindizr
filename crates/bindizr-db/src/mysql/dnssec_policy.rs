@@ -35,7 +35,7 @@ pub(crate) async fn create_tx(
     Ok(policy)
 }
 
-/// Find a DNSSEC policy by ID in the current transaction.
+/// Get a DNSSEC policy by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, MySql>,
     id: PolicyId,
@@ -43,7 +43,7 @@ pub(crate) async fn get_tx(
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
         "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = ?{}",
-        lock_level.clause()
+        lock_level.clause(),
     )))
     .bind(id)
     .fetch_optional(&mut **tx)
@@ -52,7 +52,7 @@ pub(crate) async fn get_tx(
     Ok(policy)
 }
 
-/// Find a DNSSEC policy by name.
+/// Get a DNSSEC policy by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<MySql>,
     name: &str,
@@ -69,7 +69,7 @@ pub(crate) async fn get_by_name(
     Ok(policy)
 }
 
-/// Find a DNSSEC policy by name in the current transaction.
+/// Get a DNSSEC policy by name in the current transaction.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, MySql>,
     name: &str,
@@ -77,7 +77,7 @@ pub(crate) async fn get_by_name_tx(
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
         "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = ?{}",
-        lock_level.clause()
+        lock_level.clause(),
     )))
     .bind(name)
     .fetch_optional(&mut **tx)
@@ -99,7 +99,8 @@ pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<DnssecPolicy>, Da
     Ok(policies)
 }
 
-/// Update a DNSSEC policy in the current transaction.
+/// Write the editable timing fields; the key layout, algorithm, and denial mode
+/// are fixed at creation.
 pub(crate) async fn update_tx(
     tx: &mut Transaction<'_, MySql>,
     policy: DnssecPolicy,

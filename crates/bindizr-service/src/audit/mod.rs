@@ -49,7 +49,7 @@ pub(crate) fn join_changes(changes: impl IntoIterator<Item = Option<String>>) ->
     (!changes.is_empty()).then(|| changes.join(", "))
 }
 
-/// The rows `filter` selects, newest first unless it sorts otherwise. Count
+/// List the audit log entries `filter` selects, newest first unless it sorts otherwise. Count
 /// and page are plain statements; drift between the two is accepted.
 pub async fn list(
     cx: &Context,
@@ -61,10 +61,10 @@ pub async fn list(
     let filter = normalize_filter(filter)?;
 
     let total = bindizr_db::audit_log::count_by_filter(cx.db(), &filter).await?;
-    let rows = bindizr_db::audit_log::list_by_filter(cx.db(), &filter).await?;
+    let logs = bindizr_db::audit_log::list_by_filter(cx.db(), &filter).await?;
 
     Ok(pagination::build_paginated_response(
-        rows.iter().map(AuditLogResponse::from).collect(),
+        logs.iter().map(AuditLogResponse::from).collect(),
         filter.limit,
         filter.offset,
         total,
@@ -99,8 +99,10 @@ fn normalize_filter(
 
     // Newest first is the log's natural order, whatever the field.
     let order = match filter.order.as_deref() {
+        Some(order) => order
+            .parse::<SortOrder>()
+            .map_err(ServiceError::invalid_input)?,
         None => SortOrder::Desc,
-        Some(order) => order.parse().map_err(ServiceError::invalid_input)?,
     };
     pagination::validate_page_limit(filter.limit)?;
 
@@ -168,7 +170,7 @@ mod tests {
         }
     }
 
-    /// Blank selectors normalize to absent without supplying a page limit.
+    /// Verify that blank selectors normalize to absent without supplying a page limit.
     #[test]
     fn normalize_filter_reads_blank_selectors_as_absent() {
         let filter = normalize_filter(AuditLogFilter {

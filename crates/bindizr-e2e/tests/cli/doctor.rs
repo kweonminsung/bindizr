@@ -1,5 +1,4 @@
 use std::fs;
-use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -49,31 +48,31 @@ async fn doctor_reports_healthy_installation() {
 
     // Secondaries transfer asynchronously after NOTIFY, so behind a burst of
     // zone writes doctor can catch them one catalog serial short.
-    let mut result = app.run_cli(&args, None).await;
+    let mut output = app.run_cli(&args, None).await;
 
     for _ in 0..30 {
-        if result.status.success() {
+        if output.status.success() {
             break;
         }
         time::sleep(Duration::from_secs(1)).await;
-        result = app.run_cli(&args, None).await;
+        output = app.run_cli(&args, None).await;
     }
 
-    common::assert_cli_success(&args, &result);
-    let output = String::from_utf8(result.stdout).expect("CLI stdout was not UTF-8");
+    common::assert_cli_success(&args, &output);
+    let stdout = String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8");
 
-    assert!(output.contains("Config valid"));
-    assert!(output.contains("Daemon running"));
-    assert!(output.contains("API reachable"));
-    assert!(output.contains("Database connected"));
-    assert!(output.contains("DNS server reachable"));
-    assert!(output.contains("installation looks"));
+    assert!(stdout.contains("Config valid"));
+    assert!(stdout.contains("Daemon running"));
+    assert!(stdout.contains("API reachable"));
+    assert!(stdout.contains("Database connected"));
+    assert!(stdout.contains("DNS server reachable"));
+    assert!(stdout.contains("installation looks"));
 
     if app.has_dns_secondaries() {
-        assert!(output.contains("Secondary in sync"));
-        assert!(output.contains("NOTIFY accepted"));
+        assert!(stdout.contains("Secondary in sync"));
+        assert!(stdout.contains("NOTIFY accepted"));
     } else {
-        assert!(output.contains("No enabled secondaries"));
+        assert!(stdout.contains("No enabled secondaries"));
     }
 }
 
@@ -82,21 +81,14 @@ async fn doctor_reports_healthy_installation() {
 #[serial_test::serial(bindizr_e2e)]
 fn doctor_without_a_daemon_runs_the_offline_checks() {
     // Ports nothing on this host holds, so the port checks have a pass to report.
-    let free_port = || {
-        TcpListener::bind("127.0.0.1:0")
-            .expect("bind an ephemeral port")
-            .local_addr()
-            .expect("local address")
-            .port()
-    };
     let config = VALID_CONFIG
         .replace(
             "listen_port = 8000",
-            &format!("listen_port = {}", free_port()),
+            &format!("listen_port = {}", common::reserve_tcp_port()),
         )
         .replace(
             "listen_port = 5300",
-            &format!("listen_port = {}", free_port()),
+            &format!("listen_port = {}", common::reserve_tcp_port()),
         );
 
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");

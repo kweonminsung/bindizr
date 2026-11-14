@@ -1,6 +1,11 @@
 //! DNS wire-format encoding for zone-transfer responses: message framing and
 //! record/SOA serialization.
 
+mod limit;
+pub(crate) mod query;
+mod query_metadata;
+mod records;
+
 pub use domain::base::Name;
 pub use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype};
 use domain::base::message_builder::TreeCompressor;
@@ -10,6 +15,13 @@ use domain::base::record::ComposeRecord;
 use domain::base::wire::Composer;
 use domain::base::{MessageBuilder, Record, ToName, Ttl, UnknownRecordData};
 use domain::rdata::tsig::Time48;
+pub use limit::ResponseLimit;
+pub use query::{
+    Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
+    UDP_PAYLOAD_SIZE_WITHOUT_EDNS, extract_opcode, is_response,
+};
+use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
+pub use query_metadata::{QueryMetadata, has_readable_sections};
 use thiserror::Error;
 
 use crate::dns::dnssec::EncodeWireNameError;
@@ -99,6 +111,7 @@ impl ComposeRecord for ComposedRecord<'_> {
     }
 }
 
+/// A transfer response under construction: its question, buffered answers, and signer.
 #[derive(Debug, Clone)]
 pub struct DnsMessageBuilder {
     limit: ResponseLimit,
@@ -177,11 +190,6 @@ impl DnsMessageBuilder {
         self.push_answer(answer);
     }
 
-    /// Return the number of buffered answers.
-    fn answer_count(&self) -> usize {
-        self.answers.len()
-    }
-
     /// Calculate the response size including the question, the OPT an EDNS
     /// query is owed, and the optional TSIG.
     fn message_len(&self) -> usize {
@@ -236,7 +244,7 @@ impl DnsMessageBuilder {
             .pop_last_answer()
             .ok_or_else(|| AddAnswerError::without_frame(EncodeMessageError::NoAnswers))?;
 
-        if self.answer_count() == 0 {
+        if self.answers.is_empty() {
             self.push_answer(last_answer);
             return Err(AddAnswerError::without_frame(self.answer_too_large()));
         }
@@ -258,7 +266,7 @@ impl DnsMessageBuilder {
     /// The buffered answers as a length-prefixed TCP frame, clearing them;
     /// `None` when nothing is buffered.
     pub fn take_frame(&mut self) -> Result<Option<Vec<u8>>, EncodeMessageError> {
-        if self.answer_count() == 0 {
+        if self.answers.is_empty() {
             return Ok(None);
         }
         let frame = self.build_tcp_frame()?;
@@ -355,25 +363,12 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
     ResponseLimit::STREAM.validate_len(message.len())?;
 
     let len = message.len() as u16;
-    let mut result = Vec::with_capacity(2 + message.len());
-    result.extend_from_slice(&len.to_be_bytes());
-    result.extend_from_slice(message);
+    let mut frame = Vec::with_capacity(2 + message.len());
+    frame.extend_from_slice(&len.to_be_bytes());
+    frame.extend_from_slice(message);
 
-    Ok(result)
+    Ok(frame)
 }
-
-mod limit;
-pub(crate) mod query;
-mod query_metadata;
-mod records;
-
-pub use limit::ResponseLimit;
-pub use query::{
-    Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
-    UDP_PAYLOAD_SIZE_WITHOUT_EDNS, extract_opcode, is_response,
-};
-use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
-pub use query_metadata::{QueryMetadata, has_readable_sections};
 
 #[cfg(test)]
 mod tests;

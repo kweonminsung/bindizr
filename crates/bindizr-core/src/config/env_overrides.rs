@@ -194,7 +194,7 @@ impl Config {
 /// Read an optional setting from an environment override, treating an empty
 /// value as unset so containers can leave the variable unfilled.
 fn to_optional_setting(value: String) -> Option<String> {
-    Some(value.trim().to_string()).filter(|path| !path.is_empty())
+    Some(value.trim().to_string()).filter(|value| !value.is_empty())
 }
 
 /// Parse a seconds override into its newtype, rejecting values outside its stored range.

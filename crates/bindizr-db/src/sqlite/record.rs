@@ -8,7 +8,8 @@ use crate::error::DatabaseError;
 use crate::record::RecordFilter;
 use crate::{LockLevel, sql};
 
-/// Insert a batch of records in the current transaction.
+/// Insert many records in one chunked statement, returning them with their
+/// assigned ids in input order.
 pub(crate) async fn create_many_tx(
     tx: &mut Transaction<'_, Sqlite>,
     records: &[Record],
@@ -16,6 +17,8 @@ pub(crate) async fn create_many_tx(
     // Statement count drives bulk-insert time, but the gain flattens by ~500
     // rows; 8 binds per row leaves room under SQLite's 32766 limit.
     const CHUNK: usize = 500;
+    const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?)";
+
     let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
@@ -24,11 +27,10 @@ pub(crate) async fn create_many_tx(
         );
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 {
-                "(?, ?, ?, ?, ?, ?, ?, ?)"
-            } else {
-                ",(?, ?, ?, ?, ?, ?, ?, ?)"
-            });
+            if i > 0 {
+                sql.push(',');
+            }
+            sql.push_str(ROW);
         }
 
         let now = Utc::now();
@@ -64,23 +66,24 @@ pub(crate) async fn create_many_tx(
     Ok(created_records)
 }
 
-/// Find a record by ID.
+/// Get a record by ID.
 pub(crate) async fn get(
     pool: &Pool<Sqlite>,
     id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&mut *connection)
-        .await
-        ?;
+    let record = sqlx::query_as::<_, Record>(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&mut *connection)
+    .await?;
 
     Ok(record)
 }
 
-/// Find a record with its zone metadata.
+/// Get a record with its zone metadata.
 pub(crate) async fn get_with_zone(
     pool: &Pool<Sqlite>,
     id: RecordId,
@@ -103,16 +106,18 @@ pub(crate) async fn get_with_zone(
     Ok(record)
 }
 
-/// Find a record by ID in the current transaction.
+/// Get a record by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
     id: RecordId,
     _lock_level: LockLevel,
 ) -> Result<Option<Record>, DatabaseError> {
-    let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?;
+    let record = sqlx::query_as::<_, Record>(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
 
     Ok(record)
 }
@@ -153,7 +158,8 @@ pub(crate) async fn list_by_name_tx(
     Ok(records)
 }
 
-/// List the records of the given types in the current transaction.
+/// List the records of the given types, in the current transaction; the
+/// cross-owner validation reads only the types it relates.
 pub(crate) async fn list_by_record_types_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
@@ -168,11 +174,10 @@ pub(crate) async fn list_by_record_types_tx(
     );
 
     for i in 0..record_types.len() {
-        sql.push_str(if i == 0 {
-            "?"
-        } else {
-            ",?"
-        });
+        if i > 0 {
+            sql.push(',');
+        }
+        sql.push('?');
     }
 
     sql.push_str(") ORDER BY name, id");
@@ -188,7 +193,7 @@ pub(crate) async fn list_by_record_types_tx(
     Ok(records)
 }
 
-/// List the distinct owner names of a zone in the current transaction.
+/// List the owner names of a zone, each once, in the current transaction.
 pub(crate) async fn list_names_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
@@ -202,7 +207,8 @@ pub(crate) async fn list_names_tx(
     Ok(names)
 }
 
-/// List records at the requested owner names in a zone in the current transaction.
+/// List the records whose owner name is any of `names`. Used by bulk insert to
+/// fetch only the rows that could conflict with the batch.
 pub(crate) async fn list_by_names_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
@@ -213,10 +219,6 @@ pub(crate) async fn list_by_names_tx(
     // chunk the IN list below SQLite's bind-variable limit.
     const CHUNK: usize = 400;
 
-    if names.is_empty() {
-        return Ok(Vec::new());
-    }
-
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
@@ -225,11 +227,10 @@ pub(crate) async fn list_by_names_tx(
         );
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 {
-                "?"
-            } else {
-                ",?"
-            });
+            if i > 0 {
+                sql.push(',');
+            }
+            sql.push('?');
         }
 
         sql.push(')');
@@ -263,7 +264,8 @@ pub(crate) async fn list_by_filter_with_zone(
     // Only fixed SQL fragments are interpolated; caller values stay in bindings.
     let order_by = filter.sort.order_by_sql(filter.order);
     let grant_match = sql::grant_record_match_sql("r", Some("record_type"), sql::concat_pipes);
-    let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
+
+    let records = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
         r#"
         SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
                r.zone_id, z.name AS zone_name
@@ -331,24 +333,22 @@ pub(crate) async fn list_by_filter_with_zone(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(&search);
-
-    let records = query
-        .bind(filter.scope_role_id)
-        .bind(filter.scope_role_id)
-        .bind(filter.limit.map_or(i64::MAX, i64::from))
-        .bind(
-            filter
-                .offset
-                .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
-        )
-        .fetch_all(&mut *connection)
-        .await?;
+    .bind(&search)
+    .bind(filter.scope_role_id)
+    .bind(filter.scope_role_id)
+    .bind(filter.limit.map_or(i64::MAX, i64::from))
+    .bind(
+        filter
+            .offset
+            .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
+    )
+    .fetch_all(&mut *connection)
+    .await?;
 
     Ok(records)
 }
 
-/// Count a zone's records in the current transaction.
+/// Count the records a zone holds, in the current transaction.
 pub(crate) async fn count_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
@@ -374,7 +374,8 @@ pub(crate) async fn count_by_filter(
     let name_like_types = sql::name_like_types_sql();
     let apex_owner = sql::apex_owner_sql();
     let grant_match = sql::grant_record_match_sql("r", Some("record_type"), sql::concat_pipes);
-    let query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
+
+    let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
         r#"
         SELECT COUNT(*)
         FROM records r
@@ -441,9 +442,9 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(&search)
     .bind(filter.scope_role_id)
-    .bind(filter.scope_role_id);
-
-    let count = query.fetch_one(&mut *connection).await?;
+    .bind(filter.scope_role_id)
+    .fetch_one(&mut *connection)
+    .await?;
 
     Ok(count as u64)
 }
@@ -474,7 +475,7 @@ pub(crate) async fn update_tx(
     Ok(record)
 }
 
-/// Delete the records with the supplied IDs in the current transaction.
+/// Delete many records in as few statements as the backend's bind limit allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Sqlite>,
     ids: &[RecordId],
@@ -482,19 +483,14 @@ pub(crate) async fn delete_many_tx(
     // One bind per id; keep the count under SQLite's conservative limit.
     const CHUNK: usize = 900;
 
-    if ids.is_empty() {
-        return Ok(());
-    }
-
     for chunk in ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM records WHERE id IN (".to_string();
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 {
-                "?"
-            } else {
-                ",?"
-            });
+            if i > 0 {
+                sql.push(',');
+            }
+            sql.push('?');
         }
 
         sql.push(')');

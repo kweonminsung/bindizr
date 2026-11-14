@@ -1,6 +1,7 @@
 use super::*;
 
-/// Preserve empty CAA properties, including the no-issuer form in RFC 8659, Section 4.2.
+/// Verify that empty CAA properties are preserved, including the no-issuer form in RFC 8659,
+/// Section 4.2.
 #[test]
 fn caa_encoding_preserves_empty_properties() {
     for tag in ["issue", "issuewild", "unknown"] {
@@ -47,7 +48,7 @@ fn caa_parse_round_trips_quoted_value_escapes() {
     );
 }
 
-/// Reject malformed tags and distinguish a missing value from an empty one.
+/// Verify that malformed tags are rejected and a missing value is distinguished from an empty one.
 #[test]
 fn validate_rejects_a_bad_tag_or_a_missing_value() {
     for tag in ["a".repeat(256), "bad-tag".to_string(), "é".to_string()] {
@@ -60,7 +61,7 @@ fn validate_rejects_a_bad_tag_or_a_missing_value() {
     }
 }
 
-/// Verify rejection of unclosed or concatenated quoted CAA values.
+/// Verify that unclosed or concatenated quoted CAA values are rejected.
 #[test]
 fn caa_parse_rejects_unclosed_or_concatenated_quoted_values() {
     for value in [r#"0 issue "unterminated"#, r#"0 issue "a" trailing"#] {
@@ -71,7 +72,7 @@ fn caa_parse_rejects_unclosed_or_concatenated_quoted_values() {
     }
 }
 
-/// Require quotes or escapes for whitespace within a CAA value.
+/// Verify that whitespace within a CAA value requires quotes or escapes.
 #[test]
 fn caa_parse_splits_fields_at_unquoted_whitespace() {
     for text in ["0 issue a\tb", "0 issue a b", "0 issue a\"b"] {
@@ -89,7 +90,7 @@ fn caa_parse_splits_fields_at_unquoted_whitespace() {
     assert_eq!(trailing_space.canonical(), r#"0 issue "a ""#);
 }
 
-/// Preserve every property octet through presentation and wire encoding.
+/// Verify that every property octet survives presentation and wire encoding.
 #[test]
 fn property_values_preserve_all_octets() {
     let escaped: String = (0..=255u8).map(|byte| format!("\\{byte:03}")).collect();
@@ -120,12 +121,10 @@ fn property_values_preserve_all_octets() {
     }
 }
 
-/// Bound the decoded RDATA, including a full-length tag and a value over 255 bytes.
+/// Verify that the decoded RDATA is bounded, including a full-length tag and a value over 255
+/// bytes.
 #[test]
 fn caa_validation_enforces_wire_field_lengths() {
-    use super::super::ParseRecordValueError;
-    use super::super::value::MAX_RECORD_RDATA;
-
     for tag_len in [1, 15, 16, 255] {
         let tag = "a".repeat(tag_len);
         let max = MAX_RECORD_RDATA - 2 - tag_len;

@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use reqwest::{Client, StatusCode};
+use serde_json::{Value, json};
 use tokio::time;
 
 use super::{TestApp, TestRuntime};
@@ -62,7 +63,7 @@ async fn register_compose_secondaries(client: &Client) {
         post(
             client,
             "/secondaries",
-            serde_json::json!({ "name": name, "address": format!("{name}:53") }),
+            json!({ "name": name, "address": format!("{name}:53") }),
             &[StatusCode::CREATED],
         )
         .await;
@@ -77,21 +78,21 @@ async fn register_compose_secondaries(client: &Client) {
     post(
         client,
         "/roles",
-        serde_json::json!({ "name": "secondaries" }),
+        json!({ "name": "secondaries" }),
         &[StatusCode::CREATED, StatusCode::CONFLICT],
     )
     .await;
     post(
         client,
         "/roles/secondaries/grants",
-        serde_json::json!({ "actions": ["zone:transfer"] }),
+        json!({ "actions": ["zone:transfer"] }),
         &[StatusCode::CREATED],
     )
     .await;
     post(
         client,
         "/tsig-keys",
-        serde_json::json!({
+        json!({
             "name": COMPOSE_XOT_KEY,
             "secret": COMPOSE_XOT_SECRET,
             "role_name": "secondaries"
@@ -113,7 +114,7 @@ async fn probe_api_resource(client: &Client, path: &str) -> bool {
 }
 
 /// POST `body` to the compose API, accepting one of `allowed` statuses.
-async fn post(client: &Client, path: &str, body: serde_json::Value, allowed: &[StatusCode]) {
+async fn post(client: &Client, path: &str, body: Value, allowed: &[StatusCode]) {
     let response = client
         .post(format!("{COMPOSE_API_BASE_URL}{path}"))
         .json(&body)

@@ -10,10 +10,10 @@ use bindizr_core::model::dnssec_record::DnssecRecord;
 use bindizr_core::model::record::Record;
 use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_core::model::zone_version::ZoneVersionId;
-use bindizr_service::Context;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
-use bindizr_service::zone::{self, TransferAccess, TransferContent};
+use bindizr_service::zone::{TransferAccess, TransferContent};
+use bindizr_service::{Context, zone};
 
 use super::DnsContext;
 

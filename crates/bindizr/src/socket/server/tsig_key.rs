@@ -8,15 +8,15 @@ use bindizr_service::{Context, tsig_key};
 
 use crate::socket::types::DaemonResponse;
 
-/// Create TSIG key from the control request.
+/// Create a TSIG key from the control request.
 pub(crate) async fn create_tsig_key(
     cx: &Context,
     request: &CreateTsigKeyRequest,
 ) -> Result<DaemonResponse<SingleTsigKeyResponse>, ServiceError> {
-    let data = tsig_key::create(cx, &Caller::socket(), request).await?;
+    let response = tsig_key::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "TSIG key created successfully".to_string(),
-        data,
+        data: response,
     })
 }
 
@@ -37,10 +37,10 @@ pub(crate) async fn get_tsig_key(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<SingleTsigKeyResponse>, ServiceError> {
-    let data = tsig_key::get(cx, &Caller::socket(), name).await?;
+    let response = tsig_key::get(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),
-        data,
+        data: response,
     })
 }
 

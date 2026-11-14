@@ -17,14 +17,14 @@ async fn zone_status_reports_secondaries() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/status"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zone_name"], zone_name);
     assert_eq!(
         body["serial"].as_i64().unwrap(),
         zone["serial"].as_i64().unwrap()
     );
 
-    let secondaries = body["secondaries"].as_array().expect("missing secondaries");
+    let secondaries = body["secondaries"].as_array().unwrap();
 
     if app.has_dns_secondaries() {
         // Compose mode: both BIND9 secondaries must converge to in_sync.
@@ -62,6 +62,6 @@ async fn zone_status_reports_secondaries() {
         .send_request(Method::GET, &format!("/zones/{missing_zone}/status"), None)
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }

@@ -2,13 +2,11 @@
 //! signers and validity; rollovers re-sign only affected sets.
 
 mod input;
-#[cfg(test)]
-mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use domain::base::iana::Rtype;
 use domain::base::rdata::ComposeRecordData;
 use domain::crypto::sign::{KeyPair, SecretKeyBytes};
@@ -20,8 +18,7 @@ use domain::rdata::{Dnskey, Rrsig, ZoneRecordData};
 use ring::digest::{Context, SHA256};
 use thiserror::Error;
 
-use super::{WireName, WireRecord};
-use crate::dns::dnssec::{EncodeKeyRdataError, EncodeWireNameError, KeyTag};
+use super::{EncodeKeyRdataError, EncodeWireNameError, KeyTag, WireName, WireRecord};
 use crate::dns::name::{OwnerName, ParseNameError, ZoneName};
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::{LibraryError, Serial, Ttl};
@@ -130,8 +127,7 @@ impl SignedViewParams<'_> {
             .take(8)
             .fold(0u64, |slot, byte| (slot << 8) | u64::from(*byte));
 
-        self.expiration
-            - chrono::Duration::seconds((slot % self.expiration_jitter_secs as u64) as i64)
+        self.expiration - Duration::seconds((slot % self.expiration_jitter_secs as u64) as i64)
     }
 
     /// Compute the signed DNSSEC view and its changes from the previous view.
@@ -240,7 +236,7 @@ impl SignedViewParams<'_> {
             }
         }
 
-        let refresh_cutoff = self.now + chrono::Duration::seconds(self.refresh_secs);
+        let refresh_cutoff = self.now + Duration::seconds(self.refresh_secs);
 
         for record_set in &signable {
             let owner = parse_derived_owner(record_set[0].owner(), &zone.name)?;
@@ -436,7 +432,7 @@ impl<'a> Signer<'a> {
         let key_pair = KeyPair::from_bytes(&secret, &dnskey)
             .map_err(|error| SignZoneError::LoadKey(Box::new(error)))?;
 
-        Ok(Signer {
+        Ok(Self {
             key,
             signing_key: SigningKey::new(apex.clone(), key.role.flags(), key_pair),
             key_tag: KeyTag::from(dnskey.key_tag()),
@@ -470,8 +466,11 @@ impl<'a> Signer<'a> {
 }
 
 /// Wire RDATA of `data`, without the length prefix.
-fn to_rdata<D: ComposeRecordData>(data: &D) -> Result<Rdata, EncodeRdataError> {
+fn to_rdata(data: &impl ComposeRecordData) -> Result<Rdata, EncodeRdataError> {
     let mut bytes = Vec::new();
     let Ok(()) = data.compose_rdata(&mut bytes);
     Rdata::new(bytes)
 }
+
+#[cfg(test)]
+mod tests;

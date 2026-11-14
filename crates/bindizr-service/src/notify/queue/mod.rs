@@ -144,7 +144,7 @@ impl NotifyBatch {
 
 /// Bound intentional delay by SOA REFRESH, measured from enqueue time
 /// (RFC 1996, Section 4.3). Failed lookups send immediately.
-async fn read_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
+async fn lookup_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
     let config = cx.config();
     let window = Duration::from_millis(config.dns.notify.batch_ms);
 
@@ -187,7 +187,7 @@ async fn collect_batch(
 ) -> NotifyBatch {
     let mut batch = NotifyBatch::default();
 
-    let mut deadline = read_batch_deadline(cx, &first).await;
+    let mut deadline = lookup_batch_deadline(cx, &first).await;
 
     batch.add(first);
 
@@ -205,7 +205,7 @@ async fn collect_batch(
             job = rx.recv() => match job {
                 Some(job) => {
                     // Later writes may shorten the window, never extend it.
-                    deadline = deadline.min(read_batch_deadline(cx, &job).await);
+                    deadline = deadline.min(lookup_batch_deadline(cx, &job).await);
                     batch.add(job);
                 }
                 None => break,
@@ -232,11 +232,11 @@ async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, tasks: &mut Join
         }
     }
 
-    for zone in batch.zones {
+    for zone_name in batch.zones {
         let cx = cx.clone();
         tasks.spawn(async move {
-            if let Err(error) = super::send_notify(&cx, NotifyTarget::Zone(&zone)).await {
-                log::warn!("queued notify: NOTIFY failed for zone {zone}: {error}");
+            if let Err(error) = super::send_notify(&cx, NotifyTarget::Zone(&zone_name)).await {
+                log::warn!("queued notify: NOTIFY failed for zone {zone_name}: {error}");
             }
         });
     }

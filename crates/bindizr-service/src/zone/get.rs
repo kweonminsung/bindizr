@@ -7,7 +7,7 @@ use crate::error::ServiceError;
 use crate::types::{PaginatedResponse, ZoneFilter, ZoneResponse};
 use crate::{Context, Transaction, pagination, ttl};
 
-/// The DNS plane's view of a zone: a disabled one is absent rather than
+/// Find the DNS plane's view of a zone: a disabled one is absent rather than
 /// served. The nsupdate apply and the transfer authorization read it.
 pub(crate) async fn find_served_by_name_tx(
     tx: &mut Transaction<'_>,
@@ -31,10 +31,10 @@ pub(crate) async fn find_by_name_tx(
 
 /// Cheap database round-trip (limit-1 zones probe), for health checks.
 pub async fn ping(cx: &Context) -> Result<(), ServiceError> {
-    Ok(bindizr_db::zone::ping(cx.db()).await?)
+    Ok(bindizr_db::zone::probe_table(cx.db()).await?)
 }
 
-/// The zones the DNS plane serves: the catalog's membership and the NOTIFY
+/// List the zones the DNS plane serves: the catalog's membership and the NOTIFY
 /// fan-out read it.
 pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
     let zones = bindizr_db::zone::list_all(cx.db()).await.map_err(|error| {
@@ -83,9 +83,6 @@ pub async fn list_by_filter(
     pagination::validate_page_limit(filter.limit)?;
     let limit = filter.limit;
     let offset = filter.offset;
-    let serial = filter.serial;
-    let min_serial = filter.min_serial;
-    let max_serial = filter.max_serial;
 
     let zone_filter = bindizr_db::zone::ZoneFilter {
         name: filter.name,
@@ -95,9 +92,9 @@ pub async fn list_by_filter(
         default_ttl: filter.default_ttl,
         min_default_ttl: filter.min_default_ttl,
         max_default_ttl: filter.max_default_ttl,
-        serial,
-        min_serial,
-        max_serial,
+        serial: filter.serial,
+        min_serial: filter.min_serial,
+        max_serial: filter.max_serial,
         created_after: filter.created_after,
         created_before: filter.created_before,
         signed: filter.signed,
@@ -119,7 +116,7 @@ pub async fn list_by_filter(
     ))
 }
 
-/// Fetch a zone by name for `caller`; a zone it cannot see reads as
+/// Get a zone by name for `caller`; a zone it cannot see reads as
 /// `NotFound`, so grants cannot be probed.
 pub async fn get_by_name(
     cx: &Context,
@@ -131,7 +128,7 @@ pub async fn get_by_name(
     Ok(zone)
 }
 
-/// The unchecked lookup, `NotFound` on a miss, for service-internal use;
+/// Look up a zone unchecked, `NotFound` on a miss, for service-internal use;
 /// anything a front end reaches goes through [`get_by_name`].
 pub(crate) async fn lookup_by_name(
     cx: &Context,

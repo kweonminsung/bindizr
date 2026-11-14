@@ -12,7 +12,7 @@ use crate::common::dns::tsig;
 use crate::common::dns::tsig::KeyRole;
 use crate::common::{TestApp, TestAppOptions, dns};
 
-/// An IN IXFR query cannot take its client serial from another class's SOA.
+/// Verify that an IN IXFR query cannot take its client serial from another class's SOA.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ixfr_rejects_foreign_soa_classes() {
@@ -62,8 +62,8 @@ async fn ixfr_rejects_foreign_soa_classes() {
                 ),
             ))
             .unwrap();
-        let mut request = authority.additional();
-        request
+        let mut query = authority.additional();
+        query
             .opt(|opt| {
                 opt.set_udp_payload_size(512);
                 opt.set_dnssec_ok(true);
@@ -78,14 +78,14 @@ async fn ixfr_rejects_foreign_soa_classes() {
             }
 
             for response in [
-                dns::exchange_request(request.clone(), key, |wire| {
-                    dns::exchange_udp(app.dns_port(), wire)
+                dns::exchange_request(query.clone(), key, |message| {
+                    dns::exchange_udp(app.dns_port(), message)
                 }),
-                dns::exchange_request(request.clone(), key, |wire| {
-                    common::exchange_tcp(app.dns_port(), wire)
+                dns::exchange_request(query.clone(), key, |message| {
+                    common::exchange_tcp(app.dns_port(), message)
                 }),
-                dns::exchange_request(request.clone(), key, |wire| {
-                    common::exchange_xot(app.dns_tls_port(), wire, tls::dot_client(&app))
+                dns::exchange_request(query.clone(), key, |message| {
+                    common::exchange_xot(app.dns_tls_port(), message, tls::dot_client(&app))
                 }),
             ] {
                 let response = response.unwrap();
@@ -116,6 +116,7 @@ async fn ixfr_rejects_foreign_soa_classes() {
     }
 }
 
+/// The message section that carries the foreign-class record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
     Answer,
@@ -123,7 +124,7 @@ enum Section {
     Additional,
 }
 
-/// Include a foreign RR after a valid IN SOA where applicable.
+/// Build a query with a foreign-class record after a valid IN SOA where applicable.
 fn build_query_with_foreign_record(
     section: Section,
     questions: usize,
@@ -180,7 +181,8 @@ fn build_query_with_foreign_record(
     additional
 }
 
-/// Every ordinary QUERY section is IN-only; count and EDNS errors keep their order.
+/// Verify that every ordinary QUERY section is IN-only and that count and EDNS errors keep
+/// their order.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn queries_reject_foreign_classes_in_every_section() {
@@ -194,18 +196,18 @@ async fn queries_reject_foreign_classes_in_every_section() {
     for section in [Section::Answer, Section::Authority, Section::Additional] {
         for questions in [1, 2] {
             for version in [0, 1] {
-                let request = build_query_with_foreign_record(section, questions, version);
+                let query = build_query_with_foreign_record(section, questions, version);
 
                 for key in [None, Some(&key)] {
                     for response in [
-                        dns::exchange_request(request.clone(), key, |wire| {
-                            dns::exchange_udp(app.dns_port(), wire)
+                        dns::exchange_request(query.clone(), key, |message| {
+                            dns::exchange_udp(app.dns_port(), message)
                         }),
-                        dns::exchange_request(request.clone(), key, |wire| {
-                            common::exchange_tcp(app.dns_port(), wire)
+                        dns::exchange_request(query.clone(), key, |message| {
+                            common::exchange_tcp(app.dns_port(), message)
                         }),
-                        dns::exchange_request(request.clone(), key, |wire| {
-                            common::exchange_xot(app.dns_tls_port(), wire, tls::dot_client(&app))
+                        dns::exchange_request(query.clone(), key, |message| {
+                            common::exchange_xot(app.dns_tls_port(), message, tls::dot_client(&app))
                         }),
                     ] {
                         let response = response.unwrap();
@@ -231,7 +233,7 @@ async fn queries_reject_foreign_classes_in_every_section() {
     }
 }
 
-/// Class errors cannot bypass TSIG validation, including alongside BADVERS.
+/// Verify that class errors cannot bypass TSIG validation, including alongside BADVERS.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn foreign_record_classes_keep_tsig_error_precedence() {
@@ -249,21 +251,21 @@ async fn foreign_record_classes_keep_tsig_error_precedence() {
             signing_key.name = "unknown-record-class".to_string();
         }
 
-        let mut request = build_query_with_foreign_record(Section::Authority, 1, 1);
-        tsig::sign(&mut request, &signing_key).unwrap();
-        let mut request = request.finish();
+        let mut query = build_query_with_foreign_record(Section::Authority, 1, 1);
+        tsig::sign(&mut query, &signing_key).unwrap();
+        let mut query = query.finish();
 
         if !unknown {
-            let mac_end = request.len() - 7;
-            request[mac_end] ^= 1;
+            let mac_end = query.len() - 7;
+            query[mac_end] ^= 1;
         }
 
-        for wire in [
-            dns::exchange_udp(app.dns_port(), &request),
-            common::exchange_tcp(app.dns_port(), &request),
-            common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app)),
+        for response in [
+            dns::exchange_udp(app.dns_port(), &query).unwrap(),
+            common::exchange_tcp(app.dns_port(), &query).unwrap(),
+            common::exchange_xot(app.dns_tls_port(), &query, tls::dot_client(&app)).unwrap(),
         ] {
-            let response = Message::from_octets(wire.unwrap()).unwrap();
+            let response = Message::from_octets(response).unwrap();
 
             assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
             assert!(response.opt().unwrap().dnssec_ok());

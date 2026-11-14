@@ -102,27 +102,34 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
         CliError::request_with_source(format!("failed to parse response: {error}"), error)
     })
 }
+
 /// Open a connection to the daemon's control socket, refusing a daemon this
 /// user may not drive (a socket another user planted in /tmp).
 async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
-    let (socket_path, stream) = try_connect_daemon_socket()
-        .await
-        .map_err(|error| {
-            let denied_path = if error.primary.kind() == io::ErrorKind::PermissionDenied {
-                Some(SOCKET_FILE_PATH)
-            } else if error.fallback.as_ref().is_some_and(|fallback| fallback.kind() == io::ErrorKind::PermissionDenied) {
-                Some(FALLBACK_SOCKET_FILE_PATH)
-            } else {
-                None
-            };
+    let (socket_path, stream) = try_connect_daemon_socket().await.map_err(|error| {
+        let denied_path = if error.primary.kind() == io::ErrorKind::PermissionDenied {
+            Some(SOCKET_FILE_PATH)
+        } else if error
+            .fallback
+            .as_ref()
+            .is_some_and(|fallback| fallback.kind() == io::ErrorKind::PermissionDenied)
+        {
+            Some(FALLBACK_SOCKET_FILE_PATH)
+        } else {
+            None
+        };
 
-            match denied_path {
-                Some(path) => CliError::request_with_source(format!(
-                    "permission denied on the daemon socket at '{path}'. Run the CLI as the daemon's user (for a package install, `sudo bindizr ...`)."
-                ), error),
-                None => CliError::daemon_unreachable(error),
-            }
-        })?;
+        match denied_path {
+            Some(path) => CliError::request_with_source(
+                format!(
+                    "permission denied on the daemon socket at '{path}'; run the CLI as the \
+                         daemon's user (for a package install, `sudo bindizr ...`)"
+                ),
+                error,
+            ),
+            None => CliError::daemon_unreachable(error),
+        }
+    })?;
 
     let peer_uid = stream
         .peer_cred()

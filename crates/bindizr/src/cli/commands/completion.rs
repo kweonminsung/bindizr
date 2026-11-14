@@ -3,7 +3,7 @@
 
 use std::str;
 
-use bindizr_core::stream;
+use bindizr_core::out;
 use clap::CommandFactory;
 use clap_complete::Shell;
 
@@ -37,6 +37,6 @@ fn write_generated(bytes: &[u8]) -> Result<(), CliError> {
     let text = str::from_utf8(bytes).map_err(|error| {
         CliError::request_with_source(format!("generated output was not UTF-8: {error}"), error)
     })?;
-    stream::write_stdout(text);
+    out!("{text}");
     Ok(())
 }

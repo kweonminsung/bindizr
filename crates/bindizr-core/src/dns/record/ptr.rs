@@ -24,13 +24,12 @@ impl<'a> PtrRecordValue<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::PtrRecordValue;
+    use super::*;
+    use crate::dns::name;
 
-    /// Keep root targets distinct from literal dot labels.
+    /// Verify that root targets stay distinct from literal dot labels.
     #[test]
     fn ptr_accepts_root_target_and_preserves_literal_dot() {
-        use crate::dns::name;
-
         for (input, expected) in [(".", vec![0]), (r"\.", vec![1, b'.', 0])] {
             let value = PtrRecordValue::parse(input).unwrap();
             assert_eq!(name::encode_name(&value.canonical()).unwrap(), expected);

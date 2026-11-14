@@ -1,7 +1,7 @@
 use crate::cli::common;
 use crate::common::TestApp;
 
-/// Verify zone-file export through the CLI.
+/// Verify that the CLI exports a zone file.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_export_returns_zone_file_via_cli() {

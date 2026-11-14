@@ -12,7 +12,7 @@ use crate::common::{TestApp, dns};
 pub(crate) async fn counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
     let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let text = body.as_str().expect("metrics body is prometheus text");
 
     text.lines()

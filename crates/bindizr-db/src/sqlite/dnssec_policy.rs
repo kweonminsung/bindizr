@@ -35,7 +35,7 @@ pub(crate) async fn create_tx(
     Ok(policy)
 }
 
-/// Find a DNSSEC policy by ID in the current transaction.
+/// Get a DNSSEC policy by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
     id: PolicyId,
@@ -51,7 +51,7 @@ pub(crate) async fn get_tx(
     Ok(policy)
 }
 
-/// Find a DNSSEC policy by name.
+/// Get a DNSSEC policy by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Sqlite>,
     name: &str,
@@ -68,7 +68,7 @@ pub(crate) async fn get_by_name(
     Ok(policy)
 }
 
-/// Find a DNSSEC policy by name in the current transaction.
+/// Get a DNSSEC policy by name in the current transaction.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, Sqlite>,
     name: &str,
@@ -97,7 +97,8 @@ pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<DnssecPolicy>, D
     Ok(policies)
 }
 
-/// Update a DNSSEC policy in the current transaction.
+/// Write the editable timing fields; the key layout, algorithm, and denial mode
+/// are fixed at creation.
 pub(crate) async fn update_tx(
     tx: &mut Transaction<'_, Sqlite>,
     policy: DnssecPolicy,

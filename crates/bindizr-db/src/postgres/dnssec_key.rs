@@ -14,7 +14,7 @@ pub(crate) async fn create_tx(
 ) -> Result<DnssecKey, DatabaseError> {
     let now = Utc::now();
 
-    let result = sqlx::query(
+    let row = sqlx::query(
         r#"
         INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -35,7 +35,7 @@ pub(crate) async fn create_tx(
     .fetch_one(&mut **tx)
     .await?;
 
-    key.id = DnssecKeyId::from(result.get::<i32, _>(0));
+    key.id = DnssecKeyId::from(row.get::<i32, _>(0));
     key.created_at = now;
 
     Ok(key)
@@ -48,14 +48,13 @@ pub(crate) async fn list_tx(
     lock_level: LockLevel,
 ) -> Result<Vec<DnssecKey>, DatabaseError> {
     let keys = sqlx::query_as::<_, DnssecKey>(AssertSqlSafe(format!(
-        "{}{}",
         r#"
         SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
         FROM dnssec_keys
         WHERE zone_id = $1
-        ORDER BY id
+        ORDER BY id{}
         "#,
-        lock_level.clause()
+        lock_level.clause(),
     )))
     .bind(zone_id)
     .fetch_all(&mut **tx)
@@ -64,7 +63,8 @@ pub(crate) async fn list_tx(
     Ok(keys)
 }
 
-/// List keys in the requested state whose transition deadline has passed.
+/// List the keys in `state` whose stamped `eligible_at` deadline has passed
+/// `cutoff`: the rollover work list.
 pub(crate) async fn list_by_state_eligible_before(
     pool: &Pool<Postgres>,
     state: DnssecKeyState,
@@ -88,7 +88,8 @@ pub(crate) async fn list_by_state_eligible_before(
     Ok(keys)
 }
 
-/// List zones whose keys have exceeded the policy's ZSK lifetime.
+/// List zones whose keys exceeded their policy's ZSK lifetime in `state` and
+/// `role`. A zero lifetime disables scheduled rollover.
 pub(crate) async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     pool: &Pool<Postgres>,
     role: DnssecKeyRole,

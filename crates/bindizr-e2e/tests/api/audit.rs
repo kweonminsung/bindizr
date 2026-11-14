@@ -11,9 +11,10 @@ async fn list_audit_log(app: &TestApp, query: &str) -> (Vec<Value>, u64) {
     let (status, body) = app
         .send_request(Method::GET, &format!("/audit?{query}"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
-    let items = body["items"].as_array().expect("items").clone();
-    (items, body["pagination"]["total"].as_u64().expect("total"))
+    let items = body["items"].as_array().unwrap().clone();
+    (items, body["pagination"]["total"].as_u64().unwrap())
 }
 
 /// Verify that every management change leaves one row naming the object,
@@ -294,7 +295,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
 /// Verify that reading the log needs `audit:read`, which only an all-zones grant carries.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn audit_log_needs_audit_read_in_all_zones() {
+async fn audit_log_requires_audit_read_in_all_zones() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()

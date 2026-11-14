@@ -27,13 +27,13 @@ fn test_zone() -> Zone {
 
 /// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
-            OwnerName::parse_in_zone(name, &zone).unwrap()
+            OwnerName::parse_in_zone(name, &zone_name).unwrap()
         },
         record_type,
         value: value.to_string(),
@@ -132,7 +132,7 @@ fn ed448_keys_generate_verifiable_signatures() {
     // Algorithm 16 only signs through the OpenSSL backend; this guards the
     // ring-to-OpenSSL fallback staying wired up.
     let apex = OwnerName::apex();
-    let rrsigs = rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type()));
+    let rrsigs = rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS);
 
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 16);
@@ -169,7 +169,7 @@ fn rsa_keys_generate_verifiable_signatures() {
 
     // RSA key generation also runs on the OpenSSL backend (ring only signs).
     let apex = OwnerName::apex();
-    let rrsigs = rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type()));
+    let rrsigs = rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS);
 
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 8);

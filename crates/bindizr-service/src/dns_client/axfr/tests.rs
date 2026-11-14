@@ -122,11 +122,11 @@ async fn fetch_zone_honors_keepalive_timeouts() {
         });
 
         let mut client = AxfrClient::new(&addr.to_string());
-        let zone = ZoneName::parse("example.com").unwrap();
+        let zone_name = ZoneName::parse("example.com").unwrap();
 
         assert_eq!(
             client
-                .fetch_zone(&zone, &ImportConfig::default())
+                .fetch_zone(&zone_name, &ImportConfig::default())
                 .await
                 .unwrap()
                 .len(),
@@ -139,7 +139,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
 
         assert_eq!(
             client
-                .fetch_zone(&zone, &ImportConfig::default())
+                .fetch_zone(&zone_name, &ImportConfig::default())
                 .await
                 .unwrap()
                 .len(),

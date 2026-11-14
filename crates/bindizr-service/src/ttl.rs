@@ -68,19 +68,19 @@ pub(crate) fn normalize_minimum_ttl(
     value: Option<i64>,
     fallback: Ttl,
 ) -> Result<Ttl, ServiceError> {
-    value
-        .map(validate_minimum_ttl)
-        .transpose()
-        .map(|ttl| ttl.unwrap_or(fallback))
+    let Some(ttl) = value else {
+        return Ok(fallback);
+    };
+    validate_minimum_ttl(ttl)
 }
 
 /// Require a SOA negative-cache TTL within the unsigned wire range; zero
 /// turns negative caching off (RFC 2308, Section 5).
-pub(crate) fn validate_minimum_ttl(value: i64) -> Result<Ttl, ServiceError> {
-    if value < 0 {
+pub(crate) fn validate_minimum_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
+    if ttl < 0 {
         return Err(ServiceError::invalid_zone_field(
             "minimum_ttl must be a non-negative number of seconds",
         ));
     }
-    Ttl::try_from(value).map_err(ServiceError::invalid_zone_field)
+    Ttl::try_from(ttl).map_err(ServiceError::invalid_zone_field)
 }

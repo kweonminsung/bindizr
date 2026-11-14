@@ -5,8 +5,8 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use domain::base::iana::{Class, Opcode, Rcode};
-use domain::base::{Message, MessageBuilder, Name, Rtype, Serial, Ttl};
+use domain::base::iana::{Class, Opcode, Rcode, Rtype};
+use domain::base::{Message, MessageBuilder, Name, Serial, Ttl};
 use domain::rdata::Soa;
 use domain::rdata::tsig::Time48;
 use domain::tsig::{Key, ServerTransaction};
@@ -27,6 +27,7 @@ pub(crate) struct ReceivedNotify {
     pub(crate) verified: bool,
 }
 
+/// A UDP secondary on an ephemeral port that answers NOTIFY and SOA queries.
 #[derive(Debug)]
 pub(crate) struct FakeSecondary {
     addr: SocketAddr,
@@ -49,7 +50,7 @@ impl FakeSecondary {
         let seen = Arc::clone(&received);
 
         thread::spawn(move || {
-            let mut buffer = [0_u8; 4096];
+            let mut buffer = [0; 4096];
 
             loop {
                 let Ok((len, peer)) = socket.recv_from(&mut buffer) else {
@@ -150,12 +151,12 @@ impl FakeSecondary {
         Self { addr, received }
     }
 
-    /// The `host:port` to register the fake as a secondary under.
+    /// Return the `host:port` to register the fake as a secondary under.
     pub(crate) fn addr(&self) -> String {
         self.addr.to_string()
     }
 
-    /// Every NOTIFY received so far, in order.
+    /// Return every NOTIFY received so far, in order.
     pub(crate) fn received(&self) -> Vec<ReceivedNotify> {
         self.received.lock().expect("received lock").clone()
     }

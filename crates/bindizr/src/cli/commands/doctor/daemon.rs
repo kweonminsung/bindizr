@@ -103,7 +103,7 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiErro
 
         // TCP may split the response; read until the status line is complete.
         let mut buffer = Vec::new();
-        let mut chunk = [0u8; 256];
+        let mut chunk = [0; 256];
 
         loop {
             let read = stream.read(&mut chunk).await?;
@@ -208,8 +208,8 @@ pub(crate) async fn check_services(report: &mut Report) {
 
     for notify in &doctor.notifies {
         match &notify.error {
+            Some(error) => report.fail(format!("NOTIFY rejected: {} ({error})", notify.address)),
             None => report.ok(format!("NOTIFY accepted: {}", notify.address)),
-            Some(error) => report.fail(format!("NOTIFY rejected: {} ({})", notify.address, error)),
         }
     }
 

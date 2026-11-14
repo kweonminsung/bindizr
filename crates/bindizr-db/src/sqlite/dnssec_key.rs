@@ -61,7 +61,8 @@ pub(crate) async fn list_tx(
     Ok(keys)
 }
 
-/// List keys in the requested state whose transition deadline has passed.
+/// List the keys in `state` whose stamped `eligible_at` deadline has passed
+/// `cutoff`: the rollover work list.
 pub(crate) async fn list_by_state_eligible_before(
     pool: &Pool<Sqlite>,
     state: DnssecKeyState,
@@ -86,7 +87,8 @@ pub(crate) async fn list_by_state_eligible_before(
     Ok(keys)
 }
 
-/// List zones whose keys have exceeded the policy's ZSK lifetime.
+/// List zones whose keys exceeded their policy's ZSK lifetime in `state` and
+/// `role`. A zero lifetime disables scheduled rollover.
 pub(crate) async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     pool: &Pool<Sqlite>,
     role: DnssecKeyRole,

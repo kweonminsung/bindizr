@@ -4,11 +4,13 @@ use std::str::FromStr;
 
 use base64::Engine;
 use base64::engine::general_purpose;
+use domain::base::Message;
+use domain::base::iana::Rtype;
 use domain::base::message_builder::AdditionalBuilder;
-use domain::base::{Message, Rtype};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::{Algorithm, ClientTransaction, Key, KeyName};
 use ring::hmac;
+use serde_json::Value;
 
 use crate::common::TestApp;
 
@@ -117,10 +119,10 @@ pub(crate) fn verify_response_mac(
         .to_vec();
     digest.extend_from_slice(request_mac);
     digest.extend_from_slice(&unsigned);
-    tsig.owner().compose_canonical(&mut digest).unwrap();
+    let Ok(()) = tsig.owner().compose_canonical(&mut digest);
     digest.extend_from_slice(&tsig.class().to_int().to_be_bytes());
     digest.extend_from_slice(&tsig.ttl().as_secs().to_be_bytes());
-    data.algorithm().compose_canonical(&mut digest).unwrap();
+    let Ok(()) = data.algorithm().compose_canonical(&mut digest);
     digest.extend_from_slice(&data.time_signed().into_octets());
     digest.extend_from_slice(&data.fudge().to_be_bytes());
     digest.extend_from_slice(&data.error().to_int().to_be_bytes());
@@ -167,8 +169,7 @@ pub(crate) async fn create_tsig_key(app: &TestApp, name: &str, role: KeyRole) ->
     let fetched = app
         .run_cli_success(&["tsig-key", "get", name, "--output", "json"], None)
         .await;
-    let fetched: serde_json::Value =
-        serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");
+    let fetched: Value = serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");
 
     SigningKey {
         name: name.to_string(),

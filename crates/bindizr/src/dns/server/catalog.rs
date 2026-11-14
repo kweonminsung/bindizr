@@ -1,8 +1,8 @@
 //! Encode and stream the service's virtual catalog as AXFR or IXFR.
 
-use bindizr_core::dns::message::Rtype;
+use bindizr_core::dns::message::{DnsMessageBuilder, ParsedQuery, Rtype};
 use bindizr_core::dns::tsig::TransferSigner;
-use bindizr_core::dns::{CatalogZone, Serial, message};
+use bindizr_core::dns::{CatalogZone, Serial};
 
 use crate::dns::error::DnsError;
 use crate::dns::stream::ResponseWriter;
@@ -10,19 +10,18 @@ use crate::dns::stream::ResponseWriter;
 /// Answer a catalog transfer with its current SOA or full snapshot.
 pub(crate) async fn send_catalog_response(
     writer: &ResponseWriter,
-    query: &message::ParsedQuery,
+    query: &ParsedQuery,
     response_qtype: Rtype,
     signer: &mut Option<TransferSigner>,
     content: (CatalogZone, Vec<String>),
 ) -> Result<(), DnsError> {
     let (catalog_zone, member_zones) = content;
     log::info!(
-        "{} request for catalog zone: {}",
-        response_qtype,
+        "{response_qtype} request for catalog zone: {}",
         catalog_zone.name
     );
 
-    let mut builder = message::DnsMessageBuilder::new(query, response_qtype);
+    let mut builder = DnsMessageBuilder::new(query, response_qtype);
 
     if let Some(signer) = signer.take() {
         builder = builder.sign_with(signer);
@@ -41,9 +40,9 @@ pub(crate) async fn send_catalog_response(
 
         // RFC 1995, Section 2: equal or newer clients need only the current SOA.
         if response_qtype == Rtype::IXFR
-            && query.client_serial.is_some_and(|client| {
-                let client = Serial::from(client);
-                client == serial || client.is_newer_than(serial)
+            && query.client_serial.is_some_and(|client_serial| {
+                let client_serial = Serial::from(client_serial);
+                client_serial == serial || client_serial.is_newer_than(serial)
             })
         {
             return writer.flush_if_not_empty(&mut builder).await;
@@ -86,10 +85,8 @@ pub(crate) async fn send_catalog_response(
     let messages_sent = streamed?;
 
     log::info!(
-        "Catalog {} completed at serial {} in {} DNS message(s)",
-        response_qtype,
-        catalog_zone.serial,
-        messages_sent
+        "Catalog {response_qtype} completed at serial {} in {messages_sent} DNS message(s)",
+        catalog_zone.serial
     );
 
     Ok(())

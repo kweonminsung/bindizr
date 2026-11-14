@@ -27,13 +27,13 @@ fn test_zone() -> Zone {
 
 /// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
-            OwnerName::parse_in_zone(name, &zone).unwrap()
+            OwnerName::parse_in_zone(name, &zone_name).unwrap()
         },
         record_type,
         value: value.to_string(),
@@ -243,10 +243,7 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
     // all data, so the pre-published new-algorithm key signs immediately.
     let apex = OwnerName::apex();
 
-    assert_eq!(
-        rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type())).len(),
-        2
-    );
+    assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 2);
 }
 
 /// Verify that algorithm rollover keeps the retired old algorithm signing.
@@ -283,8 +280,5 @@ fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
     // all data until the key is removed (RFC 6840, Section 5.11).
     let apex = OwnerName::apex();
 
-    assert_eq!(
-        rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type())).len(),
-        2
-    );
+    assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 2);
 }

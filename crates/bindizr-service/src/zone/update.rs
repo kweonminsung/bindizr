@@ -5,10 +5,10 @@ use bindizr_core::model::zone::Zone;
 use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 use bindizr_db::LockLevel;
 
+use super::validation;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{UpdateZoneRequest, WriteZoneResponse, ZoneResponse};
-use crate::zone::validation;
 use crate::{Context, dnssec, notify, record, serial, text, transaction, ttl};
 
 /// Outcome of the transactional part of a zone update.
@@ -79,7 +79,7 @@ pub async fn update(
         .as_deref()
         .map(validation::normalize_rname)
         .transpose();
-    let ttl = request
+    let default_ttl = request
         .default_ttl
         .map(ttl::validate_default_ttl)
         .transpose();
@@ -122,7 +122,7 @@ pub async fn update(
             name: name?.unwrap_or_else(|| existing_zone.name.clone()),
             mname: mname?.unwrap_or_else(|| existing_zone.mname.clone()),
             rname: rname?.unwrap_or_else(|| existing_zone.rname.clone()),
-            default_ttl: ttl?.unwrap_or(existing_zone.default_ttl),
+            default_ttl: default_ttl?.unwrap_or(existing_zone.default_ttl),
             description: description?.unwrap_or_else(|| existing_zone.description.clone()),
             refresh: refresh?.unwrap_or(existing_zone.refresh),
             retry: retry?.unwrap_or(existing_zone.retry),

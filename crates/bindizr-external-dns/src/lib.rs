@@ -21,6 +21,11 @@ use tokio::sync::watch;
 use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tokio::{signal, time};
 
+use crate::config::{AdapterConfig, Cli};
+use crate::metrics::AdapterMetrics;
+use crate::server::AppState;
+use crate::upstream::UpstreamClient;
+
 /// How long in-flight requests get once the adapter is asked to stop, bounded
 /// well inside the grace period Kubernetes allows before SIGKILL.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -44,9 +49,9 @@ pub async fn execute() {
 
     use clap::Parser;
 
-    let cli = config::Cli::parse();
-    let adapter_config = config::AdapterConfig::load(cli).unwrap_or_else(|error| {
-        errln!("Error: {}", error);
+    let cli = Cli::parse();
+    let adapter_config = AdapterConfig::load(cli).unwrap_or_else(|error| {
+        errln!("Error: {error}");
         process::exit(EXIT_CONFIG);
     });
 
@@ -62,20 +67,20 @@ pub async fn execute() {
     }
 
     // Prepare the upstream connection settings before accepting webhook requests.
-    let upstream = upstream::UpstreamClient::new(
+    let upstream = UpstreamClient::new(
         adapter_config.bindizr_url.clone(),
         adapter_config.token,
         adapter_config.timeout_secs,
         adapter_config.ca_file.as_deref(),
     )
     .unwrap_or_else(|error| {
-        errln!("Error: {}", error);
+        errln!("Error: {error}");
         process::exit(EXIT_CONFIG);
     });
-    let state = Arc::new(server::AppState {
+    let state = Arc::new(AppState {
         upstream,
-        metrics: metrics::AdapterMetrics::new().unwrap_or_else(|error| {
-            errln!("Error: {}", error);
+        metrics: AdapterMetrics::new().unwrap_or_else(|error| {
+            errln!("Error: {error}");
             process::exit(1);
         }),
     });
@@ -84,16 +89,15 @@ pub async fn execute() {
     let webhook_listener = TcpListener::bind(adapter_config.listen_addr)
         .await
         .unwrap_or_else(|error| {
-            log::error!("Failed to bind {}: {:?}", adapter_config.listen_addr, error);
+            log::error!("Failed to bind {}: {error:?}", adapter_config.listen_addr);
             process::exit(1);
         });
     let health_listener = TcpListener::bind(adapter_config.health_listen_addr)
         .await
         .unwrap_or_else(|error| {
             log::error!(
-                "Failed to bind {}: {:?}",
-                adapter_config.health_listen_addr,
-                error
+                "Failed to bind {}: {error:?}",
+                adapter_config.health_listen_addr
             );
             process::exit(1);
         });

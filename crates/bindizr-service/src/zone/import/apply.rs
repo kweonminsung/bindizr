@@ -103,11 +103,11 @@ pub(crate) async fn apply_import(
     let apply_result: Result<ApplyImportResult, ServiceError> = async {
         let started = Instant::now();
 
-        let existing = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let existing_zone = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        let zone_missing = existing.is_none();
-        let default_ttl = if let Some(zone) = &existing {
+        let zone_missing = existing_zone.is_none();
+        let default_ttl = if let Some(zone) = &existing_zone {
             super::authorize_import(caller, mode, zone)?;
             zone.default_ttl
         } else if missing_zone_action == MissingZoneAction::Create {
@@ -123,12 +123,15 @@ pub(crate) async fn apply_import(
             ImportSource::Text(content) => ParsedZoneFile::parse(content, zone_name, default_ttl),
             ImportSource::Transfer(parsed) => parsed,
         };
-        let mut zone = match existing {
+        let mut zone = match existing_zone {
             Some(zone) => zone,
             None => {
-                let soa = parsed.soa.as_ref().ok_or_else(|| ServiceError::invalid_input(
-                    "the zone file carries no SOA to create the zone from; create it with `zone create` first",
-                ))?;
+                let soa = parsed.soa.as_ref().ok_or_else(|| {
+                    ServiceError::invalid_input(
+                        "the zone file carries no SOA to create the zone from; \
+                         create it with `zone create` first",
+                    )
+                })?;
                 prepare_zone(cx, zone_name, soa, default_ttl)?
             }
         };
@@ -145,7 +148,9 @@ pub(crate) async fn apply_import(
         for record in parsed.records {
             let requested = match record.value {
                 ZoneFileValue::Rdata(rdata) if record.record_type == RecordType::Txt => {
-                    RecordValue::Presentation { presentation: rdata }
+                    RecordValue::Presentation {
+                        presentation: rdata,
+                    }
                 }
                 ZoneFileValue::Rdata(rdata) => RecordValue::Text(rdata),
                 ZoneFileValue::Segments(segments) => RecordValue::Segments(segments),
@@ -157,13 +162,14 @@ pub(crate) async fn apply_import(
                     continue;
                 }
             };
-            let stored_name = match validation::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
-                Ok(stored_name) => stored_name,
-                Err(error) => {
-                    errors.push(format!("{}: {}", record.owner_fqdn, error));
-                    continue;
-                }
-            };
+            let stored_name =
+                match validation::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
+                    Ok(stored_name) => stored_name,
+                    Err(error) => {
+                        errors.push(format!("{}: {}", record.owner_fqdn, error));
+                        continue;
+                    }
+                };
 
             let data = RecordData {
                 name: stored_name,
@@ -184,7 +190,8 @@ pub(crate) async fn apply_import(
                     skipped += 1;
                 } else {
                     errors.push(format!(
-                        "{}: {} records with conflicting TTLs {} and {}; records sharing a name and type share one TTL",
+                        "{}: {} records with conflicting TTLs {} and {}; \
+                         records sharing a name and type share one TTL",
                         record.owner_fqdn, record.record_type, kept_ttl, this_ttl
                     ));
                 }
@@ -210,8 +217,10 @@ pub(crate) async fn apply_import(
         } else {
             match mode {
                 ImportMode::Append => {
-                    let mut names: Vec<OwnerName> =
-                        desired.iter().map(|desired_record| desired_record.data.name.clone()).collect();
+                    let mut names: Vec<OwnerName> = desired
+                        .iter()
+                        .map(|desired_record| desired_record.data.name.clone())
+                        .collect();
                     names.sort();
                     names.dedup();
 
@@ -346,7 +355,8 @@ pub(crate) async fn apply_import(
         };
 
         let will_apply = errors.is_empty() && !run.is_dry_run();
-        let has_changes = !plan.deletes.is_empty() || !plan.adds.is_empty() || !plan.ttl_deletes.is_empty();
+        let has_changes =
+            !plan.deletes.is_empty() || !plan.adds.is_empty() || !plan.ttl_deletes.is_empty();
 
         let new_serial = if has_changes && errors.is_empty() {
             serial::generate_serial(Some(zone.serial))

@@ -18,7 +18,7 @@ impl TestApp {
                     "name": zone_name,
                     "mname": format!("ns1.{zone_name}"),
                     "rname": "admin@example.com",
-                    "default_ttl": 3600,
+                    "default_ttl": 3600
                 })),
             )
             .await;

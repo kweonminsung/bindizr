@@ -41,12 +41,13 @@ pub async fn authorize_ixfr_plan_by_name(
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
-        let current = zone.serial;
+        let current_serial = zone.serial;
 
         // RFC 1995, Section 2: equal or newer client serials need only the current SOA.
-        let plan = if client_serial == current || client_serial.is_newer_than(current) {
+        let plan = if client_serial == current_serial || client_serial.is_newer_than(current_serial)
+        {
             IxfrPlan::SoaOnly
-        } else if !current.is_newer_than(client_serial) {
+        } else if !current_serial.is_newer_than(client_serial) {
             // RFC 1982 leaves the half-range distance unordered; send a full snapshot.
             IxfrPlan::Full
         } else {
@@ -56,7 +57,7 @@ pub async fn authorize_ixfr_plan_by_name(
                 &mut tx,
                 zone.id,
                 client_serial,
-                current,
+                current_serial,
             )
             .await?;
             let zone_rows = bindizr_db::record::count_tx(&mut tx, zone.id).await?
@@ -69,7 +70,7 @@ pub async fn authorize_ixfr_plan_by_name(
                     &mut tx,
                     zone.id,
                     client_serial,
-                    current,
+                    current_serial,
                     LockLevel::Unlocked,
                 )
                 .await?;
@@ -81,7 +82,7 @@ pub async fn authorize_ixfr_plan_by_name(
                         &mut tx,
                         zone.id,
                         client_serial,
-                        current,
+                        current_serial,
                     )
                     .await?;
 
@@ -94,8 +95,12 @@ pub async fn authorize_ixfr_plan_by_name(
                     let version_serials: Vec<Serial> =
                         versions.iter().map(|version| version.serial).collect();
 
-                    match validate_delta(client_serial, current, &journal_serials, &version_serials)
-                    {
+                    match validate_delta(
+                        client_serial,
+                        current_serial,
+                        &journal_serials,
+                        &version_serials,
+                    ) {
                         Ok(()) => IxfrPlan::Changes { changes, versions },
                         Err(gap) => {
                             log::warn!(

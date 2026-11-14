@@ -34,7 +34,7 @@ pub(crate) enum Prerequisite {
 }
 
 impl Prerequisite {
-    /// The checked owner.
+    /// Return the checked owner.
     pub(crate) fn name(&self) -> &OwnerName {
         match self {
             Self::NameExists { name }
@@ -45,7 +45,7 @@ impl Prerequisite {
         }
     }
 
-    /// The wire type; `None` denotes a name-only prerequisite.
+    /// Return the wire type; `None` denotes a name-only prerequisite.
     pub(crate) fn record_type(&self) -> Option<Rtype> {
         match self {
             Self::NameExists { .. } | Self::NameAbsent { .. } => None,
@@ -59,7 +59,7 @@ impl Prerequisite {
 /// Canonical RDATA sets, excluding TTL (RFC 2136, Sections 1.1 and 3.2.3).
 pub(crate) type RecordSets = BTreeMap<(OwnerName, Rtype), BTreeSet<Rdata>>;
 
-/// The complete served zone at this transaction's serial, under the caller's
+/// List the complete served zone at this transaction's serial, under the caller's
 /// zone lock: the SOA, ordinary and signer-generated records.
 pub(crate) async fn list_served_record_sets_tx(
     tx: &mut Transaction<'_>,

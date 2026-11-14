@@ -36,9 +36,9 @@ pub async fn update(
 
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
-        None => None,
         Some("") => Some(None),
         Some(key_name) => Some(Some(tsig_key::lookup_by_name(cx, key_name).await?)),
+        None => None,
     };
 
     // Friendly pre-check; the UNIQUE(address) backstop covers the race.
@@ -70,22 +70,22 @@ pub async fn update(
         // The detail names keys, so the replaced one is read by id; gone
         // meanwhile, it reads as the id.
         let notify_key_change = match &notify_tsig_key {
-            None => None,
             Some(next) => {
                 let previous = match secondary.notify_tsig_key_id {
-                    None => "none".to_string(),
                     Some(id) => bindizr_db::tsig_key::get_tx(&mut tx, id, LockLevel::Unlocked)
                         .await?
-                        .map_or_else(|| format!("key {id}"), |key| key.name),
+                        .map_or_else(|| format!("key {id}"), |tsig_key| tsig_key.name),
+                    None => "none".to_string(),
                 };
 
                 audit::changed(
                     "notify_key_name",
                     previous,
                     next.as_ref()
-                        .map_or("none".to_string(), |key| key.name.clone()),
+                        .map_or("none".to_string(), |tsig_key| tsig_key.name.clone()),
                 )
             }
+            None => None,
         };
         let detail = audit::join_changes([
             audit::changed("address", &secondary.address, &address),
@@ -131,5 +131,5 @@ pub async fn update(
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to update secondary").await?;
 
-    super::load_response(cx, secondary).await
+    super::lookup_response(cx, &secondary).await
 }

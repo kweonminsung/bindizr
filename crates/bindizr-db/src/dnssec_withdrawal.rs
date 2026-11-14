@@ -13,7 +13,7 @@ pub async fn create_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<(), 
     }
 }
 
-/// Read a zone's DNSSEC withdrawal marker in the current transaction.
+/// Get a zone's DNSSEC withdrawal marker in the current transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,

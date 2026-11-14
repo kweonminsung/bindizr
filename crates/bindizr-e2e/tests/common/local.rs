@@ -77,15 +77,7 @@ impl TestApp {
             }
         }
 
-        panic!(
-            "bindizr did not start:
-{}",
-            failures.join(
-                "
----
-"
-            )
-        );
+        panic!("bindizr did not start:\n{}", failures.join("\n---\n"));
     }
 }
 
@@ -188,7 +180,8 @@ level = "error"
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_tsig_required = options.nsupdate_tsig_required,
         openapi_enabled = options.openapi_enabled,
-        catalog_zone_name = serde_json::to_string(&options.catalog_zone_name).unwrap(),
+        catalog_zone_name = serde_json::to_string(&options.catalog_zone_name)
+            .expect("catalog zone name serializes as a quoted string"),
         tls = if options.tls {
             format!("\n[api.tls]\ncert_file = \"{dir}/tls.crt\"\nkey_file = \"{dir}/tls.key\"\n")
         } else {

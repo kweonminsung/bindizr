@@ -1,7 +1,6 @@
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::Engine;
 use base64::engine::general_purpose;
 use chrono::Utc;
 use domain::base::iana::{Class, Opcode, Rtype};
@@ -20,7 +19,7 @@ use crate::model::tsig_key::TsigKeyId;
 
 const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
-/// Fixed TSIG fields are checked even when altering them leaves the MAC unchanged.
+/// Verify that fixed TSIG fields are checked even when altering them leaves the MAC unchanged.
 #[test]
 fn verify_response_rejects_invalid_class_and_ttl() {
     let key = test_key(TsigAlgorithm::HmacSha256)
@@ -33,9 +32,9 @@ fn verify_response_rejects_invalid_class_and_ttl() {
             Rtype::SOA,
         ))
         .unwrap();
-    let mut query = question.additional();
-    let verifier = sign_request(&mut query, key.clone()).unwrap();
-    let query = query.finish();
+    let mut additional = question.additional();
+    let verifier = sign_request(&mut additional, key.clone()).unwrap();
+    let query = additional.finish();
     let server = verify_tsig(&query, Some(key)).unwrap();
     let query = Message::from_octets(query).unwrap();
     let mut response = MessageBuilder::new_vec()
@@ -77,7 +76,7 @@ fn verify_response_rejects_invalid_class_and_ttl() {
     );
 }
 
-/// A request cannot carry a TSIG response error, even under a valid MAC.
+/// Verify that a request cannot carry a TSIG response error, even under a valid MAC.
 #[test]
 fn request_tsig_rejects_nonzero_error() {
     for algorithm in [
@@ -97,10 +96,10 @@ fn request_tsig_rejects_nonzero_error() {
             let message = build_signed_update_with_tsig_fields(algorithm, now_secs(), error, &[]);
 
             assert_eq!(request_signature(&message), RequestSignature::Malformed);
-            assert!(matches!(
+            assert_eq!(
                 UpdateRequest::parse(&message),
                 Err(ParseUpdateError::InvalidTsig)
-            ));
+            );
             assert!(matches!(
                 verify_tsig(&message, Some(key.clone())),
                 Err(TsigError::Malformed(_))
@@ -109,7 +108,7 @@ fn request_tsig_rejects_nonzero_error() {
     }
 }
 
-/// Other Data is opaque in requests and every octet participates in the MAC.
+/// Verify that Other Data is opaque in requests and every octet participates in the MAC.
 #[test]
 fn verify_tsig_authenticates_original_other_data() {
     for algorithm in [
@@ -175,7 +174,7 @@ fn verify_tsig_authenticates_original_other_data() {
     }
 }
 
-/// TSIG errors fit long queries and distinguish authenticated responses.
+/// Verify that TSIG errors fit long queries and distinguish authenticated responses.
 #[test]
 fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
     let name = format!(
@@ -303,7 +302,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
     }
 }
 
-/// Size bounds never erase the TSIG error, its time fields, or its full MAC.
+/// Verify that size bounds never erase the TSIG error, its time fields, or its full MAC.
 #[test]
 fn tsig_errors_with_distinct_long_names_fit_udp() {
     for algorithm in [
@@ -379,10 +378,10 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                             question
                                 .push((Name::<Vec<u8>>::from_str(&qname).unwrap(), qtype))
                                 .unwrap();
-                            let mut query = question.additional();
+                            let mut additional = question.additional();
 
                             if let Some(size) = edns {
-                                query
+                                additional
                                     .opt(|opt| {
                                         opt.set_udp_payload_size(size);
                                         opt.set_dnssec_ok(true);
@@ -401,12 +400,12 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                             );
                             ClientTransaction::request_with_fudge(
                                 client.clone(),
-                                &mut query,
+                                &mut additional,
                                 time,
                                 17,
                             )
                             .unwrap();
-                            let query = query.finish();
+                            let query = additional.finish();
 
                             assert_eq!(query.len(), request_len);
                             let full = build_failed_response(
@@ -448,7 +447,7 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                                 message.opt().map(|opt| opt.dnssec_ok()),
                                 edns.map(|_| true)
                             );
-                            let (rcode, error, signed_at, mac, other) =
+                            let (rcode, error, time_signed, mac, other) =
                                 extract_response_tsig(&response);
 
                             assert_eq!(rcode, Rcode::NOTAUTH);
@@ -463,7 +462,7 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                             assert_eq!(mac.len(), native);
 
                             if stale {
-                                assert_eq!(signed_at, u64::from(time));
+                                assert_eq!(time_signed, u64::from(time));
                             }
 
                             assert_eq!(
@@ -513,6 +512,8 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
 
 /// Build a signing-key fixture for the test.
 pub(crate) fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
+    use base64::Engine;
+
     TsigKey {
         id: TsigKeyId::from(1),
         name: "update-key".to_string(),
@@ -564,7 +565,7 @@ pub(crate) fn build_signed_update(algorithm: TsigAlgorithm, time_signed: u64) ->
 fn build_signed_update_with_tsig_fields(
     algorithm: TsigAlgorithm,
     time_signed: u64,
-    error: TsigRcode,
+    rcode: TsigRcode,
     other: &[u8],
 ) -> Vec<u8> {
     let base = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
@@ -577,7 +578,7 @@ fn build_signed_update_with_tsig_fields(
     digest.extend_from_slice(&algorithm_name);
     digest.extend_from_slice(&encode_u48(time_signed));
     digest.extend_from_slice(&300u16.to_be_bytes());
-    digest.extend_from_slice(&error.to_int().to_be_bytes());
+    digest.extend_from_slice(&rcode.to_int().to_be_bytes());
     digest.extend_from_slice(&(other.len() as u16).to_be_bytes());
     digest.extend_from_slice(other);
     let mac = hmac_sign(algorithm, &digest);
@@ -587,7 +588,7 @@ fn build_signed_update_with_tsig_fields(
     rdata.extend_from_slice(&(mac.len() as u16).to_be_bytes());
     rdata.extend_from_slice(&mac);
     rdata.extend_from_slice(&base[..2]);
-    rdata.extend_from_slice(&error.to_int().to_be_bytes());
+    rdata.extend_from_slice(&rcode.to_int().to_be_bytes());
     rdata.extend_from_slice(&(other.len() as u16).to_be_bytes());
     rdata.extend_from_slice(other);
     let mut message = base;
@@ -701,7 +702,7 @@ fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
     }
 }
 
-/// Accept an upper-case algorithm name: the digest takes the canonical form
+/// Verify that an upper-case algorithm name is accepted: the digest takes the canonical form
 /// (RFC 8945, Section 4.3.3), so only the match has to fold (RFC 1035, Section 2.3.3).
 #[test]
 fn verify_tsig_accepts_mixed_case_algorithm_names() {
@@ -728,7 +729,7 @@ fn verify_tsig_accepts_mixed_case_algorithm_names() {
     }
 }
 
-/// Reject a bad MAC before considering the request's timestamp.
+/// Verify that a bad MAC is rejected before the request's timestamp is considered.
 #[test]
 fn verify_tsig_rejects_tampered_mac_with_badsig() {
     let key = test_key(TsigAlgorithm::HmacSha256)
@@ -836,7 +837,7 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     assert_response_mac(&query, &response, TsigAlgorithm::HmacSha256);
 }
 
-/// Preserve EDNS and authenticate BADTIME across algorithms and request paths.
+/// Verify that BADTIME preserves EDNS and is authenticated across algorithms and request paths.
 #[test]
 fn badtime_response_preserves_edns() {
     for algorithm in [
@@ -922,7 +923,8 @@ fn badtime_response_preserves_edns() {
     }
 }
 
-/// Check MAC and time before rejecting an authenticated truncation (RFC 8945, Section 5.2).
+/// Verify that MAC and time are checked before an authenticated truncation is rejected (RFC 8945,
+/// Section 5.2).
 #[test]
 fn truncated_requests_follow_validation_order() {
     for algorithm in [
@@ -965,10 +967,10 @@ fn truncated_requests_follow_validation_order() {
                             Rtype::SOA,
                         ))
                         .unwrap();
-                    let mut query = question.additional();
+                    let mut additional = question.additional();
 
                     if let Some(dnssec_ok) = edns {
-                        query
+                        additional
                             .opt(|opt| {
                                 opt.set_udp_payload_size(1232);
                                 opt.set_dnssec_ok(dnssec_ok);
@@ -979,12 +981,12 @@ fn truncated_requests_follow_validation_order() {
 
                     ClientTransaction::request_with_fudge(
                         client_key.clone(),
-                        &mut query,
+                        &mut additional,
                         signed_at,
                         17,
                     )
                     .unwrap();
-                    let mut query = query.finish();
+                    let mut query = additional.finish();
 
                     if corrupt {
                         let mac_end = query.len() - 7;
@@ -1060,7 +1062,7 @@ fn truncated_requests_follow_validation_order() {
     }
 }
 
-/// Keep the outbound full-length policy after authenticating response MACs.
+/// Verify that the outbound full-length policy holds after response MACs authenticate.
 #[test]
 fn outbound_responses_require_full_length_macs() {
     let key = test_key(TsigAlgorithm::HmacSha256)
@@ -1085,9 +1087,9 @@ fn outbound_responses_require_full_length_macs() {
                 Rtype::SOA,
             ))
             .unwrap();
-        let mut query = question.additional();
-        let verifier = sign_request(&mut query, key.clone()).unwrap();
-        let mut query = Message::from_octets(query.finish()).unwrap();
+        let mut additional = question.additional();
+        let verifier = sign_request(&mut additional, key.clone()).unwrap();
+        let mut query = Message::from_octets(additional.finish()).unwrap();
         let server = ServerTransaction::request(&server_key, &mut query, Time48::now())
             .unwrap()
             .unwrap();
@@ -1142,7 +1144,7 @@ fn reserved_tsig_size_covers_maximum_key_name() {
     );
 }
 
-/// Keep malformed TSIG requests from being treated as unsigned.
+/// Verify that malformed TSIG requests are not treated as unsigned.
 #[test]
 fn tsig_parser_rejects_unparseable_signature() {
     let signed = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -1161,25 +1163,19 @@ fn tsig_parser_rejects_unparseable_signature() {
     empty_rdata.extend_from_slice(&0u32.to_be_bytes()); // TTL
     empty_rdata.extend_from_slice(&0u16.to_be_bytes()); // RDLENGTH
 
-    assert!(matches!(
-        request_signature(&empty_rdata),
-        RequestSignature::Malformed
-    ));
+    assert_eq!(request_signature(&empty_rdata), RequestSignature::Malformed);
 
     // An overrun prevents establishing whether more records follow.
     let mut overrun = empty_rdata.clone();
     let rdlength_at = overrun.len() - 2;
     overrun[rdlength_at..].copy_from_slice(&8u16.to_be_bytes());
 
-    assert!(matches!(
-        request_signature(&overrun),
-        RequestSignature::Malformed
-    ));
+    assert_eq!(request_signature(&overrun), RequestSignature::Malformed);
 
-    assert!(matches!(
+    assert_eq!(
         request_signature(&crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6)),
         RequestSignature::Absent
-    ));
+    );
 }
 
 /// The signed update with its TSIG MAC replaced by `mac_len` zero octets; the
@@ -1187,7 +1183,7 @@ fn tsig_parser_rejects_unparseable_signature() {
 fn build_update_with_mac_len(mac_len: usize) -> Vec<u8> {
     let key_name = encode_name("update-key");
     let algorithm_name = encode_name(TsigAlgorithm::HmacSha256.as_str());
-    let mac = vec![0u8; mac_len];
+    let mac = vec![0; mac_len];
 
     let mut message = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
     message[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
@@ -1209,8 +1205,8 @@ fn build_update_with_mac_len(mac_len: usize) -> Vec<u8> {
     message
 }
 
-/// Verify malformed TSIG placement and MAC lengths while admitting valid truncation
-/// (RFC 8945, Sections 5.2 and 5.2.2.1).
+/// Verify that malformed TSIG placement and MAC lengths are rejected while valid
+/// truncation is admitted (RFC 8945, Sections 5.2 and 5.2.2.1).
 #[test]
 fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     let signed = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -1225,10 +1221,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     not_last.extend_from_slice(&4u16.to_be_bytes());
     not_last.extend_from_slice(&[192, 0, 2, 1]);
 
-    assert!(matches!(
-        request_signature(&not_last),
-        RequestSignature::Malformed
-    ));
+    assert_eq!(request_signature(&not_last), RequestSignature::Malformed);
 
     // The TSIG record twice over.
     let base_len = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6).len();
@@ -1236,10 +1229,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     doubled[10..12].copy_from_slice(&2u16.to_be_bytes());
     doubled.extend_from_within(base_len..);
 
-    assert!(matches!(
-        request_signature(&doubled),
-        RequestSignature::Malformed
-    ));
+    assert_eq!(request_signature(&doubled), RequestSignature::Malformed);
 
     // SHA-256 allows 16..=32 bytes structurally; key validation may still
     // reject 16-byte truncation with BADTRUNC.
@@ -1253,7 +1243,8 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     }
 }
 
-/// TSIG belongs only in Additional, with CLASS ANY and TTL zero (RFC 8945, Section 4.2).
+/// Verify that TSIG is accepted only in Additional, with CLASS ANY and TTL zero (RFC 8945, Section
+/// 4.2).
 #[test]
 fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
     let wire = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -1263,10 +1254,7 @@ fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
     for offset in [class + 1, class + 5] {
         let mut malformed = wire.clone();
         malformed[offset] = 1;
-        assert!(matches!(
-            request_signature(&malformed),
-            RequestSignature::Malformed
-        ));
+        assert_eq!(request_signature(&malformed), RequestSignature::Malformed);
     }
 
     for count in [6, 8] {
@@ -1274,9 +1262,6 @@ fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
         malformed[count..count + 2].copy_from_slice(&1u16.to_be_bytes());
         malformed[10..12].fill(0);
 
-        assert!(matches!(
-            request_signature(&malformed),
-            RequestSignature::Malformed
-        ));
+        assert_eq!(request_signature(&malformed), RequestSignature::Malformed);
     }
 }

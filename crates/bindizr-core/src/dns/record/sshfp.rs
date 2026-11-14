@@ -87,7 +87,7 @@ impl SshfpRecordValue {
 
 #[cfg(test)]
 mod tests {
-    use super::SshfpRecordValue;
+    use super::*;
 
     /// Verify that `parse` drops rfc1035 parens around the fingerprint.
     #[test]

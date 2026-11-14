@@ -76,8 +76,8 @@ pub(crate) async fn check_secondary(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<CheckSecondaryResponse>, ServiceError> {
-    let check = secondary::check(cx, &Caller::socket(), name).await?;
-    let message = if check.is_healthy() {
+    let response = secondary::check(cx, &Caller::socket(), name).await?;
+    let message = if response.is_healthy() {
         format!("Secondary '{name}' passed the check")
     } else {
         format!("Secondary '{name}' failed the check")
@@ -85,24 +85,23 @@ pub(crate) async fn check_secondary(
 
     Ok(DaemonResponse {
         message,
-        data: check,
+        data: response,
     })
 }
 
-/// The transfers Bindizr served one secondary.
+/// List the transfers Bindizr served one secondary.
 pub(crate) async fn list_secondary_transfers(
     cx: &Context,
     name: &str,
     filter: SecondaryTransferFilter,
 ) -> Result<DaemonResponse<SecondaryTransfersResponse>, ServiceError> {
-    let transfers = secondary::list_transfers(cx, &Caller::socket(), name, filter).await?;
+    let response = secondary::list_transfers(cx, &Caller::socket(), name, filter).await?;
 
     Ok(DaemonResponse {
         message: format!(
-            "{} transfer(s) served to secondary '{}'",
-            transfers.transfers.len(),
-            name
+            "{} transfer(s) served to secondary '{name}'",
+            response.transfers.len()
         ),
-        data: transfers,
+        data: response,
     })
 }

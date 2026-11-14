@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::ToSchema;
 
-use super::common::ErrorResponse;
-use super::version::RecordDiffResponse;
+use crate::types::common::ErrorResponse;
+use crate::types::version::RecordDiffResponse;
 
 /// How parsed records are reconciled with the records already in the zone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportMode {
     /// Add parsed records; records already present are left untouched.
@@ -22,6 +22,40 @@ pub enum ImportMode {
     Upsert,
     /// Replace all non-protected records in the zone with the parsed records.
     Replace,
+}
+
+impl ImportMode {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Append => "append",
+            Self::Upsert => "upsert",
+            Self::Replace => "replace",
+        }
+    }
+}
+
+/// An import mode outside the supported reconciliation strategies.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("invalid import mode '{value}': expected append, upsert, or replace")]
+pub struct ParseImportModeError {
+    value: String,
+}
+
+impl FromStr for ImportMode {
+    type Err = ParseImportModeError;
+
+    /// Validate the raw mode supplied in an import request.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "append" => Ok(Self::Append),
+            "upsert" => Ok(Self::Upsert),
+            "replace" => Ok(Self::Replace),
+            _ => Err(ParseImportModeError {
+                value: value.to_string(),
+            }),
+        }
+    }
 }
 
 /// Request body for importing records into a zone: BIND zone file text in
@@ -91,24 +125,6 @@ pub struct ImportZoneSummaryResponse {
     pub unchanged: u64,
     #[schema(example = 0)]
     pub skipped: u64,
-}
-
-impl ImportMode {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Append => "append",
-            Self::Upsert => "upsert",
-            Self::Replace => "replace",
-        }
-    }
-}
-
-impl serde::Serialize for ImportMode {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
 }
 
 /// Supply the wire default when an import request omits its mode.
@@ -231,27 +247,10 @@ impl ImportZonesResponse {
     }
 }
 
-/// An import mode outside the supported reconciliation strategies.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("invalid import mode '{0}': expected append, upsert, or replace")]
-pub struct ParseImportModeError(String);
-
-impl FromStr for ImportMode {
-    type Err = ParseImportModeError;
-
-    /// Validate the raw mode supplied in an import request.
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "append" => Ok(Self::Append),
-            "upsert" => Ok(Self::Upsert),
-            "replace" => Ok(Self::Replace),
-            _ => Err(ParseImportModeError(value.to_string())),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     /// Verify that `ImportResult` has one spelling across `as_str` and serde.
@@ -262,34 +261,24 @@ mod tests {
             ImportResult::Rejected,
             ImportResult::Failed,
         ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(value.as_str())
-            );
-            assert_eq!(
-                serde_json::from_value::<ImportResult>(serde_json::json!(value.as_str())).unwrap(),
+                serde_json::from_value::<ImportResult>(json!(value.as_str())).unwrap(),
                 value
             );
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every ImportMode variant.
+    /// Verify that `ImportMode` has one spelling across `as_str`, serde, and `FromStr`.
     #[test]
     fn import_mode_spells_itself_once() {
-        for (value, expected) in [
-            (ImportMode::Append, "append"),
-            (ImportMode::Upsert, "upsert"),
-            (ImportMode::Replace, "replace"),
-        ] {
-            assert_eq!(value.as_str(), expected);
+        for value in [ImportMode::Append, ImportMode::Upsert, ImportMode::Replace] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<ImportMode>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<ImportMode>(json!(value.as_str())).unwrap(),
                 value
             );
+            assert_eq!(value.as_str().parse::<ImportMode>().unwrap(), value);
         }
     }
 }

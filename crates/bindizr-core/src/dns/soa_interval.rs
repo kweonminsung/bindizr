@@ -49,11 +49,11 @@ impl TryFrom<u32> for SoaInterval {
     type Error = ConvertSoaIntervalError;
 
     /// Take a wire interval, refused past the maximum.
-    fn try_from(secs: u32) -> Result<Self, Self::Error> {
-        if secs > Self::MAX.0 {
-            return Err(ConvertSoaIntervalError::TooLarge { secs });
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value > Self::MAX.0 {
+            return Err(ConvertSoaIntervalError::TooLarge { secs: value });
         }
-        Ok(Self(secs))
+        Ok(Self(value))
     }
 }
 
@@ -61,10 +61,10 @@ impl TryFrom<i32> for SoaInterval {
     type Error = ConvertSoaIntervalError;
 
     /// Read a row's interval; a negative one is corrupt data.
-    fn try_from(secs: i32) -> Result<Self, Self::Error> {
-        u32::try_from(secs)
-            .map(SoaInterval)
-            .map_err(|_| ConvertSoaIntervalError::Negative { secs })
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        u32::try_from(value)
+            .map(Self)
+            .map_err(|_| ConvertSoaIntervalError::Negative { secs: value })
     }
 }
 

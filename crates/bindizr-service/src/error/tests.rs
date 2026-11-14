@@ -1,12 +1,15 @@
+use std::error::Error as _;
 use std::io;
 
-use super::*;
+use serde_json::json;
 
-/// Input policy errors have no underlying operation failure to retain.
+use super::*;
+use crate::dns_client::ResolveAddressError;
+use crate::dns_client::ds::ProbeParentDsError;
+
+/// Verify that input policy errors have no underlying operation failure to retain.
 #[test]
 fn invalid_input_keeps_its_code_and_message_without_an_artificial_source() {
-    use std::error::Error;
-
     for error in [
         ServiceError::invalid_input("invalid input"),
         ServiceError::record_name_ambiguous("example.com", "www", 2),
@@ -25,14 +28,9 @@ fn invalid_input_keeps_its_code_and_message_without_an_artificial_source() {
     );
 }
 
-/// Keep the cause available after assigning the public DS-check classification.
+/// Verify that the cause stays available after assigning the public DS-check classification.
 #[test]
 fn ds_check_failure_preserves_source_and_wire_message() {
-    use std::error::Error;
-
-    use crate::dns_client::ResolveAddressError;
-    use crate::dns_client::ds::ProbeParentDsError;
-
     let error = ServiceError::dnssec_ds_unverified(
         "example.com",
         ProbeParentDsError::Unresolved {
@@ -64,10 +62,9 @@ fn ds_check_failure_preserves_source_and_wire_message() {
     ));
 }
 
-/// An unsupported digest is the observed policy outcome, without an underlying failure.
+/// Verify that an unsupported digest is the observed policy outcome, without an underlying failure.
 #[test]
 fn unsupported_ds_digest_preserves_policy_message_without_source() {
-    use std::error::Error;
     let error = ServiceError::dnssec_ds_digest_unsupported("example.com", &[KeyTag::from(7)]);
 
     assert_eq!(error.code(), ErrorCode::DnssecDsUnverified);
@@ -88,10 +85,9 @@ fn signing_failure_preserves_dnssec_error_class() {
     assert!(error.code().is_internal());
 }
 
-/// Preserve the concrete source when an internal failure gains context.
+/// Verify that the concrete source is preserved when an internal failure gains context.
 #[test]
 fn internal_context_preserves_the_source() {
-    use std::error::Error;
     let error = ServiceError::internal_with_source(
         "failed to load records",
         io::Error::new(io::ErrorKind::ConnectionReset, "database disconnected"),
@@ -104,7 +100,7 @@ fn internal_context_preserves_the_source() {
     assert_eq!(source.kind(), io::ErrorKind::ConnectionReset);
 }
 
-/// Verify every serialized error code against its established wire spelling.
+/// Verify that every serialized error code keeps its established wire spelling.
 #[test]
 fn error_code_spells_itself_once() {
     for (value, expected) in [
@@ -156,12 +152,9 @@ fn error_code_spells_itself_once() {
         (ErrorCode::Internal, "INTERNAL"),
     ] {
         assert_eq!(value.as_str(), expected);
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(expected));
         assert_eq!(
-            serde_json::to_value(value).unwrap(),
-            serde_json::json!(expected)
-        );
-        assert_eq!(
-            serde_json::from_value::<ErrorCode>(serde_json::json!(expected)).unwrap(),
+            serde_json::from_value::<ErrorCode>(json!(expected)).unwrap(),
             value
         );
     }

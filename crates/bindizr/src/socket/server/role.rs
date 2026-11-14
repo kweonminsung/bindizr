@@ -1,12 +1,12 @@
 use bindizr_core::model::role_grant::RoleGrantId;
-use bindizr_service::Context;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
-use bindizr_service::role::{self, grant};
+use bindizr_service::role::grant;
 use bindizr_service::types::{
     CreateRoleGrantRequest, CreateRoleRequest, MessageResponse, PageRequest, PaginatedResponse,
     RoleGrantResponse, RoleResponse, SingleRoleGrantResponse, SingleRoleResponse,
 };
+use bindizr_service::{Context, role};
 
 use crate::socket::types::DaemonResponse;
 
@@ -15,11 +15,10 @@ pub(crate) async fn create_role(
     cx: &Context,
     request: &CreateRoleRequest,
 ) -> Result<DaemonResponse<SingleRoleResponse>, ServiceError> {
+    let role = role::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "Role created successfully".to_string(),
-        data: SingleRoleResponse {
-            role: role::create(cx, &Caller::socket(), request).await?,
-        },
+        data: SingleRoleResponse { role },
     })
 }
 
@@ -40,11 +39,10 @@ pub(crate) async fn get_role(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<SingleRoleResponse>, ServiceError> {
+    let role = role::get(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "Role retrieved successfully".to_string(),
-        data: SingleRoleResponse {
-            role: role::get(cx, &Caller::socket(), name).await?,
-        },
+        data: SingleRoleResponse { role },
     })
 }
 

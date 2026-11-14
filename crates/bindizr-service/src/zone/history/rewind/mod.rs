@@ -41,7 +41,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
         state
             .entry(record.match_key())
             .or_default()
-            .push(record.into());
+            .push(RecordData::from(record));
     }
 
     for change in changes.iter().rev() {
@@ -90,7 +90,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
     records
 }
 
-/// The records at `serial`: the live records when it is the current serial,
+/// List the records at `serial`: the live records when it is the current serial,
 /// otherwise rewound from the journal.
 pub(crate) async fn list_records_at_serial_tx(
     tx: &mut Transaction<'_>,

@@ -1,16 +1,14 @@
 //! Read and write BIND `K*.key` / `K*.private` files, preserving rollover timings.
 
-#[cfg(test)]
-mod tests;
-
 use base64::Engine;
 use base64::engine::general_purpose;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use domain::base::iana::SecurityAlgorithm;
 use domain::crypto::sign::{KeyPair, SecretKeyBytes};
 use domain::rdata::Dnskey;
+use thiserror::Error;
 
-use crate::dns::dnssec::KeyTag;
+use super::KeyTag;
 use crate::dns::{LibraryError, Ttl};
 use crate::model::dnssec_key::{
     DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
@@ -48,7 +46,6 @@ pub enum ImportKeyError {
     #[error("private key does not match the DNSKEY: {0}")]
     KeyMismatch(#[source] LibraryError),
 }
-use thiserror::Error;
 
 impl DnssecKey {
     /// The key's `K*.private` contents, including BIND timing fields so
@@ -76,7 +73,7 @@ impl DnssecKey {
         let mut file = self.private_key.trim_end().to_string();
 
         for (field, at) in [("Created", self.created_at)].into_iter().chain(timing) {
-            file.push_str(&format!("\n{}: {}", field, at.format("%Y%m%d%H%M%S")));
+            file.push_str(&format!("\n{field}: {}", at.format("%Y%m%d%H%M%S")));
         }
 
         file.push('\n');
@@ -204,7 +201,7 @@ impl DnssecKey {
             _ => return Err(ImportKeyError::DnskeyShape),
         };
 
-        let flags: u16 = flags.parse().map_err(|_| ImportKeyError::Flags {
+        let flags = flags.parse::<u16>().map_err(|_| ImportKeyError::Flags {
             value: flags.to_string(),
         })?;
 
@@ -270,3 +267,6 @@ impl DnssecKey {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

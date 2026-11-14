@@ -207,7 +207,7 @@ fn key_import_round_trips_bind_key_pair() {
 
 /// Verify that import derives the role from the key layout.
 #[test]
-fn import_derives_the_role_from_the_key_layout() {
+fn key_import_derives_the_role_from_the_key_layout() {
     let zone = test_zone();
     let sep = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
     let dnskey = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", sep.public_key);
@@ -260,7 +260,7 @@ fn import_derives_the_role_from_the_key_layout() {
 
 /// Verify that `import` rejects a mismatched key pair.
 #[test]
-fn import_rejects_a_mismatched_key_pair() {
+fn key_import_rejects_a_mismatched_key_pair() {
     let zone = test_zone();
     let one = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
     let other = test_key(&zone, 2, DnssecKeyRole::Csk, DnssecKeyState::Active);

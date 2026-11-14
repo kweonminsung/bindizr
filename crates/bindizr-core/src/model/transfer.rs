@@ -18,12 +18,12 @@ use crate::model::zone::ZoneId;
 /// A transfer column holding a kind or result bindizr does not record.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseTransferError {
-    #[error("unsupported transfer kind '{0}'")]
-    Kind(String),
-    #[error("unsupported transfer result '{0}'")]
-    Result(String),
-    #[error("unsupported transfer transport '{0}'")]
-    Transport(String),
+    #[error("unsupported transfer kind '{value}'")]
+    Kind { value: String },
+    #[error("unsupported transfer result '{value}'")]
+    Result { value: String },
+    #[error("unsupported transfer transport '{value}'")]
+    Transport { value: String },
 }
 
 /// Which transfer a client asked for.
@@ -71,7 +71,9 @@ impl FromStr for TransferKind {
         match value.to_ascii_lowercase().as_str() {
             "axfr" => Ok(Self::Axfr),
             "ixfr" => Ok(Self::Ixfr),
-            _ => Err(ParseTransferError::Kind(value.to_string())),
+            _ => Err(ParseTransferError::Kind {
+                value: value.to_string(),
+            }),
         }
     }
 }
@@ -122,7 +124,9 @@ impl FromStr for TransferResult {
             "ok" => Ok(Self::Ok),
             "refused" => Ok(Self::Refused),
             "failed" => Ok(Self::Failed),
-            _ => Err(ParseTransferError::Result(value.to_string())),
+            _ => Err(ParseTransferError::Result {
+                value: value.to_string(),
+            }),
         }
     }
 }
@@ -180,7 +184,9 @@ impl FromStr for TransferTransport {
             "udp" => Ok(Self::Udp),
             "tcp" => Ok(Self::Tcp),
             "tls" => Ok(Self::Tls),
-            _ => Err(ParseTransferError::Transport(value.to_string())),
+            _ => Err(ParseTransferError::Transport {
+                value: value.to_string(),
+            }),
         }
     }
 }

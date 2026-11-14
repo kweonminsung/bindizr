@@ -26,13 +26,13 @@ fn test_zone() -> Zone {
 
 /// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
-            OwnerName::parse_in_zone(name, &zone).unwrap()
+            OwnerName::parse_in_zone(name, &zone_name).unwrap()
         },
         record_type,
         value: value.to_string(),
@@ -87,11 +87,8 @@ fn expirations_spread_across_the_jitter_window() {
         expirations.len() > 1,
         "one pass would come due for every signature at once: {expirations:?}"
     );
-    let earliest = *expirations.iter().next().expect("signatures were emitted");
-    let latest = *expirations
-        .iter()
-        .next_back()
-        .expect("signatures were emitted");
+    let earliest = *expirations.iter().next().unwrap();
+    let latest = *expirations.iter().next_back().unwrap();
 
     assert!(latest <= default_expiration());
     assert!(earliest > default_expiration() - Duration::seconds(window));
@@ -286,7 +283,7 @@ fn signing_refreshes_signatures_inside_refresh_window() {
     assert!(records_of_type(&diff.removed, DnssecRecordType::Dnskey).is_empty());
 }
 
-/// Verify that force resigns every RRSET.
+/// Verify that force resigns every record set.
 #[test]
 fn force_resigns_every_record_set() {
     let zone = test_zone();

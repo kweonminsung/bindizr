@@ -30,7 +30,8 @@ pub(crate) async fn create(pool: &Pool<MySql>, log: TransferLog) -> Result<(), D
     Ok(())
 }
 
-/// The rows of a client address the filter selects, newest first, with zone names.
+/// List the rows of a client address `filter` selects, newest first, with zone
+/// names.
 pub(crate) async fn list_by_client_addr_and_filter_with_zone(
     pool: &Pool<MySql>,
     client_addr: &str,
@@ -52,8 +53,8 @@ pub(crate) async fn list_by_client_addr_and_filter_with_zone(
         "#,
     )
     .bind(client_addr)
-    .bind(filter.zone_name.as_ref())
-    .bind(filter.zone_name.as_ref())
+    .bind(&filter.zone_name)
+    .bind(&filter.zone_name)
     .bind(filter.since)
     .bind(filter.since)
     .bind(filter.until)
@@ -65,7 +66,8 @@ pub(crate) async fn list_by_client_addr_and_filter_with_zone(
     Ok(logs)
 }
 
-/// The newest row of each zone a client address asked for, with zone names.
+/// List the newest row of each zone a client address asked for, with zone
+/// names.
 pub(crate) async fn list_by_client_addr_with_zone_latest_per_zone(
     pool: &Pool<MySql>,
     client_addr: &str,
@@ -90,8 +92,9 @@ pub(crate) async fn list_by_client_addr_with_zone_latest_per_zone(
     Ok(logs)
 }
 
-/// Delete the rows answered before `cutoff`, keeping the newest row of each
-/// client address and zone.
+/// Delete the rows answered before `cutoff`, returning how many. The newest row
+/// of each client address and zone stays whatever its age: it is the last
+/// transfer the status reports read.
 pub(crate) async fn prune_older_than(
     pool: &Pool<MySql>,
     cutoff: DateTime<Utc>,

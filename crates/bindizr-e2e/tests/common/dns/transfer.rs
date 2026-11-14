@@ -3,8 +3,8 @@
 use std::io::{Read, Write};
 use std::process;
 
-use domain::base::iana::Rcode;
-use domain::base::{Message, MessageBuilder, Rtype};
+use domain::base::iana::{Rcode, Rtype};
+use domain::base::{Message, MessageBuilder};
 use domain::rdata::tsig::Time48;
 use domain::tsig::ClientSequence;
 use rustls::ClientConfig;

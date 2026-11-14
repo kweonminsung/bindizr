@@ -4,8 +4,6 @@
 mod apply;
 mod change_set;
 mod policy;
-#[cfg(test)]
-mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,6 +24,13 @@ use crate::{Context, grant_pattern};
 /// DB read page size; the protocol still returns all endpoints in one response.
 const RECORD_READ_PAGE: u32 = 5000;
 
+/// What one ExternalDNS sync does in a domain: read ownership records, add, delete.
+const SYNC_ACTIONS: [Action; 3] = [
+    Action::RecordRead,
+    Action::RecordCreate,
+    Action::RecordDelete,
+];
+
 /// Normalize desired records with the apply flow's rules for AdjustEndpoints.
 /// No caller is needed: only the request's own payload is read.
 pub fn adjust_records(
@@ -38,13 +43,6 @@ pub fn adjust_records(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(AdjustExternalDnsRecordsResponse { records })
 }
-
-/// What one ExternalDNS sync does in a domain: read ownership records, add, delete.
-const SYNC_ACTIONS: [Action; 3] = [
-    Action::RecordRead,
-    Action::RecordCreate,
-    Action::RecordDelete,
-];
 
 /// List manageable subtrees as ExternalDNS domain filters.
 /// Narrow grants contribute their subtree so planning stays within apply permissions.
@@ -146,7 +144,7 @@ pub async fn list_records(
                 values.sort();
                 ExternalDnsRecord {
                     name: key.name.clone(),
-                    record_type: key.record_type.as_str().to_string(),
+                    record_type: key.record_type.to_string(),
                     ttl: Some(i64::from(ttl)),
                     values,
                 }
@@ -154,3 +152,6 @@ pub async fn list_records(
         })
         .collect())
 }
+
+#[cfg(test)]
+mod tests;

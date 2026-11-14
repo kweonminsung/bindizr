@@ -11,9 +11,8 @@ use bindizr_service::authorization::Caller;
 use bindizr_service::tsig_key;
 use thiserror::Error;
 
-use super::acl;
+use super::{DnsContext, acl};
 use crate::dns::error::DnsError;
-use crate::dns::server::DnsContext;
 
 /// A rejected transfer's cause; encoding and response limits belong to the handler.
 #[derive(Debug, Error)]
@@ -95,8 +94,8 @@ impl TransferRefusal {
     /// Encode a refusal under the request's response budget, after authentication.
     pub(crate) fn into_response(
         self,
-        query_data: &[u8],
         metadata: &QueryMetadata,
+        query_data: &[u8],
     ) -> Result<Vec<u8>, DnsError> {
         match self {
             Self::Dns {
@@ -170,7 +169,8 @@ pub(crate) async fn authenticate_tsig_key(
         }
     };
 
-    let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), &key_name)
+    let cx = dns_cx.daemon();
+    let tsig_key = tsig_key::find_by_wire_name(cx, &key_name)
         .await
         .map_err(|error| TransferRefusal::failed("failed to load TSIG key", error, None))?;
     let Some(tsig_key) = tsig_key else {
@@ -181,10 +181,10 @@ pub(crate) async fn authenticate_tsig_key(
             None,
         ));
     };
-    let signing_key = tsig_key.to_signing_key().map_err(TransferRefusal::from)?;
+    let signing_key = tsig_key.to_signing_key()?;
     let signer = tsig::verify_tsig(query_data, Some(signing_key))?;
 
-    let caller = match Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key).await {
+    let caller = match Caller::authenticate_tsig_key(cx, &tsig_key).await {
         Ok(caller) => caller,
         Err(error) => {
             return Err(TransferRefusal::failed(
@@ -205,11 +205,11 @@ pub(crate) async fn authenticate_tsig_key(
 /// Content grants are checked when loading the zone or catalog.
 pub(crate) async fn authenticate_transfer(
     dns_cx: &DnsContext,
-    query_data: &[u8],
     client_ip: IpAddr,
+    query_data: &[u8],
     transport: TransferTransport,
 ) -> Result<TransferIdentity, TransferRefusal> {
-    let over_tls = matches!(transport, TransferTransport::Tls);
+    let over_tls = transport == TransferTransport::Tls;
 
     let Some(identity) = authenticate_tsig_key(dns_cx, query_data).await? else {
         if over_tls {
@@ -284,7 +284,7 @@ pub(crate) async fn refuse_query(
             let mut signer = identity.and_then(|identity| identity.signer);
             Ok(metadata.build_signed_error_response(rcode, ede, signer.as_mut())?)
         }
-        Err(refusal) => match refusal.into_response(query_data, metadata) {
+        Err(refusal) => match refusal.into_response(metadata, query_data) {
             Err(DnsError::Tsig(error)) => {
                 log::warn!("Failed to encode TSIG refusal: {error}");
                 Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)

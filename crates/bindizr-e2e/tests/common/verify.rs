@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use reqwest::{Method, StatusCode};
 use serde_json::Value;
 
-use crate::common::{RECORD_PAGE_LIMIT, TestApp, dns};
+use super::{RECORD_PAGE_LIMIT, TestApp, dns};
 
 /// Render a name with the trailing dot record payloads carry, so a zone taken
 /// from a request path compares against the one a record names.
@@ -117,13 +117,13 @@ impl TestApp {
                 .map(|name| name.trim_end_matches('.'))
                 == record["zone_name"].as_str()
         };
-        let served_zones = records
+        let served_zones: HashSet<_> = records
             .iter()
             .filter(|record| record["type"] == "NS" && is_apex(record))
             .filter_map(|record| record["zone_name"].as_str().map(str::to_string))
-            .collect::<HashSet<_>>();
+            .collect();
 
-        let mut expected = HashMap::<(String, u16), Vec<Value>>::new();
+        let mut expected: HashMap<(String, u16), Vec<Value>> = HashMap::new();
 
         for record in &records {
             let zone_name = record["zone_name"]

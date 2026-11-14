@@ -219,7 +219,7 @@ pub(crate) enum DnssecWithdrawCommand {
     },
 }
 
-/// Run the requested DNSSEC lifecycle command.
+/// Handle the `dnssec` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliError> {
     match subcommand {
         DnssecCommand::Enable {
@@ -237,12 +237,6 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                     },
                 })
                 .await?;
-            print_status(&response.data, output)?;
-        }
-        DnssecCommand::CheckDs { name, output } => {
-            let response =
-                client::send_command::<DnssecStatusResponse>(DaemonCommand::CheckDnssecDs { name })
-                    .await?;
             print_status(&response.data, output)?;
         }
         DnssecCommand::Set {
@@ -275,8 +269,6 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             let response = client::send_command::<DnssecStatusResponse>(command).await?;
             print_status(&response.data, output)?;
         }
-        DnssecCommand::Keys { subcommand } => keys::handle_command(subcommand).await?,
-        DnssecCommand::Policy { subcommand } => policy::handle_command(subcommand).await?,
         DnssecCommand::Disable {
             name,
             skip_ds_check,
@@ -293,6 +285,12 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             } else {
                 output::print_payload(&response.data, output)?;
             }
+        }
+        DnssecCommand::CheckDs { name, output } => {
+            let response =
+                client::send_command::<DnssecStatusResponse>(DaemonCommand::CheckDnssecDs { name })
+                    .await?;
+            print_status(&response.data, output)?;
         }
         DnssecCommand::Status { name, output } => {
             let response =
@@ -340,6 +338,8 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 print_status(&response.data, output)?;
             }
         },
+        DnssecCommand::Keys { subcommand } => keys::handle_command(subcommand).await?,
+        DnssecCommand::Policy { subcommand } => policy::handle_command(subcommand).await?,
     }
 
     Ok(())
@@ -382,10 +382,10 @@ fn print_status(
             let servers = delegation.parent_ns_addrs.join(", ");
 
             if delegation.ds_key_tags.is_empty() {
-                outln!("Parent DS: none served by {}", servers);
+                outln!("Parent DS: none served by {servers}");
             } else {
                 outln!(
-                    "Parent DS: key tag{} {} served by {} (TTL {}s)",
+                    "Parent DS: key tag{} {} served by {servers} (TTL {}s)",
                     if delegation.ds_key_tags.len() == 1 {
                         ""
                     } else {
@@ -397,7 +397,6 @@ fn print_status(
                         .map(ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(", "),
-                    servers,
                     delegation.ds_ttl.unwrap_or(0)
                 );
             }
@@ -422,7 +421,7 @@ fn print_status(
                     ));
                 }
 
-                outln!("{}", line);
+                outln!("{line}");
             }
         }
 

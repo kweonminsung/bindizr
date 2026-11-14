@@ -13,7 +13,7 @@ use super::DnssecPolicyResponse;
 
 /// Whether a step that depends on the parent's DS asks the parent
 /// nameservers, or takes the DS on the operator's word.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DsCheck {
     Probe,
@@ -29,11 +29,19 @@ impl DsCheck {
             Self::Probe
         }
     }
+
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Probe => "probe",
+            Self::Skip => "skip",
+        }
+    }
 }
 
 /// Whether a key promotion waits out the hold-down resolvers need to learn
 /// the new key, or goes ahead at once.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Holddown {
     Wait,
@@ -47,6 +55,14 @@ impl Holddown {
             Self::Skip
         } else {
             Self::Wait
+        }
+    }
+
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wait => "wait",
+            Self::Skip => "skip",
         }
     }
 }
@@ -106,11 +122,21 @@ pub struct DnssecDelegationKeyResponse {
 }
 
 /// Whether the parent serves a DS for the zone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DsState {
     Published,
     Hidden,
+}
+
+impl DsState {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Published => "published",
+            Self::Hidden => "hidden",
+        }
+    }
 }
 
 /// What the parent zone's servers answered when asked for the zone's DS.
@@ -265,107 +291,43 @@ pub struct ImportDnssecKeysRequest {
     pub policy_name: Option<String>,
 }
 
-impl DsCheck {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Probe => "probe",
-            Self::Skip => "skip",
-        }
-    }
-}
-
-impl serde::Serialize for DsCheck {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl Holddown {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Wait => "wait",
-            Self::Skip => "skip",
-        }
-    }
-}
-
-impl serde::Serialize for Holddown {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl DsState {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Published => "published",
-            Self::Hidden => "hidden",
-        }
-    }
-}
-
-impl serde::Serialize for DsState {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Verify the canonical spelling and round-trip of every DsCheck variant.
+    /// Verify that `DsCheck` has one spelling across `as_str` and serde.
     #[test]
     fn ds_check_spells_itself_once() {
-        for (value, expected) in [(DsCheck::Probe, "probe"), (DsCheck::Skip, "skip")] {
-            assert_eq!(value.as_str(), expected);
+        for value in [DsCheck::Probe, DsCheck::Skip] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<DsCheck>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<DsCheck>(json!(value.as_str())).unwrap(),
                 value
             );
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every Holddown variant.
+    /// Verify that `Holddown` has one spelling across `as_str` and serde.
     #[test]
     fn holddown_spells_itself_once() {
-        for (value, expected) in [(Holddown::Wait, "wait"), (Holddown::Skip, "skip")] {
-            assert_eq!(value.as_str(), expected);
+        for value in [Holddown::Wait, Holddown::Skip] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<Holddown>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<Holddown>(json!(value.as_str())).unwrap(),
                 value
             );
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every DsState variant.
+    /// Verify that `DsState` has one spelling across `as_str` and serde.
     #[test]
     fn ds_state_spells_itself_once() {
-        for (value, expected) in [
-            (DsState::Published, "published"),
-            (DsState::Hidden, "hidden"),
-        ] {
-            assert_eq!(value.as_str(), expected);
+        for value in [DsState::Published, DsState::Hidden] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<DsState>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<DsState>(json!(value.as_str())).unwrap(),
                 value
             );
         }

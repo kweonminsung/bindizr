@@ -8,7 +8,7 @@ use bindizr_service::{Context, dnssec_policy};
 
 use crate::socket::types::DaemonResponse;
 
-/// Create DNSSEC policy from the control request.
+/// Create a DNSSEC policy from the control request.
 pub(crate) async fn create_dnssec_policy(
     cx: &Context,
     request: CreateDnssecPolicyRequest,

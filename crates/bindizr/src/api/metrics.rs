@@ -10,7 +10,7 @@ use tokio::time;
 
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 
-/// Prometheus text-format scrape endpoint.
+/// Serve the Prometheus text-format scrape endpoint.
 pub(crate) async fn handle_metrics(State(cx): State<Arc<Context>>) -> Response {
     let metrics = cx.metrics();
 

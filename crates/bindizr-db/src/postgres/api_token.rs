@@ -13,7 +13,7 @@ pub(crate) async fn create_tx(
 ) -> Result<ApiToken, DatabaseError> {
     let now = Utc::now();
 
-    let result = sqlx::query(
+    let row = sqlx::query(
         r#"
         INSERT INTO api_tokens (name, token, description, role_id, expires_at, created_at)
         VALUES ($1, $2, $3, $4, $5, $6)
@@ -29,19 +29,19 @@ pub(crate) async fn create_tx(
     .fetch_one(&mut **tx)
     .await?;
 
-    token.id = TokenId::from(result.get::<i32, _>(0));
+    token.id = TokenId::from(row.get::<i32, _>(0));
     token.created_at = now;
 
     Ok(token)
 }
 
-/// An API token by id in the current transaction.
+/// Get an API token by ID in the current transaction, locked at `lock_level`.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: TokenId,
     lock_level: LockLevel,
 ) -> Result<Option<ApiToken>, DatabaseError> {
-    let row = sqlx::query_as::<_, ApiToken>(AssertSqlSafe(format!(
+    let token = sqlx::query_as::<_, ApiToken>(AssertSqlSafe(format!(
         "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = $1{}",
         lock_level.clause(),
     )))
@@ -49,57 +49,54 @@ pub(crate) async fn get_tx(
     .fetch_optional(&mut **tx)
     .await?;
 
-    Ok(row)
+    Ok(token)
 }
 
-/// Find an API token by name.
+/// Get an API token by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Postgres>,
     name: &str,
 ) -> Result<Option<ApiToken>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let row = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE name = $1"
+    let token = sqlx::query_as::<_, ApiToken>(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE name = $1",
     )
     .bind(name)
     .fetch_optional(&mut *connection)
-    .await
-    ?;
+    .await?;
 
-    Ok(row)
+    Ok(token)
 }
 
-/// Find an API token by its stored token hash.
+/// Get an API token by its stored token hash.
 pub(crate) async fn get_by_token(
     pool: &Pool<Postgres>,
     token: &str,
 ) -> Result<Option<ApiToken>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let row = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE token = $1"
+    let token = sqlx::query_as::<_, ApiToken>(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE token = $1",
     )
     .bind(token)
     .fetch_optional(&mut *connection)
-    .await
-    ?;
+    .await?;
 
-    Ok(row)
+    Ok(token)
 }
 
 /// List all API tokens.
 pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<ApiToken>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let rows = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id DESC"
+    let tokens = sqlx::query_as::<_, ApiToken>(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id DESC",
     )
     .fetch_all(&mut *connection)
-    .await
-    ?;
+    .await?;
 
-    Ok(rows)
+    Ok(tokens)
 }
 
 /// Stamp when the token was last used.
@@ -140,12 +137,12 @@ pub(crate) async fn list_by_role_id(
 ) -> Result<Vec<ApiToken>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let rows = sqlx::query_as::<_, ApiToken>(
+    let tokens = sqlx::query_as::<_, ApiToken>(
         "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE role_id = $1 ORDER BY created_at DESC, id DESC",
     )
     .bind(role_id)
     .fetch_all(&mut *connection)
     .await?;
 
-    Ok(rows)
+    Ok(tokens)
 }

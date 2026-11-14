@@ -21,17 +21,17 @@ pub async fn notify(
     let mut serial_bumped = false;
     match target {
         // The virtual catalog zone has no row to bump and lists all zones.
-        NotifyTarget::Zone(name) if name == &cx.config().dns.catalog_zone_name => {
+        NotifyTarget::Zone(zone_name) if zone_name == &cx.config().dns.catalog_zone_name => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
                 log::info!("Skipping forced serial increment for virtual catalog zone");
             }
         }
-        NotifyTarget::Zone(name) => {
-            let zone = super::lookup_by_name(cx, name).await?;
+        NotifyTarget::Zone(zone_name) => {
+            let zone = super::lookup_by_name(cx, zone_name).await?;
             caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
             if serial == NotifySerial::Bump {
-                super::force_increment_serial(cx, caller, name).await?;
+                super::force_increment_serial(cx, caller, zone_name).await?;
                 serial_bumped = true;
             }
         }
@@ -67,28 +67,27 @@ pub async fn notify(
 mod tests {
     use bindizr_core::config::Config;
     use bindizr_core::metrics::Metrics;
+    use serde_json::json;
     use tokio::sync::{mpsc, watch};
 
     use super::*;
     use crate::zone;
 
-    /// Messages describe completed increments, including requests whose target has none.
+    /// Verify that messages describe completed increments, including requests whose target has
+    /// none.
     #[tokio::test]
     async fn notify_reports_only_serials_it_advanced() {
-        let config: Config = serde_json::from_value(serde_json::json!({
-            "database": { "sqlite": { "file_path": "sqlite::memory:" } },
-        }))
-        .unwrap();
+        let mut config: Config = serde_json::from_str("{}").unwrap();
+        config.database.sqlite.file_path = "sqlite::memory:".to_string();
         let db = bindizr_db::Db::connect(&config.database).await.unwrap();
         let (jobs, _rx) = mpsc::unbounded_channel();
-        let (period, _period_rx) = watch::channel(0);
         let cx = Arc::new(Context::new(
             config,
             String::new(),
             db,
             Metrics::new().unwrap(),
             jobs,
-            period,
+            watch::channel(0).0,
         ));
         let caller = Caller::socket();
 
@@ -115,8 +114,8 @@ mod tests {
             catalog.serial
         );
 
-        let request = serde_json::from_value(serde_json::json!({
-            "name": "example.test", "mname": "ns.example.test", "rname": "hostmaster@example.test",
+        let request = serde_json::from_value(json!({
+            "name": "example.test", "mname": "ns.example.test", "rname": "hostmaster@example.test"
         }))
         .unwrap();
         zone::create(&cx, &caller, &request).await.unwrap();

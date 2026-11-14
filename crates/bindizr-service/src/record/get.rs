@@ -8,7 +8,6 @@ use super::ServedRecord;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{PaginatedResponse, RecordFilter, RecordResponse, ZoneView};
-use crate::zone::validation;
 use crate::{Context, pagination, ttl, zone};
 
 /// Which plane a `type` filter names: a user record type, or a derived
@@ -39,7 +38,7 @@ fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, 
     }
 }
 
-/// Every record, for the unauthenticated metrics endpoint.
+/// Count every record, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(
         bindizr_db::record::count_by_filter(cx.db(), bindizr_db::record::RecordFilter::default())
@@ -66,7 +65,7 @@ pub async fn list_by_filter_with_zone(
     let zone_name = filter
         .zone_name
         .as_deref()
-        .map(validation::normalize_name)
+        .map(zone::normalize_name)
         .transpose()?;
     pagination::validate_page_limit(filter.limit)?;
     let limit = filter.limit;
@@ -195,7 +194,7 @@ pub async fn list_by_filter_with_zone(
     ))
 }
 
-/// Fetch a record by id with the caller's actions on it. A record the
+/// Get a record by id with the caller's actions on it. A record the
 /// caller cannot read reads as `NotFound`, so ids cannot be probed.
 pub async fn get(
     cx: &Context,
@@ -235,7 +234,7 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
             return None;
         }
 
-        let Some(zone) = zone_name else {
+        let Some(zone_name) = zone_name else {
             // No zone to build an FQDN against, so the apex can only be matched
             // by the sentinel rows hold it as.
             if trimmed == OwnerName::APEX {
@@ -258,11 +257,11 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
         };
 
         // Use stored owner spelling for SQL owner/FQDN matching; pass non-names through literally.
-        if let Ok(owner) = OwnerName::parse_absolute_in_zone(trimmed, zone) {
-            return Some(owner.to_fqdn(zone));
+        if let Ok(owner) = OwnerName::parse_absolute_in_zone(trimmed, zone_name) {
+            return Some(owner.to_fqdn(zone_name));
         }
 
-        Some(match OwnerName::parse_in_zone(trimmed, zone) {
+        Some(match OwnerName::parse_in_zone(trimmed, zone_name) {
             Ok(owner) => owner.to_stored(),
             Err(_) => trimmed.to_string(),
         })

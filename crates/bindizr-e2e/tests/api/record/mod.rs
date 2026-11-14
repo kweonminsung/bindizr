@@ -1,36 +1,37 @@
 use std::slice;
 
-use domain::base::Rtype;
+use domain::base::Name;
+use domain::base::iana::Rtype;
 use reqwest::{Method, StatusCode};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::common::{TestApp, dns};
 
 mod bulk;
 mod dname_targets;
 
-/// Create and replace root targets; reject malformed names.
+/// Verify that root targets can be created and replaced, and malformed names are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn root_record_targets_round_trip_through_management() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
 
-    for (kind, rtype) in [
+    for (record_type, rtype) in [
         ("NS", Rtype::NS),
         ("CNAME", Rtype::CNAME),
         ("PTR", Rtype::PTR),
         ("DNAME", Rtype::DNAME),
     ] {
-        let owner = kind.to_ascii_lowercase();
+        let owner = record_type.to_ascii_lowercase();
 
         let (status, body) = app
             .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
-                    "zone_name": name, "name": owner, "type": kind, "value": "."
+                    "zone_name": zone_name, "name": owner, "type": record_type, "value": "."
                 })),
             )
             .await;
@@ -44,12 +45,12 @@ async fn root_record_targets_round_trip_through_management() {
                 .send_request(
                     Method::PUT,
                     &format!("/records/{id}"),
-                    Some(json!({"value": target})),
+                    Some(json!({ "value": target })),
                 )
                 .await;
 
             assert_eq!(status, StatusCode::OK, "{body}");
-            let expected = if kind == "DNAME" {
+            let expected = if record_type == "DNAME" {
                 target.to_string()
             } else {
                 target.to_ascii_lowercase()
@@ -65,27 +66,30 @@ async fn root_record_targets_round_trip_through_management() {
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["record"]["value"], ".");
 
-        let records = dns::fetch_exported_record_sets(&app, name).await;
+        let records = dns::fetch_exported_record_sets(&app, zone_name).await;
 
-        assert_eq!(records[&(format!("{owner}.{name}."), rtype)], [vec![0]]);
+        assert_eq!(
+            records[&(format!("{owner}.{zone_name}."), rtype)],
+            [vec![0]]
+        );
 
-        let serial = app.read_zone_serial(name).await;
+        let serial = app.read_zone_serial(zone_name).await;
 
         for invalid in ["", ".."] {
             let (status, body) = app
                 .send_request(
                     Method::PUT,
                     &format!("/records/{id}"),
-                    Some(json!({"value": invalid})),
+                    Some(json!({ "value": invalid })),
                 )
                 .await;
 
             assert_eq!(
                 status,
                 StatusCode::BAD_REQUEST,
-                "{kind} {invalid:?}: {body}"
+                "{record_type} {invalid:?}: {body}"
             );
-            assert_eq!(app.read_zone_serial(name).await, serial);
+            assert_eq!(app.read_zone_serial(zone_name).await, serial);
         }
     }
 
@@ -94,7 +98,7 @@ async fn root_record_targets_round_trip_through_management() {
             Method::POST,
             "/records",
             Some(json!({
-                "zone_name": name, "name": "@", "type": "CNAME", "value": "."
+                "zone_name": zone_name, "name": "@", "type": "CNAME", "value": "."
             })),
         )
         .await;
@@ -103,17 +107,15 @@ async fn root_record_targets_round_trip_through_management() {
     assert_eq!(body["code"], "INVALID_RECORD_NAME");
 }
 
-/// Preserve escaped targets through CRUD, independent export parsing, import and value deletion.
+/// Verify that escaped targets are preserved through CRUD, independent export parsing, import and value deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn escaped_record_targets_round_trip_through_management() {
     use std::str::FromStr;
 
-    use domain::base::Name;
-
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
     let mut expected_records = Vec::new();
 
     for (index, suffix) in ["", "get.example"].into_iter().enumerate() {
@@ -121,7 +123,7 @@ async fn escaped_record_targets_round_trip_through_management() {
         let decimal = format!(r"tar\032{suffix}.");
         let target = Name::<Vec<u8>>::from_str(&decimal).unwrap();
 
-        for (kind, rtype, prefix, wire_prefix) in [
+        for (record_type, rtype, prefix, wire_prefix) in [
             ("CNAME", Rtype::CNAME, "", &[][..]),
             ("DNAME", Rtype::DNAME, "", &[][..]),
             ("NS", Rtype::NS, "", &[][..]),
@@ -137,23 +139,27 @@ async fn escaped_record_targets_round_trip_through_management() {
                 ][..],
             ),
         ] {
-            let owner = format!("{}-{index}", kind.to_ascii_lowercase());
+            let owner = format!("{}-{index}", record_type.to_ascii_lowercase());
             let input = format!("{prefix}{simple}");
             let expected_value = format!("{prefix}{decimal}");
-            let priority = matches!(kind, "MX" | "SRV").then_some(10);
+            let priority = matches!(record_type, "MX" | "SRV").then_some(10);
 
             let (status, body) = app
                 .send_request(
                     Method::POST,
                     "/records",
                     Some(json!({
-                        "zone_name": name, "name": owner, "type": kind,
+                        "zone_name": zone_name, "name": owner, "type": record_type,
                         "value": input, "priority": priority
                     })),
                 )
                 .await;
 
-            assert_eq!(status, StatusCode::CREATED, "{kind} {input:?}: {body}");
+            assert_eq!(
+                status,
+                StatusCode::CREATED,
+                "{record_type} {input:?}: {body}"
+            );
             assert_eq!(body["record"]["value"], expected_value);
             let id = body["record"]["id"].as_i64().unwrap();
 
@@ -168,7 +174,7 @@ async fn escaped_record_targets_round_trip_through_management() {
                 .send_request(
                     Method::PUT,
                     &format!("/records/{id}"),
-                    Some(json!({"value": input})),
+                    Some(json!({ "value": input })),
                 )
                 .await;
 
@@ -176,21 +182,21 @@ async fn escaped_record_targets_round_trip_through_management() {
             assert_eq!(body["record"]["value"], expected_value);
             let mut rdata = wire_prefix.to_vec();
             rdata.extend_from_slice(target.as_slice());
-            expected_records.push((owner, rtype, kind, input, priority, rdata));
+            expected_records.push((owner, rtype, record_type, input, priority, rdata));
         }
     }
 
-    let exported = dns::fetch_exported_record_sets(&app, name).await;
+    let exported = dns::fetch_exported_record_sets(&app, zone_name).await;
     let (status, body) = app
-        .send_request(Method::GET, &format!("/zones/{name}/export"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let imported_name = app.zone_name("escaped-target-import.example");
     let content = body
         .as_str()
         .unwrap()
-        .replace(&format!("{name}."), &format!("{imported_name}."));
+        .replace(&format!("{zone_name}."), &format!("{imported_name}."));
 
     let (status, body) = app
         .send_request(
@@ -206,9 +212,9 @@ async fn escaped_record_targets_round_trip_through_management() {
 
     let imported = dns::fetch_exported_record_sets(&app, &imported_name).await;
 
-    for (owner, rtype, kind, input, priority, rdata) in expected_records {
+    for (owner, rtype, record_type, input, priority, rdata) in expected_records {
         assert_eq!(
-            exported[&(format!("{owner}.{name}."), rtype)].as_slice(),
+            exported[&(format!("{owner}.{zone_name}."), rtype)].as_slice(),
             slice::from_ref(&rdata)
         );
         assert_eq!(
@@ -216,8 +222,8 @@ async fn escaped_record_targets_round_trip_through_management() {
             [rdata]
         );
         let mut path = format!(
-            "/records?zone_name={name}&name={owner}&type={kind}&value={}",
-            encode(&input)
+            "/records?zone_name={zone_name}&name={owner}&type={record_type}&value={}",
+            encode_query_value(&input)
         );
 
         if let Some(priority) = priority {
@@ -226,12 +232,12 @@ async fn escaped_record_targets_round_trip_through_management() {
 
         let (status, body) = app.send_request(Method::DELETE, &path, None).await;
 
-        assert_eq!(status, StatusCode::OK, "{kind} {input:?}: {body}");
+        assert_eq!(status, StatusCode::OK, "{record_type} {input:?}: {body}");
         assert_eq!(body["deleted"], 1);
     }
 }
 
-/// Preserve CAA empty and binary values through record writes and reads.
+/// Verify that CAA empty and binary values are preserved through record writes and reads.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn caa_values_preserve_empty_and_binary_properties() {
@@ -254,7 +260,7 @@ async fn caa_values_preserve_empty_and_binary_properties() {
             .send_request(
                 Method::POST,
                 "/records",
-                Some(json!({"zone_name": zone_name, "name": "@", "type": "CAA", "value": input})),
+                Some(json!({ "zone_name": zone_name, "name": "@", "type": "CAA", "value": input })),
             )
             .await;
 
@@ -265,11 +271,15 @@ async fn caa_values_preserve_empty_and_binary_properties() {
 
         let (status, body) = app.send_request(Method::GET, &path, None).await;
 
-        assert_eq!(status, StatusCode::OK);
+        assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["record"]["value"], expected);
 
         let (status, body) = app
-            .send_request(Method::PUT, &path, Some(json!({"value": "0 custom \"\""})))
+            .send_request(
+                Method::PUT,
+                &path,
+                Some(json!({ "value": "0 custom \"\"" })),
+            )
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
@@ -285,8 +295,9 @@ async fn caa_values_preserve_empty_and_binary_properties() {
             "255 custom x",
         ] {
             let (status, body) = app
-                .send_request(Method::PUT, &path, Some(json!({"value": invalid})))
+                .send_request(Method::PUT, &path, Some(json!({ "value": invalid })))
                 .await;
+
             assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}: {body}");
             assert_eq!(app.read_zone_serial(zone_name).await, serial);
         }
@@ -303,7 +314,7 @@ async fn caa_values_preserve_empty_and_binary_properties() {
 
 /// Percent-encode a query value byte by byte; `;`, `\` and UTF-8 would
 /// otherwise be taken apart.
-fn encode(value: &str) -> String {
+fn encode_query_value(value: &str) -> String {
     value
         .bytes()
         .map(|byte| match byte {
@@ -315,7 +326,7 @@ fn encode(value: &str) -> String {
         .collect()
 }
 
-/// Verify record creation, retrieval, update, and deletion.
+/// Verify that records can be created, retrieved, updated, and deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_supports_create_read_update_and_delete() {
@@ -335,7 +346,7 @@ async fn record_supports_create_read_update_and_delete() {
         .send_request(Method::POST, "/records", Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let record_id = body["record"]["id"].as_i64().unwrap();
 
@@ -346,7 +357,7 @@ async fn record_supports_create_read_update_and_delete() {
         .send_request(Method::GET, &format!("/records/{record_id}"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["record"]["name"], format!("api.{zone_name}."));
 
     let (status, body) = app
@@ -357,7 +368,7 @@ async fn record_supports_create_read_update_and_delete() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
 
     // The type filter parses at the service boundary, so junk is a 400
@@ -372,7 +383,7 @@ async fn record_supports_create_read_update_and_delete() {
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    let update_record_request = json!({
+    let request = json!({
         "name": "api-updated",
         "type": "A",
         "value": "192.168.1.202",
@@ -380,14 +391,10 @@ async fn record_supports_create_read_update_and_delete() {
     });
 
     let (status, body) = app
-        .send_request(
-            Method::PUT,
-            &format!("/records/{record_id}"),
-            Some(update_record_request),
-        )
+        .send_request(Method::PUT, &format!("/records/{record_id}"), Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["record"]["name"], format!("api-updated.{zone_name}."));
     assert_eq!(body["record"]["value"], "192.168.1.202");
 
@@ -399,7 +406,7 @@ async fn record_supports_create_read_update_and_delete() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["record"]["ttl"], 600);
     assert_eq!(body["record"]["name"], format!("api-updated.{zone_name}."));
     assert_eq!(body["record"]["value"], "192.168.1.202");
@@ -417,7 +424,7 @@ async fn record_supports_create_read_update_and_delete() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Verify zone-name normalization in record requests.
+/// Verify that record requests normalize the zone name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_canonicalizes_zone_name() {
@@ -435,7 +442,7 @@ async fn record_canonicalizes_zone_name() {
         .send_request(Method::POST, "/zones", Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["zone"]["name"], zone_name);
 
     let request = json!({
@@ -450,7 +457,7 @@ async fn record_canonicalizes_zone_name() {
         .send_request(Method::POST, "/records", Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["record"]["name"], format!("api.{zone_name}."));
     assert_eq!(body["record"]["zone_name"], zone_name);
 }
@@ -558,27 +565,28 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     assert_eq!(serial_of(&app).await, before + 1);
 }
 
-/// Verify that record delete matching refuses what would widen it.
+/// Verify that record delete matching rejects what would widen it.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_delete_matching_refuses_what_would_widen_it() {
+async fn record_delete_matching_rejects_what_would_widen_it() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
     // The last would be a whole-zone delete; the other cannot be meant.
-    for (query, expected) in [
+    for (path, expected) in [
         (
             format!("/records?zone_name={zone_name}&name=www&value=x"),
             "record_type is required",
         ),
         (format!("/records?zone_name={zone_name}"), "name"),
     ] {
-        let (status, body) = app.send_request(Method::DELETE, &query, None).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}: {body}");
+        let (status, body) = app.send_request(Method::DELETE, &path, None).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {body}");
         assert!(
             body["error"].as_str().unwrap().contains(expected),
-            "{query}: {body}"
+            "{path}: {body}"
         );
     }
 }
@@ -616,7 +624,7 @@ async fn record_delete_matches_a_txt_value_as_the_content_it_was_created_with() 
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["deleted"].as_i64(), Some(1), "{body}");
+    assert_eq!(body["deleted"], 1, "{body}");
 
     // Several character-strings are named the way a create names them, and
     // every one has to match: a subset names no record.
@@ -642,7 +650,7 @@ async fn record_delete_matches_a_txt_value_as_the_content_it_was_created_with() 
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["deleted"].as_i64(), Some(0), "{body}");
+    assert_eq!(body["deleted"], 0, "{body}");
 
     // A value naming no record removes none: reading the same string the other
     // way would delete whichever record that spelling happens to name.
@@ -667,7 +675,7 @@ async fn record_delete_matches_a_txt_value_as_the_content_it_was_created_with() 
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["deleted"].as_i64(), Some(0), "{body}");
+    assert_eq!(body["deleted"], 0, "{body}");
 }
 
 /// Verify that record listings are scoped to the requested zone.
@@ -710,7 +718,7 @@ async fn record_listing_filters_by_zone() {
             .send_request(Method::POST, "/records", Some(request))
             .await;
 
-        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(status, StatusCode::CREATED, "{body}");
 
         if zone_name == second_zone_name {
             second_record_id = Some(body["record"]["id"].as_i64().unwrap());
@@ -723,7 +731,7 @@ async fn record_listing_filters_by_zone() {
         .send_request(Method::GET, &format!("/records/{second_record_id}"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["record"]["value"], "192.0.2.20");
 
     let (status, _) = app
@@ -744,7 +752,7 @@ async fn record_listing_filters_by_zone() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
         body["items"]
             .as_array()
@@ -763,7 +771,7 @@ async fn record_listing_filters_by_zone() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Verify record filtering and pagination.
+/// Verify that record listings filter and paginate.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_listing_filters_and_paginates() {
@@ -777,7 +785,7 @@ async fn record_listing_filters_and_paginates() {
             "type": "A",
             "value": "192.168.1.200",
             "ttl": 1800,
-            "zone_name": zone["name"]
+            "zone_name": zone_name
         }),
         json!({
             "name": "mail",
@@ -785,19 +793,20 @@ async fn record_listing_filters_and_paginates() {
             "value": "mail.example.com",
             "ttl": 3600,
             "priority": 10,
-            "zone_name": zone["name"]
+            "zone_name": zone_name
         }),
         json!({
             "name": "alias",
             "type": "CNAME",
             "value": "Target.Example.Com",
             "ttl": 7200,
-            "zone_name": zone["name"]
+            "zone_name": zone_name
         }),
     ] {
         let (status, _) = app
             .send_request(Method::POST, "/records", Some(request))
             .await;
+
         assert_eq!(status, StatusCode::CREATED);
     }
 
@@ -809,7 +818,7 @@ async fn record_listing_filters_and_paginates() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     assert_eq!(records.len(), 1);
@@ -823,7 +832,7 @@ async fn record_listing_filters_and_paginates() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     assert_eq!(records.len(), 1);
@@ -839,7 +848,7 @@ async fn record_listing_filters_and_paginates() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     assert_eq!(records.len(), 1);
@@ -855,7 +864,7 @@ async fn record_listing_filters_and_paginates() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     assert_eq!(records.len(), 1);
@@ -869,7 +878,7 @@ async fn record_listing_filters_and_paginates() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     assert_eq!(records.len(), 1);
@@ -902,7 +911,7 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
                     "name": name,
                     "type": "A",
                     "value": "192.0.2.1",
-                    "zone_name": zone_name,
+                    "zone_name": zone_name
                 })),
             )
             .await;
@@ -925,15 +934,18 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
         let (status, body) = app
             .send_request(
                 Method::GET,
-                &format!("/records?zone_name={zone_name}&name={}", encode(spelling)),
+                &format!(
+                    "/records?zone_name={zone_name}&name={}",
+                    encode_query_value(spelling)
+                ),
                 None,
             )
             .await;
 
-        assert_eq!(status, StatusCode::OK);
+        assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(
-            body["items"].as_array().map(Vec::len),
-            Some(1),
+            body["items"].as_array().unwrap().len(),
+            1,
             "no record matched {spelling:?}"
         );
     }
@@ -967,7 +979,7 @@ async fn record_name_filter_matches_owner_spellings_across_zones() {
                     "name": name,
                     "type": record_type,
                     "value": value,
-                    "zone_name": zone_name,
+                    "zone_name": zone_name
                 })),
             )
             .await;
@@ -991,15 +1003,15 @@ async fn record_name_filter_matches_owner_spellings_across_zones() {
         let (status, body) = app
             .send_request(
                 Method::GET,
-                &format!("/records?name={}", encode(&spelling)),
+                &format!("/records?name={}", encode_query_value(&spelling)),
                 None,
             )
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(
-            body["items"].as_array().map(Vec::len),
-            Some(1),
+            body["items"].as_array().unwrap().len(),
+            1,
             "no record matched {spelling:?}: {body}"
         );
     }
@@ -1010,14 +1022,14 @@ async fn record_name_filter_matches_owner_spellings_across_zones() {
             Method::GET,
             &format!(
                 "/records?zone_name={zone_name}&search={}",
-                encode("caf\u{e9}")
+                encode_query_value("caf\u{e9}")
             ),
             None,
         )
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["items"].as_array().map(Vec::len), Some(1), "{body}");
+    assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
 }
 
 /// Verify that an apex filter maps `@` to the stored empty owner even
@@ -1033,13 +1045,15 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
         .send_request(
             Method::POST,
             "/records",
-            Some(json!({"zone_name": zone_name, "name": "www", "type": "A", "value": "192.0.2.1"})),
+            Some(
+                json!({ "zone_name": zone_name, "name": "www", "type": "A", "value": "192.0.2.1" }),
+            ),
         )
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
-    let (status, scoped) = app
+    let (status, body) = app
         .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=@"),
@@ -1047,16 +1061,13 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    let scoped_count = scoped["items"].as_array().unwrap().len();
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let scoped_count = body["items"].as_array().unwrap().len();
 
-    assert!(
-        scoped_count > 0,
-        "zone has no apex record to find: {scoped}"
-    );
+    assert!(scoped_count > 0, "zone has no apex record to find: {body}");
 
     // Keep the unscoped lookup on one page even when Compose retains older runs.
-    let (status, unscoped) = app
+    let (status, body) = app
         .send_request(
             Method::GET,
             &format!("/records?name=@&search={}", app.namespace()),
@@ -1064,8 +1075,8 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    let names: Vec<&str> = unscoped["items"]
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let names: Vec<&str> = body["items"]
         .as_array()
         .unwrap()
         .iter()
@@ -1098,7 +1109,7 @@ async fn record_listing_ignores_empty_name_filter() {
         assert_eq!(status, StatusCode::CREATED);
     }
 
-    let count = |body: &serde_json::Value| body["items"].as_array().unwrap().len();
+    let count = |body: &Value| body["items"].as_array().unwrap().len();
 
     let (_, unfiltered) = app
         .send_request(
@@ -1128,14 +1139,17 @@ async fn record_listing_ignores_empty_name_filter() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn search_treats_like_wildcards_as_literal_text() {
-    /// Search a zone's records and collect the matching owner labels.
-    async fn search(app: &TestApp, zone_name: &str, term: &str) -> Vec<String> {
-        let q = term.replace('%', "%25").replace('_', "%5F");
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let search = async |app: &TestApp, term: &str| -> Vec<String> {
+        let query = term.replace('%', "%25").replace('_', "%5F");
 
         let (_, body) = app
             .send_request(
                 Method::GET,
-                &format!("/records?zone_name={zone_name}&search={q}"),
+                &format!("/records?zone_name={zone_name}&search={query}"),
                 None,
             )
             .await;
@@ -1156,11 +1170,7 @@ async fn search_treats_like_wildcards_as_literal_text() {
         names.sort();
 
         names
-    }
-
-    let app = TestApp::start().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
+    };
 
     for (name, value) in [
         ("pct", "100%off"),
@@ -1182,12 +1192,12 @@ async fn search_treats_like_wildcards_as_literal_text() {
         assert_eq!(status, StatusCode::CREATED);
     }
 
-    assert_eq!(search(&app, zone_name, "100%off").await, ["pct"]);
-    assert_eq!(search(&app, zone_name, "a_b").await, ["under"]);
+    assert_eq!(search(&app, "100%off").await, ["pct"]);
+    assert_eq!(search(&app, "a_b").await, ["under"]);
 
     // A term that is nothing but wildcards matches the records holding them.
-    assert_eq!(search(&app, zone_name, "%").await, ["pct"]);
-    assert_eq!(search(&app, zone_name, "_").await, ["under"]);
+    assert_eq!(search(&app, "%").await, ["pct"]);
+    assert_eq!(search(&app, "_").await, ["under"]);
 }
 
 /// Verify that record listing sorts by the field asked for.
@@ -1259,7 +1269,7 @@ async fn record_listing_sorts_by_the_field_asked_for() {
     );
 }
 
-/// Accept DNS octets independently of IDNA host conventions.
+/// Verify that DNS octets are accepted independently of IDNA host conventions.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_storage_preserves_non_ascii_label_octets() {
@@ -1287,7 +1297,7 @@ async fn record_storage_preserves_non_ascii_label_octets() {
                     "name": name,
                     "type": record_type,
                     "value": value,
-                    "zone_name": zone_name,
+                    "zone_name": zone_name
                 })),
             )
             .await;
@@ -1314,7 +1324,7 @@ async fn txt_record_storage_escapes_control_characters() {
                 "name": "nul",
                 "type": "TXT",
                 "value": "a\u{0}b",
-                "zone_name": zone_name,
+                "zone_name": zone_name
             })),
         )
         .await;
@@ -1330,10 +1340,10 @@ async fn txt_record_storage_escapes_control_characters() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["items"].as_array().map(Vec::len), Some(1), "{body}");
+    assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
 }
 
-/// Reject invalid NAPTR flags on create and update.
+/// Verify that invalid NAPTR flags are rejected on create and update.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn naptr_record_validates_flags_on_create_and_update() {
@@ -1350,7 +1360,7 @@ async fn naptr_record_validates_flags_on_create_and_update() {
                 "zone_name": zone_name,
                 "name": "naptr",
                 "type": "NAPTR",
-                "value": original,
+                "value": original
             })),
         )
         .await;
@@ -1371,13 +1381,13 @@ async fn naptr_record_validates_flags_on_create_and_update() {
                     Method::POST,
                     "/records".to_string(),
                     json!({
-                        "zone_name": zone_name, "name": "invalid", "type": "NAPTR", "value": invalid,
+                        "zone_name": zone_name, "name": "invalid", "type": "NAPTR", "value": invalid
                     }),
                 ),
                 (
                     Method::PUT,
                     format!("/records/{id}"),
-                    json!({"value": invalid}),
+                    json!({ "value": invalid }),
                 ),
             ] {
                 let (status, body) = app.send_request(method, &path, Some(request)).await;
@@ -1399,7 +1409,7 @@ async fn naptr_record_validates_flags_on_create_and_update() {
         .send_request(
             Method::PUT,
             &format!("/records/{id}"),
-            Some(json!({"value": r#"10 10 "" "app" "" target.example."#})),
+            Some(json!({ "value": r#"10 10 "" "app" "" target.example."# })),
         )
         .await;
 
@@ -1450,7 +1460,7 @@ async fn naptr_record_rejects_invalid_regexp() {
                     "name": "probe",
                     "type": "NAPTR",
                     "value": value,
-                    "zone_name": zone_name,
+                    "zone_name": zone_name
                 })),
             )
             .await;
@@ -1458,7 +1468,10 @@ async fn naptr_record_rejects_invalid_regexp() {
         assert_eq!(status, expected, "{value}: {body}");
 
         if expected == StatusCode::BAD_REQUEST {
-            assert!(body.to_string().contains("NAPTR regexp"), "{body}");
+            assert!(
+                body["error"].as_str().unwrap().contains("NAPTR regexp"),
+                "{body}"
+            );
         }
     }
 }
@@ -1469,6 +1482,7 @@ async fn naptr_record_rejects_invalid_regexp() {
 async fn record_rejects_invalid_values() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     for (record_type, value, expected_error) in [
         ("A", "not-an-ip", "valid IPv4"),
@@ -1485,14 +1499,14 @@ async fn record_rejects_invalid_values() {
             "type": record_type,
             "value": value,
             "ttl": 1800,
-            "zone_name": zone["name"]
+            "zone_name": zone_name
         });
 
         let (status, body) = app
             .send_request(Method::POST, "/records", Some(request))
             .await;
 
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         assert!(
             body["error"].as_str().unwrap().contains(expected_error),
             "unexpected error for {record_type} value '{value}': {}",
@@ -1505,14 +1519,14 @@ async fn record_rejects_invalid_values() {
         "type": "A",
         "value": "192.0.2.10",
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, body) = app
         .send_request(Method::POST, "/records", Some(valid_request))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
 
     let invalid_update = json!({
@@ -1530,7 +1544,7 @@ async fn record_rejects_invalid_values() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body["error"].as_str().unwrap().contains("valid IPv6"));
 }
 
@@ -1540,13 +1554,14 @@ async fn record_rejects_invalid_values() {
 async fn record_rejects_mixed_ttl_for_one_name_and_type() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     let first = json!({
         "name": "www",
         "type": "A",
         "value": "192.0.2.1",
         "ttl": 300,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, _) = app
@@ -1561,14 +1576,14 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
         "type": "A",
         "value": "192.0.2.2",
         "ttl": 600,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, body) = app
         .send_request(Method::POST, "/records", Some(differing_ttl))
         .await;
 
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert!(
         body["error"].as_str().unwrap().contains("share one TTL"),
         "unexpected error: {}",
@@ -1580,7 +1595,7 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
         "type": "A",
         "value": "192.0.2.2",
         "ttl": 300,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, _) = app
@@ -1595,7 +1610,7 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
         "type": "TXT",
         "value": "hello",
         "ttl": 600,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, _) = app
@@ -1605,12 +1620,13 @@ async fn record_rejects_mixed_ttl_for_one_name_and_type() {
     assert_eq!(status, StatusCode::CREATED);
 }
 
-/// Verify rejection of negative TTLs on record creation and update.
+/// Verify that negative TTLs are rejected on record creation and update.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_rejects_negative_ttl_on_create_and_update() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     let (status, body) = app
         .send_request(
@@ -1621,12 +1637,12 @@ async fn record_rejects_negative_ttl_on_create_and_update() {
                 "type": "A",
                 "value": "192.0.2.1",
                 "ttl": -1,
-                "zone_name": zone["name"]
+                "zone_name": zone_name
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body["error"].as_str().unwrap().contains("TTL"), "{body}");
 
     let (status, body) = app
@@ -1637,12 +1653,12 @@ async fn record_rejects_negative_ttl_on_create_and_update() {
                 "name": "neg",
                 "type": "A",
                 "value": "192.0.2.1",
-                "zone_name": zone["name"]
+                "zone_name": zone_name
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
 
     let (status, body) = app
@@ -1653,16 +1669,17 @@ async fn record_rejects_negative_ttl_on_create_and_update() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body["error"].as_str().unwrap().contains("TTL"), "{body}");
 }
 
-/// Verify rejection of priority on record types without a priority field.
+/// Verify that a priority is rejected on record types without a priority field.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_rejects_priority_on_types_without_one() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     for (record_type, value) in [
         ("A", "192.0.2.1"),
@@ -1681,7 +1698,7 @@ async fn record_rejects_priority_on_types_without_one() {
             "value": value,
             "ttl": 3600,
             "priority": 10,
-            "zone_name": zone["name"]
+            "zone_name": zone_name
         });
 
         let (status, body) = app
@@ -1702,7 +1719,7 @@ async fn record_rejects_priority_on_types_without_one() {
         "value": "mail.example.com",
         "ttl": 3600,
         "priority": 10,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, _) = app.send_request(Method::POST, "/records", Some(mx)).await;
@@ -1710,17 +1727,19 @@ async fn record_rejects_priority_on_types_without_one() {
     assert_eq!(status, StatusCode::CREATED);
 
     // An update is held to the same rule.
-    let a = json!({
+    let a_record = json!({
         "name": "prio",
         "type": "A",
         "value": "192.0.2.1",
         "ttl": 3600,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
-    let (status, body) = app.send_request(Method::POST, "/records", Some(a)).await;
+    let (status, body) = app
+        .send_request(Method::POST, "/records", Some(a_record))
+        .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
 
     let (status, body) = app
@@ -1731,14 +1750,14 @@ async fn record_rejects_priority_on_types_without_one() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(
         body["error"].as_str().unwrap().contains("priority"),
         "{body}"
     );
 }
 
-/// Verify preservation of TXT segment boundaries and case.
+/// Verify that TXT segment boundaries and case are preserved.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_preserves_txt_segments_and_case() {
@@ -1754,7 +1773,7 @@ async fn record_preserves_txt_segments_and_case() {
             "type": "TXT",
             "value": value,
             "ttl": 1800,
-            "zone_name": zone["name"]
+            "zone_name": zone_name
         });
 
         let (status, _) = app
@@ -1772,7 +1791,7 @@ async fn record_preserves_txt_segments_and_case() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     assert_eq!(records.len(), 1);
@@ -1783,14 +1802,14 @@ async fn record_preserves_txt_segments_and_case() {
         "type": "TXT",
         "value": ["a", "bc"],
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, body) = app
         .send_request(Method::POST, "/records", Some(segmented))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["record"]["value"], json!(["a", "bc"]));
 
     let empty_segments = json!({
@@ -1798,14 +1817,14 @@ async fn record_preserves_txt_segments_and_case() {
         "type": "TXT",
         "value": [],
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, body) = app
         .send_request(Method::POST, "/records", Some(empty_segments))
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(
         body["error"]
             .as_str()
@@ -1820,21 +1839,21 @@ async fn record_preserves_txt_segments_and_case() {
         "type": "TXT",
         "value": "a".repeat(300),
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, body) = app
         .send_request(Method::POST, "/records", Some(long_txt))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(
         body["record"]["value"],
         json!(["a".repeat(255), "a".repeat(45)])
     );
 }
 
-/// Verify owner normalization and rejection of names outside the zone.
+/// Verify that owners are normalized and names outside the zone are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_normalizes_owner_and_rejects_out_of_zone() {
@@ -1847,14 +1866,14 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
         "type": "A",
         "value": "127.0.0.1",
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, body) = app
         .send_request(Method::POST, "/records", Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["record"]["name"], format!("a1.{zone_name}."));
 
     // The FQDN spelling resolves to the same stored owner as the relative
@@ -1864,7 +1883,7 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
         "type": "A",
         "value": "127.0.0.1",
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, _) = app
@@ -1878,14 +1897,14 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
         "type": "A",
         "value": "127.0.0.2",
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, body) = app
         .send_request(Method::POST, "/records", Some(in_bailiwick_different_value))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["record"]["name"], format!("a1.{zone_name}."));
 
     for name in [
@@ -1901,7 +1920,7 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
             "type": "A",
             "value": "127.0.0.3",
             "ttl": 1800,
-            "zone_name": zone["name"]
+            "zone_name": zone_name
         });
 
         let (status, _) = app
@@ -1930,7 +1949,7 @@ async fn record_normalizes_owner_and_rejects_out_of_zone() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-/// Verify creation of every supported user record type.
+/// Verify that every supported user record type can be created.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_create_accepts_supported_types() {
@@ -1938,7 +1957,7 @@ async fn record_create_accepts_supported_types() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let record_types = vec![
+    let record_types = [
         ("mail", "MX", "mail.example.com", Some(10)),
         ("_sip._tcp", "SRV", "5 5060 sip.example.com", Some(10)),
         ("@", "TXT", "v=spf1 include:_spf.google.com ~all", None),
@@ -1961,20 +1980,20 @@ async fn record_create_accepts_supported_types() {
     ];
 
     for (name, record_type, value, priority) in record_types {
-        let create_request = json!({
+        let request = json!({
             "name": name,
             "type": record_type,
             "value": value,
             "ttl": 3600,
             "priority": priority,
-            "zone_name": zone["name"]
+            "zone_name": zone_name
         });
 
         let (status, body) = app
-            .send_request(Method::POST, "/records", Some(create_request))
+            .send_request(Method::POST, "/records", Some(request))
             .await;
 
-        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(status, StatusCode::CREATED, "{body}");
         assert_eq!(body["record"]["type"], record_type);
         let expected_value = match record_type {
             "MX" => "mail.example.com.",
@@ -2002,7 +2021,7 @@ async fn record_create_accepts_supported_types() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     // 9 created here + the apex NS record auto-created with the zone.
@@ -2018,19 +2037,20 @@ async fn record_create_accepts_supported_types() {
     }
 }
 
-/// Verify rejection of records that conflict with a CNAME.
+/// Verify that records conflicting with a CNAME are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_rejects_cname_conflicts() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     let a_record_request = json!({
         "name": "test",
         "type": "A",
         "value": "1.1.1.1",
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, _) = app
@@ -2044,7 +2064,7 @@ async fn record_rejects_cname_conflicts() {
         "type": "CNAME",
         "value": "other.example.com",
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, _) = app
@@ -2058,14 +2078,14 @@ async fn record_rejects_cname_conflicts() {
         "type": "CNAME",
         "value": "another.example.com",
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, body) = app
         .send_request(Method::POST, "/records", Some(cname_record_request))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let cname_record_id = body["record"]["id"].as_i64().unwrap();
 
     let a_record_request = json!({
@@ -2073,7 +2093,7 @@ async fn record_rejects_cname_conflicts() {
         "type": "A",
         "value": "2.2.2.2",
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
 
     let (status, _) = app
@@ -2102,8 +2122,8 @@ async fn record_rejects_cname_conflicts() {
     assert_eq!(status, StatusCode::CONFLICT);
 }
 
-/// Verify the DNAME rules of RFC 6672, Section 2.4 and the alias-target rule
-/// of RFC 2181, Section 10.3 and RFC 2782, in either order of arrival.
+/// Verify that the DNAME rules of RFC 6672, Section 2.4 and the alias-target rule
+/// of RFC 2181, Section 10.3 and RFC 2782 hold in either order of arrival.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_enforces_dname_and_alias_target_rules() {
@@ -2270,7 +2290,7 @@ async fn record_enforces_dname_and_alias_target_rules() {
         .send_request(
             Method::POST,
             &format!("/zones/{apex_zone_name}/import"),
-            Some(json!({"content": "@ IN NS ns.example.net.\n", "mode": "replace"})),
+            Some(json!({ "content": "@ IN NS ns.example.net.\n", "mode": "replace" })),
         )
         .await;
 
@@ -2304,7 +2324,7 @@ async fn record_enforces_dname_and_alias_target_rules() {
     }
 }
 
-/// Preview and apply reject the same cross-owner conflicts without changing the zone.
+/// Verify that preview and apply reject the same cross-owner conflicts without changing the zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_mutations_validate_the_complete_proposed_state() {
@@ -2312,23 +2332,23 @@ async fn record_mutations_validate_the_complete_proposed_state() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let (status, seeded) = app
+    let (status, body) = app
         .send_request(
             Method::POST,
             "/records/bulk",
             Some(json!({
                 "zone_name": zone_name,
                 "records": [
-                    {"name": "child", "type": "NS", "value": "ns.example.net."},
-                    {"name": "child", "type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab"},
-                    {"name": "redirect", "type": "DNAME", "value": "target.example.net."}
+                    { "name": "child", "type": "NS", "value": "ns.example.net." },
+                    { "name": "child", "type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" },
+                    { "name": "redirect", "type": "DNAME", "value": "target.example.net." }
                 ]
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED, "{seeded}");
-    let ns_id = seeded["records"][0]["id"].as_i64().unwrap();
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let ns_id = body["records"][0]["id"].as_i64().unwrap();
 
     let serial = app.read_zone_serial(zone_name).await;
 
@@ -2337,7 +2357,7 @@ async fn record_mutations_validate_the_complete_proposed_state() {
             .send_request(
                 Method::PUT,
                 &format!("/records/{ns_id}"),
-                Some(json!({"name": "moved", "dry_run": dry_run})),
+                Some(json!({ "name": "moved", "dry_run": dry_run })),
             )
             .await;
 
@@ -2348,6 +2368,7 @@ async fn record_mutations_validate_the_complete_proposed_state() {
             format!("/records?zone_name={zone_name}&name=child&type=NS&dry_run={dry_run}"),
         ] {
             let (status, body) = app.send_request(Method::DELETE, &path, None).await;
+
             assert_eq!(status, StatusCode::CONFLICT, "{body}");
         }
 
@@ -2357,7 +2378,7 @@ async fn record_mutations_validate_the_complete_proposed_state() {
                 "/records/bulk",
                 Some(json!({
                     "zone_name": zone_name, "dry_run": dry_run,
-                    "records": [{"name": "leaf.redirect", "type": "A", "value": "192.0.2.5"}]
+                    "records": [{ "name": "leaf.redirect", "type": "A", "value": "192.0.2.5" }]
                 })),
             )
             .await;
@@ -2409,7 +2430,7 @@ async fn signed_record_listing_paginates_derived_records() {
                 "name": "www",
                 "type": "A",
                 "value": "192.0.2.10",
-                "zone_name": zone_name,
+                "zone_name": zone_name
             })),
         )
         .await;
@@ -2420,7 +2441,7 @@ async fn signed_record_listing_paginates_derived_records() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
 
@@ -2434,7 +2455,7 @@ async fn signed_record_listing_paginates_derived_records() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let user_total = body["pagination"]["total"].as_u64().unwrap();
 
     assert!(
@@ -2454,7 +2475,7 @@ async fn signed_record_listing_paginates_derived_records() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     assert_eq!(
@@ -2492,7 +2513,7 @@ async fn signed_record_listing_paginates_derived_records() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     assert_eq!(records.len(), 2);
@@ -2506,7 +2527,7 @@ async fn signed_record_listing_paginates_derived_records() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
     assert!(!records.is_empty());
@@ -2606,7 +2627,7 @@ async fn signed_record_listing_filters_derived_records_by_name() {
     );
 }
 
-/// Unsupported named and numeric types cannot be created or replace an existing record.
+/// Verify that unsupported named and numeric types cannot be created or replace an existing record.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_writes_reject_unsupported_types_without_changes() {
@@ -2624,14 +2645,14 @@ async fn record_writes_reject_unsupported_types_without_changes() {
             (Method::POST, "/records".to_string()),
             (Method::PUT, format!("/records/{record_id}")),
         ] {
-            let payload = json!({"zone_name": zone_name, "name": "unsupported", "type": record_type, "value": r"\# 2 0000"});
-            let payload = if method == Method::PUT {
-                json!({"name": "unsupported", "type": record_type, "value": r"\# 2 0000"})
+            let request = json!({ "zone_name": zone_name, "name": "unsupported", "type": record_type, "value": r"\# 2 0000" });
+            let request = if method == Method::PUT {
+                json!({ "name": "unsupported", "type": record_type, "value": r"\# 2 0000" })
             } else {
-                payload
+                request
             };
 
-            let (status, body) = app.send_request(method, &path, Some(payload)).await;
+            let (status, body) = app.send_request(method, &path, Some(request)).await;
 
             assert!(status.is_client_error(), "{record_type}: {body}");
             assert_eq!(app.list_records(zone_name).await, before);
@@ -2640,19 +2661,19 @@ async fn record_writes_reject_unsupported_types_without_changes() {
     }
 }
 
-/// Binary TXT and WKS retain their exact RDATA when API responses are written back.
+/// Verify that binary TXT and WKS retain their exact RDATA when API responses are written back.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn binary_txt_and_wks_round_trip() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let zone = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
 
-    for (name, rtype, value, bytes) in [
+    for (name, record_type, value, bytes) in [
         (
             "binary",
             "TXT",
-            json!({"presentation": r#""\255\000" "\195" "\169""#}),
+            json!({ "presentation": r#""\255\000" "\195" "\169""# }),
             vec![2, 255, 0, 1, 195, 1, 169],
         ),
         (
@@ -2666,24 +2687,25 @@ async fn binary_txt_and_wks_round_trip() {
             .send_request(
                 Method::POST,
                 "/records",
-                Some(json!({"zone_name": zone, "name": name, "type": rtype, "value": value})),
+                Some(json!({ "zone_name": zone_name, "name": name, "type": record_type, "value": value })),
             )
             .await;
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
-        let path = format!("/records/{}", body["record"]["id"]);
+        let record_id = body["record"]["id"].as_i64().unwrap();
+        let path = format!("/records/{record_id}");
         let value = body["record"]["value"].clone();
 
         let (status, body) = app
-            .send_request(Method::PUT, &path, Some(json!({"value": value})))
+            .send_request(Method::PUT, &path, Some(json!({ "value": value })))
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
-        let wire_type: Rtype = rtype.parse().unwrap();
+        let rtype = record_type.parse::<Rtype>().unwrap();
 
         assert_eq!(
-            &dns::fetch_exported_record_sets(&app, zone).await
-                [&(format!("{name}.{zone}."), wire_type)],
+            &dns::fetch_exported_record_sets(&app, zone_name).await
+                [&(format!("{name}.{zone_name}."), rtype)],
             &vec![bytes]
         );
     }
@@ -2691,26 +2713,26 @@ async fn binary_txt_and_wks_round_trip() {
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{zone}/import"),
-            Some(json!({"content": r#"imported IN TXT "\255\000""#})),
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": r#"imported IN TXT "\255\000""# })),
         )
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        &dns::fetch_exported_record_sets(&app, zone).await
-            [&(format!("imported.{zone}."), Rtype::TXT)],
+        &dns::fetch_exported_record_sets(&app, zone_name).await
+            [&(format!("imported.{zone_name}."), Rtype::TXT)],
         &vec![vec![2, 255, 0]]
     );
 }
 
-/// PTR cannot name a CNAME, whichever record was created first (RFC 2181, Section 10.2).
+/// Verify that a PTR cannot name a CNAME, whichever record was created first (RFC 2181, Section 10.2).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ptr_record_rejects_alias_target() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let zone = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
 
     for reverse in [false, true] {
         let alias = if reverse {
@@ -2718,20 +2740,19 @@ async fn ptr_record_rejects_alias_target() {
         } else {
             "earlier"
         };
-        let cname = json!({"zone_name": zone, "name": alias, "type": "CNAME", "value": "host.example.net."});
-        let ptr = json!({"zone_name": zone, "name": format!("ptr-{alias}"), "type": "PTR", "value": format!("{alias}.{zone}.")});
+        let cname = json!({ "zone_name": zone_name, "name": alias, "type": "CNAME", "value": "host.example.net." });
+        let ptr = json!({ "zone_name": zone_name, "name": format!("ptr-{alias}"), "type": "PTR", "value": format!("{alias}.{zone_name}.") });
         let [first, second] = if reverse {
             [ptr, cname]
         } else {
             [cname, ptr]
         };
 
-        assert_eq!(
-            app.send_request(Method::POST, "/records", Some(first))
-                .await
-                .0,
-            StatusCode::CREATED
-        );
+        let (status, body) = app
+            .send_request(Method::POST, "/records", Some(first))
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED, "{body}");
 
         let (status, body) = app
             .send_request(Method::POST, "/records", Some(second))
@@ -2741,7 +2762,7 @@ async fn ptr_record_rejects_alias_target() {
     }
 }
 
-/// Preserve the full TTL range across record reads, writes, and imports.
+/// Verify that the full TTL range is preserved across record reads, writes, and imports.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_ttl_preserves_unsigned_boundaries() {
@@ -2755,9 +2776,15 @@ async fn record_ttl_preserves_unsigned_boundaries() {
     {
         let name = format!("ttl{index}");
 
-        let (status, body) = app.send_request(Method::POST, "/records", Some(json!({
-            "zone_name": zone_name, "name": name, "type": "A", "value": "192.0.2.44", "ttl": ttl
-        }))).await;
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "zone_name": zone_name, "name": name, "type": "A", "value": "192.0.2.44", "ttl": ttl
+                })),
+            )
+            .await;
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
         assert_eq!(body["record"]["ttl"], ttl);
@@ -2767,7 +2794,7 @@ async fn record_ttl_preserves_unsigned_boundaries() {
                 .send_request(
                     Method::PUT,
                     &format!("/zones/{zone_name}"),
-                    Some(json!({"minimum_ttl": ttl})),
+                    Some(json!({ "minimum_ttl": ttl })),
                 )
                 .await;
 
@@ -2810,9 +2837,16 @@ async fn record_ttl_preserves_unsigned_boundaries() {
     let serial = app.read_zone_serial(zone_name).await;
 
     for ttl in [-1i64, i64::from(u32::MAX) + 1] {
-        let (status, body) = app.send_request(Method::POST, "/records", Some(json!({
-            "zone_name": zone_name, "name": "invalid", "type": "A", "value": "192.0.2.45", "ttl": ttl
-        }))).await;
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "zone_name": zone_name, "name": "invalid", "type": "A", "value": "192.0.2.45", "ttl": ttl
+                })),
+            )
+            .await;
+
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         assert_eq!(app.read_zone_serial(zone_name).await, serial);
     }

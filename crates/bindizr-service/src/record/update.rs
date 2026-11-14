@@ -32,7 +32,7 @@ enum LockTarget<'a> {
 /// Resolve a replacement; omitted fields require read access to the stored record.
 fn resolve_update(
     zone: &Zone,
-    existing: &Record,
+    existing_record: &Record,
     request: &UpdateRecordRequest,
     can_read: bool,
 ) -> Result<Record, ServiceError> {
@@ -77,19 +77,19 @@ fn resolve_update(
         }
     }
 
-    let record_type = record_type?.unwrap_or(existing.record_type);
+    let record_type = record_type?.unwrap_or(existing_record.record_type);
 
     // Each type has its own stored grammar (TXT uses quoted presentation),
     // so a type change requires a fresh value.
-    if record_type != existing.record_type && request.value.is_none() {
+    if record_type != existing_record.record_type && request.value.is_none() {
         return Err(ServiceError::invalid_input(
-            "value is required when changing a record's type".to_string(),
+            "value is required when changing a record's type",
         ));
     }
 
     // Reject explicit priority outside MX/SRV; changing away from them clears it.
     let priority = if matches!(record_type, RecordType::Mx | RecordType::Srv) {
-        record_type.stored_priority(request.priority.or(existing.priority))
+        record_type.stored_priority(request.priority.or(existing_record.priority))
     } else if request.priority.is_some() {
         return Err(ServiceError::invalid_record_value(format!(
             "{record_type} records do not take a priority"
@@ -105,29 +105,29 @@ fn resolve_update(
             validation::validate_management_value(record_type, &encoded)?;
             encoded
         }
-        None => existing.value.clone(),
+        None => existing_record.value.clone(),
     };
 
     let ttl = match request.ttl {
         Some(ttl) => ttl::validate_record_ttl(ttl)?,
-        None => existing.ttl,
+        None => existing_record.ttl,
     };
 
     // An omitted name keeps the stored owner, which needs no reparse.
     let owner_name = match &request.name {
         Some(name) => validation::normalize_record_owner_name(name, &zone.name)?,
-        None => existing.name.clone(),
+        None => existing_record.name.clone(),
     };
 
     Ok(Record {
-        id: existing.id,
+        id: existing_record.id,
         name: owner_name,
         record_type,
         value: encoded_value,
         ttl,
         priority,
         zone_id: zone.id,
-        created_at: existing.created_at,
+        created_at: existing_record.created_at,
     })
 }
 
@@ -206,9 +206,7 @@ async fn update_locked(
                 .await
                 {
                     Ok(Some(record)) if record.zone_id == zone.id => record,
-                    Ok(Some(_) | None) => {
-                        return Err(ServiceError::record_not_found(record_id));
-                    }
+                    Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
                     Err(error) => {
                         log::error!("Failed to fetch record: {error}");
                         return Err(ServiceError::internal_with_source(
@@ -259,9 +257,7 @@ async fn update_locked(
 
                 match matched.len() {
                     1 => (zone, matched.remove(0), caller),
-                    0 => {
-                        return Err(ServiceError::record_not_found_at_name(&zone.name, &owner));
-                    }
+                    0 => return Err(ServiceError::record_not_found_at_name(&zone.name, &owner)),
                     matches => {
                         return Err(ServiceError::record_name_ambiguous(
                             &zone.name, &owner, matches,
@@ -301,23 +297,17 @@ async fn update_locked(
 
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name = match bindizr_db::record::list_by_name_tx(
+        let records_at_name = bindizr_db::record::list_by_name_tx(
             &mut tx,
             zone.id,
             &candidate.name,
             LockLevel::Exclusive,
         )
         .await
-        {
-            Ok(records) => records,
-            Err(error) => {
-                log::error!("Failed to load records: {error}");
-                return Err(ServiceError::internal_with_source(
-                    "failed to update record",
-                    error,
-                ));
-            }
-        };
+        .map_err(|error| {
+            log::error!("Failed to load records: {error}");
+            ServiceError::internal_with_source("failed to update record", error)
+        })?;
 
         validation::validate_record_constraints(
             &records_at_name,

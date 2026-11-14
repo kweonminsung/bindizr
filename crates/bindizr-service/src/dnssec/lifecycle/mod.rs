@@ -11,9 +11,8 @@ use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneC
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{parent_ns_addrs, status};
+use super::{SignedZone, parent_ns_addrs, status};
 use crate::authorization::Caller;
-use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest,
@@ -33,7 +32,7 @@ fn validate_policy_move(
              signed, so disable DNSSEC and re-enable under the new policy",
             target.name,
             target.key_layout(),
-            zone.name.as_str(),
+            zone.name,
             current.key_layout()
         )));
     }
@@ -68,7 +67,7 @@ pub async fn enable(
             bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
 
         if !existing_keys.is_empty() {
-            return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
+            return Err(ServiceError::dnssec_already_enabled(&zone.name));
         }
 
         // Shared: a concurrent delete of the policy must wait for the FK
@@ -199,7 +198,7 @@ pub async fn update_settings(
         let policy = match &policy_name {
             Some(name) => {
                 if keys.is_empty() {
-                    return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
+                    return Err(ServiceError::dnssec_not_enabled(&zone.name));
                 }
 
                 let current = super::lookup_zone_policy_tx(&mut tx, &zone).await?;
@@ -308,7 +307,7 @@ pub async fn disable(
 
             if !delegation.ds_key_tags.is_empty() {
                 return Err(ServiceError::dnssec_ds_published(
-                    signed.zone.name.as_str(),
+                    &signed.zone.name,
                     &delegation.ds_key_tags,
                 ));
             }
@@ -345,10 +344,10 @@ pub async fn disable(
         bindizr_db::zone::update_dnssec_policy_id_tx(&mut tx, signed.zone.id, None).await?;
         zone::advance_serial_tx(&mut tx, &signed.zone, new_serial, caller.change_origin()).await?;
 
-        Ok(signed.zone.name.clone())
+        Ok(())
     }
     .await;
-    let zone_name = transaction::finish_tx(tx, result, "failed to disable DNSSEC").await?;
+    transaction::finish_tx(tx, result, "failed to disable DNSSEC").await?;
 
     cx.metrics().track_serial_bumps(1);
 
@@ -358,7 +357,7 @@ pub async fn disable(
 
     log::info!("event=dnssec_disable zone={zone_name}");
 
-    notify::notify_after_update(cx, &zone_name).await;
+    notify::notify_after_update(cx, zone_name).await;
 
     Ok(())
 }
@@ -381,16 +380,19 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
                 .await?
                 .is_some();
 
-        Ok((signed.zone.name.clone(), changed))
+        Ok(changed)
     }
     .await;
-    let (zone_name, changed) = transaction::finish_tx(tx, result, "failed to sign zone").await?;
+    let changed = transaction::finish_tx(tx, result, "failed to sign zone").await?;
+
+    if changed {
+        cx.metrics().track_serial_bumps(1);
+    }
 
     log::info!("event=dnssec_sign zone={zone_name}");
 
     if changed {
-        cx.metrics().track_serial_bumps(1);
-        notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(())

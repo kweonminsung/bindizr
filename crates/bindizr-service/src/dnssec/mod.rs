@@ -116,7 +116,7 @@ async fn find_zone_policy_tx(
         .ok_or_else(|| {
             ServiceError::internal(format!(
                 "zone {} references a missing DNSSEC policy",
-                zone.name.as_str()
+                zone.name
             ))
         })
 }
@@ -130,7 +130,7 @@ async fn lookup_zone_policy_tx(
     find_zone_policy_tx(tx, zone).await?.ok_or_else(|| {
         ServiceError::internal(format!(
             "zone {} is signed but has no DNSSEC policy",
-            zone.name.as_str()
+            zone.name
         ))
     })
 }
@@ -152,7 +152,7 @@ async fn get_signed_zone_tx(
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
 
     if keys.is_empty() {
-        return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
+        return Err(ServiceError::dnssec_not_enabled(&zone.name));
     }
 
     let policy = lookup_zone_policy_tx(tx, &zone).await?;
@@ -295,7 +295,7 @@ mod tests {
     use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, PolicyId};
     use chrono::Utc;
 
-    use super::DnssecPolicy;
+    use super::*;
 
     /// Build a policy fixture with the requested signature timing.
     fn policy(signature_validity_days: u32, signature_refresh_days: u32) -> DnssecPolicy {

@@ -35,7 +35,11 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         )
         .route(
             "/zones/{name}/dnssec/withdraw",
-            routing::post(withdraw_dnssec).delete(cancel_dnssec_withdrawal),
+            routing::post(withdraw_dnssec),
+        )
+        .route(
+            "/zones/{name}/dnssec/withdraw",
+            routing::delete(cancel_dnssec_withdrawal),
         )
         .route(
             "/zones/{name}/dnssec/check-ds",
@@ -66,8 +70,8 @@ pub(crate) async fn get_dnssec_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::get_status(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
-    Ok((StatusCode::OK, Json(status)).into_response())
+    let response = dnssec::get_status(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Enable DNSSEC for a zone: generate its signing keys and sign the zone.
@@ -98,8 +102,9 @@ pub(crate) async fn enable_dnssec(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<EnableDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::enable(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
-    Ok((StatusCode::CREATED, Json(status)).into_response())
+    let response =
+        dnssec::enable(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
+    Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
 /// The check switch of a DNSSEC disable request.
@@ -211,9 +216,9 @@ pub(crate) async fn start_dnssec_rollover(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<StartDnssecRolloverRequest>,
 ) -> Result<Response, ApiError> {
-    let status =
+    let response =
         dnssec::start_rollover(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
-    Ok((StatusCode::OK, Json(status)).into_response())
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// The check switches of a ds-seen request.
@@ -254,7 +259,7 @@ pub(crate) async fn advance_dnssec_rollover(
     Path(params): Path<NameParams>,
     Query(query): Query<AdvanceDnssecRolloverQuery>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::advance_rollover(
+    let response = dnssec::advance_rollover(
         &cx,
         &caller,
         &zone::normalize_name(&params.name)?,
@@ -263,7 +268,7 @@ pub(crate) async fn advance_dnssec_rollover(
     )
     .await?;
 
-    Ok((StatusCode::OK, Json(status)).into_response())
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Publish the RFC 8078 delete CDS/CDNSKEY pair.
@@ -291,8 +296,8 @@ pub(crate) async fn withdraw_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::withdraw(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
-    Ok((StatusCode::OK, Json(status)).into_response())
+    let response = dnssec::withdraw(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Cancel a published DS withdrawal.
@@ -320,9 +325,9 @@ pub(crate) async fn cancel_dnssec_withdrawal(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status =
+    let response =
         dnssec::cancel_withdrawal(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
-    Ok((StatusCode::OK, Json(status)).into_response())
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Ask the parent zone whether it serves the zone's DS.
@@ -349,8 +354,8 @@ pub(crate) async fn check_dnssec_ds(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::check_ds(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
-    Ok((StatusCode::OK, Json(status)).into_response())
+    let response = dnssec::check_ds(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Change a zone's DNSSEC settings.
@@ -381,7 +386,7 @@ pub(crate) async fn update_dnssec_settings(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateDnssecSettingsRequest>,
 ) -> Result<Response, ApiError> {
-    let status =
+    let response =
         dnssec::update_settings(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
-    Ok((StatusCode::OK, Json(status)).into_response())
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

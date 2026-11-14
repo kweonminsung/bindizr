@@ -33,8 +33,9 @@ pub(crate) async fn save_version_tx(
     origin: &ChangeOrigin,
 ) -> Result<(), ServiceError> {
     // Retire ambiguous history before serial values can be reused after wrapping.
-    bindizr_db::zone_change::prune_outside_serial_window_tx(tx, zone.id, serial).await?;
-    bindizr_db::zone_version::prune_outside_serial_window_tx(tx, zone.id, serial).await?;
+    bindizr_db::zone_change::prune_by_zone_id_outside_serial_window_tx(tx, zone.id, serial).await?;
+    bindizr_db::zone_version::prune_by_zone_id_outside_serial_window_tx(tx, zone.id, serial)
+        .await?;
     bindizr_db::zone_version::upsert_tx(
         tx,
         ZoneVersion {

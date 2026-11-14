@@ -39,7 +39,7 @@ async fn context() -> Context {
     )
 }
 
-/// An omitted limit is unbounded, while explicitly requested pages stay within the cap.
+/// Verify that an omitted limit is unbounded, while explicitly requested pages stay within the cap.
 #[test]
 fn page_limit_accepts_absence_and_rejects_out_of_range() {
     for limit in [None, Some(1), Some(MAX_PAGE_LIMIT)] {
@@ -54,7 +54,7 @@ fn page_limit_accepts_absence_and_rejects_out_of_range() {
     }
 }
 
-/// Collection paging retains the unbounded request and reports offsets without truncating them.
+/// Verify that collection paging retains the unbounded request and reports offsets without truncating them.
 #[test]
 fn build_page_preserves_unbounded_windows_and_metadata() {
     for (limit, offset, expected) in [
@@ -73,7 +73,7 @@ fn build_page_preserves_unbounded_windows_and_metadata() {
     }
 }
 
-/// SQL and collection listings must return every row when a socket caller omits the limit.
+/// Verify that SQL and collection listings return every row when a socket caller omits the limit.
 #[tokio::test]
 async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
     let cx = context().await;
@@ -141,7 +141,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
     }
 
     let zone = first_zone.unwrap();
-    let records = (0..1001)
+    let records: Vec<_> = (0..1001)
         .map(|index| Record {
             id: RecordId::UNWRITTEN,
             name: OwnerName::from_row(&format!("host{index:04}")),
@@ -152,13 +152,13 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             created_at: Utc::now(),
             zone_id: zone.id,
         })
-        .collect::<Vec<_>>();
+        .collect();
 
     bindizr_db::record::create_many_tx(&mut tx, &records)
         .await
         .unwrap();
 
-    let derived = (0..3)
+    let derived: Vec<_> = (0..3)
         .map(|index| DnssecRecord {
             id: DnssecRecordId::UNWRITTEN,
             zone_id: zone.id,
@@ -170,7 +170,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             expires_at: None,
             record_set_digest: None,
         })
-        .collect::<Vec<_>>();
+        .collect();
 
     bindizr_db::dnssec_record::create_many_tx(&mut tx, &derived)
         .await
@@ -344,7 +344,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
     }
 }
 
-/// Bad page sizes are rejected before an unrelated role lookup can mask the input error.
+/// Verify that bad page sizes are rejected before an unrelated role lookup can mask the input error.
 #[tokio::test]
 async fn collection_listings_reject_invalid_limits_before_role_queries() {
     let cx = context().await;
@@ -352,7 +352,7 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
     let caller = Caller::socket();
 
     for limit in [0, 1001] {
-        let token = token::list(
+        let token_error = token::list(
             &cx,
             &caller,
             &TokenFilter {
@@ -363,7 +363,7 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
         )
         .await
         .unwrap_err();
-        let tsig = tsig_key::list(
+        let tsig_key_error = tsig_key::list(
             &cx,
             &caller,
             &TsigKeyFilter {
@@ -374,7 +374,7 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
         )
         .await
         .unwrap_err();
-        let grant = role::grant::list(
+        let grant_error = role::grant::list(
             &cx,
             &caller,
             "missing",
@@ -386,7 +386,7 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
         .await
         .unwrap_err();
 
-        for error in [token, tsig, grant] {
+        for error in [token_error, tsig_key_error, grant_error] {
             assert_eq!(error.code(), ErrorCode::InvalidInput);
         }
     }

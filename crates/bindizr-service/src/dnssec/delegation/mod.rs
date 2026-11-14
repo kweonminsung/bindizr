@@ -10,11 +10,10 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 use thiserror::Error;
 
-use super::status;
+use super::{SignedZone, status};
 use crate::authorization::Caller;
 use crate::dns_client::ds;
 use crate::dns_client::ds::ParentDs;
-use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState,
@@ -75,7 +74,7 @@ pub(crate) async fn probe_delegation(
 ) -> Result<DnssecDelegationResponse, ServiceError> {
     let parent_ns_addrs = signed.zone.parent_ns_addrs.as_deref().ok_or_else(|| {
         ServiceError::dnssec_ds_unverified(
-            signed.zone.name.as_str(),
+            &signed.zone.name,
             ProbeDelegationError::NoParentNameservers,
         )
     })?;
@@ -83,7 +82,7 @@ pub(crate) async fn probe_delegation(
 
     let parent = ds::probe_parent_ds(&signed.zone.name, parent_ns_addrs, timeout)
         .await
-        .map_err(|error| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), error))?;
+        .map_err(|error| ServiceError::dnssec_ds_unverified(&signed.zone.name, error))?;
 
     build_delegation_response(&signed.zone, &signed.keys, parent)
 }

@@ -7,7 +7,7 @@ use crate::common::dns::notify::{FakeSecondary, ReceivedNotify, SERVED_SERIAL};
 use crate::common::dns::tsig;
 use crate::common::dns::tsig::KeyRole;
 
-/// Verify secondary registration, retrieval, update, and deletion.
+/// Verify that secondaries can be registered, retrieved, updated, and deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn secondary_supports_create_read_update_and_delete() {
@@ -37,7 +37,7 @@ async fn secondary_supports_create_read_update_and_delete() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "SECONDARY_CONFLICT");
 
     let (status, body) = app
@@ -48,19 +48,19 @@ async fn secondary_supports_create_read_update_and_delete() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "SECONDARY_CONFLICT");
 
     let (status, body) = app
         .send_request(Method::GET, &format!("/secondaries/{name}"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["secondary"]["address"], "ns2.example.net:53");
 
     let (status, body) = app.send_request(Method::GET, "/secondaries", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let listed = body["items"].as_array().unwrap();
 
     assert!(listed.iter().any(|item| item["name"] == name), "{body}");
@@ -98,7 +98,7 @@ async fn secondary_supports_create_read_update_and_delete() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["code"], "INVALID_INPUT");
 
     let (status, body) = app
@@ -109,7 +109,7 @@ async fn secondary_supports_create_read_update_and_delete() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["code"], "INVALID_INPUT");
 
     let (status, _) = app
@@ -122,7 +122,7 @@ async fn secondary_supports_create_read_update_and_delete() {
         .send_request(Method::GET, &format!("/secondaries/{name}"), None)
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["code"], "SECONDARY_NOT_FOUND");
 }
 
@@ -184,7 +184,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
 
     let plain = app.create_secondary("plain", &plain_receiver.addr()).await;
 
-    assert_eq!(plain["secondary"]["notify_key_name"], json!(null));
+    assert!(plain["secondary"]["notify_key_name"].is_null(), "{plain}");
 
     // NOTIFY is sent before the request is answered (no batching window).
     let (status, body) = app
@@ -238,7 +238,8 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
     assert!(
         body["error"]
-            .to_string()
+            .as_str()
+            .unwrap()
             .contains("NOTIFY response timeout"),
         "{body}"
     );
@@ -261,7 +262,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["secondary"]["notify_key_name"], json!(null));
+    assert!(body["secondary"]["notify_key_name"].is_null(), "{body}");
 
     let (status, _) = app
         .send_request(Method::DELETE, "/tsig-keys/notify-key", None)
@@ -270,7 +271,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(status, StatusCode::OK);
 }
 
-/// Verify resolved addresses, catalog serial and NOTIFY reports, including CLI failure exit status.
+/// Verify that resolved addresses, catalog serial and NOTIFY are reported, including the CLI failure exit status.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn secondary_check_reports_resolution_catalog_and_notify() {

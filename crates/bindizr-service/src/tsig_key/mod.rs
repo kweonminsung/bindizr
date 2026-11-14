@@ -20,6 +20,11 @@ use crate::types::{
 };
 use crate::{Context, audit, pagination, role, transaction};
 
+/// Imported secrets must contain at least 128 bits. RFC 8945, Section 8
+/// recommends output-sized keys; shorter imports preserve secrets already
+/// shared with other servers.
+const MIN_IMPORTED_SECRET_BYTES: usize = 16;
+
 /// Create a TSIG key in the request's role. An omitted `secret` is generated;
 /// a given one must be valid, non-empty base64 (an imported key).
 pub async fn create(
@@ -33,13 +38,12 @@ pub async fn create(
 
     let role = role::lookup_by_name(cx, &request.role_name).await?;
 
-    let algorithm = request
-        .algorithm
-        .as_deref()
-        .map(str::parse::<TsigAlgorithm>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?
-        .unwrap_or_default();
+    let algorithm = match request.algorithm.as_deref() {
+        Some(algorithm) => algorithm
+            .parse::<TsigAlgorithm>()
+            .map_err(ServiceError::invalid_input)?,
+        None => TsigAlgorithm::default(),
+    };
     let secret = match request.secret.as_deref() {
         Some(secret) => normalize_secret(secret)?,
         None => generate_secret(&algorithm),
@@ -112,7 +116,7 @@ pub async fn list(
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(filter.limit)?;
 
-    let keys = match &filter.role_name {
+    let tsig_keys = match &filter.role_name {
         Some(role_name) => {
             let role = role::lookup_by_name(cx, role_name).await?;
             bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?
@@ -126,7 +130,8 @@ pub async fn list(
         .collect();
 
     Ok(pagination::build_page(
-        keys.iter()
+        tsig_keys
+            .iter()
             .map(|tsig_key| {
                 let role_name = role_names.get(&tsig_key.role_id).map_or("", String::as_str);
                 TsigKeyResponse::from_tsig_key(tsig_key, role_name)
@@ -137,7 +142,7 @@ pub async fn list(
     ))
 }
 
-/// Fetch one TSIG key by name, including its secret.
+/// Get one TSIG key by name, including its secret.
 pub async fn get(
     cx: &Context,
     caller: &Caller,
@@ -183,9 +188,8 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     if secondary_count > 0 {
         return Err(ServiceError::TsigKeyInUse(format!(
-            "TSIG key '{}' still signs NOTIFY for {} secondar{}",
+            "TSIG key '{}' still signs NOTIFY for {secondary_count} secondar{}",
             tsig_key.name,
-            secondary_count,
             if secondary_count == 1 {
                 "y"
             } else {
@@ -249,11 +253,6 @@ pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
     Ok(name)
 }
 
-/// Imported secrets must contain at least 128 bits.
-// RFC 8945, Section 8 recommends output-sized keys; shorter imports preserve
-// secrets already shared with other servers.
-const MIN_IMPORTED_SECRET_BYTES: usize = 16;
-
 /// Validate and normalize a base64-encoded TSIG secret.
 fn normalize_secret(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
@@ -270,8 +269,7 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
 
     if decoded.len() < MIN_IMPORTED_SECRET_BYTES {
         return Err(ServiceError::invalid_input(format!(
-            "TSIG key secret must decode to at least {} bytes ({} bits)",
-            MIN_IMPORTED_SECRET_BYTES,
+            "TSIG key secret must decode to at least {MIN_IMPORTED_SECRET_BYTES} bytes ({} bits)",
             MIN_IMPORTED_SECRET_BYTES * 8
         )));
     }
@@ -333,7 +331,7 @@ mod tests {
         // 32-byte imported secret, whitespace trimmed.
         assert_eq!(
             normalize_secret(" bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU= ").unwrap(),
-            "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=".to_string()
+            "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
         );
 
         let invalid = normalize_secret("not base64!!").unwrap_err();

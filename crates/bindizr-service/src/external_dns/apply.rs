@@ -50,9 +50,7 @@ pub async fn apply_changes(
         // BTreeMap iteration locks zones in name order, so concurrent
         // multi-zone requests cannot deadlock on row locks.
         for (zone_name, operations) in &zone_operations {
-            let zone = bindizr_db::zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive)
-                .await?
-                .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
+            let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
             if !caller.sees_zone(zone.id) {
@@ -102,7 +100,7 @@ pub async fn apply_changes(
             )
             .await?;
 
-            let change_set = ZoneChangeSet::compute(operations, &zone, &records_at_names)?;
+            let change_set = ZoneChangeSet::compute(&zone, operations, &records_at_names)?;
 
             if change_set.deletes.is_empty() && change_set.creates.is_empty() {
                 continue;

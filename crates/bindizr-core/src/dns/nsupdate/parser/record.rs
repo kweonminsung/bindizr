@@ -24,7 +24,7 @@ pub struct UpdateRecord {
 }
 
 /// A wire shape the IN-zone update section cannot carry (RFC 2136,
-/// Section 3.4.1). This is independent of whether the RR can change stored data.
+/// Section 3.4.1). This is independent of whether the record can change stored data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ValidateUpdateShapeError {
     #[error("unsupported update class: {class}")]
@@ -59,10 +59,11 @@ impl UpdateRecord {
             return Err(ValidateUpdateShapeError::NonzeroTtl);
         }
 
-        match self.class {
-            Class::ANY if !self.rdata.is_empty() => Err(ValidateUpdateShapeError::AnyClassRdata),
-            _ => Ok(()),
+        if self.class == Class::ANY && !self.rdata.is_empty() {
+            return Err(ValidateUpdateShapeError::AnyClassRdata);
         }
+
+        Ok(())
     }
 
     /// Decode prerequisite RDATA for comparison, resolving names in `message`.
@@ -97,11 +98,11 @@ impl UpdateRecord {
     fn parse_rdata<'a, T>(
         &self,
         message: &'a [u8],
-        what: &str,
+        record_type: &str,
         parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
     ) -> Result<T, ParseUpdateError> {
         let refused = || ParseUpdateError::Rdata {
-            record_type: what.to_string(),
+            record_type: record_type.to_string(),
         };
 
         // RDLENGTH bounds the value while compression retains message offsets
@@ -149,7 +150,7 @@ impl UpdateRecord {
                 })?;
                 let value = super::to_presentation_name(&name).map_err(|error| {
                     ParseUpdateError::RdataName {
-                        record_type: record_type.as_str().to_string(),
+                        record_type: record_type.to_string(),
                         source: Box::new(error),
                     }
                 })?;
@@ -224,7 +225,7 @@ impl UpdateRecord {
                 // Priority lives in its own column, so the value holds the rest.
                 Ok((
                     RecordType::Srv,
-                    format!("{} {} {}", data.weight(), data.port(), target),
+                    format!("{} {} {target}", data.weight(), data.port()),
                     Some(i32::from(data.priority())),
                 ))
             }

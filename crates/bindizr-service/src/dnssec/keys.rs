@@ -10,9 +10,8 @@ use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::status;
+use super::{SignedZone, status};
 use crate::authorization::Caller;
-use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecKeyMaterialResponse, DnssecStatusResponse, ExportDnssecKeysResponse,
@@ -40,7 +39,7 @@ pub async fn export_keys(
         .await?;
 
         Ok(ExportDnssecKeysResponse {
-            zone_name: zone.name.as_str().to_string(),
+            zone_name: zone.name.to_string(),
             keys: keys
                 .iter()
                 .map(|key| DnssecKeyMaterialResponse {
@@ -49,7 +48,7 @@ pub async fn export_keys(
                     key_tag: key.key_tag,
                     dnskey_record: format!(
                         "{}. IN DNSKEY {} 3 {} {}",
-                        zone.name.as_str(),
+                        zone.name,
                         key.role.flags(),
                         key.algorithm.as_i32(),
                         key.public_key
@@ -93,7 +92,7 @@ pub async fn import_keys(
             .await?
             .is_empty()
         {
-            return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
+            return Err(ServiceError::dnssec_already_enabled(&zone.name));
         }
 
         let policy =

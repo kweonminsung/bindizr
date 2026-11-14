@@ -7,7 +7,7 @@ use crate::dns::record::TxtRecordValue;
 use crate::model::record::RecordId;
 use crate::model::zone::ZoneId;
 
-/// Preserve equivalent escaped whitespace through every name-bearing value encoder.
+/// Verify that equivalent escaped whitespace is preserved through every name-bearing value encoder.
 #[test]
 fn encoded_name_values_preserve_escaped_whitespace() {
     for byte in [9u8, 10, 11, 12, 13, 32] {
@@ -15,7 +15,7 @@ fn encoded_name_values_preserve_escaped_whitespace() {
             let simple = format!("Tar\\{}{suffix}", char::from(byte));
             let decimal = format!("Tar\\{byte:03}{suffix}");
 
-            for (kind, prefix) in [
+            for (record_type, prefix) in [
                 (RecordType::Cname, ""),
                 (RecordType::Dname, ""),
                 (RecordType::Ns, ""),
@@ -24,23 +24,24 @@ fn encoded_name_values_preserve_escaped_whitespace() {
                 (RecordType::Srv, "0 443 "),
                 (RecordType::Naptr, "10 10 \"S\" \"SIP D2U\" \"\" "),
             ] {
-                let priority = matches!(kind, RecordType::Mx | RecordType::Srv).then_some(10);
+                let priority =
+                    matches!(record_type, RecordType::Mx | RecordType::Srv).then_some(10);
                 let input = format!(" {prefix}{simple} \t");
-                let expected = kind
+                let expected = record_type
                     .encoded_value(&format!("{prefix}{decimal}"), priority)
                     .unwrap();
-                let stored = kind
+                let stored = record_type
                     .encoded_value(&input, priority)
-                    .unwrap_or_else(|error| panic!("{kind} {input:?}: {error}"));
+                    .unwrap_or_else(|error| panic!("{record_type} {input:?}: {error}"));
 
-                assert_eq!(stored, expected, "{kind} {input:?}");
-                kind.validate_value(&stored, priority).unwrap();
+                assert_eq!(stored, expected, "{record_type} {input:?}");
+                record_type.validate_value(&stored, priority).unwrap();
             }
         }
     }
 }
 
-/// Distinguish an escaped final space from padding after a literal backslash.
+/// Verify that an escaped final space is distinguished from padding after a literal backslash.
 #[test]
 fn encoded_name_values_keep_backslashes_before_whitespace() {
     for (input, expected) in [
@@ -48,13 +49,13 @@ fn encoded_name_values_keep_backslashes_before_whitespace() {
         ("tail\\\\\\ ", r"tail\\\032."),
         ("tail\\ \t", r"tail\032."),
     ] {
-        for kind in [RecordType::Cname, RecordType::Mx] {
-            assert_eq!(kind.encoded_value(input, None).unwrap(), expected);
+        for record_type in [RecordType::Cname, RecordType::Mx] {
+            assert_eq!(record_type.encoded_value(input, None).unwrap(), expected);
         }
     }
 }
 
-/// The stored model admits exactly the implemented wire types and canonicalizes numeric aliases.
+/// Verify that the stored model admits exactly the implemented wire types and canonicalizes numeric aliases.
 #[test]
 fn record_type_rejects_unimplemented_wire_types() {
     let supported = [1, 2, 5, 11, 12, 15, 16, 28, 33, 35, 39, 43, 44, 52, 257];
@@ -254,7 +255,7 @@ fn display_value_leaves_wrong_field_count_unchanged() {
     }
 }
 
-/// Reject malformed targets while preserving each type's root policy.
+/// Verify that malformed targets are rejected while each type's root policy is preserved.
 #[test]
 fn domain_record_values_reject_malformed_names_and_preserve_root_policy() {
     for record_type in [
@@ -428,7 +429,7 @@ fn record_match_accepts_all_records_when_filters_are_absent() {
     assert!(record(RecordType::A, "192.0.2.1", None).matches(None, None, None));
 }
 
-/// Verify that a type narrows to one RRSET.
+/// Verify that a type narrows to the records of one name and type.
 #[test]
 fn record_match_filters_by_type() {
     let a = record(RecordType::A, "192.0.2.1", None);

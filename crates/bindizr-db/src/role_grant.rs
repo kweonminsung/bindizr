@@ -17,7 +17,7 @@ pub async fn create_tx(
     }
 }
 
-/// Find a role grant by ID.
+/// Get a role grant by ID.
 pub async fn get(db: &Db, id: RoleGrantId) -> Result<Option<RoleGrant>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::role_grant::get(pool, id).await,
@@ -26,7 +26,6 @@ pub async fn get(db: &Db, id: RoleGrantId) -> Result<Option<RoleGrant>, Database
     }
 }
 
-/// Every grant of a role; drives what a credential authenticating into it may
 /// List every role's grants.
 pub async fn list_all(db: &Db) -> Result<Vec<RoleGrant>, DatabaseError> {
     match &db.0 {
@@ -36,7 +35,7 @@ pub async fn list_all(db: &Db) -> Result<Vec<RoleGrant>, DatabaseError> {
     }
 }
 
-/// Every grant of a role, which bounds what a credential of it may see.
+/// List every grant of a role, which bounds what a credential of it may see.
 pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<RoleGrant>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::role_grant::list_by_role_id(pool, role_id).await,
@@ -45,7 +44,7 @@ pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<RoleGrant>,
     }
 }
 
-/// Every grant of a role inside the caller's transaction, locked at
+/// List every grant of a role in the current transaction, locked at
 /// `lock_level`, for a mutation to authorize against.
 pub async fn list_by_role_id_tx(
     tx: &mut Transaction<'_>,

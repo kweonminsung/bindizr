@@ -14,7 +14,7 @@ use bindizr_service::types::{
     UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
     UpdateSecondaryRequest, UpdateZoneRequest, ZoneFilter, ZoneView,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 /// A daemon command and its payload, shared by CLI serialization
 /// and daemon deserialization.
@@ -272,24 +272,6 @@ pub(crate) enum DoctorCheckStatus {
     Skipped,
 }
 
-impl fmt::Display for DoctorCheckStatus {
-    /// Write the status as the doctor's report labels it.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Ok => "OK",
-            Self::Failed => "FAILED",
-            Self::Skipped => "SKIP",
-        })
-    }
-}
-
-/// One installation check, worded as `doctor` reports it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct DoctorCheckResponse {
-    pub(crate) status: DoctorCheckStatus,
-    pub(crate) message: String,
-}
-
 impl DoctorCheckStatus {
     /// Return the canonical wire spelling.
     pub(crate) fn as_str(self) -> &'static str {
@@ -301,18 +283,38 @@ impl DoctorCheckStatus {
     }
 }
 
-impl serde::Serialize for DoctorCheckStatus {
+impl fmt::Display for DoctorCheckStatus {
+    /// Write the status as the doctor's report labels it.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Ok => "OK",
+            Self::Failed => "FAILED",
+            Self::Skipped => "SKIP",
+        })
+    }
+}
+
+impl Serialize for DoctorCheckStatus {
     /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
     }
 }
 
+/// One installation check, worded as `doctor` reports it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DoctorCheckResponse {
+    pub(crate) status: DoctorCheckStatus,
+    pub(crate) message: String,
+}
+
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Keep socket command strings stable when Rust variants are renamed.
+    /// Verify that socket command strings stay stable when Rust variants are renamed.
     #[test]
     fn command_names_preserve_the_wire_contract() {
         for (command, expected) in [
@@ -353,7 +355,7 @@ mod tests {
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every DoctorCheckStatus variant.
+    /// Verify that every DoctorCheckStatus variant spells itself canonically and round-trips.
     #[test]
     fn doctor_check_status_spells_itself_once() {
         for (value, expected) in [
@@ -362,12 +364,9 @@ mod tests {
             (DoctorCheckStatus::Skipped, "skip"),
         ] {
             assert_eq!(value.as_str(), expected);
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(expected));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<DoctorCheckStatus>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<DoctorCheckStatus>(json!(expected)).unwrap(),
                 value
             );
         }

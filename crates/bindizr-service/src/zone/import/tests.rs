@@ -1,37 +1,32 @@
+use std::io;
+use std::net::TcpListener;
+
+use bindizr_core::config::Config;
+use bindizr_core::metrics::Metrics;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
+use crate::dns_client::axfr::FetchZoneError;
 use crate::error::ErrorCode;
 use crate::types::{ImportZoneRequest, ImportZonesRequest};
+use crate::zone;
 
-/// A failed external import keeps its network cause without creating a zone.
+/// Verify that a failed external import keeps its network cause without creating a zone.
 #[tokio::test]
 async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
     use std::error::Error;
-    use std::io;
-    use std::net::TcpListener;
 
-    use bindizr_core::config::Config;
-    use bindizr_core::metrics::Metrics;
-
-    use crate::dns_client::axfr::FetchZoneError;
-
-    let config: Config = serde_json::from_value(serde_json::json!({
-        "database": { "sqlite": { "file_path": "sqlite::memory:" } },
-    }))
-    .unwrap();
+    let mut config: Config = serde_json::from_str("{}").unwrap();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
 
     let db = bindizr_db::Db::connect(&config.database).await.unwrap();
-
-    let (notify_jobs, _jobs) = mpsc::unbounded_channel();
-    let (scheduler, _period) = watch::channel(0);
     let cx = Context::new(
         config,
         String::new(),
         db,
         Metrics::new().unwrap(),
-        notify_jobs,
-        scheduler,
+        mpsc::unbounded_channel().0,
+        watch::channel(0).0,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let server = listener.local_addr().unwrap().to_string();
@@ -91,15 +86,15 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
     assert!(zone::list(&cx).await.unwrap().is_empty());
 }
 
-/// Zone names normalize and deduplicate in request order.
+/// Verify that zone names normalize and deduplicate in request order.
 #[test]
 fn normalize_zone_names_canonicalizes_and_drops_repeats() {
     let names = ["Example.COM.", "example.net", " example.com", "example.net"].map(str::to_string);
 
-    let zones = normalize_zone_names(&names).unwrap();
+    let zone_names = normalize_zone_names(&names).unwrap();
 
     assert_eq!(
-        zones,
+        zone_names,
         vec![
             ZoneName::parse("example.com").unwrap(),
             ZoneName::parse("example.net").unwrap(),
@@ -107,7 +102,7 @@ fn normalize_zone_names_canonicalizes_and_drops_repeats() {
     );
 }
 
-/// Zone-name lists reject empty input and invalid names.
+/// Verify that zone-name lists reject empty input and invalid names.
 #[test]
 fn normalize_zone_names_rejects_empty_list_and_bad_name() {
     let empty = normalize_zone_names(&[]).unwrap_err();

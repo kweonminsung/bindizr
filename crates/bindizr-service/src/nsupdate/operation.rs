@@ -10,9 +10,9 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::NsupdateError;
-use crate::Transaction;
 use crate::authorization::{Caller, RecordAccess};
-use crate::record::{self, AddResult};
+use crate::record::AddResult;
+use crate::{Transaction, record};
 
 /// One update to apply (RFC 2136, Section 2.5). Owner names have passed the zone prescan.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +42,7 @@ pub(crate) enum RecordOperation {
 }
 
 impl RecordOperation {
-    /// The grant action this operation needs: an add creates, both deletes delete.
+    /// Return the grant action this operation needs: an add creates, both deletes delete.
     pub(crate) fn action(&self) -> Action {
         match self {
             Self::AddRecord { .. } => Action::RecordCreate,
@@ -59,7 +59,7 @@ impl RecordOperation {
         }
     }
 
-    /// The type this update touches; `None` for a whole-name delete.
+    /// Return the type this update touches; `None` for a whole-name delete.
     pub(crate) fn record_type(&self) -> Option<&RecordType> {
         match self {
             Self::AddRecord { record_type, .. } | Self::DeleteRecord { record_type, .. } => {
@@ -190,7 +190,7 @@ pub(crate) async fn apply_record_operation_tx(
                     .await?;
 
             // An rdata-identical add changes nothing beyond the TTL above.
-            if matches!(outcome, AddResult::Duplicate) {
+            if outcome == AddResult::Duplicate {
                 return Ok(changed);
             }
 
@@ -248,10 +248,10 @@ async fn delete_matching_tx(
     new_serial: Serial,
 ) -> Result<bool, NsupdateError> {
     // Only records at the owner name can match, so lock just those.
-    let owner_records =
+    let records_at_name =
         bindizr_db::record::list_by_name_tx(tx, zone.id, owner, LockLevel::Exclusive).await?;
 
-    let mut matched: Vec<Record> = owner_records
+    let mut matched: Vec<Record> = records_at_name
         .iter()
         .filter(|record| record.matches(record_type, value, priority))
         .cloned()
@@ -260,17 +260,17 @@ async fn delete_matching_tx(
     // RFC 2136, Sections 3.4.2.3 and 3.4.2.4: at the apex the NS set outlives
     // a delete, and one NS goes only while another remains; the SOA is no row.
     if owner.is_apex() {
-        let ns_total = owner_records
+        let ns_total = records_at_name
             .iter()
             .filter(|record| record.record_type == RecordType::Ns)
             .count();
 
         match value {
-            None => matched.retain(|record| record.record_type != RecordType::Ns),
             Some(_) if ns_total <= 1 => {
                 matched.retain(|record| record.record_type != RecordType::Ns);
             }
             Some(_) => {}
+            None => matched.retain(|record| record.record_type != RecordType::Ns),
         }
     }
 

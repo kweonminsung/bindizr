@@ -18,12 +18,12 @@ pub struct WksRecordValue {
 impl WksRecordValue {
     /// Parse `<IPv4> <protocol> [ports...]`, accepting TCP/UDP or a protocol number.
     pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
-        let mut words = value.split_whitespace();
-        let (Some(address), Some(protocol)) = (words.next(), words.next()) else {
+        let mut fields = value.split_whitespace();
+        let (Some(address), Some(protocol)) = (fields.next(), fields.next()) else {
             return Err(ParseRecordValueError::WksShape);
         };
         let address = address
-            .parse()
+            .parse::<Ipv4Addr>()
             .map_err(|_| ParseRecordValueError::WksAddress)?;
         let protocol = match protocol.to_ascii_uppercase().as_str() {
             "TCP" => 6,
@@ -32,7 +32,7 @@ impl WksRecordValue {
         };
         let mut services = Vec::new();
 
-        for port in words.filter(|word| !matches!(*word, "(" | ")")) {
+        for port in fields.filter(|field| !matches!(*field, "(" | ")")) {
             let port = usize::from(value::parse_u16_record_field("WKS port", port)?);
             let index = port / 8;
             if services.len() <= index {
@@ -49,20 +49,20 @@ impl WksRecordValue {
     }
 
     /// Decode WKS wire fields, rejecting bitmap shapes BIND cannot load.
-    pub fn from_rdata(bytes: &[u8]) -> Result<Self, ParseRecordValueError> {
-        if !(WKS_PREFIX_LEN..=WKS_PREFIX_LEN + MAX_SERVICE_BITMAP_LEN).contains(&bytes.len()) {
+    pub fn from_rdata(rdata: &[u8]) -> Result<Self, ParseRecordValueError> {
+        if !(WKS_PREFIX_LEN..=WKS_PREFIX_LEN + MAX_SERVICE_BITMAP_LEN).contains(&rdata.len()) {
             return Err(ParseRecordValueError::WksRdata);
         }
 
         // BIND rejects trailing zero bitmap bytes, which would prevent zone loading.
-        if bytes.len() > WKS_PREFIX_LEN && bytes.last() == Some(&0) {
+        if rdata.len() > WKS_PREFIX_LEN && rdata.last() == Some(&0) {
             return Err(ParseRecordValueError::WksBitmapPadding);
         }
 
         Ok(Self {
-            address: Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]),
-            protocol: bytes[4],
-            services: bytes[WKS_PREFIX_LEN..].to_vec(),
+            address: Ipv4Addr::new(rdata[0], rdata[1], rdata[2], rdata[3]),
+            protocol: rdata[4],
+            services: rdata[WKS_PREFIX_LEN..].to_vec(),
         })
     }
 
@@ -104,7 +104,7 @@ impl WksRecordValue {
 mod tests {
     use super::*;
 
-    /// Check bitmap boundaries, duplicate ports, and port 65535.
+    /// Verify that bitmap boundaries, duplicate ports, and port 65535 encode correctly.
     #[test]
     fn parse_encodes_port_bitmap_boundaries() {
         let parsed = WksRecordValue::parse("192.0.2.1 TCP ( 65535 8 7 0 8 )").unwrap();
@@ -120,9 +120,9 @@ mod tests {
         assert_eq!(WksRecordValue::parse(&parsed.canonical()).unwrap(), parsed);
     }
 
-    /// Preserve empty bitmaps and protocol numbers across wire/text round trips.
+    /// Verify that empty bitmaps and protocol numbers survive wire/text round trips.
     #[test]
-    fn wire_roundtrip_preserves_empty_and_nonempty_bitmaps() {
+    fn wire_round_trip_preserves_empty_and_nonempty_bitmaps() {
         for bytes in [
             vec![192, 0, 2, 1, 255],
             vec![192, 0, 2, 1, 17, 1],
@@ -148,7 +148,7 @@ mod tests {
         );
     }
 
-    /// Reject malformed addresses, integer overflow, and invalid WKS wire shapes.
+    /// Verify that malformed addresses, integer overflow, and invalid WKS wire shapes are rejected.
     #[test]
     fn parse_rejects_invalid_addresses_protocols_ports_and_lengths() {
         for value in [

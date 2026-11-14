@@ -33,12 +33,12 @@ use bindizr_core::model::api_token::ApiToken;
 use bindizr_service::Context;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
-use error::ApiError;
 use rustls::ServerConfig;
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
+use crate::api::error::ApiError;
 use crate::shutdown::Shutdown;
 use crate::tls::TlsCertificate;
 
@@ -117,11 +117,8 @@ pub(crate) async fn start(
     shutdown: &Shutdown,
     certificate: Option<Arc<TlsCertificate>>,
 ) -> Result<JoinHandle<()>, StartApiError> {
-    let bindizr_config = cx.config();
-    let addr = SocketAddr::from((
-        bindizr_config.api.listen_addr,
-        bindizr_config.api.listen_port,
-    ));
+    let config = cx.config();
+    let addr = SocketAddr::from((config.api.listen_addr, config.api.listen_port));
 
     // Bound here rather than inside the server so a taken port fails startup
     // instead of surfacing in a background task.

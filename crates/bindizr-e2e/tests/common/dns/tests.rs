@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::*;
 
-/// Verify that parse DNS response renders values in harness comparison format.
+/// Verify that `extract_dns_records` renders values in harness comparison format.
 #[test]
 fn extract_dns_records_renders_values_in_harness_comparison_format() {
     let mut builder = MessageBuilder::new_vec();
@@ -102,7 +102,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
     let records = extract_dns_records(7, &answer.finish()).unwrap();
     let values: Vec<(u16, Option<Value>)> = records
         .into_iter()
-        .map(|answer| (answer.record_type, answer.value))
+        .map(|record| (record.record_type, record.value))
         .collect();
 
     assert_eq!(
@@ -147,7 +147,7 @@ fn build_wks_response(rdata: Vec<u8>) -> Vec<u8> {
     answer.finish()
 }
 
-/// WKS values match the API's numeric fields, including bitmap boundaries and empty services.
+/// Verify that WKS values match the API's numeric fields, including bitmap boundaries and empty services.
 #[test]
 fn extract_dns_records_decodes_wks_service_bitmaps() {
     // The captured BIND response advertises ports 22, 80, and 443.
@@ -175,7 +175,7 @@ fn extract_dns_records_decodes_wks_service_bitmaps() {
     }
 }
 
-/// Incomplete fixed fields and service bits beyond port 65535 fail response decoding.
+/// Verify that incomplete fixed fields and service bits beyond port 65535 fail response decoding.
 #[test]
 fn extract_dns_records_rejects_invalid_wks_rdata() {
     for length in [0, 1, 2, 3, 4, 8198] {

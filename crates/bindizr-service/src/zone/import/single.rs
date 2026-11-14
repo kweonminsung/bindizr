@@ -59,9 +59,7 @@ pub async fn import(
                 "give either content or from_server, not both",
             ));
         }
-        (None, None) => {
-            return Err(ServiceError::invalid_input("give content or from_server"));
-        }
+        (None, None) => return Err(ServiceError::invalid_input("give content or from_server")),
     };
 
     apply::apply_import(cx, caller, zone_name, source, options).await

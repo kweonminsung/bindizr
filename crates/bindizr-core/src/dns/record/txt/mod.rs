@@ -58,13 +58,12 @@ impl TxtRecordValue {
         for bytes in segments {
             has_segments = true;
 
-            if bytes.len() > MAX_CHARACTER_STRING_LEN {
-                return Err(ParseRecordValueError::CharStringTooLong {
+            let len = u8::try_from(bytes.len()).map_err(|_| {
+                ParseRecordValueError::CharStringTooLong {
                     field: "TXT character-string",
-                });
-            }
-
-            rdata.push(bytes.len() as u8);
+                }
+            })?;
+            rdata.push(len);
             rdata.extend_from_slice(bytes);
         }
 
@@ -82,13 +81,13 @@ impl TxtRecordValue {
         let mut chunk_start = 0usize;
         let mut chunk_len = 0usize;
 
-        for (idx, ch) in value.char_indices() {
+        for (index, ch) in value.char_indices() {
             let char_len = ch.len_utf8();
 
             if chunk_len + char_len > MAX_CHARACTER_STRING_LEN {
                 rdata.push(chunk_len as u8);
-                rdata.extend_from_slice(&value.as_bytes()[chunk_start..idx]);
-                chunk_start = idx;
+                rdata.extend_from_slice(&value.as_bytes()[chunk_start..index]);
+                chunk_start = index;
                 chunk_len = 0;
             }
 
@@ -187,13 +186,10 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
                             + u16::from(tens - b'0') * 10
                             + u16::from(ones - b'0');
 
-                        if code > u16::from(u8::MAX) {
-                            return Err(ParseRecordValueError::InvalidEscape {
-                                field: "TXT value",
-                            });
-                        }
-
-                        segment.push(code as u8);
+                        let byte = u8::try_from(code).map_err(|_| {
+                            ParseRecordValueError::InvalidEscape { field: "TXT value" }
+                        })?;
+                        segment.push(byte);
                     }
                     Some(escaped) => segment.push(escaped),
                     None => return Err(ParseRecordValueError::TxtDanglingEscape),
@@ -213,7 +209,6 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
 
         // Require spaces between quoted strings while preserving each wire segment.
         match bytes.next() {
-            None => break,
             Some(b' ') => {
                 while bytes.peek() == Some(&b' ') {
                     bytes.next();
@@ -222,9 +217,8 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
                     break;
                 }
             }
-            Some(_) => {
-                return Err(ParseRecordValueError::TxtUnseparated);
-            }
+            Some(_) => return Err(ParseRecordValueError::TxtUnseparated),
+            None => break,
         }
     }
 
@@ -259,7 +253,7 @@ pub fn to_quoted_charstr(bytes: &[u8]) -> String {
         match byte {
             b'"' => text.push_str("\\\""),
             b'\\' => text.push_str("\\\\"),
-            0x20..=0x7e => text.push(byte as char),
+            0x20..=0x7e => text.push(char::from(byte)),
             _ => text.push_str(&format!("\\{byte:03}")),
         }
     }

@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
-/// Preserve accepted domain octets when importing an export and restoring a stored version.
+/// Verify that accepted domain octets are preserved when importing an export and restoring a stored version.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn mailbox_domain_octets_survive_import_and_rollback() {
@@ -19,78 +19,78 @@ async fn mailbox_domain_octets_survive_import_and_rollback() {
         r"last\046",
         r"last\\",
     ]
-    .iter()
+    .into_iter()
     .enumerate()
     {
-        let name = app.zone_name(&format!("mailbox-{index}.example"));
+        let zone_name = app.zone_name(&format!("mailbox-{index}.example"));
         let rname = format!("first.last@{domain}");
 
-        let (status, created) = app
+        let (status, body) = app
             .send_request(
                 Method::POST,
                 "/zones",
                 Some(json!({
-                    "name": name, "mname": "ns.example.com", "rname": rname, "serial": 1
+                    "name": zone_name, "mname": "ns.example.com", "rname": rname, "serial": 1
                 })),
             )
             .await;
 
-        assert_eq!(status, StatusCode::CREATED, "{created}");
-        assert_eq!(created["zone"]["rname"], rname);
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert_eq!(body["zone"]["rname"], rname);
 
         let (status, body) = app
             .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
-                    "zone_name": name, "name": "www", "type": "A", "value": "192.0.2.1"
+                    "zone_name": zone_name, "name": "www", "type": "A", "value": "192.0.2.1"
                 })),
             )
             .await;
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
-        assert_eq!(app.read_zone_serial(&name).await, 2);
+        assert_eq!(app.read_zone_serial(&zone_name).await, 2);
 
-        let (status, exported) = app
-            .send_request(Method::GET, &format!("/zones/{name}/export"), None)
+        let (status, body) = app
+            .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
             .await;
 
-        assert_eq!(status, StatusCode::OK, "{exported}");
+        assert_eq!(status, StatusCode::OK, "{body}");
         let imported_name = app.zone_name(&format!("imported-{index}.example"));
-        let content = exported
+        let content = body
             .as_str()
             .unwrap()
-            .replace(&format!("{name}."), &format!("{imported_name}."));
+            .replace(&format!("{zone_name}."), &format!("{imported_name}."));
 
         let (status, body) = app
             .send_request(
                 Method::POST,
                 &format!("/zones/{imported_name}/import"),
-                Some(json!({"content": content, "create": true})),
+                Some(json!({ "content": content, "create": true })),
             )
             .await;
 
         assert_eq!(status, StatusCode::OK, "{rname}: {body}");
 
-        let (status, imported) = app
+        let (status, body) = app
             .send_request(Method::GET, &format!("/zones/{imported_name}"), None)
             .await;
 
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(imported["zone"]["rname"], rname);
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["zone"]["rname"], rname);
 
         for dry_run in [true, false] {
             let (status, body) = app
                 .send_request(
                     Method::POST,
-                    &format!("/zones/{name}/versions/1/rollback?dry_run={dry_run}"),
+                    &format!("/zones/{zone_name}/versions/1/rollback?dry_run={dry_run}"),
                     None,
                 )
                 .await;
 
             assert_eq!(status, StatusCode::OK, "{body}");
             assert_eq!(
-                app.read_zone_serial(&name).await,
+                app.read_zone_serial(&zone_name).await,
                 if dry_run {
                     2
                 } else {
@@ -99,14 +99,14 @@ async fn mailbox_domain_octets_survive_import_and_rollback() {
             );
         }
 
-        let (status, restored) = app
-            .send_request(Method::GET, &format!("/zones/{name}"), None)
+        let (status, body) = app
+            .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
             .await;
 
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(restored["zone"]["rname"], rname);
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["zone"]["rname"], rname);
         assert!(
-            app.list_records(&name)
+            app.list_records(&zone_name)
                 .await
                 .iter()
                 .all(|record| record["type"] != "A")

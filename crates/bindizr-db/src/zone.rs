@@ -10,6 +10,8 @@ use crate::sql::{SortOrder, ZoneSortField};
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
+/// Select zones by their columns, a search term and a role scope, with
+/// sort and paging.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ZoneFilter {
     pub name: Option<String>,
@@ -50,7 +52,7 @@ pub async fn create_tx(tx: &mut Transaction<'_>, zone: Zone) -> Result<Zone, Dat
     }
 }
 
-/// Find a zone by ID in the current transaction.
+/// Get a zone by ID in the current transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
     id: ZoneId,
@@ -63,7 +65,7 @@ pub async fn get_tx(
     }
 }
 
-/// Find a zone by name.
+/// Get a zone by name.
 pub async fn get_by_name(db: &Db, name: &ZoneName) -> Result<Option<Zone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::zone::get_by_name(pool, name).await,
@@ -72,7 +74,7 @@ pub async fn get_by_name(db: &Db, name: &ZoneName) -> Result<Option<Zone>, Datab
     }
 }
 
-/// Find a zone by name in the current transaction.
+/// Get a zone by name in the current transaction.
 pub async fn get_by_name_tx(
     tx: &mut Transaction<'_>,
     name: &ZoneName,
@@ -115,6 +117,16 @@ pub async fn list_by_filter(db: &Db, filter: ZoneFilter) -> Result<Vec<Zone>, Da
     }
 }
 
+/// Probe the zones table with a limit-1 query; health checks must stay cheap on
+/// large tables.
+pub async fn probe_table(db: &Db) -> Result<(), DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::zone::probe_table(pool).await,
+        Backend::Postgres(pool) => postgres::zone::probe_table(pool).await,
+        Backend::Sqlite(pool) => sqlite::zone::probe_table(pool).await,
+    }
+}
+
 /// Count zones matching the filter.
 pub async fn count_by_filter(db: &Db, filter: ZoneFilter) -> Result<u64, DatabaseError> {
     match &db.0 {
@@ -124,17 +136,7 @@ pub async fn count_by_filter(db: &Db, filter: ZoneFilter) -> Result<u64, Databas
     }
 }
 
-/// Limit-1 probe of the zones table; health checks must stay cheap on
-/// large tables.
-pub async fn ping(db: &Db) -> Result<(), DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::zone::ping(pool).await,
-        Backend::Postgres(pool) => postgres::zone::ping(pool).await,
-        Backend::Sqlite(pool) => sqlite::zone::ping(pool).await,
-    }
-}
-
-/// Full-row update, except the DNSSEC-owned `dnssec_policy_id` and
+/// Update a zone's full row, except the DNSSEC-owned `dnssec_policy_id` and
 /// `parent_ns_addrs`: ordinary zone updates cannot clobber them.
 pub async fn update_tx(tx: &mut Transaction<'_>, zone: Zone) -> Result<Zone, DatabaseError> {
     match &mut tx.0 {
@@ -144,47 +146,47 @@ pub async fn update_tx(tx: &mut Transaction<'_>, zone: Zone) -> Result<Zone, Dat
     }
 }
 
-/// Set only `dnssec_policy_id`, leaving the zone's other columns
-/// untouched; `None` marks the zone unsigned.
+/// Set only `dnssec_policy_id`, leaving the zone's other columns untouched;
+/// `None` marks the zone unsigned.
 pub async fn update_dnssec_policy_id_tx(
     tx: &mut Transaction<'_>,
-    zone_id: ZoneId,
+    id: ZoneId,
     dnssec_policy_id: Option<PolicyId>,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::zone::update_dnssec_policy_id_tx(tx, zone_id, dnssec_policy_id).await
+            mysql::zone::update_dnssec_policy_id_tx(tx, id, dnssec_policy_id).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::zone::update_dnssec_policy_id_tx(tx, zone_id, dnssec_policy_id).await
+            postgres::zone::update_dnssec_policy_id_tx(tx, id, dnssec_policy_id).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::zone::update_dnssec_policy_id_tx(tx, zone_id, dnssec_policy_id).await
+            sqlite::zone::update_dnssec_policy_id_tx(tx, id, dnssec_policy_id).await
         }
     }
 }
 
-/// Set only `parent_ns_addrs`, leaving the zone's other columns
-/// untouched; `None` clears the configured parent servers.
+/// Set only `parent_ns_addrs`, leaving the zone's other columns untouched;
+/// `None` clears the configured parent servers.
 pub async fn update_parent_ns_addrs_tx(
     tx: &mut Transaction<'_>,
-    zone_id: ZoneId,
+    id: ZoneId,
     parent_ns_addrs: Option<&str>,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::zone::update_parent_ns_addrs_tx(tx, zone_id, parent_ns_addrs).await
+            mysql::zone::update_parent_ns_addrs_tx(tx, id, parent_ns_addrs).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::zone::update_parent_ns_addrs_tx(tx, zone_id, parent_ns_addrs).await
+            postgres::zone::update_parent_ns_addrs_tx(tx, id, parent_ns_addrs).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::zone::update_parent_ns_addrs_tx(tx, zone_id, parent_ns_addrs).await
+            sqlite::zone::update_parent_ns_addrs_tx(tx, id, parent_ns_addrs).await
         }
     }
 }
 
-/// Zones signed under the policy: the in-use check before a delete.
+/// Count the zones signed under the policy: the in-use check before a delete.
 pub async fn count_by_dnssec_policy_id(
     db: &Db,
     dnssec_policy_id: PolicyId,
@@ -205,15 +207,13 @@ pub async fn count_by_dnssec_policy_id(
 /// Bump only the serial, leaving the zone's other columns untouched.
 pub async fn update_serial_tx(
     tx: &mut Transaction<'_>,
-    zone_id: ZoneId,
+    id: ZoneId,
     serial: Serial,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::zone::update_serial_tx(tx, zone_id, serial).await,
-        TransactionKind::Postgres(tx) => {
-            postgres::zone::update_serial_tx(tx, zone_id, serial).await
-        }
-        TransactionKind::Sqlite(tx) => sqlite::zone::update_serial_tx(tx, zone_id, serial).await,
+        TransactionKind::MySql(tx) => mysql::zone::update_serial_tx(tx, id, serial).await,
+        TransactionKind::Postgres(tx) => postgres::zone::update_serial_tx(tx, id, serial).await,
+        TransactionKind::Sqlite(tx) => sqlite::zone::update_serial_tx(tx, id, serial).await,
     }
 }
 

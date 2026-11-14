@@ -157,11 +157,9 @@ impl AdapterConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, iter};
+    use std::iter;
 
-    use clap::Parser;
-
-    use super::{AdapterConfig, Cli};
+    use super::*;
 
     /// Build the `Cli` a configuration test starts from, panicking on a parse failure.
     fn to_cli(args: &[&str]) -> Cli {
@@ -214,8 +212,8 @@ mod tests {
     /// Verify that token file takes precedence and is trimmed.
     #[test]
     fn config_prefers_trimmed_token_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("token");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("token");
         fs::write(&path, "secret-token\n").unwrap();
 
         let config = AdapterConfig::load(to_cli(&[

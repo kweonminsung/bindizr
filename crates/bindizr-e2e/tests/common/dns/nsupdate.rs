@@ -2,9 +2,9 @@
 
 use std::process;
 
-use domain::base::iana::{Class, Opcode, OptRcode, Rcode};
+use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
-use domain::base::{MessageBuilder, Name, Record, Rtype, Ttl, UnknownRecordData};
+use domain::base::{MessageBuilder, Name, Record, Ttl, UnknownRecordData};
 use domain::rdata::{A, Cname, Dname, Ns, Soa};
 
 use super::tsig;
@@ -78,7 +78,7 @@ pub(crate) enum PrerequisiteRecord {
         name: String,
         soa: Soa<Name<Vec<u8>>>,
     },
-    /// CLASS IN, TTL 0: a wire value contributing to exact RRset equality.
+    /// CLASS IN, TTL 0: a wire value contributing to exact record set equality.
     RecordEquals {
         name: String,
         rtype: Rtype,
@@ -226,12 +226,16 @@ pub(crate) fn build_update(
                     ))
                     .map_err(|error| error.to_string())?;
             }
-            PrerequisiteRecord::RecordEquals { name, rtype, rdata } => {
+            PrerequisiteRecord::RecordEquals {
+                name: owner,
+                rtype,
+                rdata,
+            } => {
                 let data = UnknownRecordData::from_octets(*rtype, rdata.clone())
                     .map_err(|error| error.to_string())?;
                 answer
                     .push(Record::new(
-                        super::parse_name(name)?,
+                        super::parse_name(owner)?,
                         Class::IN,
                         Ttl::ZERO,
                         data,
@@ -246,7 +250,7 @@ pub(crate) fn build_update(
     for update in updates {
         match update {
             UpdateRecord::AddRecord {
-                name,
+                name: owner,
                 rtype,
                 ttl,
                 rdata,
@@ -255,16 +259,20 @@ pub(crate) fn build_update(
                     .map_err(|error| error.to_string())?;
                 authority
                     .push(Record::new(
-                        super::parse_name(name)?,
+                        super::parse_name(owner)?,
                         Class::IN,
                         Ttl::from_secs(*ttl),
                         data,
                     ))
                     .map_err(|error| error.to_string())?;
             }
-            UpdateRecord::AddSoa { name, ttl, soa } => authority
+            UpdateRecord::AddSoa {
+                name: owner,
+                ttl,
+                soa,
+            } => authority
                 .push(Record::new(
-                    super::parse_name(name)?,
+                    super::parse_name(owner)?,
                     Class::IN,
                     Ttl::from_secs(*ttl),
                     soa.clone(),
@@ -318,12 +326,16 @@ pub(crate) fn build_update(
             UpdateRecord::DeleteRecordSet { name: owner, rtype } => authority
                 .push(empty_record(owner, *rtype, Class::ANY)?)
                 .map_err(|error| error.to_string())?,
-            UpdateRecord::DeleteRecord { name, rtype, rdata } => {
+            UpdateRecord::DeleteRecord {
+                name: owner,
+                rtype,
+                rdata,
+            } => {
                 let data = UnknownRecordData::from_octets(*rtype, rdata.clone())
                     .map_err(|error| error.to_string())?;
                 authority
                     .push(Record::new(
-                        super::parse_name(name)?,
+                        super::parse_name(owner)?,
                         Class::NONE,
                         Ttl::ZERO,
                         data,

@@ -26,7 +26,7 @@ use crate::types::{
 };
 use crate::{Context, Transaction, dnssec, notify, pagination, record, serial, transaction};
 
-/// A serial is diffable only if it is the current serial or has a version.
+/// Validate that a serial is diffable: only if it is the current serial or has a version.
 async fn validate_serial_diffable_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -38,7 +38,7 @@ async fn validate_serial_diffable_tx(
 
     bindizr_db::zone_version::get_by_serial_tx(tx, zone.id, serial, LockLevel::Unlocked)
         .await?
-        .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
+        .ok_or_else(|| ServiceError::version_not_found(&zone.name, serial))?;
 
     Ok(())
 }
@@ -58,14 +58,8 @@ pub async fn list_versions(
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let total = bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, filter).await?;
-    let versions = bindizr_db::zone_version::list_by_filter(
-        cx.db(),
-        zone.id,
-        filter,
-        limit,
-        offset.unwrap_or(0),
-    )
-    .await?;
+    let versions =
+        bindizr_db::zone_version::list_by_filter(cx.db(), zone.id, filter, limit, offset).await?;
     let items = versions
         .iter()
         .map(ZoneVersionResponse::try_from)
@@ -76,7 +70,7 @@ pub async fn list_versions(
     ))
 }
 
-/// Fetch the version at `serial` together with the records rewound to it.
+/// Get the version at `serial` together with the records rewound to it.
 pub async fn get_version(
     cx: &Context,
     caller: &Caller,
@@ -98,7 +92,7 @@ pub async fn get_version(
             LockLevel::Unlocked,
         )
         .await?
-        .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
+        .ok_or_else(|| ServiceError::version_not_found(&zone.name, serial))?;
 
         let records = read.readable_records(
             rewind::list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?,
@@ -129,9 +123,6 @@ pub async fn diff_versions(
     from_serial: Serial,
     to_serial: Option<Serial>,
 ) -> Result<DiffZoneVersionsResponse, ServiceError> {
-    let from = from_serial;
-    let to = to_serial;
-
     let mut tx = transaction::begin_read_tx(cx, "failed to diff versions").await?;
 
     let result = async {
@@ -141,19 +132,19 @@ pub async fn diff_versions(
             .await?
             .authorize_whole_zone_read(&zone)?;
 
-        let to = to.unwrap_or(zone.serial);
+        let to_serial = to_serial.unwrap_or(zone.serial);
 
-        validate_serial_diffable_tx(&mut tx, &zone, from).await?;
-        validate_serial_diffable_tx(&mut tx, &zone, to).await?;
+        validate_serial_diffable_tx(&mut tx, &zone, from_serial).await?;
+        validate_serial_diffable_tx(&mut tx, &zone, to_serial).await?;
 
         let from_records =
-            rewind::list_records_at_serial_tx(&mut tx, zone.id, from, zone.serial).await?;
+            rewind::list_records_at_serial_tx(&mut tx, zone.id, from_serial, zone.serial).await?;
         let to_records =
-            rewind::list_records_at_serial_tx(&mut tx, zone.id, to, zone.serial).await?;
+            rewind::list_records_at_serial_tx(&mut tx, zone.id, to_serial, zone.serial).await?;
 
         Ok::<_, ServiceError>(DiffZoneVersionsResponse {
             from_serial,
-            to_serial: to,
+            to_serial,
             diff: diff::build_record_diff(
                 &zone,
                 &read.readable_records(from_records),
@@ -175,8 +166,6 @@ pub async fn rollback(
     target_serial: Serial,
     run: Run,
 ) -> Result<RollbackZoneResponse, ServiceError> {
-    let target = target_serial;
-
     let mut tx = transaction::begin_tx(cx, "failed to roll back zone").await?;
 
     let apply_result = async {
@@ -190,21 +179,21 @@ pub async fn rollback(
         caller.authorize_whole_zone(Action::RecordCreate, &zone)?;
         caller.authorize_whole_zone(Action::RecordDelete, &zone)?;
 
-        if !zone.serial.is_newer_than(target) {
+        if !zone.serial.is_newer_than(target_serial) {
             return Err(ServiceError::invalid_input(format!(
                 "target serial {} must be less than the current serial {}",
-                target, zone.serial
+                target_serial, zone.serial
             )));
         }
 
         let version = bindizr_db::zone_version::get_by_serial_tx(
             &mut tx,
             zone.id,
-            target,
+            target_serial,
             LockLevel::Unlocked,
         )
         .await?
-        .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
+        .ok_or_else(|| ServiceError::version_not_found(&zone.name, target_serial))?;
 
         let new_serial = serial::generate_serial(Some(zone.serial));
 
@@ -240,7 +229,8 @@ pub async fn rollback(
         let current_records =
             bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
         let target_records =
-            rewind::rewind_records_to_serial_tx(&mut tx, zone.id, target, zone.serial).await?;
+            rewind::rewind_records_to_serial_tx(&mut tx, zone.id, target_serial, zone.serial)
+                .await?;
 
         // Diff current vs target, import-Replace style.
         let mut target_by_key: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();

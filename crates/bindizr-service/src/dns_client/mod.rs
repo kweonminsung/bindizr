@@ -58,7 +58,7 @@ pub enum ResolveAddressError {
 }
 
 /// One byte beyond the largest supported advertisement detects truncated datagrams.
-const UDP_RESPONSE_BUF: usize = query::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
+const UDP_RESPONSE_BUFFER_LEN: usize = query::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
 
 /// Ask over UDP and, when the answer comes back truncated, again over TCP
 /// (RFC 1035, Section 4.2.1).
@@ -104,9 +104,9 @@ pub(crate) async fn read_tcp_message(
 ) -> Result<Vec<u8>, ReadTcpMessageError> {
     use tokio::io::AsyncReadExt;
 
-    let mut prefix = [0u8; 2];
+    let mut prefix = [0; 2];
     stream.read_exact(&mut prefix).await?;
-    let mut message = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
+    let mut message = vec![0; usize::from(u16::from_be_bytes(prefix))];
     stream.read_exact(&mut message).await?;
     Ok(message)
 }
@@ -118,7 +118,7 @@ pub(crate) async fn exchange_over_udp(
     timeout: Duration,
     request: &[u8],
     what: &'static str,
-) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), ExchangeMessageError> {
+) -> Result<(usize, [u8; UDP_RESPONSE_BUFFER_LEN]), ExchangeMessageError> {
     let limit = QueryMetadata::parse(request, Keepalive::None)?.response_limit();
     let bind_addr = if server_addr.is_ipv4() {
         "0.0.0.0:0"
@@ -142,7 +142,7 @@ pub(crate) async fn exchange_over_udp(
         });
     }
 
-    let mut response = [0u8; UDP_RESPONSE_BUF];
+    let mut response = [0; UDP_RESPONSE_BUFFER_LEN];
 
     let receive = async {
         loop {
@@ -170,7 +170,7 @@ pub(crate) async fn exchange_over_udp(
 /// entry text plus every resolved address, or the failure.
 pub(crate) async fn resolve_address_entries(
     raw: &str,
-    resolve_timeout: Duration,
+    timeout: Duration,
 ) -> Vec<(String, Result<Vec<SocketAddr>, ResolveAddressError>)> {
     let mut entries = Vec::new();
 
@@ -183,22 +183,22 @@ pub(crate) async fn resolve_address_entries(
 
         let target = AddressTarget::parse(trimmed, DEFAULT_DNS_PORT);
 
-        let result = resolve_address_entry(&target, resolve_timeout).await;
+        let result = resolve_address_entry(&target, timeout).await;
         entries.push((trimmed.to_string(), result));
     }
 
     entries
 }
 
-/// Resolve `host[:port]` (default 53), bounded by `resolve_timeout`.
+/// Resolve `host[:port]` (default 53), bounded by `timeout`.
 pub async fn resolve_address_entry(
-    entry: &AddressTarget,
-    resolve_timeout: Duration,
+    target: &AddressTarget,
+    timeout: Duration,
 ) -> Result<Vec<SocketAddr>, ResolveAddressError> {
-    match entry {
+    match target {
         AddressTarget::Socket(addr) => Ok(vec![*addr]),
         AddressTarget::HostPort(host_port) => {
-            match time::timeout(resolve_timeout, net::lookup_host(host_port)).await {
+            match time::timeout(timeout, net::lookup_host(host_port)).await {
                 Ok(Ok(resolved)) => {
                     let addrs: Vec<SocketAddr> = resolved.collect();
                     if addrs.is_empty() {
@@ -208,17 +208,17 @@ pub async fn resolve_address_entry(
                     }
                 }
                 Ok(Err(error)) => {
-                    log::error!("Invalid server address '{entry}': {error}");
+                    log::error!("Invalid server address '{target}': {error}");
                     Err(ResolveAddressError::Lookup(error))
                 }
                 Err(_) => {
                     log::error!(
                         "Resolving server address '{}' timed out after {} seconds",
-                        entry,
-                        resolve_timeout.as_secs()
+                        target,
+                        timeout.as_secs()
                     );
                     Err(ResolveAddressError::TimedOut {
-                        secs: resolve_timeout.as_secs(),
+                        secs: timeout.as_secs(),
                     })
                 }
             }
@@ -233,7 +233,6 @@ pub struct ReadTcpMessageError(#[from] io::Error);
 
 #[cfg(test)]
 mod tests {
-
     use bindizr_core::dns::message::{Name, Opcode, OptRcode, ParsedQuery, Rtype};
     use bindizr_core::dns::query;
 
@@ -245,8 +244,8 @@ mod tests {
         use std::str::FromStr;
 
         for (advertised, limit) in [(None, 512), (Some(1232), 1232)] {
-            let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            let address = server.local_addr().unwrap();
+            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let addr = socket.local_addr().unwrap();
             let (_, request) = query::build_question(
                 Opcode::QUERY,
                 false,
@@ -258,12 +257,12 @@ mod tests {
             let request = request.finish();
 
             let mut exchange = tokio::spawn(async move {
-                exchange_over_udp(address, Duration::from_secs(1), &request, "test").await
+                exchange_over_udp(addr, Duration::from_secs(1), &request, "test").await
             });
 
             let mut buffer = [0; 1232];
 
-            let (len, peer) = server.recv_from(&mut buffer).await.unwrap();
+            let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
             let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
             let valid = query
                 .build_signed_error_response(OptRcode::NOERROR, None, None)
@@ -273,7 +272,7 @@ mod tests {
                 let mut oversized = valid.clone();
                 oversized.resize(size, 0);
 
-                server.send_to(&oversized, peer).await.unwrap();
+                socket.send_to(&oversized, peer).await.unwrap();
 
                 assert!(
                     time::timeout(Duration::from_millis(20), &mut exchange)
@@ -282,7 +281,7 @@ mod tests {
                 );
             }
 
-            server.send_to(&valid, peer).await.unwrap();
+            socket.send_to(&valid, peer).await.unwrap();
             let (len, response) = exchange.await.unwrap().unwrap();
 
             assert_eq!(&response[..len], valid);

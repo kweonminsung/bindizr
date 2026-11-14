@@ -14,11 +14,11 @@ use bindizr_core::model::zone::Zone;
 pub use multiple::import_many;
 pub use single::import;
 
+use crate::Context;
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
 use crate::error::ServiceError;
 use crate::types::{ImportMode, ImportZoneResponse, Run};
-use crate::{Context, zone};
 
 /// Text needs the locked zone's default TTL; AXFR carries every TTL explicitly.
 #[derive(Debug)]
@@ -54,7 +54,7 @@ async fn import_transfer(
 ) -> Result<ImportZoneResponse, ServiceError> {
     // Reject invalid or unauthorized requests before AXFR; recheck in the transaction.
     if options.missing_zone_action == MissingZoneAction::Reject {
-        let zone = zone::lookup_by_name(cx, zone_name).await?;
+        let zone = super::lookup_by_name(cx, zone_name).await?;
         authorize_import(caller, options.mode, &zone)?;
     }
 
@@ -74,7 +74,7 @@ async fn import_transfer(
     apply::apply_import(cx, caller, zone_name, source, options).await
 }
 
-/// The zones a bulk import names, in request order without repeats.
+/// Normalize the zones a bulk import names, in request order without repeats.
 fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError> {
     if names.is_empty() {
         return Err(ServiceError::invalid_input(
@@ -86,7 +86,7 @@ fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError>
     let mut seen: HashSet<ZoneName> = HashSet::with_capacity(names.len());
 
     for name in names {
-        let zone_name = zone::normalize_name(name)?;
+        let zone_name = super::normalize_name(name)?;
         if seen.insert(zone_name.clone()) {
             zone_names.push(zone_name);
         }
@@ -95,7 +95,7 @@ fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError>
     Ok(zone_names)
 }
 
-/// The record actions an import mode performs.
+/// Return the record actions an import mode performs.
 fn import_actions(mode: ImportMode) -> &'static [Action] {
     match mode {
         ImportMode::Append => &[Action::RecordCreate],

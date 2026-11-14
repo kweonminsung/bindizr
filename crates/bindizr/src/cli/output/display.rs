@@ -8,14 +8,15 @@ use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransp
 use bindizr_service::types::{
     RecordValue, SecondaryStatus, TransferResponse, TransferSummaryResponse,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 /// What a cell shows for a value that is absent.
 pub(crate) const MISSING_CELL: &str = "-";
 
 /// An optional value as one cell, absent as `-`.
-pub(crate) fn display_option<T: fmt::Display>(opt: &Option<T>) -> String {
-    opt.as_ref()
+pub(crate) fn display_option<T: fmt::Display>(value: &Option<T>) -> String {
+    value
+        .as_ref()
         .map_or_else(|| MISSING_CELL.to_string(), ToString::to_string)
 }
 
@@ -55,13 +56,13 @@ pub(crate) fn display_serial_lag(
 const MAX_CELL_CHARS: usize = 48;
 
 /// Format a timestamp for table output; `-o json` carries the full precision.
-pub(crate) fn display_time(at: chrono::DateTime<chrono::Utc>) -> String {
+pub(crate) fn display_time(at: DateTime<Utc>) -> String {
     at.format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 /// Format an optional timestamp for table output.
-pub(crate) fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
-    opt.map_or_else(|| MISSING_CELL.to_string(), display_time)
+pub(crate) fn display_option_time(value: &Option<DateTime<Utc>>) -> String {
+    value.map_or_else(|| MISSING_CELL.to_string(), display_time)
 }
 
 /// A record value as one listing cell, cut at `MAX_CELL_CHARS` and marked

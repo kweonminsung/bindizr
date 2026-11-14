@@ -28,8 +28,8 @@ impl KeyTag {
 
 impl From<u16> for KeyTag {
     /// Take a wire key tag.
-    fn from(key_tag: u16) -> Self {
-        Self(key_tag)
+    fn from(value: u16) -> Self {
+        Self(value)
     }
 }
 
@@ -37,10 +37,10 @@ impl TryFrom<i32> for KeyTag {
     type Error = ConvertKeyTagError;
 
     /// Read a row's key tag; one outside 16 bits is corrupt data.
-    fn try_from(key_tag: i32) -> Result<Self, Self::Error> {
-        u16::try_from(key_tag)
-            .map(KeyTag)
-            .map_err(|_| ConvertKeyTagError { key_tag })
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        u16::try_from(value)
+            .map(Self)
+            .map_err(|_| ConvertKeyTagError { key_tag: value })
     }
 }
 

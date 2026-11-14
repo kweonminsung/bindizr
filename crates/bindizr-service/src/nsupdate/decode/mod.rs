@@ -34,7 +34,7 @@ pub(crate) fn decode_updates(
         .collect()
 }
 
-/// The prescan's type check: unrecognized types are FORMERR (RFC 2136, Section 3.4.1.2).
+/// Check a type in the prescan: unrecognized types are FORMERR (RFC 2136, Section 3.4.1.2).
 fn validate_supported_type(record_type: Rtype) -> Result<(), NsupdateError> {
     if matches!(record_type, Rtype::SOA | Rtype::ANY)
         || RecordType::try_from(record_type).is_ok()
@@ -50,7 +50,7 @@ fn validate_supported_type(record_type: Rtype) -> Result<(), NsupdateError> {
 pub(crate) fn decode_prerequisite(
     record: &UpdateRecord,
     zone_name: &ZoneName,
-    query_data: &[u8],
+    message: &[u8],
 ) -> Result<Prerequisite, NsupdateError> {
     if record.ttl != 0 {
         return Err(NsupdateError::FormErr(
@@ -93,7 +93,7 @@ pub(crate) fn decode_prerequisite(
             Ok(Prerequisite::RecordValueMatches {
                 name,
                 record_type: record.record_type,
-                rdata: record.to_rdata(query_data)?,
+                rdata: record.to_rdata(message)?,
             })
         }
         other => Err(NsupdateError::FormErr(format!(
@@ -107,12 +107,12 @@ pub(crate) fn decode_prerequisite(
 fn decode_update(
     record: &UpdateRecord,
     name: OwnerName,
-    query_data: &[u8],
+    message: &[u8],
 ) -> Result<Option<UpdateOperation>, NsupdateError> {
     if DnssecRecordType::try_from(i32::from(record.record_type.to_int())).is_ok() {
         // Malformed RDATA must remain FORMERR, ahead of policy refusal.
         if record.class != Class::ANY {
-            record.to_rdata(query_data)?;
+            record.to_rdata(message)?;
         }
         return Err(NsupdateError::ManagedType(record.record_type));
     }
@@ -126,11 +126,11 @@ fn decode_update(
                 return Ok(Some(UpdateOperation::ReplaceSoa {
                     name,
                     ttl,
-                    value: record.to_soa_value(query_data)?,
+                    value: record.to_soa_value(message)?,
                 }));
             }
 
-            let (record_type, value, priority) = record.to_record_value(query_data)?;
+            let (record_type, value, priority) = record.to_record_value(message)?;
 
             Ok(Some(UpdateOperation::Record(RecordOperation::AddRecord {
                 name,
@@ -159,7 +159,7 @@ fn decode_update(
                 return Ok(None);
             }
 
-            let (record_type, value, priority) = record.to_record_value(query_data)?;
+            let (record_type, value, priority) = record.to_record_value(message)?;
 
             Ok(Some(UpdateOperation::Record(
                 RecordOperation::DeleteRecord {
@@ -170,8 +170,8 @@ fn decode_update(
                 },
             )))
         }
-        class => Err(NsupdateError::FormErr(format!(
-            "unsupported update class: {class}"
+        other => Err(NsupdateError::FormErr(format!(
+            "unsupported update class: {other}"
         ))),
     }
 }

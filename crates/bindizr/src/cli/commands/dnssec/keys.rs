@@ -63,7 +63,7 @@ is matched with the Nth --key.")]
     },
 }
 
-/// Run the requested DNSSEC key import or export command.
+/// Handle the `dnssec keys` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), CliError> {
     match subcommand {
         DnssecKeysCommand::Export { name } => {
@@ -144,9 +144,9 @@ fn print_key_material(exported: &ExportDnssecKeysResponse) {
             base.push_str(&format!(".{}", duplicate_count + 1));
         }
 
-        outln!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
+        outln!("; {base}.key ({}, tag {})", key.role, key.key_tag);
         outln!("{}", key.dnskey_record);
-        outln!("; {}.private", base);
+        outln!("; {base}.private");
         outln!("{}", key.private_key.trim_end());
     }
 }

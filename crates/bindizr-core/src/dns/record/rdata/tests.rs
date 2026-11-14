@@ -1,5 +1,6 @@
+use domain::base::iana::Rtype;
+
 use super::*;
-use crate::dns::message::Rtype;
 use crate::dns::name;
 use crate::dns::record::TxtRecordValue;
 use crate::model::record::RecordType;
@@ -153,7 +154,7 @@ fn encode_cname_rdata_reads_an_escaped_dot_as_label_data() {
     );
 }
 
-/// Resolve compressed names within RDLENGTH (RFC 1035, Section 4.1.4).
+/// Verify that compressed names resolve within RDLENGTH (RFC 1035, Section 4.1.4).
 #[test]
 fn canonical_rdata_resolves_compression_without_consuming_the_next_record() {
     let mut message = b"\x02NS\x07EXAMPLE\x03COM\0".to_vec();
@@ -171,7 +172,7 @@ fn canonical_rdata_resolves_compression_without_consuming_the_next_record() {
     assert!(Rdata::parse_canonical(Rtype::MX, &message, start, usize::MAX).is_err());
 }
 
-/// Preserve opaque RDATA, including empty data (RFC 3597, Section 6).
+/// Verify that opaque RDATA is preserved, including empty data (RFC 3597, Section 6).
 #[test]
 fn canonical_rdata_preserves_opaque_bytes_and_character_strings() {
     let message = [0xc0, 0, 0xff, 0xee];
@@ -190,7 +191,8 @@ fn canonical_rdata_preserves_opaque_bytes_and_character_strings() {
     assert_eq!(txt.to_canonical(Rtype::TXT).unwrap(), txt);
 }
 
-/// Preserve NSEC name case but fold RRSIG signer names (RFC 6840, Section 5.1).
+/// Verify that NSEC name case is preserved but RRSIG signer names are folded (RFC 6840, Section
+/// 5.1).
 #[test]
 fn canonical_rdata_observes_dnssec_name_case_rules() {
     let name = b"\x02NS\x07EXAMPLE\x03COM\0";
@@ -211,7 +213,7 @@ fn canonical_rdata_observes_dnssec_name_case_rules() {
     assert_eq!(rdata.to_canonical(Rtype::NSEC).unwrap(), rdata);
 }
 
-/// Reject known RDATA that does not fill its declared length.
+/// Verify that known RDATA that does not fill its declared length is rejected.
 #[test]
 fn canonical_rdata_rejects_malformed_known_types() {
     let bytes = [192, 0, 2, 1, 0];

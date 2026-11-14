@@ -189,10 +189,9 @@ mod tests {
             .unwrap()
             .into_parts();
 
-        let Err(error) = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &()).await
-        else {
-            panic!("an unknown query key must be rejected");
-        };
+        let error = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &())
+            .await
+            .unwrap_err();
 
         assert_eq!(error.0.code(), ErrorCode::InvalidInput);
         assert!(
@@ -211,14 +210,12 @@ mod tests {
             .unwrap()
             .into_parts();
 
-        let Ok(Query(filter)) =
-            Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &()).await
-        else {
-            panic!("the spelled-out filter must parse");
-        };
+        let Query(query) = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &())
+            .await
+            .unwrap();
 
-        assert_eq!(filter.record_type.as_deref(), Some("A"));
-        assert!(filter.dry_run);
+        assert_eq!(query.record_type.as_deref(), Some("A"));
+        assert!(query.dry_run);
     }
 
     /// Verify that an unknown body field is rejected, naming the field.
@@ -233,9 +230,9 @@ mod tests {
             ))
             .unwrap();
 
-        let Err(rejection) = Json::<CreateRecordRequest>::from_request(request, &()).await else {
-            panic!("an unknown body field must be rejected");
-        };
+        let rejection = Json::<CreateRecordRequest>::from_request(request, &())
+            .await
+            .unwrap_err();
         let error = ApiError::from(rejection);
 
         assert_eq!(error.0.code(), ErrorCode::InvalidJsonBody);

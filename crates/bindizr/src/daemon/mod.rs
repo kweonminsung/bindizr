@@ -9,14 +9,17 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{env, io};
 
-use bindizr_core::config::{self, Config, ConfigError};
-use bindizr_core::logger::{self, Logger};
+use bindizr_core::config::{Config, ConfigError};
+use bindizr_core::logger::Logger;
 use bindizr_core::metrics::{Metrics, RegisterMetricsError};
+use bindizr_core::{config, logger};
 use bindizr_db::Db;
 use bindizr_db::error::DatabaseError;
 use bindizr_service::context::ReloadConfigError;
 use bindizr_service::error::ServiceError;
 use bindizr_service::notify::queue;
+use bindizr_service::notify::queue::NotifyWorker;
+use bindizr_service::scheduler::SchedulerWorker;
 use bindizr_service::{Context, scheduler, token, zone};
 use chrono::Utc;
 use thiserror::Error;
@@ -28,7 +31,8 @@ use tokio::{signal, sync, time};
 use crate::api::StartApiError;
 use crate::dns::StartDnsError;
 use crate::shutdown::Shutdown;
-use crate::socket::server::{BindSocketError, ServeSocketError};
+use crate::socket::server::control::DaemonControl;
+use crate::socket::server::{BindSocketError, ServeSocketError, SocketContext};
 use crate::tls::{LoadCertificateError, TlsCertificates};
 use crate::{api, dns, socket};
 
@@ -205,11 +209,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     let dns_servers = dns::start(cx.clone(), &shutdown, tls.dns.clone()).await?;
 
     let (control_tx, mut control_rx) = socket::server::control::channel();
-    let socket_cx = Arc::new(socket::server::SocketContext::new(
-        cx.clone(),
-        control_tx,
-        tls.clone(),
-    ));
+    let socket_cx = Arc::new(SocketContext::new(cx.clone(), control_tx, tls.clone()));
     let socket_task = socket::server::serve(socket_cx, socket_listener, &shutdown)?;
 
     let api_task = api::start(cx.clone(), &shutdown, tls.api.clone()).await?;
@@ -280,7 +280,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         };
 
         match control {
-            Some(socket::server::control::DaemonControl::Restart) => {
+            Some(DaemonControl::Restart) => {
                 log::info!("Restart requested, re-executing bindizr...");
                 break RunResult::Restart;
             }
@@ -327,8 +327,8 @@ impl RunResult {
 async fn drain(
     shutdown: &Shutdown,
     mut servers: Servers,
-    scheduler_worker: scheduler::SchedulerWorker,
-    notify_worker: queue::NotifyWorker,
+    scheduler_worker: SchedulerWorker,
+    notify_worker: NotifyWorker,
 ) {
     shutdown.trigger();
 

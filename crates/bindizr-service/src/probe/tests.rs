@@ -1,13 +1,14 @@
 use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 
 use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
+use bindizr_db::Db;
 use serde_json::json;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::{mpsc, watch};
 use tokio::time;
-use tokio::time::Duration;
 
 use super::*;
 use crate::authorization::Caller;
@@ -15,21 +16,18 @@ use crate::zone;
 
 /// Build isolated SQLite state with a bounded probe timeout and no workers.
 async fn context() -> Arc<Context> {
-    let config: Config = serde_json::from_value(json!({
-        "database":{"sqlite":{"file_path":"sqlite::memory:"}},
-        "dns":{"notify":{"timeout_secs":2}},
-    }))
-    .unwrap();
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
-    let (jobs, _rx) = mpsc::unbounded_channel();
-    let (period, _rx) = watch::channel(0);
+    let mut config: Config = serde_json::from_str("{}").unwrap();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
+    config.dns.notify.timeout_secs = 2;
+
+    let db = Db::connect(&config.database).await.unwrap();
     Arc::new(Context::new(
         config,
         String::new(),
         db,
         Metrics::new().unwrap(),
-        jobs,
-        period,
+        mpsc::unbounded_channel().0,
+        watch::channel(0).0,
     ))
 }
 
@@ -76,19 +74,19 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
     )
     .await
     .unwrap();
-    let name = zone::normalize_name("example.test").unwrap();
+    let zone_name = zone::normalize_name("example.test").unwrap();
     let task_cx = cx.clone();
-    let task = tokio::spawn(async move { probe_secondaries(&task_cx, &name, None).await });
-    let mut query = [0u8; 4096];
-    let (len, client) = time::timeout(Duration::from_secs(2), udp.recv_from(&mut query))
+    let task = tokio::spawn(async move { probe_secondaries(&task_cx, &zone_name, None).await });
+    let mut buffer = [0; 4096];
+    let (len, peer) = time::timeout(Duration::from_secs(2), udp.recv_from(&mut buffer))
         .await
         .unwrap()
         .unwrap();
 
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
-    query[2] = 0x82; // QR and TC would otherwise start a TCP exchange.
-    udp.send_to(&query[..len], client).await.unwrap();
+    buffer[2] = 0x82; // QR and TC would otherwise start a TCP exchange.
+    udp.send_to(&buffer[..len], peer).await.unwrap();
     assert!(
         time::timeout(Duration::from_millis(150), tcp.accept())
             .await
@@ -114,44 +112,47 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
         .await
         .unwrap();
     }
-    let name = zone::normalize_name("example.test").unwrap();
+    let zone_name = zone::normalize_name("example.test").unwrap();
     let task_cx = cx.clone();
-    let task = tokio::spawn(async move { probe_secondaries(&task_cx, &name, None).await });
-    let mut first_query = [0u8; 4096];
-    let mut second_query = [0u8; 4096];
-    let (first_len, first_client) =
-        time::timeout(Duration::from_secs(2), first.recv_from(&mut first_query))
+    let task = tokio::spawn(async move { probe_secondaries(&task_cx, &zone_name, None).await });
+    let mut first_buffer = [0; 4096];
+    let mut second_buffer = [0; 4096];
+    let (first_len, first_peer) =
+        time::timeout(Duration::from_secs(2), first.recv_from(&mut first_buffer))
             .await
             .unwrap()
             .unwrap();
-    let (second_len, second_client) =
-        time::timeout(Duration::from_secs(2), second.recv_from(&mut second_query))
+    let (second_len, second_peer) =
+        time::timeout(Duration::from_secs(2), second.recv_from(&mut second_buffer))
             .await
             .unwrap()
             .unwrap();
 
     // Refusals complete a probe without requiring an SOA fixture.
-    second_query[2] = 0x84;
-    second_query[3] = 5;
+    second_buffer[2] = 0x84;
+    second_buffer[3] = 5;
     second
-        .send_to(&second_query[..second_len], second_client)
+        .send_to(&second_buffer[..second_len], second_peer)
         .await
         .unwrap();
     time::sleep(Duration::from_millis(20)).await;
-    first_query[2] = 0x84;
-    first_query[3] = 5;
+    first_buffer[2] = 0x84;
+    first_buffer[3] = 5;
     first
-        .send_to(&first_query[..first_len], first_client)
+        .send_to(&first_buffer[..first_len], first_peer)
         .await
         .unwrap();
 
-    let probes = task.await.unwrap().unwrap();
-    assert_eq!(probes.len(), 2);
-    assert_eq!(probes[0].address, first.local_addr().unwrap().to_string());
-    assert_eq!(probes[1].address, second.local_addr().unwrap().to_string());
+    let statuses = task.await.unwrap().unwrap();
+    assert_eq!(statuses.len(), 2);
+    assert_eq!(statuses[0].address, first.local_addr().unwrap().to_string());
+    assert_eq!(
+        statuses[1].address,
+        second.local_addr().unwrap().to_string()
+    );
     assert!(
-        probes
+        statuses
             .iter()
-            .all(|probe| probe.status == SecondaryStatus::Unreachable)
+            .all(|status| status.status == SecondaryStatus::Unreachable)
     );
 }

@@ -3,7 +3,7 @@ use serde_json::Value;
 use crate::cli::common;
 use crate::common::TestApp;
 
-/// Preserve a high source serial during preview and advance it when applying records.
+/// Verify that a high source serial is preserved during preview and advanced when applying records.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_accepts_the_full_serial_range() {
@@ -47,16 +47,16 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
 
     // A record type bindizr does not store fails the whole file, and a CI step
     // must not read the rejection as a successful import.
-    let output = app
+    let refused = app
         .run_cli(
             &["zone", "import", &zone_name, "-"],
             Some("www IN A 192.0.2.40\nbox IN TYPE128 \\# 0\n"),
         )
         .await;
 
-    assert!(!output.status.success(), "{output:?}");
+    assert!(!refused.status.success(), "{refused:?}");
 
-    let stdout = String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8");
+    let stdout = String::from_utf8(refused.stdout).expect("CLI stdout was not UTF-8");
 
     assert_eq!(common::summary_cells(&stdout)[0], "no", "{stdout}");
 
@@ -68,7 +68,7 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
     assert!(!listed.contains("192.0.2.40"), "{listed}");
 }
 
-/// Verify importing a zone file from standard input.
+/// Verify that a zone file is imported from standard input.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_reads_zone_file_from_stdin() {
@@ -277,11 +277,11 @@ async fn zone_import_pulls_several_zones_from_one_server() {
         "replace",
     ];
 
-    let output = app.run_cli(&args, Some(&zones)).await;
+    let failed = app.run_cli(&args, Some(&zones)).await;
 
-    assert!(!output.status.success(), "a failed zone must exit non-zero");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!failed.status.success(), "a failed zone must exit non-zero");
+    let stdout = String::from_utf8_lossy(&failed.stdout);
+    let stderr = String::from_utf8_lossy(&failed.stderr);
 
     assert!(
         stdout.contains("2 of 3 zone(s) imported; 0 rejected, 1 failed"),

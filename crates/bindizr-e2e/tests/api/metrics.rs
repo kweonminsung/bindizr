@@ -1,6 +1,7 @@
 use reqwest::{Method, StatusCode};
+use serde_json::json;
 
-use crate::common::TestApp;
+use crate::common::{TestApp, TestAppOptions};
 
 /// Read one numeric sample from a Prometheus metrics response.
 fn metric_value(text: &str, name: &str) -> f64 {
@@ -19,8 +20,8 @@ async fn metrics_reports_zone_totals_and_database_up() {
 
     let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
 
-    assert_eq!(status, StatusCode::OK);
-    let text = body.as_str().expect("metrics body is prometheus text");
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let text = body.as_str().unwrap();
 
     assert!(text.contains("bindizr_build_info"));
     assert_eq!(metric_value(text, "bindizr_database_up"), 1.0);
@@ -38,22 +39,18 @@ async fn metrics_counts_http_requests_by_route() {
 
     let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
 
-    assert_eq!(status, StatusCode::OK);
-    let text = body.as_str().expect("metrics body is prometheus text");
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let text = body.as_str().unwrap();
 
     assert!(
         text.contains(r#"bindizr_http_requests_total{method="GET",route="/health",status="200"}"#)
     );
 }
 
-/// A later zone's failure rolls back the earlier zone and its success metric.
+/// Verify that a later zone's failure rolls back the earlier zone and its success metric.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn serial_bumps_count_only_committed_versions() {
-    use serde_json::json;
-
-    use crate::common::TestAppOptions;
-
     let app = TestApp::start_with_options(TestAppOptions {
         external_dns_enabled: true,
         ..Default::default()
@@ -76,9 +73,9 @@ async fn serial_bumps_count_only_committed_versions() {
             "/external-dns/changes",
             Some(json!({
                 "creates": [
-                    {"name": format!("ok.{first}"), "type": "A", "values": ["192.0.2.1"]},
-                    {"name": format!("bad.{second}"), "type": "A", "values": ["192.0.2.1"]},
-                    {"name": format!("bad.{second}"), "type": "CNAME", "values": ["target.example.net."]}
+                    { "name": format!("ok.{first}"), "type": "A", "values": ["192.0.2.1"] },
+                    { "name": format!("bad.{second}"), "type": "A", "values": ["192.0.2.1"] },
+                    { "name": format!("bad.{second}"), "type": "CNAME", "values": ["target.example.net."] }
                 ]
             })),
         )
@@ -97,7 +94,7 @@ async fn serial_bumps_count_only_committed_versions() {
         .send_request(
             Method::POST,
             &import_path,
-            Some(json!({"create": true, "dry_run": true, "content": content})),
+            Some(json!({ "create": true, "dry_run": true, "content": content })),
         )
         .await;
 
@@ -117,8 +114,8 @@ async fn serial_bumps_count_only_committed_versions() {
             "/external-dns/changes",
             Some(json!({
                 "creates": [
-                    {"name": format!("ok.{first}"), "type": "A", "values": ["192.0.2.1"]},
-                    {"name": format!("ok.{second}"), "type": "A", "values": ["192.0.2.1"]}
+                    { "name": format!("ok.{first}"), "type": "A", "values": ["192.0.2.1"] },
+                    { "name": format!("ok.{second}"), "type": "A", "values": ["192.0.2.1"] }
                 ]
             })),
         )
@@ -137,7 +134,7 @@ async fn serial_bumps_count_only_committed_versions() {
         .send_request(
             Method::POST,
             &import_path,
-            Some(json!({"create": true, "content": content})),
+            Some(json!({ "create": true, "content": content })),
         )
         .await;
 

@@ -11,6 +11,7 @@ use bindizr_service::types::{
     PaginatedResponse, Run, SingleZoneResponse, UpdateZoneRequest, WriteZoneResponse, ZoneFilter,
     ZoneResponse, ZoneStatusResponse, ZoneView,
 };
+use chrono::{DateTime, Utc};
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
 
@@ -74,7 +75,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// List zones
     #[command(alias = "ls")]
     List {
@@ -107,10 +107,10 @@ and the contact is the address a resolver operator writes to.")]
         max_serial: Option<u32>,
         /// Keep zones created at or after this RFC 3339 timestamp
         #[arg(long, value_name = "TIMESTAMP")]
-        created_after: Option<chrono::DateTime<chrono::Utc>>,
+        created_after: Option<DateTime<Utc>>,
         /// Keep zones created at or before this RFC 3339 timestamp
         #[arg(long, value_name = "TIMESTAMP")]
-        created_before: Option<chrono::DateTime<chrono::Utc>>,
+        created_before: Option<DateTime<Utc>>,
         /// Keep only zones signing under a DNSSEC policy
         #[arg(long)]
         signed: bool,
@@ -136,7 +136,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Get a zone by name
     Get {
         /// The name of the zone
@@ -146,7 +145,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Update a zone, changing only the fields you pass
     Update {
         /// The name of the zone to update
@@ -189,7 +187,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Delete a zone
     #[command(alias = "rm")]
     Delete {
@@ -203,7 +200,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Import a BIND zone file into a zone, or pull zones from another server
     #[command(after_help = "\
 The file is standard BIND zone file text, for example:
@@ -277,7 +273,6 @@ skipped); a catalog zone (RFC 9432) names every zone the server provisions.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Export a zone as BIND master-file text
     #[command(after_help = "\
 Examples:
@@ -294,7 +289,6 @@ bindizr generates rather than stores as editable records.")]
         #[arg(long)]
         signed: bool,
     },
-
     /// Show how far each secondary has caught up with a zone
     Status {
         /// The name of the zone
@@ -304,7 +298,6 @@ bindizr generates rather than stores as editable records.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Send NOTIFY messages to secondary servers for a zone, or for all zones
     #[command(after_help = "\
 Examples:
@@ -312,7 +305,6 @@ Examples:
   bindizr zone notify                 # all zones
   bindizr zone notify --bump-serial   # all zones, transferring even where nothing changed")]
     Notify(NotifyArgs),
-
     /// Inspect or roll back a zone's versions (serial history)
     Version {
         #[command(subcommand)]
@@ -348,18 +340,16 @@ pub(crate) struct NotifyArgs {
     /// The name of the zone; omit it to notify all zones
     #[arg(value_name = "ZONE_NAME")]
     name: Option<String>,
-
     /// Bump the serial first, so secondaries transfer even when nothing
     /// changed
     #[arg(long)]
     bump_serial: bool,
-
     /// Output format
     #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
 }
 
-/// Handle the `zone` subcommand by forwarding it to the daemon over the socket.
+/// Handle the `zone` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliError> {
     match subcommand {
         ZoneCommand::Create {
@@ -445,7 +435,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 }),
             )
             .await?;
-            output::print_page(&response.data, output, |item| ZoneRow::from(item))?;
+            output::print_page(&response.data, output, |zone| ZoneRow::from(zone))?;
         }
         ZoneCommand::Get { name, output } => {
             let response =
@@ -508,15 +498,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 output::print_payload(&response.data, output)?;
             }
         }
-        ZoneCommand::Export { name, signed } => {
-            let response =
-                client::send_command::<ExportZoneFileResponse>(DaemonCommand::ExportZone {
-                    name,
-                    view: ZoneView::from_signed(signed),
-                })
-                .await?;
-            out!("{}", response.data.zone_file);
-        }
         ZoneCommand::Import {
             name: None,
             from_server,
@@ -563,7 +544,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         continue;
                     };
                     for error in &zone_import.errors {
-                        errln!("  {} - {}", item.zone_name, error);
+                        errln!("  {} - {error}", item.zone_name);
                     }
                 }
 
@@ -611,7 +592,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
 
                 // Diagnostics go to stderr, so a pipeline keeps the summary clean.
                 for error in &import.errors {
-                    errln!("  - {}", error);
+                    errln!("  - {error}");
                 }
 
                 output::print_table(vec![ImportSummaryRow::from(import)]);
@@ -631,7 +612,15 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 )));
             }
         }
-        ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
+        ZoneCommand::Export { name, signed } => {
+            let response =
+                client::send_command::<ExportZoneFileResponse>(DaemonCommand::ExportZone {
+                    name,
+                    view: ZoneView::from_signed(signed),
+                })
+                .await?;
+            out!("{}", response.data.zone_file);
+        }
         ZoneCommand::Status { name, output } => {
             let response =
                 client::send_command::<ZoneStatusResponse>(DaemonCommand::GetZoneStatus { name })
@@ -667,6 +656,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 output::print_payload(&response.data, args.output)?;
             }
         }
+        ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
     }
 
     Ok(())

@@ -1,3 +1,9 @@
+mod assertions;
+mod compose;
+pub(crate) mod dns;
+mod local;
+mod verify;
+
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
@@ -6,31 +12,23 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::SystemTime;
 use std::{env, process, time};
 
+pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
+use compose::ComposeStack;
+pub(crate) use dns::{
+    DsRecord, FakeParent, TransferResult, axfr, exchange_dns_query, exchange_tcp, exchange_xot,
+    probe_zone_soa, read_frame, wait_for_any_dns_record, xot,
+};
 use reqwest::{Client, Method, StatusCode};
 use rustls::crypto::ring;
 use rustls::pki_types::CertificateDer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
-
-mod assertions;
-mod compose;
-mod local;
-
-use compose::ComposeStack;
-pub(crate) mod dns;
-mod verify;
-
-pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
-pub(crate) use dns::{
-    DsRecord, FakeParent, TransferResult, axfr, exchange_dns_query, exchange_tcp, exchange_xot,
-    probe_zone_soa, read_frame, wait_for_any_dns_record, xot,
-};
 use verify::PreviousRecordKey;
 
-/// The most a listing returns in one call; the HTTP API refuses more.
 /// Every record action, the grant a test role needs to read and change a zone's records.
 pub(crate) const RECORD_ACTIONS: &str = "record:read,record:create,record:update,record:delete";
 
+/// The most a listing returns in one call; the HTTP API refuses more.
 const RECORD_PAGE_LIMIT: u32 = 1000;
 const DNS_VERIFICATION_ENV: &str = "BINDIZR_E2E_VERIFY_DNS";
 static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
@@ -143,7 +141,7 @@ impl TestApp {
             .expect("the daemon was started with TLS")
     }
 
-    /// Bearer token attached to every subsequent HTTP request.
+    /// Set the bearer token attached to every subsequent HTTP request.
     pub(crate) fn set_auth_token(&mut self, token: String) {
         self.auth_token = Some(token);
     }
@@ -198,10 +196,11 @@ impl TestApp {
     /// The config file the local daemon was started from, for tests that
     /// rewrite it and reload.
     pub(crate) fn config_path(&self) -> PathBuf {
-        match &self.runtime {
-            TestRuntime::Local { temp_dir, .. } => temp_dir.path().join("bindizr.conf.toml"),
-            _ => panic!("only the local runtime owns its config file"),
-        }
+        let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
+            panic!("only the local runtime owns its config file");
+        };
+
+        temp_dir.path().join("bindizr.conf.toml")
     }
 
     /// Check whether this test application includes DNS secondaries.
@@ -297,7 +296,7 @@ impl TestApp {
                 )
                 .await;
 
-            assert_eq!(status, StatusCode::OK);
+            assert_eq!(status, StatusCode::OK, "{body}");
             let page = body["items"]
                 .as_array()
                 .expect("record list response did not contain items")
@@ -323,7 +322,7 @@ impl TestApp {
             .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
             .await;
 
-        assert_eq!(status, StatusCode::OK);
+        assert_eq!(status, StatusCode::OK, "{body}");
 
         body["zone"]["serial"]
             .as_i64()
@@ -366,7 +365,7 @@ impl TestApp {
             .send_request(Method::POST, "/zones", Some(request))
             .await;
 
-        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(status, StatusCode::CREATED, "{body}");
 
         body["zone"].clone()
     }

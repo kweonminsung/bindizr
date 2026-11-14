@@ -3,9 +3,9 @@ use std::io;
 
 use super::*;
 
-/// Verify that owner in zone reduces an in zone owner to its stored form.
+/// Verify that `parse_update_owner` reduces an in-zone owner to its stored form.
 #[test]
-fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
+fn parse_update_owner_reduces_an_in_zone_owner_to_its_stored_form() {
     assert_eq!(
         parse_update_owner("www.example.com.", &ZoneName::from_row("example.com"))
             .unwrap()
@@ -32,7 +32,7 @@ fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
 
 /// Verify that `parse_update_owner` rejects owners outside the zone.
 #[test]
-fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
+fn parse_update_owner_rejects_owners_outside_the_zone() {
     for owner in [
         "aexample.com.",
         "badexample.com.",
@@ -46,7 +46,7 @@ fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
     }
 }
 
-/// Preserve parser failures while retaining their FORMERR classification.
+/// Verify that parser failures are preserved while retaining their FORMERR classification.
 #[test]
 fn parser_errors_retain_their_sources() {
     let shape = ValidateUpdateShapeError::NonzeroTtl;
@@ -73,7 +73,7 @@ fn parser_errors_retain_their_sources() {
     );
 }
 
-/// Keep caller and backend failures typed, with their original DNS classifications.
+/// Verify that caller and backend failures stay typed, with their original DNS classifications.
 #[test]
 fn service_errors_retain_their_sources_and_classification() {
     for (source, rcode) in [
@@ -111,7 +111,8 @@ fn service_errors_retain_their_sources_and_classification() {
     }
 }
 
-/// Distinguish an outside-zone owner from malformed names without losing the parser cause.
+/// Verify that an outside-zone owner is distinguished from malformed names without losing the
+/// parser cause.
 #[test]
 fn owner_errors_retain_their_sources_and_classification() {
     let zone = ZoneName::parse("example.com").unwrap();

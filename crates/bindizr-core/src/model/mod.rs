@@ -36,8 +36,8 @@ macro_rules! id_newtype {
 
         impl From<i32> for $name {
             /// Wrap a row id as the database numbered it.
-            fn from(id: i32) -> Self {
-                Self(id)
+            fn from(value: i32) -> Self {
+                Self(value)
             }
         }
 
@@ -51,7 +51,7 @@ macro_rules! id_newtype {
         impl std::fmt::Display for $name {
             /// Write the id in decimal.
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.0)
+                std::fmt::Display::fmt(&self.0, f)
             }
         }
     };

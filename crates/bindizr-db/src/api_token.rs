@@ -18,7 +18,7 @@ pub async fn create_tx(
     }
 }
 
-/// An API token by id inside the caller's transaction, locked at `lock_level`.
+/// Get an API token by ID in the current transaction, locked at `lock_level`.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
     id: TokenId,
@@ -31,7 +31,7 @@ pub async fn get_tx(
     }
 }
 
-/// Find an API token by name.
+/// Get an API token by name.
 pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<ApiToken>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::api_token::get_by_name(pool, name).await,
@@ -40,7 +40,7 @@ pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<ApiToken>, Databa
     }
 }
 
-/// Find an API token by its stored token hash.
+/// Get an API token by its stored token hash.
 pub async fn get_by_token(db: &Db, token: &str) -> Result<Option<ApiToken>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::api_token::get_by_token(pool, token).await,

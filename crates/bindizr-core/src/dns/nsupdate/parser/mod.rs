@@ -32,6 +32,7 @@ pub struct TsigRecord {
     pub fudge: u16,
 }
 
+/// Why an UPDATE message could not be parsed into its sections.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseUpdateError {
     #[error("DNS message is too short")]

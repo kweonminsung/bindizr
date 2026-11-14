@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::{IntoParams, ToSchema};
 
-use super::version::RecordDiffResponse;
+use crate::types::version::RecordDiffResponse;
 
 /// A request value that has no record-row form.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -379,8 +379,8 @@ impl ServedRecordType {
     /// Render the canonical API mnemonic.
     pub fn to_text(self) -> String {
         match self {
-            Self::User(value) => value.as_str().to_string(),
-            Self::Derived(value) => value.as_str().to_string(),
+            Self::User(record_type) => record_type.to_string(),
+            Self::Derived(record_type) => record_type.to_string(),
         }
     }
 }
@@ -408,11 +408,13 @@ impl From<DnssecRecordType> for ServedRecordType {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Keep signed and plain record responses compatible with DNS mnemonic strings.
+    /// Verify that signed and plain record responses stay compatible with DNS mnemonic strings.
     #[test]
-    fn record_type_response_spells_itself_once() {
+    fn served_record_type_spells_itself_once() {
         for (value, expected) in [
             (ServedRecordType::from(RecordType::A), "A"),
             (ServedRecordType::from(RecordType::Aaaa), "AAAA"),
@@ -442,20 +444,15 @@ mod tests {
         ] {
             assert_eq!(value.to_text(), expected);
             assert_eq!(value.to_string(), expected);
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(expected));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<ServedRecordType>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<ServedRecordType>(json!(expected)).unwrap(),
                 value
             );
         }
 
         for invalid in ["SOA", "ANY", "AAAAA"] {
-            assert!(
-                serde_json::from_value::<ServedRecordType>(serde_json::json!(invalid)).is_err()
-            );
+            assert!(serde_json::from_value::<ServedRecordType>(json!(invalid)).is_err());
         }
     }
 }

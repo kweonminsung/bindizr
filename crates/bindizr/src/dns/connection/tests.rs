@@ -1,20 +1,20 @@
-use std::str::FromStr;
-
 use bindizr_core::config::Config;
-use bindizr_core::dns::message::{Name, Opcode, OptRcode};
+use bindizr_core::dns::message::{Name, Opcode, OptRcode, Rcode};
 use bindizr_core::dns::{message, query};
 use bindizr_core::metrics::Metrics;
+use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
 use bindizr_service::types::RecordFilter;
 use bindizr_service::{Context, record, secondary, zone};
 use rustls::server::ResolvesServerCertUsingSni;
-use rustls::version;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use rustls::{ServerConfig, version};
+use tokio::io::AsyncReadExt;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
 use tokio::{task, time};
 
 use super::*;
+use crate::dns::udp::UdpSocket;
 use crate::dns::{tcp, tls, udp};
 use crate::shutdown::Shutdown;
 
@@ -27,7 +27,7 @@ async fn context() -> Arc<Context> {
     config.dns.notify.timeout_secs = 3;
     config.dns.notify.retries = 0;
 
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let db = Db::connect(&config.database).await.unwrap();
 
     Arc::new(Context::new(
         config,
@@ -39,9 +39,14 @@ async fn context() -> Arc<Context> {
     ))
 }
 
-/// Stopping a listener waits for a committed UPDATE's NOTIFY before ending its request task.
+/// Verify that stopping a listener waits for a committed UPDATE's NOTIFY before ending its
+/// request task.
 #[tokio::test]
 async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
+    use std::str::FromStr;
+
+    use tokio::io::AsyncWriteExt;
+
     for tcp in [false, true] {
         let cx = context().await;
 
@@ -52,7 +57,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         .unwrap();
 
         zone::create(&cx, &caller, &request).await.unwrap();
-        let secondary_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let secondary_socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let request = serde_json::from_value(serde_json::json!({
             "name": "ack-gate",
             "address": secondary_socket.local_addr().unwrap().to_string(),
@@ -77,14 +82,14 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
 
             tokio::spawn(async move { tcp::run_tcp_server(dns_cx, listener, stop).await.unwrap() })
         } else {
-            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            let address = socket.local_addr().unwrap();
+            let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let addr = socket.local_addr().unwrap();
 
-            let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            client.connect(address).await.unwrap();
+            let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            client.connect(addr).await.unwrap();
 
             udp_client = Some(client);
-            let socket = udp::UdpSocket::new(socket).unwrap();
+            let socket = UdpSocket::new(socket).unwrap();
 
             tokio::spawn(udp::run_udp_server(dns_cx, socket, stop))
         };
@@ -132,7 +137,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
                 .await
                 .is_err()
         );
-        let response = message::ParsedQuery::parse(&notify[..len], Keepalive::None)
+        let response = ParsedQuery::parse(&notify[..len], Keepalive::None)
             .unwrap()
             .build_signed_error_response(OptRcode::NOERROR, None, None)
             .unwrap();
@@ -163,7 +168,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             response
         };
 
-        assert_eq!(response[3] & 15, 0, "tcp={tcp}");
+        assert_eq!(response[3] & 15, Rcode::NOERROR.to_int(), "tcp={tcp}");
 
         time::timeout(Duration::from_secs(2), server)
             .await
@@ -185,7 +190,8 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
     }
 }
 
-/// Shutdown closes idle TCP sessions and cancels a TLS handshake that has received no bytes.
+/// Verify that shutdown closes idle TCP sessions and cancels a TLS handshake that has
+/// received no bytes.
 #[tokio::test]
 async fn listeners_stop_idle_connections_without_waiting_for_protocol_timeouts() {
     for tls in [false, true] {
@@ -203,10 +209,9 @@ async fn listeners_stop_idle_connections_without_waiting_for_protocol_timeouts()
 
         let server = tokio::spawn(async move {
             if tls {
-                let config =
-                    rustls::ServerConfig::builder_with_protocol_versions(&[&version::TLS13])
-                        .with_no_client_auth()
-                        .with_cert_resolver(Arc::new(ResolvesServerCertUsingSni::new()));
+                let config = ServerConfig::builder_with_protocol_versions(&[&version::TLS13])
+                    .with_no_client_auth()
+                    .with_cert_resolver(Arc::new(ResolvesServerCertUsingSni::new()));
 
                 tls::run_tls_server(server_cx, listener, Arc::new(config), stop)
                     .await

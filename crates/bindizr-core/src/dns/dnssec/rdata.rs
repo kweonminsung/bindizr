@@ -12,6 +12,10 @@ use crate::dns::LibraryError;
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::model::dnssec_key::DnssecKey;
 
+/// Supported DS digests: SHA-1 only matches existing parent DS records (RFC 9905,
+/// Section 5); new DS/CDS use `DS_DIGEST_TYPE`, SHA-256 (RFC 9904, Section 4).
+pub const DS_DIGEST_TYPES: [u8; 3] = [1, 2, 4];
+
 /// A stored key whose RDATA could not be rebuilt.
 #[derive(Debug, Error)]
 pub enum EncodeKeyRdataError {
@@ -24,10 +28,6 @@ pub enum EncodeKeyRdataError {
     #[error(transparent)]
     Rdata(#[from] EncodeRdataError),
 }
-
-/// Supported DS digests: SHA-1 only matches existing parent DS records (RFC 9905,
-/// Section 5); new DS/CDS use `DS_DIGEST_TYPE`, SHA-256 (RFC 9904, Section 4).
-pub const DS_DIGEST_TYPES: [u8; 3] = [1, 2, 4];
 
 impl DnssecKey {
     /// The key's DNSKEY RDATA rebuilt from its stored public half.

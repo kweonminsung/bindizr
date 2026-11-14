@@ -5,27 +5,27 @@ use bindizr_core::dns::message::{Name, Opcode, Rcode, Rtype};
 use bindizr_core::dns::tsig::TsigError;
 use bindizr_core::dns::{query, tsig};
 use bindizr_core::metrics::Metrics;
+use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
 use bindizr_service::types::CreateTsigKeyRequest;
 use bindizr_service::{Context, tsig_key};
-use sqlx::Connection;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
 
-/// A malformed UPDATE retains FORMERR, but backend and key failures remain SERVFAIL.
+/// Verify that a malformed UPDATE retains FORMERR, but backend and key failures remain SERVFAIL.
 #[tokio::test]
 async fn questionless_update_does_not_hide_tsig_backend_failures() {
     use std::str::FromStr;
 
+    use sqlx::Connection;
+
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("fault.sqlite");
-    let config: Config = serde_json::from_value(serde_json::json!({
-        "database": { "sqlite": { "file_path": path.to_str().unwrap() } },
-    }))
-    .unwrap();
+    let mut config: Config = serde_json::from_str("{}").unwrap();
+    config.database.sqlite.file_path = path.to_str().unwrap().to_string();
 
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let db = Db::connect(&config.database).await.unwrap();
 
     let (notify_jobs, _jobs) = mpsc::unbounded_channel();
     let (scheduler, _period) = watch::channel(0);
@@ -69,12 +69,12 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
     let verifier = tsig::sign_request(&mut request, key).unwrap();
     let request = request.finish();
     let dns_cx = DnsContext::new(cx.clone());
-    let client = "127.0.0.1:2136".parse().unwrap();
+    let client_addr = "127.0.0.1:2136".parse().unwrap();
 
     let response = handle_nsupdate_request(
         &dns_cx,
+        client_addr,
         &request,
-        client,
         TransferTransport::Udp,
         ResponseLimit::UDP,
     )
@@ -93,19 +93,19 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
             .execute(&mut connection)
             .await
             .unwrap();
-        let failure = update::authenticate_tsig_key(&dns_cx, "fault-key", &request)
+        let error = update::authenticate_tsig_key(&dns_cx, "fault-key", &request)
             .await
             .unwrap_err();
 
         assert!(matches!(
-            failure,
-            update::UpdateError::Tsig(TsigError::EmptySecret) | update::UpdateError::LoadTsigKey(_),
+            error,
+            UpdateError::Tsig(TsigError::EmptySecret) | UpdateError::LoadTsigKey(_),
         ));
 
         let response = handle_nsupdate_request(
             &dns_cx,
+            client_addr,
             &request,
-            client,
             TransferTransport::Udp,
             ResponseLimit::UDP,
         )

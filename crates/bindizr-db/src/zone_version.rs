@@ -19,8 +19,9 @@ pub async fn upsert_tx(
     }
 }
 
-/// Versions with serial in the closed interval `[from_serial, to_serial]`;
-/// an IXFR needs both endpoint SOAs, unlike the journal's half-open range.
+/// List the versions with serial in the closed interval `[from_serial,
+/// to_serial]`; an IXFR needs both endpoint SOAs, unlike the journal's
+/// half-open range.
 pub async fn list_in_serial_range_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -48,7 +49,7 @@ pub async fn list_by_filter(
     zone_id: ZoneId,
     filter: VersionFilter,
     limit: Option<u32>,
-    offset: u64,
+    offset: Option<u64>,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
@@ -78,7 +79,8 @@ pub async fn count_by_filter(
     }
 }
 
-/// Read a zone version by serial consistently with mutations in the current transaction.
+/// Get a zone version by serial consistently with mutations in the current
+/// transaction.
 pub async fn get_by_serial_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -98,8 +100,8 @@ pub async fn get_by_serial_tx(
     }
 }
 
-/// Prune one zone's versions older than `cutoff`, always keeping its
-/// newest (the IXFR up-to-date response reads it). Returns rows deleted.
+/// Prune one zone's versions older than `cutoff`, always keeping its newest
+/// (the IXFR up-to-date response reads it). Returns rows deleted.
 pub async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -119,20 +121,23 @@ pub async fn prune_by_zone_id_older_than_tx(
 }
 
 /// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
-pub async fn prune_outside_serial_window_tx(
+pub async fn prune_by_zone_id_outside_serial_window_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
     current: Serial,
 ) -> Result<u64, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::zone_version::prune_outside_serial_window_tx(tx, zone_id, current).await
+            mysql::zone_version::prune_by_zone_id_outside_serial_window_tx(tx, zone_id, current)
+                .await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::zone_version::prune_outside_serial_window_tx(tx, zone_id, current).await
+            postgres::zone_version::prune_by_zone_id_outside_serial_window_tx(tx, zone_id, current)
+                .await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::zone_version::prune_outside_serial_window_tx(tx, zone_id, current).await
+            sqlite::zone_version::prune_by_zone_id_outside_serial_window_tx(tx, zone_id, current)
+                .await
         }
     }
 }

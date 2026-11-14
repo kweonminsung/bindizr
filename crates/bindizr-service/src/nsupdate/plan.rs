@@ -44,7 +44,7 @@ impl UpdatePlan {
 
         for update in updates {
             match update {
-                UpdateOperation::Record(record) => plan.records.push(record),
+                UpdateOperation::Record(operation) => plan.records.push(operation),
                 UpdateOperation::ReplaceSoa { name, ttl, value } => {
                     // RFC 2136, Section 3.4.2.2: SOA exists only at the apex;
                     // equal, older, and RFC 1982-undefined serials cannot replace it.

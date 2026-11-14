@@ -34,8 +34,8 @@ pub async fn list_tx(
     }
 }
 
-/// Keys in `state` whose stamped `eligible_at` deadline has passed `cutoff`:
-/// the rollover work list.
+/// List the keys in `state` whose stamped `eligible_at` deadline has passed
+/// `cutoff`: the rollover work list.
 pub async fn list_by_state_eligible_before(
     db: &Db,
     state: DnssecKeyState,
@@ -54,8 +54,8 @@ pub async fn list_by_state_eligible_before(
     }
 }
 
-/// List zones whose keys exceeded their policy's ZSK lifetime in `state` and `role`.
-/// A zero lifetime disables scheduled rollover.
+/// List zones whose keys exceeded their policy's ZSK lifetime in `state` and
+/// `role`. A zero lifetime disables scheduled rollover.
 pub async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     db: &Db,
     role: DnssecKeyRole,

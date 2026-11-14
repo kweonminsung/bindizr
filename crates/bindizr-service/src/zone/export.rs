@@ -25,7 +25,8 @@ pub async fn export(
     // Read the zone and records in one locked transaction so the export is a
     // single consistent view, not stale SOA metadata with newer records.
     let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;
-    let load_result = async {
+
+    let result = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         caller
             .reauthenticate_tx(&mut tx)
@@ -41,8 +42,9 @@ pub async fn export(
         Ok::<(Zone, Vec<Record>, Vec<DnssecRecord>), ServiceError>((zone, records, derived))
     }
     .await;
+
     let (zone, mut records, mut derived) =
-        transaction::finish_tx(tx, load_result, "failed to export zone").await?;
+        transaction::finish_tx(tx, result, "failed to export zone").await?;
 
     let origin = zone.name.to_fqdn();
     let mut out = String::new();

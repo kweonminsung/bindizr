@@ -7,7 +7,7 @@ use crate::error::{ErrorCode, ServiceError};
 
 /// Whether a previewable write goes through, or only reports what it
 /// would do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Run {
     Apply,
@@ -28,6 +28,14 @@ impl Run {
     pub fn is_dry_run(self) -> bool {
         self == Self::DryRun
     }
+
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Apply => "apply",
+            Self::DryRun => "dry_run",
+        }
+    }
 }
 
 /// Generic success message response.
@@ -38,11 +46,21 @@ pub struct MessageResponse {
 }
 
 /// Whether the API can serve requests: its database answered a probe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthStatus {
     Healthy,
     Unhealthy,
+}
+
+impl HealthStatus {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Healthy => "healthy",
+            Self::Unhealthy => "unhealthy",
+        }
+    }
 }
 
 /// Health probe response.
@@ -70,74 +88,31 @@ impl From<&ServiceError> for ErrorResponse {
     }
 }
 
-impl Run {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Apply => "apply",
-            Self::DryRun => "dry_run",
-        }
-    }
-}
-
-impl serde::Serialize for Run {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl HealthStatus {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Healthy => "healthy",
-            Self::Unhealthy => "unhealthy",
-        }
-    }
-}
-
-impl serde::Serialize for HealthStatus {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Verify the canonical spelling and round-trip of every Run variant.
+    /// Verify that `Run` has one spelling across `as_str` and serde.
     #[test]
     fn run_spells_itself_once() {
-        for (value, expected) in [(Run::Apply, "apply"), (Run::DryRun, "dry_run")] {
-            assert_eq!(value.as_str(), expected);
+        for value in [Run::Apply, Run::DryRun] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<Run>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<Run>(json!(value.as_str())).unwrap(),
                 value
             );
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every HealthStatus variant.
+    /// Verify that `HealthStatus` has one spelling across `as_str` and serde.
     #[test]
     fn health_status_spells_itself_once() {
-        for (value, expected) in [
-            (HealthStatus::Healthy, "healthy"),
-            (HealthStatus::Unhealthy, "unhealthy"),
-        ] {
-            assert_eq!(value.as_str(), expected);
+        for value in [HealthStatus::Healthy, HealthStatus::Unhealthy] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<HealthStatus>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<HealthStatus>(json!(value.as_str())).unwrap(),
                 value
             );
         }

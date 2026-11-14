@@ -8,7 +8,7 @@ use bindizr_service::{Context, token};
 
 use crate::socket::types::DaemonResponse;
 
-/// Create token from the control request.
+/// Create a token from the control request.
 pub(crate) async fn create_token(
     cx: &Context,
     request: &CreateTokenRequest,

@@ -1,5 +1,5 @@
-//! The RFC 8078 DS withdrawal: publishing the delete CDS/CDNSKEY pair that
-//! asks a CDS-consuming parent to drop the zone's DS, and taking it back.
+//! The DS withdrawal (RFC 8078, Section 4): publishing the delete CDS/CDNSKEY
+//! pair that asks a CDS-consuming parent to drop the zone's DS, and taking it back.
 
 use bindizr_core::dns::dnssec::SigningPass;
 use bindizr_core::dns::name::ZoneName;
@@ -12,8 +12,8 @@ use crate::error::ServiceError;
 use crate::types::DnssecStatusResponse;
 use crate::{Context, notify, transaction};
 
-/// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
-/// parent to drop the zone's DS: the first step of going insecure.
+/// Publish the delete CDS/CDNSKEY pair (RFC 8078, Section 4), asking a
+/// CDS-consuming parent to drop the zone's DS: the first step of going insecure.
 pub async fn withdraw(
     cx: &Context,
     caller: &Caller,

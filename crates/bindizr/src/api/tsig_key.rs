@@ -30,8 +30,8 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/tsig-keys",
         tag = "TSIG",
         summary = "List TSIG keys",
-        params(TsigKeyFilter),
         description = "Lists TSIG keys without their secrets, every one or only those authenticating into `role_name`. Fetch a single key to read the secret.",
+        params(TsigKeyFilter),
         responses(
             (status = 200, description = "All TSIG keys", body = PaginatedResponse<TsigKeyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),

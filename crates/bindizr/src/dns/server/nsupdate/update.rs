@@ -10,12 +10,13 @@ use bindizr_core::model::transfer::TransferTransport;
 use bindizr_core::model::tsig_key::TsigKey;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
-use bindizr_service::nsupdate::{self, NsupdateError, Update};
-use bindizr_service::tsig_key;
+use bindizr_service::nsupdate::{NsupdateError, Update};
+use bindizr_service::{nsupdate, tsig_key};
 use thiserror::Error;
 
 use crate::dns::server::DnsContext;
 
+/// Why an UPDATE was not applied, classified for the RCODE it answers.
 #[derive(Debug, Error)]
 pub(crate) enum UpdateError {
     /// Malformed OPT or unsupported EDNS version (RFC 6891, Section 6.1).
@@ -46,6 +47,7 @@ pub(crate) async fn apply_update(
     query_data: &[u8],
     transport: TransferTransport,
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
+    let cx = dns_cx.daemon();
     let mut signer = None;
 
     let result = async {
@@ -76,7 +78,7 @@ pub(crate) async fn apply_update(
         // Unsigned UPDATE admits every reachable client; the service refuses it
         // under `tsig_required` after the authority check (RFC 2136, Section 3.1.1).
         let caller = match tsig_key {
-            Some(tsig_key) => Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
+            Some(tsig_key) => Caller::authenticate_tsig_key(cx, &tsig_key)
                 .await
                 .map_err(NsupdateError::from)?,
             None => Caller::unsigned_dns(),
@@ -103,9 +105,7 @@ pub(crate) async fn apply_update(
             message: query_data,
         };
 
-        let changed = nsupdate::apply(dns_cx.daemon(), &caller, update).await?;
-
-        Ok(changed)
+        Ok(nsupdate::apply(cx, &caller, update).await?)
     }
     .await;
 
@@ -132,7 +132,6 @@ pub(crate) async fn authenticate_tsig_key(
 
 #[cfg(test)]
 mod tests {
-
     use std::io;
 
     use bindizr_core::dns::message::Rcode;
@@ -140,7 +139,8 @@ mod tests {
 
     use super::*;
 
-    /// Preserve the complete parser and backend source chains through the DNS boundary.
+    /// Verify that the complete parser and backend source chains are preserved through the
+    /// DNS boundary.
     #[test]
     fn update_errors_retain_sources_across_layers() {
         use std::error::Error;

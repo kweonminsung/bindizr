@@ -27,7 +27,7 @@ struct DoctorResponse {
 /// unless the caller asked for one document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Report {
-    format: OutputFormat,
+    output: OutputFormat,
     checks: Vec<DoctorCheckResponse>,
     failures: usize,
 }
@@ -63,14 +63,14 @@ impl Report {
             self.failures += 1;
         }
 
-        if self.format == OutputFormat::Table {
+        if self.output == OutputFormat::Table {
             let text = check.status.to_string();
             let label = match check.status {
                 DoctorCheckStatus::Ok => color::green(&text),
                 DoctorCheckStatus::Failed => color::red(&text),
                 DoctorCheckStatus::Skipped => color::yellow(&text),
             };
-            outln!("[{}] {}", label, check.message);
+            outln!("[{label}] {}", check.message);
         }
 
         self.checks.push(check);
@@ -80,15 +80,15 @@ impl Report {
 /// Handle the `doctor` subcommand by verifying the installation end to end.
 pub(crate) async fn handle_command(
     config_file: Option<String>,
-    format: OutputFormat,
+    output: OutputFormat,
 ) -> Result<(), CliError> {
-    if format == OutputFormat::Table {
+    if output == OutputFormat::Table {
         outln!("Bindizr Doctor");
         outln!();
     }
 
     let mut report = Report {
-        format,
+        output,
         checks: Vec::new(),
         failures: 0,
     };
@@ -125,7 +125,7 @@ pub(crate) async fn handle_command(
         report.skip("API, database, and port checks skipped: no valid configuration");
     }
 
-    if format == OutputFormat::Table {
+    if output == OutputFormat::Table {
         outln!();
         if report.failures == 0 {
             outln!("Result: installation looks {}", color::green("healthy"));
@@ -136,7 +136,7 @@ pub(crate) async fn handle_command(
             failures: report.failures,
             checks: report.checks,
         };
-        output::print_payload(&document, format)?;
+        output::print_payload(&document, output)?;
     }
 
     if report.failures == 0 {

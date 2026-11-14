@@ -1,17 +1,16 @@
 //! What a zone transfer may read: the enabled zone the request named, granted
 //! to the caller its key became, decided on the locked row it will serve.
 
-use bindizr_core::dns::CatalogZone;
-use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::role_grant::Action;
-use bindizr_db::LockLevel;
-
 mod ixfr;
 
+use bindizr_core::dns::CatalogZone;
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_record::DnssecRecord;
 use bindizr_core::model::record::Record;
+use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
 use bindizr_core::model::zone_version::ZoneVersionId;
+use bindizr_db::LockLevel;
 pub use ixfr::{IxfrPlan, authorize_ixfr_plan_by_name};
 
 use crate::authorization::Caller;
@@ -31,9 +30,9 @@ pub enum TransferAccess<T> {
 
 impl<T> TransferAccess<T> {
     /// Carry a granted value into another shape, leaving a denial as it is.
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> TransferAccess<U> {
+    pub fn map<U>(self, transform: impl FnOnce(T) -> U) -> TransferAccess<U> {
         match self {
-            Self::Granted(value) => TransferAccess::Granted(f(value)),
+            Self::Granted(value) => TransferAccess::Granted(transform(value)),
             Self::NotAuth => TransferAccess::NotAuth,
             Self::Refused(reason) => TransferAccess::Refused(reason),
         }
@@ -77,7 +76,7 @@ pub async fn authorize_soa_content_by_name(
     transaction::finish_tx(tx, result, "failed to load SOA content").await
 }
 
-/// The enabled zone `zone_name` names, if `caller` may transfer it. Decided
+/// Authorize the enabled zone `zone_name` names, if `caller` may transfer it. Decided
 /// on the row this transaction share-locks, with the grants re-read beside it.
 pub async fn authorize_transfer_by_name(
     cx: &Context,

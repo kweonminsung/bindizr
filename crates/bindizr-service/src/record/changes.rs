@@ -47,10 +47,10 @@ pub(crate) async fn create_with_changes_tx(
 pub(crate) async fn update_with_changes_tx(
     tx: &mut Transaction<'_>,
     new_serial: Serial,
-    existing: &Record,
-    updated: Record,
+    existing_record: &Record,
+    updated_record: Record,
 ) -> Result<Record, ServiceError> {
-    let updated = bindizr_db::record::update_tx(tx, updated).await?;
+    let updated_record = bindizr_db::record::update_tx(tx, updated_record).await?;
 
     let change = |operation, record: &Record| ZoneChange {
         zone_id: record.zone_id,
@@ -65,13 +65,13 @@ pub(crate) async fn update_with_changes_tx(
         derived: false,
     };
     let changes = [
-        change(ChangeOperation::Delete, existing),
-        change(ChangeOperation::Add, &updated),
+        change(ChangeOperation::Delete, existing_record),
+        change(ChangeOperation::Add, &updated_record),
     ];
 
     bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
 
-    Ok(updated)
+    Ok(updated_record)
 }
 
 /// Delete records with their DEL zone changes for IXFR.

@@ -7,6 +7,7 @@ use bindizr_service::types::{
     WriteRecordResponse,
 };
 use clap::Subcommand;
+use serde_json::Value;
 
 use crate::cli::error::CliError;
 use crate::cli::output;
@@ -38,7 +39,7 @@ parts with nothing between them, so a space has to be inside a value.")]
         #[arg(long = "type")]
         record_type: String,
         /// Record value; repeat it to choose a long TXT value's segments yourself
-        #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append, required = true)]
+        #[arg(long, value_name = "VALUE", required = true)]
         value: Vec<String>,
         /// TTL in seconds, defaulting to the zone TTL (records sharing a name and type share one TTL)
         #[arg(long)]
@@ -53,7 +54,6 @@ parts with nothing between them, so a space has to be inside a value.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Bulk insert records into a zone from a JSON or YAML file
     #[command(after_help = "\
 Input format (JSON or YAML): an array of records, or an object with a
@@ -89,7 +89,6 @@ YAML example:
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// List records
     #[command(
         alias = "ls",
@@ -154,7 +153,6 @@ Omit the zone to list records from all zones the caller can see."
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Get every record at a name, or one record by ID
     #[command(after_help = "\
 Examples:
@@ -185,7 +183,6 @@ addresses exactly one.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Update a record, changing only the fields you pass
     #[command(after_help = "\
 Examples:
@@ -222,7 +219,7 @@ error when the name holds several, which --id then addresses individually.")]
         #[arg(long = "type")]
         record_type: Option<String>,
         /// Record value; repeat it for the segments of a TXT record
-        #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append)]
+        #[arg(long, value_name = "VALUE")]
         value: Vec<String>,
         /// TTL (records sharing a name and type share one TTL)
         #[arg(long)]
@@ -237,7 +234,6 @@ error when the name holds several, which --id then addresses individually.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Delete one record by ID, or every record at a name
     #[command(
         alias = "rm",
@@ -294,14 +290,14 @@ serial and the secondaries transfer once."
     },
 }
 
-/// Handle the `record` subcommand by forwarding it to the daemon over the socket.
+/// Handle the `record` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliError> {
     match subcommand {
         RecordCommand::Create {
+            zone,
             name,
             record_type,
             value,
-            zone,
             ttl,
             priority,
             dry_run,
@@ -323,66 +319,24 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 vec![RecordRow::from(&response.record)]
             })?;
         }
-        RecordCommand::List {
-            zone,
-            name,
-            record_type,
-            value,
-            ttl,
-            min_ttl,
-            max_ttl,
-            priority,
-            min_priority,
-            max_priority,
-            search,
-            signed,
-            sort,
-            order,
-            limit,
-            offset,
-            output,
-        } => {
-            let response = client::send_command::<PaginatedResponse<RecordResponse>>(
-                DaemonCommand::ListRecords(RecordFilter {
-                    zone_name: zone,
-                    name,
-                    record_type,
-                    value,
-                    ttl,
-                    min_ttl,
-                    max_ttl,
-                    priority,
-                    min_priority,
-                    max_priority,
-                    search,
-                    signed: signed.then_some(true),
-                    sort,
-                    order,
-                    limit,
-                    offset,
-                }),
-            )
-            .await?;
-            output::print_page(&response.data, output, |record| RecordRow::from(record))?;
-        }
         RecordCommand::BulkCreate {
-            file,
             zone,
+            file,
             dry_run,
             output,
         } => {
             let content = super::read_input(&file)?;
 
             // YAML is a superset of JSON, so one parse accepts both formats.
-            let parsed: serde_json::Value = serde_norway::from_str(&content).map_err(|error| {
+            let parsed: Value = serde_norway::from_str(&content).map_err(|error| {
                 CliError::request_with_source(
                     format!("invalid JSON/YAML in '{file}': {error}"),
                     error,
                 )
             })?;
             let records = match parsed {
-                serde_json::Value::Array(_) => parsed,
-                serde_json::Value::Object(mut obj) => obj.remove("records").ok_or_else(|| {
+                Value::Array(_) => parsed,
+                Value::Object(mut object) => object.remove("records").ok_or_else(|| {
                     CliError::request("input object must contain a 'records' array")
                 })?,
                 _ => {
@@ -420,6 +374,48 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 output::print_payload(bulk, output)?;
             }
         }
+        RecordCommand::List {
+            zone,
+            name,
+            record_type,
+            value,
+            ttl,
+            min_ttl,
+            max_ttl,
+            priority,
+            min_priority,
+            max_priority,
+            search,
+            sort,
+            order,
+            signed,
+            limit,
+            offset,
+            output,
+        } => {
+            let response = client::send_command::<PaginatedResponse<RecordResponse>>(
+                DaemonCommand::ListRecords(RecordFilter {
+                    zone_name: zone,
+                    name,
+                    record_type,
+                    value,
+                    ttl,
+                    min_ttl,
+                    max_ttl,
+                    priority,
+                    min_priority,
+                    max_priority,
+                    search,
+                    signed: signed.then_some(true),
+                    sort,
+                    order,
+                    limit,
+                    offset,
+                }),
+            )
+            .await?;
+            output::print_page(&response.data, output, |record| RecordRow::from(record))?;
+        }
         // clap holds the two selectors apart.
         RecordCommand::Get {
             id: Some(id),
@@ -435,8 +431,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             })?;
         }
         RecordCommand::Get {
-            name: Some(name),
             zone,
+            name: Some(name),
             output,
             ..
         } => {
@@ -480,12 +476,12 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         }
         RecordCommand::Update {
             id: Some(id),
-            dry_run,
             new_name,
             record_type,
             value,
             ttl,
             priority,
+            dry_run,
             output,
             ..
         } => {
@@ -507,14 +503,14 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             })?;
         }
         RecordCommand::Update {
-            name: Some(name),
             zone: Some(zone),
-            dry_run,
+            name: Some(name),
             new_name,
             record_type,
             value,
             ttl,
             priority,
+            dry_run,
             output,
             ..
         } => {

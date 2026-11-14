@@ -49,7 +49,7 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
             &cx,
             &Caller::socket(),
             &CreateSecondaryRequest {
-                name: name.into(),
+                name: name.to_string(),
                 address,
                 notify_key_name: None,
             },

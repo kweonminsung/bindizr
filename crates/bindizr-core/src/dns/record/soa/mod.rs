@@ -7,8 +7,8 @@ use domain::base::Name;
 use domain::base::name::{FromStrError, Label};
 use thiserror::Error;
 
+use super::{EncodeRdataError, Rdata};
 use crate::dns::name;
-use crate::dns::record::{EncodeRdataError, Rdata};
 
 /// An email that does not encode as an SOA mailbox, or a mailbox that does
 /// not decode back.
@@ -90,11 +90,11 @@ impl SoaMailbox {
     /// Decode the local part as text and escape domain octets (RFC 1035, Section 5.1).
     pub fn to_email(&self) -> Result<String, ParseMailboxError> {
         let name = Name::<Vec<u8>>::from_str(&self.0)?;
-        let labels = name
+        let labels: Vec<_> = name
             .iter()
             .filter(|label| !label.is_root())
             .map(Label::as_slice)
-            .collect::<Vec<_>>();
+            .collect();
 
         if labels.len() < 2 {
             return Err(ParseMailboxError::NotEncodedEmail);

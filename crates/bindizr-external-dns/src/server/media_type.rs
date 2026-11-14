@@ -28,9 +28,9 @@ pub(crate) fn is_acceptable(headers: &HeaderMap) -> bool {
                 continue;
             };
 
-            if preferred
-                .is_none_or(|(rank, q)| specificity > rank || (specificity == rank && quality > q))
-            {
+            if preferred.is_none_or(|(rank, preferred_quality)| {
+                specificity > rank || (specificity == rank && quality > preferred_quality)
+            }) {
                 preferred = Some((specificity, quality));
             }
         }
@@ -68,7 +68,7 @@ fn match_range(range: &str) -> Option<((u8, bool), u16)> {
         let (name, value) = parameter.split_once('=')?;
 
         if name.eq_ignore_ascii_case("version") && !version {
-            if parameter_value(value)? != "1" {
+            if decode_parameter_value(value)? != "1" {
                 return None;
             }
             version = true;
@@ -104,7 +104,7 @@ fn split_quoted(value: &str, delimiter: char) -> impl Iterator<Item = &str> {
 }
 
 /// Decode a token or quoted-string parameter (RFC 9110, Sections 5.6.2 and 5.6.4).
-fn parameter_value(value: &str) -> Option<String> {
+fn decode_parameter_value(value: &str) -> Option<String> {
     if let Some(inner) = value
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
@@ -151,7 +151,7 @@ fn parse_quality(value: &str) -> Option<u16> {
         "0" => Some(
             fraction
                 .bytes()
-                .fold(0, |q, byte| q * 10 + u16::from(byte - b'0'))
+                .fold(0, |quality, byte| quality * 10 + u16::from(byte - b'0'))
                 * 10u16.pow((QUALITY_PRECISION - fraction.len()) as u32),
         ),
         "1" if fraction.bytes().all(|byte| byte == b'0') => Some(QUALITY_SCALE),
@@ -165,7 +165,8 @@ mod tests {
 
     use super::*;
 
-    /// Check equivalent ranges, multiple fields, and quality precedence.
+    /// Verify that Accept matching handles equivalent ranges, multiple fields, and
+    /// quality precedence.
     #[test]
     fn accept_matches_media_ranges_and_quality_precedence() {
         let mut headers = HeaderMap::new();

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::*;
 
 /// Build the test zone or its DNS name.
@@ -44,10 +46,12 @@ fn decode_preserves_escaped_trailing_dot_as_label_data() {
     assert_eq!(decode_name_labels(r"a\.").unwrap().0, vec![b"a.".to_vec()]);
     assert_eq!(decode_name_labels("www.example.com.").unwrap().0.len(), 3);
 
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     assert_eq!(
-        OwnerName::parse_in_zone(r"a\.", &zone).unwrap().labels(),
+        OwnerName::parse_in_zone(r"a\.", &zone_name)
+            .unwrap()
+            .labels(),
         [b"a.".to_vec()]
     );
 }
@@ -61,7 +65,7 @@ fn decode_rejects_malformed_escapes() {
         (r"a\300.example.com", ParseNameError::InvalidEscape),
         ("bad..example.com", ParseNameError::EmptyLabel),
     ] {
-        assert_eq!(decode_name_labels(name).unwrap_err(), expected, "{name:?}");
+        assert_eq!(decode_name_labels(name), Err(expected), "{name:?}");
     }
 }
 
@@ -83,11 +87,11 @@ fn lookup_name_canonicalizes_spelling_and_case() {
         "app.example.com"
     );
 
-    assert_eq!(parse_lookup_name("").unwrap_err(), ParseNameError::Empty);
-    assert_eq!(parse_lookup_name(".").unwrap_err(), ParseNameError::Empty);
+    assert_eq!(parse_lookup_name(""), Err(ParseNameError::Empty));
+    assert_eq!(parse_lookup_name("."), Err(ParseNameError::Empty));
     assert_eq!(
-        parse_lookup_name("bad name.example.com").unwrap_err(),
-        ParseNameError::Whitespace
+        parse_lookup_name("bad name.example.com"),
+        Err(ParseNameError::Whitespace)
     );
 }
 
@@ -124,25 +128,29 @@ fn containment_compares_whole_labels() {
 /// Verify that owner name parse reduces input to the stored form.
 #[test]
 fn owner_name_parse_reduces_input_to_the_stored_form() {
-    let zone = zone();
+    let zone_name = zone();
 
     // Rows hold the apex out of band, so no label can spell it.
     assert_eq!(
-        OwnerName::parse_in_zone("@", &zone).unwrap().to_stored(),
+        OwnerName::parse_in_zone("@", &zone_name)
+            .unwrap()
+            .to_stored(),
         ""
     );
     assert_eq!(
-        OwnerName::parse_in_zone("a1", &zone).unwrap().to_stored(),
-        "a1"
-    );
-    assert_eq!(
-        OwnerName::parse_in_zone("A1.Test.Example.Com", &zone)
+        OwnerName::parse_in_zone("a1", &zone_name)
             .unwrap()
             .to_stored(),
         "a1"
     );
     assert_eq!(
-        OwnerName::parse_in_zone("A1.Test.Example.Com.", &zone)
+        OwnerName::parse_in_zone("A1.Test.Example.Com", &zone_name)
+            .unwrap()
+            .to_stored(),
+        "a1"
+    );
+    assert_eq!(
+        OwnerName::parse_in_zone("A1.Test.Example.Com.", &zone_name)
             .unwrap()
             .to_stored(),
         "a1"
@@ -150,7 +158,7 @@ fn owner_name_parse_reduces_input_to_the_stored_form() {
 
     // Owner names must admit the `_`-prefixed labels ACME and SRV rely on.
     assert_eq!(
-        OwnerName::parse_in_zone("_acme-challenge", &zone)
+        OwnerName::parse_in_zone("_acme-challenge", &zone_name)
             .unwrap()
             .to_stored(),
         "_acme-challenge"
@@ -160,11 +168,11 @@ fn owner_name_parse_reduces_input_to_the_stored_form() {
 /// Verify that owner name parse strips the zone suffix once.
 #[test]
 fn owner_name_parse_strips_the_zone_suffix_once() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     // Stripping the suffix more than once would leave this owner empty.
     assert_eq!(
-        OwnerName::parse_in_zone("example.com.example.com.", &zone)
+        OwnerName::parse_in_zone("example.com.example.com.", &zone_name)
             .unwrap()
             .to_stored(),
         "example.com"
@@ -174,24 +182,24 @@ fn owner_name_parse_strips_the_zone_suffix_once() {
 /// Verify that owner name keeps an escaped dot as label data.
 #[test]
 fn owner_name_keeps_an_escaped_dot_as_label_data() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
-    let owner = OwnerName::parse_in_zone(r"host\.name.example.com.", &zone).unwrap();
+    let owner = OwnerName::parse_in_zone(r"host\.name.example.com.", &zone_name).unwrap();
 
     assert_eq!(owner.labels(), [b"host.name".to_vec()]);
     assert_eq!(owner.to_stored(), r"host\046name");
-    assert_eq!(owner.to_fqdn(&zone), r"host\046name.example.com.");
+    assert_eq!(owner.to_fqdn(&zone_name), r"host\046name.example.com.");
 
     // The same name spelled with a decimal escape is the same owner.
     assert_eq!(
-        OwnerName::parse_in_zone(r"host\046name.example.com.", &zone).unwrap(),
+        OwnerName::parse_in_zone(r"host\046name.example.com.", &zone_name).unwrap(),
         owner
     );
 
     // One label that merely spells the zone is not inside it.
     assert_eq!(
-        OwnerName::parse_in_zone(r"evil\.example.com.", &zone).unwrap_err(),
-        ParseNameError::OutsideZone
+        OwnerName::parse_in_zone(r"evil\.example.com.", &zone_name),
+        Err(ParseNameError::OutsideZone)
     );
 }
 
@@ -204,20 +212,20 @@ fn name_rendering_escapes_dots_inside_labels() {
     assert_eq!(OwnerName::from_row(r"a\\.sub").to_stored(), r"a\\.sub");
 }
 
-/// DNS labels preserve arbitrary octets, independently of IDNA host conventions.
+/// Verify that DNS labels preserve arbitrary octets, independently of IDNA host conventions.
 #[test]
 fn name_encoding_round_trips_arbitrary_label_octets() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     for (input, expected) in [
         ("café", r"caf\195\169"),
         (r"\255\000\032", r"\255\000\032"),
         ("a\\ ", r"a\032"),
     ] {
-        let owner = OwnerName::parse_in_zone(input, &zone).unwrap();
+        let owner = OwnerName::parse_in_zone(input, &zone_name).unwrap();
         assert_eq!(owner.to_stored(), expected);
         assert_eq!(
-            OwnerName::parse_absolute_in_zone(&owner.to_fqdn(&zone), &zone).unwrap(),
+            OwnerName::parse_absolute_in_zone(&owner.to_fqdn(&zone_name), &zone_name).unwrap(),
             owner
         );
     }
@@ -227,34 +235,34 @@ fn name_encoding_round_trips_arbitrary_label_octets() {
         "0/25.2.0.192.in-addr.arpa",
         r"\255\000.example",
     ] {
-        let zone = ZoneName::parse(name).unwrap();
-        assert_eq!(ZoneName::parse(&zone.to_fqdn()).unwrap(), zone);
-        assert!(zone.to_wire().is_ok());
+        let zone_name = ZoneName::parse(name).unwrap();
+        assert_eq!(ZoneName::parse(&zone_name.to_fqdn()).unwrap(), zone_name);
+        assert!(zone_name.to_wire().is_ok());
     }
 }
 
 /// Verify that owner name parse enforces the length limit on both paths.
 #[test]
 fn owner_name_parse_enforces_the_length_limit_on_both_paths() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     let long = vec!["a".repeat(60); 5].join(".");
 
     // The qualified name is what has to fit, so relative and absolute input
     // must reach the same verdict.
     assert_eq!(
-        OwnerName::parse_in_zone(&long, &zone).unwrap_err(),
-        ParseNameError::TooLong
+        OwnerName::parse_in_zone(&long, &zone_name),
+        Err(ParseNameError::TooLong)
     );
     assert_eq!(
-        OwnerName::parse_in_zone(&format!("{long}.example.com."), &zone).unwrap_err(),
-        ParseNameError::TooLong
+        OwnerName::parse_in_zone(&format!("{long}.example.com."), &zone_name),
+        Err(ParseNameError::TooLong)
     );
 }
 
 /// Verify that owner name parse rejects names outside the zone.
 #[test]
 fn owner_name_parse_rejects_names_outside_the_zone() {
-    let zone = zone();
+    let zone_name = zone();
 
     for name in [
         "a1.",
@@ -264,8 +272,8 @@ fn owner_name_parse_rejects_names_outside_the_zone() {
         "badtest.example.com.",
     ] {
         assert_eq!(
-            OwnerName::parse_in_zone(name, &zone).unwrap_err(),
-            ParseNameError::OutsideZone,
+            OwnerName::parse_in_zone(name, &zone_name),
+            Err(ParseNameError::OutsideZone),
             "{name:?}"
         );
     }
@@ -274,22 +282,22 @@ fn owner_name_parse_rejects_names_outside_the_zone() {
 /// Verify that owner name parse absolute never qualifies a foreign name.
 #[test]
 fn owner_name_parse_absolute_never_qualifies_a_foreign_name() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     // Lookup-form input carries no trailing dot, so only this entry point can
     // tell `app.other.org` apart from a relative name.
     assert_eq!(
-        OwnerName::parse_absolute_in_zone("app.other.org", &zone).unwrap_err(),
-        ParseNameError::OutsideZone
+        OwnerName::parse_absolute_in_zone("app.other.org", &zone_name),
+        Err(ParseNameError::OutsideZone)
     );
     assert_eq!(
-        OwnerName::parse_absolute_in_zone("app.example.com", &zone)
+        OwnerName::parse_absolute_in_zone("app.example.com", &zone_name)
             .unwrap()
             .to_stored(),
         "app"
     );
     assert!(
-        OwnerName::parse_absolute_in_zone("example.com", &zone)
+        OwnerName::parse_absolute_in_zone("example.com", &zone_name)
             .unwrap()
             .is_apex()
     );
@@ -298,8 +306,6 @@ fn owner_name_parse_absolute_never_qualifies_a_foreign_name() {
 /// Verify that owner name equality and hashing fold case.
 #[test]
 fn owner_name_equality_and_hashing_fold_case() {
-    use std::collections::HashSet;
-
     assert_eq!(OwnerName::from_row("WWW"), OwnerName::from_row("www"));
     assert!(OwnerName::from_row("").is_apex());
 
@@ -312,15 +318,15 @@ fn owner_name_equality_and_hashing_fold_case() {
 /// Verify that owner name to fqdn resolves within its zone.
 #[test]
 fn owner_name_to_fqdn_resolves_within_its_zone() {
-    let zone = zone();
+    let zone_name = zone();
 
-    assert_eq!(OwnerName::apex().to_fqdn(&zone), "test.example.com.");
+    assert_eq!(OwnerName::apex().to_fqdn(&zone_name), "test.example.com.");
     assert_eq!(
-        OwnerName::from_row("a1").to_fqdn(&zone),
+        OwnerName::from_row("a1").to_fqdn(&zone_name),
         "a1.test.example.com."
     );
     assert_eq!(
-        OwnerName::from_row("A1.Sub").to_fqdn(&zone),
+        OwnerName::from_row("A1.Sub").to_fqdn(&zone_name),
         "a1.sub.test.example.com."
     );
 }
@@ -363,12 +369,12 @@ fn zone_name_parse_rejects_malformed_names() {
         (".", ParseNameError::Empty),
         ("a b.com", ParseNameError::Whitespace),
     ] {
-        assert_eq!(ZoneName::parse(value).unwrap_err(), expected, "{value:?}");
+        assert_eq!(ZoneName::parse(value), Err(expected), "{value:?}");
     }
 
     assert_eq!(
-        ZoneName::parse("bad..example.com").unwrap_err(),
-        ParseNameError::EmptyLabel
+        ZoneName::parse("bad..example.com"),
+        Err(ParseNameError::EmptyLabel)
     );
 
     for name in [
@@ -385,7 +391,7 @@ fn zone_name_parse_rejects_malformed_names() {
 /// Verify that apex, escaped, and relative owners survive storage and presentation round trips.
 #[test]
 fn owner_name_round_trips_storage_and_presentation() {
-    let zone = zone();
+    let zone_name = zone();
 
     for input in [
         "@",
@@ -400,7 +406,7 @@ fn owner_name_round_trips_storage_and_presentation() {
         r"\@",
         "A1.Test.Example.Com.",
     ] {
-        let owner = OwnerName::parse_in_zone(input, &zone).unwrap();
+        let owner = OwnerName::parse_in_zone(input, &zone_name).unwrap();
 
         assert_eq!(
             OwnerName::from_row(&owner.to_stored()),
@@ -408,7 +414,7 @@ fn owner_name_round_trips_storage_and_presentation() {
             "storage round trip for {input:?}"
         );
         assert_eq!(
-            OwnerName::parse_absolute_in_zone(&owner.to_fqdn(&zone), &zone).as_ref(),
+            OwnerName::parse_absolute_in_zone(&owner.to_fqdn(&zone_name), &zone_name).as_ref(),
             Ok(&owner),
             "presentation round trip for {input:?}"
         );
@@ -419,22 +425,22 @@ fn owner_name_round_trips_storage_and_presentation() {
 /// treatment of names outside the zone.
 #[test]
 fn owner_name_constructors_admit_the_same_labels() {
-    let zone = zone();
+    let zone_name = zone();
 
     for label in ["host name", "host\u{7}bell"] {
-        let relative = OwnerName::parse_in_zone(label, &zone);
+        let relative = OwnerName::parse_in_zone(label, &zone_name);
         let absolute =
-            OwnerName::parse_absolute_in_zone(&format!("{label}.test.example.com."), &zone);
+            OwnerName::parse_absolute_in_zone(&format!("{label}.test.example.com."), &zone_name);
         assert_eq!(relative, Err(ParseNameError::Whitespace), "{label:?}");
         assert_eq!(absolute, Err(ParseNameError::Whitespace), "{label:?}");
     }
 }
 
-/// Verify the 255-octet wire limit (RFC 1035, Section 2.3.4),
+/// Verify that the 255-octet wire limit (RFC 1035, Section 2.3.4) admits a maximal name,
 /// independent of the 253-character presentation limit.
 #[test]
 fn owner_name_admits_a_maximum_length_name() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     let longest = format!(
         "{}.{}.{}.{}.example.com.",
         "a".repeat(63),
@@ -445,11 +451,11 @@ fn owner_name_admits_a_maximum_length_name() {
 
     assert_eq!(longest.trim_end_matches('.').len(), 253);
 
-    assert!(OwnerName::parse_absolute_in_zone(&longest, &zone).is_ok());
+    assert!(OwnerName::parse_absolute_in_zone(&longest, &zone_name).is_ok());
     let over = longest.replace(&"d".repeat(49), &"d".repeat(50));
 
     assert_eq!(
-        OwnerName::parse_absolute_in_zone(&over, &zone),
+        OwnerName::parse_absolute_in_zone(&over, &zone_name),
         Err(ParseNameError::TooLong)
     );
 }
@@ -458,7 +464,7 @@ fn owner_name_admits_a_maximum_length_name() {
 /// the owner field or comment out the record.
 #[test]
 fn owner_name_escapes_master_file_metacharacters() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     for (input, rendered) in [
         ("foo;bar", r"foo\;bar"),
@@ -467,7 +473,7 @@ fn owner_name_escapes_master_file_metacharacters() {
         ("foo\"bar", "foo\\\"bar"),
         ("$origin", r"\$origin"),
     ] {
-        let owner = OwnerName::parse_in_zone(input, &zone).unwrap();
+        let owner = OwnerName::parse_in_zone(input, &zone_name).unwrap();
         assert_eq!(owner.to_string(), rendered, "{input:?}");
     }
 }
@@ -477,7 +483,7 @@ fn owner_name_escapes_master_file_metacharacters() {
 #[test]
 fn owner_name_storage_fits_schema_at_maximum_length() {
     const SCHEMA_COLUMN_WIDTH: usize = 1024;
-    let zone = ZoneName::parse("e.co").unwrap();
+    let zone_name = ZoneName::parse("e.co").unwrap();
 
     // Every dot renders as four characters; four labels is the split that
     // maximizes the rendering under the 63-byte label cap and the wire budget.
@@ -489,16 +495,14 @@ fn owner_name_storage_fits_schema_at_maximum_length() {
     ];
     let decoded: usize = labels.iter().map(|label| label.len() / 2).sum();
 
-    let owner = OwnerName::parse_in_zone(&labels.join("."), &zone)
-        .expect("the largest name the wire limit admits inside this zone");
+    let owner = OwnerName::parse_in_zone(&labels.join("."), &zone_name).unwrap();
     let stored = owner.to_stored();
 
     assert_eq!(stored.len(), decoded * 4 + labels.len() - 1);
     assert!(
         stored.len() <= SCHEMA_COLUMN_WIDTH,
-        "stored form is {} bytes, column holds {}",
-        stored.len(),
-        SCHEMA_COLUMN_WIDTH
+        "stored form is {} bytes, column holds {SCHEMA_COLUMN_WIDTH}",
+        stored.len()
     );
 
     // One more byte of name is refused, so nothing longer can reach a row.
@@ -506,7 +510,7 @@ fn owner_name_storage_fits_schema_at_maximum_length() {
     longer[3].push('$');
 
     assert_eq!(
-        OwnerName::parse_in_zone(&longer.join("."), &zone),
+        OwnerName::parse_in_zone(&longer.join("."), &zone_name),
         Err(ParseNameError::TooLong)
     );
 }
@@ -548,22 +552,22 @@ fn encode_name_maps_empty_and_root_to_the_root_name() {
 
 /// Verify that owner to wire matches the encoded fqdn.
 #[test]
-fn owner_to_wire_matches_the_encoded_fqdn() {
-    let zone = zone();
-    let owner = OwnerName::parse_in_zone(r"api\.v2.www", &zone).unwrap();
+fn owner_name_to_wire_matches_the_encoded_fqdn() {
+    let zone_name = zone();
+    let owner = OwnerName::parse_in_zone(r"api\.v2.www", &zone_name).unwrap();
     assert_eq!(
-        owner.to_wire(&zone).unwrap(),
-        encode_name(&owner.to_fqdn(&zone)).unwrap()
+        owner.to_wire(&zone_name).unwrap(),
+        encode_name(&owner.to_fqdn(&zone_name)).unwrap()
     );
 }
 
 /// Verify that zone to wire matches the encoded fqdn.
 #[test]
-fn zone_to_wire_matches_the_encoded_fqdn() {
-    let zone = zone();
+fn zone_name_to_wire_matches_the_encoded_fqdn() {
+    let zone_name = zone();
     assert_eq!(
-        zone.to_wire().unwrap(),
-        encode_name(&zone.to_fqdn()).unwrap()
+        zone_name.to_wire().unwrap(),
+        encode_name(&zone_name.to_fqdn()).unwrap()
     );
 }
 

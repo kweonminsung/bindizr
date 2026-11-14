@@ -69,9 +69,9 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
     match subcommand {
         TokenCommand::Create {
             name,
+            role,
             description,
             expires_in_days,
-            role,
             output,
         } => {
             let response = client::send_command::<CreateTokenResponse>(DaemonCommand::CreateToken(
@@ -84,8 +84,8 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             ))
             .await?;
             log::debug!("Token creation result: {response:?}");
-            output::print_response(&response.data, output, |created| {
-                vec![TokenRow::from(created)]
+            output::print_response(&response.data, output, |response| {
+                vec![TokenRow::from(response)]
             })?;
         }
         TokenCommand::List {
@@ -103,7 +103,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             )
             .await?;
             log::debug!("Token list result: {response:?}");
-            output::print_page(&response.data, output, |item| TokenRow::from(item))?;
+            output::print_page(&response.data, output, |token| TokenRow::from(token))?;
         }
         TokenCommand::Delete { name, output } => {
             let response =

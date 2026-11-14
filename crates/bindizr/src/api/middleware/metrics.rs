@@ -13,7 +13,7 @@ pub(crate) async fn track_http_metrics(
     request: Request,
     next: Next,
 ) -> Response {
-    let method = request.method().as_str().to_string();
+    let method = request.method().to_string();
     let route = request
         .extensions()
         .get::<MatchedPath>()

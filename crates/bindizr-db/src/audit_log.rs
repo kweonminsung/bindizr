@@ -5,8 +5,9 @@ use bindizr_core::model::audit_log::{AuditEntity, AuditLog};
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
+use crate::sql::{AuditLogSortField, SortOrder};
 use crate::tx::TransactionKind;
-use crate::{AuditLogSortField, Backend, Db, SortOrder, Transaction, mysql, postgres, sqlite};
+use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
 /// Which audit log rows a listing selects and how they are ordered; paging
 /// rides along.
@@ -33,7 +34,7 @@ pub async fn create_tx(tx: &mut Transaction<'_>, log: AuditLog) -> Result<(), Da
     }
 }
 
-/// The rows `filter` selects, in its order.
+/// List the rows `filter` selects, in its order.
 pub async fn list_by_filter(
     db: &Db,
     filter: &AuditLogFilter,
@@ -45,7 +46,7 @@ pub async fn list_by_filter(
     }
 }
 
-/// How many rows `filter` selects, its paging aside.
+/// Count the rows `filter` selects, its paging aside.
 pub async fn count_by_filter(db: &Db, filter: &AuditLogFilter) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::audit_log::count_by_filter(pool, filter).await,

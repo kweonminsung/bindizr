@@ -125,9 +125,7 @@ impl TryFrom<String> for JournalRecordType {
             return Ok(Self::User(record_type));
         }
 
-        value
-            .parse::<DnssecRecordType>()
-            .map(JournalRecordType::Derived)
+        value.parse::<DnssecRecordType>().map(Self::Derived)
     }
 }
 

@@ -12,9 +12,8 @@ use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
-use super::status;
+use super::{SignedZone, status};
 use crate::authorization::Caller;
-use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown,
@@ -54,9 +53,7 @@ pub async fn start_rollover(
             .iter()
             .any(|key| key.state != DnssecKeyState::Active)
         {
-            return Err(ServiceError::dnssec_rollover_in_progress(
-                signed.zone.name.as_str(),
-            ));
+            return Err(ServiceError::dnssec_rollover_in_progress(&signed.zone.name));
         }
 
         // The key the replacement is modelled on: one of the requested role,
@@ -132,9 +129,7 @@ pub(crate) async fn start_algorithm_rollover_tx(
     keys: Vec<DnssecKey>,
 ) -> Result<Vec<DnssecKey>, ServiceError> {
     if keys.iter().any(|key| key.state != DnssecKeyState::Active) {
-        return Err(ServiceError::dnssec_rollover_in_progress(
-            zone.name.as_str(),
-        ));
+        return Err(ServiceError::dnssec_rollover_in_progress(&zone.name));
     }
 
     // One replacement per key, so both algorithms carry a full signer
@@ -191,7 +186,7 @@ pub async fn advance_rollover(
 
             if !unsupported.is_empty() {
                 return Err(ServiceError::dnssec_ds_digest_unsupported(
-                    signed.zone.name.as_str(),
+                    &signed.zone.name,
                     &unsupported,
                 ));
             }
@@ -200,7 +195,7 @@ pub async fn advance_rollover(
 
             if !missing.is_empty() {
                 return Err(ServiceError::dnssec_ds_not_published(
-                    signed.zone.name.as_str(),
+                    &signed.zone.name,
                     &missing,
                 ));
             }
@@ -359,7 +354,7 @@ pub(crate) fn promotable_sep_key_ids(
         .any(|key| key.state == DnssecKeyState::Published)
     {
         return Err(ServiceError::dnssec_no_rollover_in_progress(
-            signed.zone.name.as_str(),
+            &signed.zone.name,
         ));
     }
 

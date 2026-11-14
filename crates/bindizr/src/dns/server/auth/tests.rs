@@ -1,38 +1,31 @@
-use std::fs;
 use std::sync::Arc;
 
 use bindizr_core::config::Config;
-use bindizr_core::dns::message::{Keepalive, Name, Opcode, ParsedQuery, Rtype};
+use bindizr_core::dns::message::{Keepalive, Name, Opcode, ParsedQuery, Rcode, Rtype};
 use bindizr_core::dns::{query, tsig};
 use bindizr_core::metrics::Metrics;
+use bindizr_db::Db;
 use bindizr_service::Context;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::CreateTsigKeyRequest;
-use sqlx::Connection;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
 
-/// Grant-loading failures return a signed SERVFAIL.
+/// Verify that grant-loading failures return a signed SERVFAIL.
 #[tokio::test]
 async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
     use std::error::Error;
     use std::str::FromStr;
 
+    use sqlx::Connection;
+
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("fault.sqlite");
-    let config_path = directory.path().join("bindizr.toml");
-    fs::write(
-        &config_path,
-        format!(
-            "[database]\ntype=\"sqlite\"\n[database.sqlite]\nfile_path=\"{}\"\n",
-            path.display()
-        ),
-    )
-    .unwrap();
-    let config = Config::load(config_path.to_str().unwrap()).unwrap();
+    let mut config: Config = serde_json::from_str("{}").unwrap();
+    config.database.sqlite.file_path = path.to_str().unwrap().to_string();
 
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let db = Db::connect(&config.database).await.unwrap();
 
     let (notify_jobs, _jobs) = mpsc::unbounded_channel();
     let (scheduler, _period) = watch::channel(0);
@@ -86,20 +79,20 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
         .execute(&mut connection)
         .await
         .unwrap();
-    let failure = authenticate_tsig_key(&dns_cx, &request).await.unwrap_err();
+    let refusal = authenticate_tsig_key(&dns_cx, &request).await.unwrap_err();
 
-    assert!(failure.is_failure());
-    let source = failure
+    assert!(refusal.is_failure());
+    let source = refusal
         .source()
         .unwrap()
         .downcast_ref::<ServiceError>()
         .unwrap();
 
     assert!(source.source().is_some());
-    let response = failure
-        .into_response(&request, &QueryMetadata::from(&query))
+    let response = refusal
+        .into_response(&QueryMetadata::from(&query), &request)
         .unwrap();
 
-    assert_eq!(response[3] & 15, 2);
+    assert_eq!(response[3] & 15, Rcode::SERVFAIL.to_int());
     tsig::verify_response(&verifier, &response).unwrap();
 }

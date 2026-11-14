@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::State;
+use axum::http::Request;
 use axum::http::header::AUTHORIZATION;
-use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use bindizr_service::Context;
@@ -18,22 +18,22 @@ pub(crate) async fn auth_middleware(
     State(cx): State<Arc<Context>>,
     mut request: Request<Body>,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Response {
     let Some(auth_header) = request.headers().get(AUTHORIZATION) else {
-        return Ok(unauthorized("no authorization header"));
+        return unauthorized("no authorization header");
     };
 
     let Ok(auth_str) = auth_header.to_str() else {
-        return Ok(unauthorized("invalid authorization header"));
+        return unauthorized("invalid authorization header");
     };
 
     let Some((scheme, credentials)) = auth_str.split_once(' ') else {
-        return Ok(unauthorized("invalid authentication scheme"));
+        return unauthorized("invalid authentication scheme");
     };
 
     // RFC 9110, Sections 11.1 and 11.4: schemes ignore case; 1*SP separates credentials.
     if !scheme.eq_ignore_ascii_case("Bearer") {
-        return Ok(unauthorized("invalid authentication scheme"));
+        return unauthorized("invalid authentication scheme");
     }
 
     let token = credentials.trim_start_matches(' ');
@@ -42,11 +42,11 @@ pub(crate) async fn auth_middleware(
         Ok((caller, token)) => {
             request.extensions_mut().insert(caller);
             request.extensions_mut().insert(AuthenticatedToken(token));
-            Ok(next.run(request).await)
+            next.run(request).await
         }
         Err(error) => {
             log::debug!("Token validation error: {error}");
-            Ok(ApiError::from(error).into_response())
+            ApiError::from(error).into_response()
         }
     }
 }

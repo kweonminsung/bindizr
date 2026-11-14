@@ -13,7 +13,7 @@ pub use check::{check, check_enabled};
 pub use create::create;
 pub use delete::delete;
 pub use get::{get, list, list_enabled};
-pub(crate) use get::{load_response, lookup_by_name};
+pub(crate) use get::{lookup_by_name, lookup_response};
 pub(crate) use notify::{find_notify_signing_key, find_notify_tsig_key};
 pub use transfers::list_transfers;
 pub(crate) use transfers::summarize_transfers;

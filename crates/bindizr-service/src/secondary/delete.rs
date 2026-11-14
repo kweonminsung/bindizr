@@ -11,9 +11,10 @@ use crate::{Context, audit, transaction};
 pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
+    // Unlocked read to learn the row to delete; a row gone meanwhile reads as not found below.
     let secondary = super::lookup_by_name(cx, name).await?;
     let mut tx = transaction::begin_tx(cx, "failed to delete secondary").await?;
-    let result: Result<_, ServiceError> = async {
+    let result = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?

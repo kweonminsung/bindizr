@@ -8,17 +8,17 @@ async fn token_create_rejects_duplicate_name() {
     let app = TestApp::start().await;
     let (name, _) = app.create_api_token().await;
 
-    let output = app
+    let refused = app
         .run_cli(&["token", "create", &name, "--role", "admin"], None)
         .await;
 
-    assert!(!output.status.success());
+    assert!(!refused.status.success());
 }
 
-/// Verify that a token needs a role that exists.
+/// Verify that a token requires a role that exists.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn token_create_needs_an_existing_role() {
+async fn token_create_requires_an_existing_role() {
     let app = TestApp::start().await;
     let name = app.zone_name("roleless");
 

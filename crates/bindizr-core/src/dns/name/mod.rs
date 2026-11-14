@@ -62,7 +62,7 @@ pub fn trim_presentation_name(value: &str) -> &str {
         if prefix
             .bytes()
             .rev()
-            .take_while(|&byte| byte == b'\\')
+            .take_while(|byte| *byte == b'\\')
             .count()
             % 2
             == 1
@@ -160,7 +160,7 @@ fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a [u8]>) -> Result<Vec<u8>,
             return Err(ParseNameError::LabelTooLong);
         }
 
-        wire.push(label.len() as u8);
+        wire.push(u8::try_from(label.len()).map_err(|_| ParseNameError::LabelTooLong)?);
         wire.extend_from_slice(label);
     }
 

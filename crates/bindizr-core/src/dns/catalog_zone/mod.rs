@@ -3,25 +3,15 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use ring::digest::{self, SHA256};
+use domain::base::Name;
+use domain::base::iana::Rtype;
+use ring::digest;
+use ring::digest::SHA256;
 use thiserror::Error;
 
-use crate::dns::message::{Name, Rtype};
 use crate::dns::name::{MAX_WIRE_NAME_LEN, OwnerName, ParseNameError, ZoneName};
 use crate::dns::query::TransferRecord;
 use crate::dns::{Serial, SoaInterval, Ttl};
-
-/// The virtual catalog's SOA metadata, without a managed-zone row or signing settings.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CatalogZone {
-    pub name: ZoneName,
-    pub serial: Serial,
-    pub default_ttl: Ttl,
-    pub refresh: SoaInterval,
-    pub retry: SoaInterval,
-    pub expire: SoaInterval,
-    pub minimum_ttl: Ttl,
-}
 
 /// Digest octets retained in stable catalog member IDs.
 const MEMBER_ID_DIGEST_LEN: usize = 16;
@@ -35,10 +25,22 @@ const MEMBER_PREFIX_WIRE_LEN: usize = 1 + MEMBER_ID_DIGEST_LEN * 2 + 1 + MEMBER_
 /// Longest catalog name allowing every generated owner; the member prefix exceeds "version.".
 pub(crate) const MAX_CATALOG_ZONE_WIRE_LEN: usize = MAX_WIRE_NAME_LEN - MEMBER_PREFIX_WIRE_LEN;
 
+/// The virtual catalog's SOA metadata, without a managed-zone row or signing settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogZone {
+    pub name: ZoneName,
+    pub serial: Serial,
+    pub default_ttl: Ttl,
+    pub refresh: SoaInterval,
+    pub retry: SoaInterval,
+    pub expire: SoaInterval,
+    pub minimum_ttl: Ttl,
+}
+
 /// Build a schema-2 member PTR owner using the same prefix startup validates.
-pub(crate) fn catalog_member_owner_name(catalog: &ZoneName, member_zone: &str) -> String {
-    let member_id = zone_name_to_member_id(member_zone);
-    format!("{member_id}.{MEMBER_SUBTREE}.{catalog}.")
+pub(crate) fn catalog_member_owner_name(catalog_zone_name: &ZoneName, zone_name: &str) -> String {
+    let member_id = zone_name_to_member_id(zone_name);
+    format!("{member_id}.{MEMBER_SUBTREE}.{catalog_zone_name}.")
 }
 
 /// Build a stable member label from truncated SHA-256 (RFC 9432, Section 4.1).
@@ -111,7 +113,7 @@ pub fn extract_member_zones(
 
                 version = Some(record.rdata.as_bytes().to_vec());
             }
-            Rtype::PTR if labels.len() == 2 && labels[1] == b"zones" => {
+            Rtype::PTR if labels.len() == 2 && labels[1] == MEMBER_SUBTREE.as_bytes() => {
                 let target = Name::<Vec<u8>>::from_octets(record.rdata.as_bytes().to_vec())
                     .map_err(|_| ExtractMemberZonesError::MemberRdata {
                         name: record.name.clone(),

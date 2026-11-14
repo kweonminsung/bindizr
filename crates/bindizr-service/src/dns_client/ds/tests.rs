@@ -6,7 +6,6 @@ use std::time::Duration;
 use bindizr_core::dns::dnssec::KeyTag;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecord;
-use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::time;
 
@@ -30,25 +29,25 @@ async fn query_ds_cancels_child_exchanges_with_the_request() {
             Err(error) => panic!("binding TCP listener failed: {error}"),
         }
     };
-    let address = udp.local_addr().unwrap();
+    let addr = udp.local_addr().unwrap();
     let task = tokio::spawn(async move {
         query_ds(
             &ZoneName::parse("example.test").unwrap(),
-            &[(address.to_string(), vec![address])],
+            &[(addr.to_string(), vec![addr])],
             TIMEOUT,
         )
         .await
     });
-    let mut query = [0u8; 4096];
-    let (len, client) = time::timeout(TIMEOUT, udp.recv_from(&mut query))
+    let mut buffer = [0; 4096];
+    let (len, peer) = time::timeout(TIMEOUT, udp.recv_from(&mut buffer))
         .await
         .unwrap()
         .unwrap();
 
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
-    let response = build_response(&query[..len], FLAG_TC, 0, &[], &[]);
-    udp.send_to(&response, client).await.unwrap();
+    let response = build_response(&buffer[..len], FLAG_TC, 0, &[], &[]);
+    udp.send_to(&response, peer).await.unwrap();
     assert!(
         time::timeout(Duration::from_millis(150), tcp.accept())
             .await
@@ -223,7 +222,7 @@ fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8
 /// Start a fake server with the selected behavior over UDP and TCP on one
 /// port, until dropped.
 async fn fake_server(behavior: ServerBehavior) -> SocketAddr {
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     // A port the kernel hands out for UDP may be taken for TCP, so the pair
     // is retried until both sides bind.
@@ -239,7 +238,7 @@ async fn fake_server(behavior: ServerBehavior) -> SocketAddr {
     let udp_behavior = behavior.clone();
 
     tokio::spawn(async move {
-        let mut buffer = [0u8; 4096];
+        let mut buffer = [0; 4096];
 
         loop {
             let Ok((len, peer)) = socket.recv_from(&mut buffer).await else {
@@ -265,13 +264,13 @@ async fn fake_server(behavior: ServerBehavior) -> SocketAddr {
                 return;
             };
 
-            let mut prefix = [0u8; 2];
+            let mut prefix = [0; 2];
 
             if stream.read_exact(&mut prefix).await.is_err() {
                 continue;
             }
 
-            let mut query = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
+            let mut query = vec![0; usize::from(u16::from_be_bytes(prefix))];
 
             if stream.read_exact(&mut query).await.is_err() {
                 continue;
@@ -306,22 +305,26 @@ fn servers(addrs: &[SocketAddr]) -> Vec<(String, Vec<SocketAddr>)> {
 /// Verify that the explicit targets retain their order and separate DS answers.
 #[tokio::test]
 async fn probe_parent_ds_reports_each_server_apart() {
-    let a = fake_server(ServerBehavior::Ds {
+    let first = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![(34217, 3600)],
     })
     .await;
-    let b = fake_server(ServerBehavior::Ds {
+    let second = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![(34217, 3600), (2371, 86400)],
     })
     .await;
 
-    let parent = probe_parent_ds(&zone_name("example.com"), &format!("{a}, {b}"), TIMEOUT)
-        .await
-        .unwrap();
+    let parent = probe_parent_ds(
+        &zone_name("example.com"),
+        &format!("{first}, {second}"),
+        TIMEOUT,
+    )
+    .await
+    .unwrap();
 
-    assert_eq!(parent.ns_addrs, vec![a.to_string(), b.to_string()]);
+    assert_eq!(parent.ns_addrs, vec![first.to_string(), second.to_string()]);
     assert_eq!(
         parent.answers,
         vec![
@@ -404,7 +407,7 @@ async fn query_ds_reports_absence_per_server() {
     assert_eq!(
         answers
             .iter()
-            .map(|a| a.as_ref().map(DsRecordSet::key_tags))
+            .map(|answer| answer.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
         vec![None, Some(vec![KeyTag::from(1)])]
     );
@@ -464,7 +467,7 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
     assert_eq!(
         answers
             .iter()
-            .map(|a| a.as_ref().map(DsRecordSet::key_tags))
+            .map(|answer| answer.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
         vec![Some(vec![KeyTag::from(7)])]
     );

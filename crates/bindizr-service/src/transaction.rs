@@ -44,8 +44,8 @@ pub(crate) async fn finish_tx<T, E: From<ServiceError>>(
         }
         Err(error) => {
             // A rollback failure must not replace the original operation error.
-            if let Err(error) = tx.rollback().await {
-                log::error!("Failed to rollback transaction: {error}");
+            if let Err(rollback_error) = tx.rollback().await {
+                log::error!("Failed to rollback transaction: {rollback_error}");
             }
             Err(error)
         }

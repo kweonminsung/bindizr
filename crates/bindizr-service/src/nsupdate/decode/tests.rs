@@ -4,7 +4,7 @@ use bindizr_core::dns::message::Rcode;
 
 use super::*;
 
-/// A wire record whose RDATA starts at the beginning of its test message.
+/// Build a wire record whose RDATA starts at the beginning of its test message.
 fn record(class: Class, record_type: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRecord {
     UpdateRecord {
         name: "host.example.com.".to_string(),
@@ -16,7 +16,7 @@ fn record(class: Class, record_type: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRec
     }
 }
 
-/// Managed changes return REFUSED; malformed RDATA returns FORMERR.
+/// Verify that managed changes return REFUSED and malformed RDATA returns FORMERR.
 #[test]
 fn nsupdate_decode_refuses_managed_dnssec_changes_after_validating_wire_data() {
     let zone = ZoneName::parse("example.com").unwrap();
@@ -60,7 +60,7 @@ fn nsupdate_decode_refuses_managed_dnssec_changes_after_validating_wire_data() {
     ));
 }
 
-/// Verify the prerequisite and update shapes are reported as FORMERR
+/// Verify that malformed prerequisite and update shapes are reported as FORMERR
 /// (RFC 2136, Sections 3.2.1 and 3.4.1).
 #[test]
 fn nsupdate_decode_returns_formerr_for_malformed_sections() {

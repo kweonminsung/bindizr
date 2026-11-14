@@ -189,14 +189,14 @@ fn append_entry(
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use crate::dns::Ttl;
     use crate::dns::name::ZoneName;
     use crate::dns::zonefile::ParsedZoneFile;
     use crate::model::record::RecordType;
 
-    /// Preserve the WKS parse cause until the zone-file result renders its diagnostic.
+    /// Verify that the WKS parse cause is preserved until the zone-file result renders its
+    /// diagnostic.
     #[test]
     fn rewrite_native_records_preserves_value_error_and_source_line() {
         use std::error::Error;
@@ -216,7 +216,8 @@ mod tests {
         assert_eq!(parsed.errors, vec![error.to_string()]);
     }
 
-    /// Preserve other records, inherited owners, and line numbers around multiline WKS.
+    /// Verify that other records, inherited owners, and line numbers around multiline WKS are
+    /// preserved.
     #[test]
     fn rewrite_native_records_preserves_other_records_and_multiline_wks() {
         let content = "$ORIGIN example.com.\n@ IN NS ns.example.com.\nhost IN WKS 192.0.2.1 TCP ( 0 ; services\n 7 8 )\n 300 WKS 192.0.2.2 UDP 53\ntext IN TXT \"WKS\" \"192.0.2.1 6 80\"\nWKS IN A 192.0.2.8\n";
@@ -239,7 +240,7 @@ mod tests {
         assert_eq!(parsed.records[2].owner_fqdn, "host.example.com.");
     }
 
-    /// Generic WKS data and escaped or quoted type-like text remain untouched.
+    /// Verify that generic WKS data and escaped or quoted type-like text remain untouched.
     #[test]
     fn rewrite_native_records_preserves_generic_wks_and_escaped_tokens() {
         for content in [

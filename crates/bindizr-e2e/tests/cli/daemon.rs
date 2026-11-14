@@ -28,9 +28,9 @@ async fn restart_reexecs_daemon_in_place() {
         return;
     }
 
-    let output = app.run_cli_success(&["restart"], None).await;
+    let restarted = app.run_cli_success(&["restart"], None).await;
 
-    assert!(output.contains("Bindizr restarted"));
+    assert!(restarted.contains("Bindizr restarted"));
 
     let status = app.run_cli_success(&["status"], None).await;
 
@@ -47,9 +47,9 @@ async fn stop_shuts_down_daemon() {
         return;
     }
 
-    let output = app.run_cli_success(&["stop"], None).await;
+    let stopped = app.run_cli_success(&["stop"], None).await;
 
-    assert!(output.contains("Bindizr stopped"));
+    assert!(stopped.contains("Bindizr stopped"));
 
     let args = ["status"];
 

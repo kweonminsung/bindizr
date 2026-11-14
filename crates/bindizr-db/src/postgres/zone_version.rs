@@ -1,5 +1,12 @@
-use chrono::Utc;
+use bindizr_core::dns::Serial;
+use bindizr_core::model::change::ChangeActor;
+use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone_version::{VersionFilter, ZoneVersion};
+use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Pool, Postgres, Transaction};
+
+use crate::LockLevel;
+use crate::error::DatabaseError;
 
 /// Exclude past versions whose nonempty journal contains only derived changes.
 /// Reuse `$1` (zone id) to keep the current-serial subquery uncorrelated.
@@ -19,14 +26,6 @@ const EXCLUDE_PAST_SIGNER_ONLY_FILTER: &str = r#"
                   )
               )"#;
 
-use bindizr_core::dns::Serial;
-use bindizr_core::model::change::ChangeActor;
-use bindizr_core::model::zone::ZoneId;
-use bindizr_core::model::zone_version::{VersionFilter, ZoneVersion};
-
-use crate::LockLevel;
-use crate::error::DatabaseError;
-
 /// Insert or update a zone version in the current transaction.
 pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, Postgres>,
@@ -37,7 +36,8 @@ pub(crate) async fn upsert_tx(
         .as_ref()
         .map(ChangeActor::as_columns)
         .unzip();
-    sqlx::query_as::<_, ZoneVersion>(
+
+    let version = sqlx::query_as::<_, ZoneVersion>(
         r#"
         INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -70,18 +70,21 @@ pub(crate) async fn upsert_tx(
     .bind(changed_by_name)
     .bind(Utc::now())
     .fetch_one(&mut **tx)
-    .await
-    .map_err(DatabaseError::from)
+    .await?;
+
+    Ok(version)
 }
 
-/// List zone versions in the closed interval `[from_serial, to_serial]`.
+/// List the versions with serial in the closed interval `[from_serial,
+/// to_serial]`; an IXFR needs both endpoint SOAs, unlike the journal's
+/// half-open range.
 pub(crate) async fn list_in_serial_range_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
     from_serial: Serial,
     to_serial: Serial,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
-    sqlx::query_as::<_, ZoneVersion>(
+    let versions = sqlx::query_as::<_, ZoneVersion>(
         r#"
         SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
@@ -92,23 +95,27 @@ pub(crate) async fn list_in_serial_range_tx(
     .bind(from_serial)
     .bind(to_serial)
     .fetch_all(&mut **tx)
-    .await
-    .map_err(DatabaseError::from)
+    .await?;
+
+    Ok(versions)
 }
 
-/// List zone versions for a zone.
+/// List the versions of a zone that `filter` covers, newest version first,
+/// paginated; the current serial is always listed.
 pub(crate) async fn list_by_filter(
     pool: &Pool<Postgres>,
     zone_id: ZoneId,
     filter: VersionFilter,
     limit: Option<u32>,
-    offset: u64,
+    offset: Option<u64>,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+
     let predicate = match filter {
         VersionFilter::ExcludePastSignerOnly => EXCLUDE_PAST_SIGNER_ONLY_FILTER,
         VersionFilter::All => "",
     };
-    sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
+    let versions = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
         r#"
         SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
@@ -119,59 +126,65 @@ pub(crate) async fn list_by_filter(
     )))
     .bind(zone_id)
     .bind(limit.map_or(i64::MAX, i64::from))
-    .bind(i64::try_from(offset).unwrap_or(i64::MAX))
-    .fetch_all(pool)
-    .await
-    .map_err(DatabaseError::from)
+    .bind(offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
+    .fetch_all(&mut *connection)
+    .await?;
+
+    Ok(versions)
 }
 
-/// Count zone versions using the requested change filter.
+/// Count the versions of a zone that `filter` covers.
 pub(crate) async fn count_by_filter(
     pool: &Pool<Postgres>,
     zone_id: ZoneId,
     filter: VersionFilter,
 ) -> Result<u64, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+
     let predicate = match filter {
         VersionFilter::ExcludePastSignerOnly => EXCLUDE_PAST_SIGNER_ONLY_FILTER,
         VersionFilter::All => "",
     };
-
-    let count: i64 = sqlx::query_scalar(AssertSqlSafe(format!(
+    let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM zone_versions WHERE zone_id = $1{predicate}"
     )))
     .bind(zone_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
 
     Ok(count as u64)
 }
 
-/// Find a zone version by zone ID and serial in the current transaction.
+/// Get a zone version by serial consistently with mutations in the current
+/// transaction.
 pub(crate) async fn get_by_serial_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
     serial: Serial,
     lock_level: LockLevel,
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
-    sqlx::query_as::<_, ZoneVersion>(
-        AssertSqlSafe(format!("{}{}", r#"
+    let version = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
+        r#"
         SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
-        WHERE zone_id = $1 AND serial = $2
-        "#, lock_level.clause())),
-    )
+        WHERE zone_id = $1 AND serial = $2{}
+        "#,
+        lock_level.clause(),
+    )))
     .bind(zone_id)
     .bind(serial)
     .fetch_optional(&mut **tx)
-    .await
-    .map_err(DatabaseError::from)
+    .await?;
+
+    Ok(version)
 }
 
-/// Prune one zone's old versions, keeping its newest, in the current transaction.
+/// Prune one zone's versions older than `cutoff`, always keeping its newest
+/// (the IXFR up-to-date response reads it). Returns rows deleted.
 pub(crate) async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
-    cutoff: chrono::DateTime<chrono::Utc>,
+    cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
     // The zone's newest version survives regardless of age: the IXFR
     // up-to-date response reads it.
@@ -191,15 +204,18 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
 }
 
 /// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
-pub(crate) async fn prune_outside_serial_window_tx(
+pub(crate) async fn prune_by_zone_id_outside_serial_window_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
     current: Serial,
 ) -> Result<u64, DatabaseError> {
-    let result = sqlx::query("DELETE FROM zone_versions WHERE zone_id = $1 AND (($2 - serial + 4294967296) % 4294967296) >= 2147483648")
-        .bind(zone_id)
-        .bind(current)
-        .execute(&mut **tx)
-        .await?;
+    let result = sqlx::query(
+        "DELETE FROM zone_versions WHERE zone_id = $1 AND (($2 - serial + 4294967296) % 4294967296) >= 2147483648",
+    )
+    .bind(zone_id)
+    .bind(current)
+    .execute(&mut **tx)
+    .await?;
+
     Ok(result.rows_affected())
 }

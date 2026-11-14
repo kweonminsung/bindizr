@@ -3,7 +3,7 @@ use serde_json::Value;
 use crate::common;
 use crate::common::TestApp;
 
-/// Verify zone history inspection and rollback through the CLI.
+/// Verify that the CLI inspects zone history and rolls it back.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_versions_support_diff_and_rollback_via_cli() {
@@ -50,7 +50,8 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
     )
     .await;
 
-    let target_serial = "2"; // zone create = 1, record create = 2
+    // zone create = 1, record create = 2
+    let target_serial = "2";
 
     app.run_cli_success(
         &[
@@ -188,6 +189,6 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
     // Rolling back to the current serial is rejected with a hint.
     let args = ["zone", "version", "rollback", &zone_name, "4"];
 
-    let output = app.run_cli(&args, None).await;
-    common::assert_cli_failure_contains(&args, &output, "must be less than the current serial");
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "must be less than the current serial");
 }

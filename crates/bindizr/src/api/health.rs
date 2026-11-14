@@ -3,15 +3,15 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use bindizr_service::types::{HealthResponse, HealthStatus};
 use bindizr_service::{Context, zone};
 use tokio::time;
 
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 
-/// Minimal database round-trip, kept cheap and side-effect free because
-/// probes run frequently.
+/// Probe the database with a minimal round-trip, kept cheap and side-effect
+/// free because probes run frequently.
 #[utoipa::path(
         get,
         path = "/health",
@@ -24,19 +24,21 @@ use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
             (status = 503, description = "Service unhealthy", body = HealthResponse)
         )
 )]
-pub(crate) async fn handle_health(State(cx): State<Arc<Context>>) -> impl IntoResponse {
+pub(crate) async fn handle_health(State(cx): State<Arc<Context>>) -> Response {
     match time::timeout(DB_PROBE_TIMEOUT, zone::ping(&cx)).await {
         Ok(Ok(())) => (
             StatusCode::OK,
             Json(HealthResponse {
                 status: HealthStatus::Healthy,
             }),
-        ),
+        )
+            .into_response(),
         _ => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(HealthResponse {
                 status: HealthStatus::Unhealthy,
             }),
-        ),
+        )
+            .into_response(),
     }
 }

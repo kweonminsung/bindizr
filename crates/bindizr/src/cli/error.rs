@@ -318,7 +318,7 @@ mod tests {
         );
     }
 
-    /// Local rendering and transport failures retain an inspectable cause.
+    /// Verify that local rendering and transport failures retain an inspectable cause.
     #[test]
     fn local_failure_preserves_the_source() {
         use std::error::Error;

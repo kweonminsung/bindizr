@@ -8,7 +8,7 @@ use crate::error::ServiceError;
 use crate::types::ZoneStatusResponse;
 use crate::{Context, probe};
 
-/// Probe every enabled secondary for the zone and classify each
+/// Get the zone's status: probe every enabled secondary and classify each
 /// against the zone's serial; empty with no enabled secondaries.
 pub async fn get_status(
     cx: &Context,

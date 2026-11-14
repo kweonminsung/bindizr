@@ -13,12 +13,12 @@ use bindizr_service::{Context, zone};
 
 use crate::socket::types::DaemonResponse;
 
-/// Return the requested zone.
+/// Get the requested zone.
 pub(crate) async fn get_zone(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
 ) -> Result<DaemonResponse<SingleZoneResponse>, ServiceError> {
-    let zone = zone::get_by_name(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
+    let zone = zone::get_by_name(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
 
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
@@ -28,7 +28,7 @@ pub(crate) async fn get_zone(
     })
 }
 
-/// Return zones matching the request filters.
+/// List zones matching the request filters.
 pub(crate) async fn list_zones(
     cx: &Context,
     filter: ZoneFilter,
@@ -140,20 +140,26 @@ pub(crate) async fn import_zones(
 /// Export the requested zone as a zone file.
 pub(crate) async fn export_zone(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
     view: ZoneView,
 ) -> Result<DaemonResponse<ExportZoneFileResponse>, ServiceError> {
-    let zone_file = zone::export(cx, &Caller::socket(), &zone::normalize_name(name)?, view).await?;
+    let zone_file = zone::export(
+        cx,
+        &Caller::socket(),
+        &zone::normalize_name(zone_name)?,
+        view,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
         data: ExportZoneFileResponse { zone_file },
     })
 }
 
-/// Return the requested zone's version history.
+/// List the requested zone's version history.
 pub(crate) async fn list_zone_versions(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
     limit: Option<u32>,
     offset: Option<u64>,
     filter: VersionFilter,
@@ -161,7 +167,7 @@ pub(crate) async fn list_zone_versions(
     let response = zone::list_versions(
         cx,
         &Caller::socket(),
-        &zone::normalize_name(name)?,
+        &zone::normalize_name(zone_name)?,
         limit,
         offset,
         filter,
@@ -174,14 +180,19 @@ pub(crate) async fn list_zone_versions(
     })
 }
 
-/// Return a zone version with the records it held.
+/// Get a zone version with the records it held.
 pub(crate) async fn get_zone_version(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
     serial: Serial,
 ) -> Result<DaemonResponse<GetZoneVersionResponse>, ServiceError> {
-    let response =
-        zone::get_version(cx, &Caller::socket(), &zone::normalize_name(name)?, serial).await?;
+    let response = zone::get_version(
+        cx,
+        &Caller::socket(),
+        &zone::normalize_name(zone_name)?,
+        serial,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: format!("Version '{serial}' retrieved successfully"),
         data: response,
@@ -191,14 +202,14 @@ pub(crate) async fn get_zone_version(
 /// Compare two zone versions, using the current serial when `to_serial` is omitted.
 pub(crate) async fn diff_zone_versions(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
     from_serial: Serial,
     to_serial: Option<Serial>,
 ) -> Result<DaemonResponse<DiffZoneVersionsResponse>, ServiceError> {
     let response = zone::diff_versions(
         cx,
         &Caller::socket(),
-        &zone::normalize_name(name)?,
+        &zone::normalize_name(zone_name)?,
         from_serial,
         to_serial,
     )
@@ -220,14 +231,14 @@ pub(crate) async fn diff_zone_versions(
 /// Preview or apply a rollback to the requested zone version.
 pub(crate) async fn rollback_zone(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
     serial: Serial,
     run: Run,
 ) -> Result<DaemonResponse<RollbackZoneResponse>, ServiceError> {
     let response = zone::rollback(
         cx,
         &Caller::socket(),
-        &zone::normalize_name(name)?,
+        &zone::normalize_name(zone_name)?,
         serial,
         run,
     )
@@ -250,12 +261,13 @@ pub(crate) async fn rollback_zone(
     })
 }
 
-/// Return the requested zone's primary and secondary status.
+/// Get the requested zone's primary and secondary status.
 pub(crate) async fn get_zone_status(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
 ) -> Result<DaemonResponse<ZoneStatusResponse>, ServiceError> {
-    let response = zone::get_status(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
+    let response =
+        zone::get_status(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
     let in_sync = response
         .secondaries
         .iter()
@@ -281,19 +293,25 @@ pub(crate) async fn get_zone_status(
 /// Delete the requested zone.
 pub(crate) async fn delete_zone(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
     run: Run,
 ) -> Result<DaemonResponse<DeleteZoneResponse>, ServiceError> {
-    let response = zone::delete(cx, &Caller::socket(), &zone::normalize_name(name)?, run).await?;
+    let response = zone::delete(
+        cx,
+        &Caller::socket(),
+        &zone::normalize_name(zone_name)?,
+        run,
+    )
+    .await?;
 
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!(
                 "Zone '{}' would be deleted with {} record(s) and {} version(s)",
-                name, response.records_deleted, response.versions_deleted
+                zone_name, response.records_deleted, response.versions_deleted
             )
         } else {
-            format!("Zone '{name}' deleted successfully")
+            format!("Zone '{zone_name}' deleted successfully")
         },
         data: response,
     })

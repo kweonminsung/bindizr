@@ -28,17 +28,17 @@ pub(crate) enum OutputFormat {
 /// from it.
 pub(crate) fn print_response<T, U>(
     data: &T,
-    format: OutputFormat,
+    output: OutputFormat,
     to_table_rows: impl Fn(&T) -> Vec<U>,
 ) -> Result<(), RenderOutputError>
 where
     T: Serialize,
     U: Tabled,
 {
-    if format == OutputFormat::Table {
+    if output == OutputFormat::Table {
         print_table(to_table_rows(data));
     } else {
-        print_payload(data, format)?;
+        print_payload(data, output)?;
     }
     Ok(())
 }
@@ -46,26 +46,25 @@ where
 /// Print a page as JSON, YAML, or a table that also reports omitted items.
 pub(crate) fn print_page<T, U>(
     page: &PaginatedResponse<T>,
-    format: OutputFormat,
+    output: OutputFormat,
     to_table_row: impl Fn(&T) -> U,
 ) -> Result<(), RenderOutputError>
 where
     T: Serialize,
     U: Tabled,
 {
-    if format == OutputFormat::Table {
+    if output == OutputFormat::Table {
         print_table(page.items.iter().map(to_table_row).collect());
         let seen = page.pagination.offset + page.items.len() as u64;
 
         if seen < page.pagination.total {
             outln!(
-                "Showing {} of {}; page the rest with --limit and --offset.",
-                seen,
+                "Showing {seen} of {}; page the rest with --limit and --offset.",
                 page.pagination.total
             );
         }
     } else {
-        print_payload(page, format)?;
+        print_payload(page, output)?;
     }
 
     Ok(())
@@ -74,15 +73,15 @@ where
 /// Print the payload as JSON or YAML, for a command that renders its own table.
 pub(crate) fn print_payload<T: Serialize>(
     data: &T,
-    format: OutputFormat,
+    output: OutputFormat,
 ) -> Result<(), RenderOutputError> {
-    let rendered = match format {
+    let rendered = match output {
         OutputFormat::Yaml => serde_norway::to_string(data).map_err(RenderOutputError::Yaml)?,
         OutputFormat::Json | OutputFormat::Table => {
             serde_json::to_string_pretty(data).map_err(RenderOutputError::Json)?
         }
     };
-    outln!("{}", rendered);
+    outln!("{rendered}");
 
     Ok(())
 }

@@ -118,8 +118,8 @@ impl Db {
         Ok(Transaction(kind))
     }
 
-    /// The pool's occupancy. sqlx counts held connections, not waiters, so
-    /// saturation shows as `connections` reaching `max`.
+    /// Return the pool's occupancy. sqlx counts held connections, not waiters,
+    /// so saturation shows as `connections` reaching `max`.
     pub fn stats(&self) -> PoolStats {
         let (connections, idle) = match &self.0 {
             Backend::MySql(pool) => (pool.size(), pool.num_idle()),
@@ -142,7 +142,10 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
         config::DatabaseType::MySql => {
             let pool = MySqlPoolOptions::new()
                 .max_connections(1)
-                .connect_with(mysql_connect_options(&database.mysql.url, &database.tls)?)
+                .connect_with(parse_mysql_connect_options(
+                    &database.mysql.url,
+                    &database.tls,
+                )?)
                 .await
                 .map_err(DatabaseError::MySqlConnect)?;
             sqlx::query("SELECT 1").execute(&pool).await?;
@@ -150,7 +153,7 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
         config::DatabaseType::Postgres => {
             let pool = PgPoolOptions::new()
                 .max_connections(1)
-                .connect_with(postgres_connect_options(
+                .connect_with(parse_postgres_connect_options(
                     &database.postgresql.url,
                     &database.tls,
                 )?)
@@ -161,7 +164,7 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
         config::DatabaseType::Sqlite => {
             // Creating the file here would leave it owned by whoever ran doctor.
             let url = sqlite::path::to_url(&database.sqlite.file_path)?;
-            let connect_options = sqlite_connect_options(&url)?
+            let connect_options = parse_sqlite_connect_options(&url)?
                 .create_if_missing(false)
                 .read_only(true);
 
@@ -178,13 +181,13 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
 }
 
 /// Parse a SQLite URL into connection options.
-fn sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseError> {
+fn parse_sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseError> {
     SqliteConnectOptions::from_str(url).map_err(DatabaseError::InvalidSqlitePath)
 }
 
 /// Parse the MySQL URL and lay `[database.tls]` over it: a set key replaces
 /// the URL's own parameter.
-fn mysql_connect_options(
+fn parse_mysql_connect_options(
     url: &str,
     tls: &config::DatabaseTlsConfig,
 ) -> Result<MySqlConnectOptions, DatabaseError> {
@@ -208,7 +211,7 @@ fn mysql_connect_options(
 
 /// Parse the PostgreSQL URL and lay `[database.tls]` over it: a set key
 /// replaces the URL's own parameter.
-fn postgres_connect_options(
+fn parse_postgres_connect_options(
     url: &str,
     tls: &config::DatabaseTlsConfig,
 ) -> Result<PgConnectOptions, DatabaseError> {
@@ -265,7 +268,7 @@ impl Backend {
                         .map(|_| ())
                 })
             })
-            .connect_with(mysql_connect_options(url, tls)?)
+            .connect_with(parse_mysql_connect_options(url, tls)?)
             .await
             .map_err(DatabaseError::MySqlConnect)?;
 
@@ -290,7 +293,7 @@ impl Backend {
                     .map(|_| ())
                 })
             })
-            .connect_with(postgres_connect_options(url, tls)?)
+            .connect_with(parse_postgres_connect_options(url, tls)?)
             .await
             .map_err(DatabaseError::PostgresConnect)?;
 
@@ -300,7 +303,7 @@ impl Backend {
     /// Connect to SQLite and return the pool.
     async fn connect_sqlite(url: &str) -> Result<Self, DatabaseError> {
         // A clean install points at a database file that does not exist yet.
-        let connect_options = sqlite_connect_options(url)?.create_if_missing(true);
+        let connect_options = parse_sqlite_connect_options(url)?.create_if_missing(true);
 
         let pool = SqlitePoolOptions::new()
             .max_connections(pool_max_connections())

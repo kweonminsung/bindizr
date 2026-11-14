@@ -44,45 +44,51 @@ pub(crate) async fn create_tx(
     Ok(zone)
 }
 
-/// Find a zone by ID in the current transaction.
+/// Get a zone by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
     id: ZoneId,
     _lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
-    let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?;
+    let zone = sqlx::query_as::<_, Zone>(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
 
     Ok(zone)
 }
 
-/// Find a zone by name.
+/// Get a zone by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Sqlite>,
     name: &ZoneName,
 ) -> Result<Option<Zone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?")
-        .bind(name)
-        .fetch_optional(&mut *connection)
-        .await?;
+    let zone = sqlx::query_as::<_, Zone>(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?",
+    )
+    .bind(name)
+    .fetch_optional(&mut *connection)
+    .await?;
 
     Ok(zone)
 }
 
-/// Find a zone by name in the current transaction.
+/// Get a zone by name in the current transaction.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, Sqlite>,
     name: &ZoneName,
     _lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
-    let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?")
-        .bind(name)
-        .fetch_optional(&mut **tx)
-        .await?;
+    let zone = sqlx::query_as::<_, Zone>(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?",
+    )
+    .bind(name)
+    .fetch_optional(&mut **tx)
+    .await?;
 
     Ok(zone)
 }
@@ -91,9 +97,11 @@ pub(crate) async fn get_by_name_tx(
 pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<Zone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name")
-        .fetch_all(&mut *connection)
-        .await?;
+    let zones = sqlx::query_as::<_, Zone>(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name",
+    )
+    .fetch_all(&mut *connection)
+    .await?;
 
     Ok(zones)
 }
@@ -103,9 +111,11 @@ pub(crate) async fn list_all_tx(
     tx: &mut Transaction<'_, Sqlite>,
     _lock_level: LockLevel,
 ) -> Result<Vec<Zone>, DatabaseError> {
-    let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name")
-        .fetch_all(&mut **tx)
-        .await?;
+    let zones = sqlx::query_as::<_, Zone>(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name",
+    )
+    .fetch_all(&mut **tx)
+    .await?;
 
     Ok(zones)
 }
@@ -118,7 +128,6 @@ pub(crate) async fn list_by_filter(
     let mut connection = pool.acquire().await?;
 
     let search = sql::like_pattern(filter.search.as_deref());
-
     let order_by = filter.sort.order_by_sql(filter.order);
 
     let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
@@ -200,12 +209,15 @@ pub(crate) async fn list_by_filter(
     Ok(zones)
 }
 
-/// Probe the zones table to check database connectivity.
-pub(crate) async fn ping(pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+/// Probe the zones table with a limit-1 query; health checks must stay cheap on
+/// large tables.
+pub(crate) async fn probe_table(pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
     let mut connection = pool.acquire().await?;
+
     sqlx::query("SELECT 1 FROM zones LIMIT 1")
         .fetch_optional(&mut *connection)
         .await?;
+
     Ok(())
 }
 
@@ -289,7 +301,8 @@ pub(crate) async fn count_by_filter(
     Ok(count as u64)
 }
 
-/// Update a zone in the current transaction.
+/// Update a zone's full row, except the DNSSEC-owned `dnssec_policy_id` and
+/// `parent_ns_addrs`: ordinary zone updates cannot clobber them.
 pub(crate) async fn update_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone: Zone,
@@ -321,37 +334,39 @@ pub(crate) async fn update_tx(
     Ok(zone)
 }
 
-/// Set or clear a zone's DNSSEC policy assignment in the current transaction.
+/// Set only `dnssec_policy_id`, leaving the zone's other columns untouched;
+/// `None` marks the zone unsigned.
 pub(crate) async fn update_dnssec_policy_id_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: ZoneId,
+    id: ZoneId,
     dnssec_policy_id: Option<PolicyId>,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET dnssec_policy_id = ? WHERE id = ?")
         .bind(dnssec_policy_id)
-        .bind(zone_id)
+        .bind(id)
         .execute(&mut **tx)
         .await?;
 
     Ok(())
 }
 
-/// Set or clear a zone's configured parent name servers in the current transaction.
+/// Set only `parent_ns_addrs`, leaving the zone's other columns untouched;
+/// `None` clears the configured parent servers.
 pub(crate) async fn update_parent_ns_addrs_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: ZoneId,
+    id: ZoneId,
     parent_ns_addrs: Option<&str>,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET parent_ns_addrs = ? WHERE id = ?")
         .bind(parent_ns_addrs)
-        .bind(zone_id)
+        .bind(id)
         .execute(&mut **tx)
         .await?;
 
     Ok(())
 }
 
-/// Count zones using a DNSSEC policy.
+/// Count the zones signed under the policy: the in-use check before a delete.
 pub(crate) async fn count_by_dnssec_policy_id(
     pool: &Pool<Sqlite>,
     dnssec_policy_id: PolicyId,
@@ -367,17 +382,18 @@ pub(crate) async fn count_by_dnssec_policy_id(
     Ok(count as u64)
 }
 
-/// Update only a zone's serial in the current transaction.
+/// Bump only the serial, leaving the zone's other columns untouched.
 pub(crate) async fn update_serial_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: ZoneId,
+    id: ZoneId,
     serial: Serial,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET serial = ? WHERE id = ?")
         .bind(serial)
-        .bind(zone_id)
+        .bind(id)
         .execute(&mut **tx)
         .await?;
+
     Ok(())
 }
 
@@ -390,5 +406,6 @@ pub(crate) async fn delete_tx(
         .bind(id)
         .execute(&mut **tx)
         .await?;
+
     Ok(())
 }

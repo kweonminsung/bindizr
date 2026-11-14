@@ -82,29 +82,31 @@ mod tests {
         create_parent_dir("sqlite:my_database.db").expect("sqlite URI");
     }
 
-    /// Verify that plain paths become SQLite connection URLs.
+    /// Verify that a path without the `sqlite:` scheme gains it, and one with
+    /// it passes through.
     #[test]
-    fn to_url_formats_plain_paths() {
-        let result = to_url("/absolute/path/to/database.db");
+    fn to_url_prefixes_paths_without_the_sqlite_scheme() {
+        assert_eq!(
+            to_url("/absolute/path/to/database.db").unwrap(),
+            "sqlite:/absolute/path/to/database.db"
+        );
+        assert_eq!(
+            to_url("relative/path/to/database.db").unwrap(),
+            "sqlite:relative/path/to/database.db"
+        );
+        assert_eq!(
+            to_url("file::memory:?cache=shared").unwrap(),
+            "sqlite:file::memory:?cache=shared"
+        );
+        assert_eq!(
+            to_url("sqlite:my_database.db").unwrap(),
+            "sqlite:my_database.db"
+        );
+    }
 
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "sqlite:/absolute/path/to/database.db");
-
-        let result = to_url("relative/path/to/database.db");
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "sqlite:relative/path/to/database.db");
-
+    /// Verify that an empty path is rejected rather than turned into a URL.
+    #[test]
+    fn to_url_rejects_an_empty_path() {
         assert!(matches!(to_url(""), Err(DatabaseError::EmptySqlitePath)));
-
-        let result = to_url("file::memory:?cache=shared");
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "sqlite:file::memory:?cache=shared");
-
-        let result = to_url("sqlite:my_database.db");
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "sqlite:my_database.db");
     }
 }

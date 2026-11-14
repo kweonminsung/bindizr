@@ -21,8 +21,8 @@ use bindizr_service::types::{
 };
 use tabled::Tabled;
 
-use super::display;
-use super::display::MISSING_CELL;
+use crate::cli::output::display;
+use crate::cli::output::display::MISSING_CELL;
 
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct ZoneRow {
@@ -712,15 +712,13 @@ impl From<&AuditLogResponse> for AuditLogRow {
 
 #[cfg(test)]
 mod tests {
-    use bindizr_service::types::SecondaryStatus;
+    use bindizr_service::types::SecondaryStatus::{Ahead, InSync, Lagging, Reachable, Unreachable};
 
     use super::*;
 
-    /// Display serial lag using wraparound-aware secondary status.
+    /// Verify that serial lag is displayed using wraparound-aware secondary status.
     #[test]
     fn secondary_status_row_displays_serial_lag_across_wraparound() {
-        use SecondaryStatus::{Ahead, InSync, Lagging, Reachable, Unreachable};
-
         for (zone_serial, visible_serial, status, lag) in [
             (10, Some(10), InSync, "0"),
             (11, Some(10), Lagging, "1"),

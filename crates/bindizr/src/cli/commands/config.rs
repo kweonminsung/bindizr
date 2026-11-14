@@ -75,11 +75,11 @@ async fn reload_config(output: OutputFormat) -> Result<(), CliError> {
 }
 
 /// Validate the local configuration file.
-fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliError> {
-    let path = config::resolve_config_path(file);
+fn validate_config(config_file: Option<&str>, output: OutputFormat) -> Result<(), CliError> {
+    let path = config::resolve_config_path(config_file);
 
     if output == OutputFormat::Table {
-        outln!("Checking configuration file: {}", path);
+        outln!("Checking configuration file: {path}");
     }
 
     Config::load(&path).map_err(CliError::configuration)?;
@@ -122,7 +122,7 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
 
     if output == OutputFormat::Table {
         match found {
-            serde_json::Value::String(value) => outln!("{}", value),
+            serde_json::Value::String(value) => outln!("{value}"),
             serde_json::Value::Object(_) => outln!(
                 "{}",
                 serde_json::to_string_pretty(found).map_err(|error| {
@@ -132,7 +132,7 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
                     )
                 })?
             ),
-            value => outln!("{}", value),
+            value => outln!("{value}"),
         }
     } else {
         output::print_payload(found, output)?;
@@ -263,5 +263,5 @@ fn print_optional(key: &str, value: Option<&str>) {
 
 /// Print one configuration key and its value.
 fn print_value(key: &str, value: impl fmt::Display) {
-    outln!("  {} = {}", color::yellow(&format!("{key:<24}")), value);
+    outln!("  {} = {value}", color::yellow(&format!("{key:<24}")));
 }

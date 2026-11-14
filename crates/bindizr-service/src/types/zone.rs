@@ -10,11 +10,11 @@ use utoipa::openapi::RefOr;
 use utoipa::openapi::schema::Schema;
 use utoipa::{IntoParams, ToSchema};
 
-use super::secondary::TransferResponse;
+use crate::types::secondary::TransferResponse;
 
 /// Which records a zone reads back as: the user records alone, or with the
 /// derived DNSSEC records bindizr generates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ZoneView {
     Plain,
@@ -30,11 +30,19 @@ impl ZoneView {
             Self::Plain
         }
     }
+
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Plain => "plain",
+            Self::Signed => "signed",
+        }
+    }
 }
 
 /// Whether a manual NOTIFY bumps the zone serial first, so secondaries
 /// transfer even when nothing changed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotifySerial {
     Keep,
@@ -48,6 +56,14 @@ impl NotifySerial {
             Self::Bump
         } else {
             Self::Keep
+        }
+    }
+
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Keep => "keep",
+            Self::Bump => "bump",
         }
     }
 }
@@ -149,7 +165,7 @@ fn build_minimum_ttl_schema() -> RefOr<Schema> {
     ObjectBuilder::new()
         .schema_type(SchemaType::from_iter([Type::Integer, Type::Null]))
         .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
-        .minimum(Some(0_u64))
+        .minimum(Some(0u64))
         .maximum(Some(u64::from(Ttl::MAX.as_secs())))
         .examples([3600])
         .into()
@@ -319,7 +335,7 @@ pub struct ExportZoneFileResponse {
 }
 
 /// How the serial a secondary serves compares with the one Bindizr serves.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SecondaryStatus {
     InSync,
@@ -328,6 +344,19 @@ pub enum SecondaryStatus {
     /// The secondary answered, but serials could not be ordered (unknown or RFC 1982 half-range).
     Reachable,
     Unreachable,
+}
+
+impl SecondaryStatus {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InSync => "in_sync",
+            Self::Lagging => "lagging",
+            Self::Ahead => "ahead",
+            Self::Reachable => "reachable",
+            Self::Unreachable => "unreachable",
+        }
+    }
 }
 
 impl fmt::Display for SecondaryStatus {
@@ -380,113 +409,49 @@ pub struct ZoneStatusResponse {
     pub secondaries: Vec<SecondaryStatusResponse>,
 }
 
-impl ZoneView {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Plain => "plain",
-            Self::Signed => "signed",
-        }
-    }
-}
-
-impl serde::Serialize for ZoneView {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl NotifySerial {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Keep => "keep",
-            Self::Bump => "bump",
-        }
-    }
-}
-
-impl serde::Serialize for NotifySerial {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl SecondaryStatus {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::InSync => "in_sync",
-            Self::Lagging => "lagging",
-            Self::Ahead => "ahead",
-            Self::Reachable => "reachable",
-            Self::Unreachable => "unreachable",
-        }
-    }
-}
-
-impl serde::Serialize for SecondaryStatus {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Verify the canonical spelling and round-trip of every ZoneView variant.
+    /// Verify that `ZoneView` has one spelling across `as_str` and serde.
     #[test]
     fn zone_view_spells_itself_once() {
-        for (value, expected) in [(ZoneView::Plain, "plain"), (ZoneView::Signed, "signed")] {
-            assert_eq!(value.as_str(), expected);
+        for value in [ZoneView::Plain, ZoneView::Signed] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<ZoneView>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<ZoneView>(json!(value.as_str())).unwrap(),
                 value
             );
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every NotifySerial variant.
+    /// Verify that `NotifySerial` has one spelling across `as_str` and serde.
     #[test]
     fn notify_serial_spells_itself_once() {
-        for (value, expected) in [(NotifySerial::Keep, "keep"), (NotifySerial::Bump, "bump")] {
-            assert_eq!(value.as_str(), expected);
+        for value in [NotifySerial::Keep, NotifySerial::Bump] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<NotifySerial>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<NotifySerial>(json!(value.as_str())).unwrap(),
                 value
             );
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every SecondaryStatus variant.
+    /// Verify that `SecondaryStatus` has one spelling across `as_str` and serde.
     #[test]
     fn secondary_status_spells_itself_once() {
-        for (value, expected) in [
-            (SecondaryStatus::InSync, "in_sync"),
-            (SecondaryStatus::Lagging, "lagging"),
-            (SecondaryStatus::Ahead, "ahead"),
-            (SecondaryStatus::Reachable, "reachable"),
-            (SecondaryStatus::Unreachable, "unreachable"),
+        for value in [
+            SecondaryStatus::InSync,
+            SecondaryStatus::Lagging,
+            SecondaryStatus::Ahead,
+            SecondaryStatus::Reachable,
+            SecondaryStatus::Unreachable,
         ] {
-            assert_eq!(value.as_str(), expected);
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<SecondaryStatus>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<SecondaryStatus>(json!(value.as_str())).unwrap(),
                 value
             );
         }

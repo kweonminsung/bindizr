@@ -23,6 +23,25 @@ use crate::dns::record::{
 use crate::dns::{Ttl, name};
 use crate::model::zone::ZoneId;
 
+/// Return domain-name value types for case-insensitive comparison (RFC 4343).
+/// Record-filter SQL shares this list across backends.
+pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
+    RecordType::Cname,
+    RecordType::Dname,
+    RecordType::Ns,
+    RecordType::Ptr,
+    RecordType::Mx,
+    RecordType::Srv,
+];
+
+/// Record types shared by the API server and ExternalDNS adapter.
+pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
+    RecordType::A,
+    RecordType::Aaaa,
+    RecordType::Cname,
+    RecordType::Txt,
+];
+
 id_newtype!(
     /// The id of a record row.
     RecordId
@@ -216,118 +235,6 @@ pub enum RecordType {
     Sshfp,
     Tlsa,
     Wks,
-}
-
-impl fmt::Display for RecordType {
-    /// Write the record type in its display form.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad(self.as_str())
-    }
-}
-
-/// A record type outside the user records bindizr stores, by mnemonic or by
-/// wire type.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum ParseRecordTypeError {
-    #[error("invalid record type: {0}")]
-    Unknown(String),
-    #[error("unsupported record type: {0}")]
-    Unsupported(Rtype),
-}
-
-impl TryFrom<String> for RecordType {
-    type Error = ParseRecordTypeError;
-
-    /// Validate and convert the stored value into a record type.
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
-    }
-}
-
-/// The write half: binding renders the canonical mnemonic, the row form
-/// `TryFrom<String>` parses.
-impl<DB: sqlx::Database> sqlx::Type<DB> for RecordType
-where
-    String: sqlx::Type<DB>,
-{
-    /// Return the SQL type used to store this value.
-    fn type_info() -> DB::TypeInfo {
-        <String as sqlx::Type<DB>>::type_info()
-    }
-
-    /// Check whether the SQL type can store this value.
-    fn compatible(ty: &DB::TypeInfo) -> bool {
-        <String as sqlx::Type<DB>>::compatible(ty)
-    }
-}
-
-impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for RecordType
-where
-    String: sqlx::Encode<'q, DB>,
-{
-    /// Encode this value using its database representation.
-    fn encode_by_ref(
-        &self,
-        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
-        self.as_str().to_string().encode_by_ref(buffer)
-    }
-}
-
-impl FromStr for RecordType {
-    type Err = ParseRecordTypeError;
-
-    /// Parse a record type from its text representation.
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value.to_uppercase().as_str() {
-            "A" => Ok(Self::A),
-            "AAAA" => Ok(Self::Aaaa),
-            "CAA" => Ok(Self::Caa),
-            "CNAME" => Ok(Self::Cname),
-            "DNAME" => Ok(Self::Dname),
-            "DS" => Ok(Self::Ds),
-            "MX" => Ok(Self::Mx),
-            "NAPTR" => Ok(Self::Naptr),
-            "TXT" => Ok(Self::Txt),
-            "NS" => Ok(Self::Ns),
-            "SRV" => Ok(Self::Srv),
-            "PTR" => Ok(Self::Ptr),
-            "SSHFP" => Ok(Self::Sshfp),
-            "TLSA" => Ok(Self::Tlsa),
-            "WKS" => Ok(Self::Wks),
-            _ => value
-                .parse::<Rtype>()
-                .map_err(|_| ParseRecordTypeError::Unknown(value.to_string()))
-                .and_then(Self::try_from),
-        }
-    }
-}
-
-impl TryFrom<Rtype> for RecordType {
-    type Error = ParseRecordTypeError;
-
-    /// The record types bindizr stores as user records, keyed by wire record type.
-    /// SOA is excluded because it is managed through the zone's own fields.
-    fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
-        match rtype {
-            Rtype::A => Ok(Self::A),
-            Rtype::NS => Ok(Self::Ns),
-            Rtype::CNAME => Ok(Self::Cname),
-            Rtype::DNAME => Ok(Self::Dname),
-            Rtype::PTR => Ok(Self::Ptr),
-            Rtype::CAA => Ok(Self::Caa),
-            Rtype::DS => Ok(Self::Ds),
-            Rtype::SSHFP => Ok(Self::Sshfp),
-            Rtype::TLSA => Ok(Self::Tlsa),
-            Rtype::MX => Ok(Self::Mx),
-            Rtype::NAPTR => Ok(Self::Naptr),
-            Rtype::TXT => Ok(Self::Txt),
-            Rtype::AAAA => Ok(Self::Aaaa),
-            Rtype::SRV => Ok(Self::Srv),
-            Rtype::WKS => Ok(Self::Wks),
-            _ => Err(ParseRecordTypeError::Unsupported(rtype)),
-        }
-    }
 }
 
 impl RecordType {
@@ -561,6 +468,154 @@ impl RecordType {
     }
 }
 
+impl fmt::Display for RecordType {
+    /// Write the record type in its display form.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(self.as_str())
+    }
+}
+
+/// A record type outside the user records bindizr stores, by mnemonic or by
+/// wire type.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseRecordTypeError {
+    #[error("invalid record type: {value}")]
+    Unknown { value: String },
+    #[error("unsupported record type: {value}")]
+    Unsupported { value: Rtype },
+}
+
+impl FromStr for RecordType {
+    type Err = ParseRecordTypeError;
+
+    /// Parse a record type from its text representation.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_uppercase().as_str() {
+            "A" => Ok(Self::A),
+            "AAAA" => Ok(Self::Aaaa),
+            "CAA" => Ok(Self::Caa),
+            "CNAME" => Ok(Self::Cname),
+            "DNAME" => Ok(Self::Dname),
+            "DS" => Ok(Self::Ds),
+            "MX" => Ok(Self::Mx),
+            "NAPTR" => Ok(Self::Naptr),
+            "TXT" => Ok(Self::Txt),
+            "NS" => Ok(Self::Ns),
+            "SRV" => Ok(Self::Srv),
+            "PTR" => Ok(Self::Ptr),
+            "SSHFP" => Ok(Self::Sshfp),
+            "TLSA" => Ok(Self::Tlsa),
+            "WKS" => Ok(Self::Wks),
+            _ => value
+                .parse::<Rtype>()
+                .map_err(|_| ParseRecordTypeError::Unknown {
+                    value: value.to_string(),
+                })
+                .and_then(Self::try_from),
+        }
+    }
+}
+
+impl TryFrom<String> for RecordType {
+    type Error = ParseRecordTypeError;
+
+    /// Validate and convert the stored value into a record type.
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+/// The write half: binding renders the canonical mnemonic, the row form
+/// `TryFrom<String>` parses.
+impl<DB: sqlx::Database> sqlx::Type<DB> for RecordType
+where
+    String: sqlx::Type<DB>,
+{
+    /// Return the SQL type used to store this value.
+    fn type_info() -> DB::TypeInfo {
+        <String as sqlx::Type<DB>>::type_info()
+    }
+
+    /// Check whether the SQL type can store this value.
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <String as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for RecordType
+where
+    String: sqlx::Encode<'q, DB>,
+{
+    /// Encode this value using its database representation.
+    fn encode_by_ref(
+        &self,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<IsNull, BoxDynError> {
+        self.as_str().to_string().encode_by_ref(buffer)
+    }
+}
+
+impl From<RecordType> for String {
+    /// Render the canonical mnemonic for serde.
+    fn from(record_type: RecordType) -> Self {
+        record_type.as_str().to_string()
+    }
+}
+
+impl TryFrom<Rtype> for RecordType {
+    type Error = ParseRecordTypeError;
+
+    /// The record types bindizr stores as user records, keyed by wire record type.
+    /// SOA is excluded because it is managed through the zone's own fields.
+    fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
+        match rtype {
+            Rtype::A => Ok(Self::A),
+            Rtype::NS => Ok(Self::Ns),
+            Rtype::CNAME => Ok(Self::Cname),
+            Rtype::DNAME => Ok(Self::Dname),
+            Rtype::PTR => Ok(Self::Ptr),
+            Rtype::CAA => Ok(Self::Caa),
+            Rtype::DS => Ok(Self::Ds),
+            Rtype::SSHFP => Ok(Self::Sshfp),
+            Rtype::TLSA => Ok(Self::Tlsa),
+            Rtype::MX => Ok(Self::Mx),
+            Rtype::NAPTR => Ok(Self::Naptr),
+            Rtype::TXT => Ok(Self::Txt),
+            Rtype::AAAA => Ok(Self::Aaaa),
+            Rtype::SRV => Ok(Self::Srv),
+            Rtype::WKS => Ok(Self::Wks),
+            _ => Err(ParseRecordTypeError::Unsupported { value: rtype }),
+        }
+    }
+}
+
+impl Ord for RecordType {
+    /// Preserve mnemonic ordering in record lists and diffs.
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl PartialOrd for RecordType {
+    /// Compare record types by their canonical mnemonic.
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl utoipa::PartialSchema for RecordType {
+    /// Describe the closed list of supported user record types.
+    fn schema() -> RefOr<Schema> {
+        ObjectBuilder::new()
+            .schema_type(Type::String)
+            .enum_values(Some(["A", "AAAA", "CAA", "CNAME", "DNAME", "DS", "MX", "NAPTR", "TXT", "NS", "SRV", "PTR", "SSHFP", "TLSA", "WKS"]))
+            .description(Some("Supported user record type. WKS values use <IPv4> <protocol> [ports...]. Unsupported types are rejected; SOA and signer-managed DNSSEC records have separate contracts."))
+            .into()
+    }
+}
+
+impl utoipa::ToSchema for RecordType {}
+
 /// TXT text for the display column: control characters as `\DDD`, since a
 /// text column cannot hold a NUL, and everything else as typed, for search.
 fn to_display_text(text: &str) -> String {
@@ -581,32 +636,10 @@ fn to_display_text(text: &str) -> String {
     display
 }
 
-/// Return domain-name value types for case-insensitive comparison (RFC 4343).
-/// Record-filter SQL shares this list across backends.
-pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
-    RecordType::Cname,
-    RecordType::Dname,
-    RecordType::Ns,
-    RecordType::Ptr,
-    RecordType::Mx,
-    RecordType::Srv,
-];
-
-/// Record types shared by the API server and ExternalDNS adapter.
-pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
-    RecordType::A,
-    RecordType::Aaaa,
-    RecordType::Cname,
-    RecordType::Txt,
-];
-
 /// Render the stored trailing domain name; MX priority is stored separately,
 /// and SRV retains only weight, port, and target in its value.
 fn display_last_name_field(value: &str, field_count: usize) -> String {
-    let mut fields = value
-        .split_whitespace()
-        .map(str::to_string)
-        .collect::<Vec<_>>();
+    let mut fields: Vec<String> = value.split_whitespace().map(str::to_string).collect();
 
     if fields.len() != field_count {
         return value.to_string();
@@ -622,37 +655,3 @@ fn display_last_name_field(value: &str, field_count: usize) -> String {
 
 #[cfg(test)]
 mod tests;
-
-impl Ord for RecordType {
-    /// Preserve mnemonic ordering in record lists and diffs.
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.as_str().cmp(other.as_str())
-    }
-}
-
-impl PartialOrd for RecordType {
-    /// Compare record types by their canonical mnemonic.
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl From<RecordType> for String {
-    /// Render the canonical mnemonic for serde.
-    fn from(value: RecordType) -> Self {
-        value.as_str().to_string()
-    }
-}
-
-impl utoipa::PartialSchema for RecordType {
-    /// Describe the closed list of supported user record types.
-    fn schema() -> RefOr<Schema> {
-        ObjectBuilder::new()
-            .schema_type(Type::String)
-            .enum_values(Some(["A", "AAAA", "CAA", "CNAME", "DNAME", "DS", "MX", "NAPTR", "TXT", "NS", "SRV", "PTR", "SSHFP", "TLSA", "WKS"]))
-            .description(Some("Supported user record type. WKS values use <IPv4> <protocol> [ports...]. Unsupported types are rejected; SOA and signer-managed DNSSEC records have separate contracts."))
-            .into()
-    }
-}
-
-impl utoipa::ToSchema for RecordType {}

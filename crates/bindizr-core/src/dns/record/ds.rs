@@ -5,14 +5,6 @@ use super::value::MAX_RECORD_RDATA;
 use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 use crate::dns::dnssec::KeyTag;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DsRecordValue {
-    key_tag: KeyTag,
-    algorithm: u8,
-    digest_type: u8,
-    digest: Vec<u8>,
-}
-
 /// The algorithm mnemonics a DS may spell instead of a number (RFC 4034,
 /// Appendix A.1 and the IANA DNS Security Algorithm Numbers registry).
 const ALGORITHM_MNEMONICS: [(&str, u8); 16] = [
@@ -33,6 +25,14 @@ const ALGORITHM_MNEMONICS: [(&str, u8); 16] = [
     ("PRIVATEDNS", 253),
     ("PRIVATEOID", 254),
 ];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DsRecordValue {
+    key_tag: KeyTag,
+    algorithm: u8,
+    digest_type: u8,
+    digest: Vec<u8>,
+}
 
 impl DsRecordValue {
     /// The value is `<key tag> <algorithm> <digest type> <digest>`: the algorithm
@@ -121,7 +121,7 @@ impl DsRecordValue {
 
 #[cfg(test)]
 mod tests {
-    use super::DsRecordValue;
+    use super::*;
 
     /// Verify that `parse` joins spaced digest and canonicalizes hex case.
     #[test]

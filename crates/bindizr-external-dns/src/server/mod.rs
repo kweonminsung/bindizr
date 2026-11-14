@@ -7,10 +7,11 @@ use std::time::Instant;
 
 use axum::extract::{DefaultBodyLimit, MatchedPath, Request, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
-use axum::middleware::{self, Next};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::{Router, routing};
+use axum::{Router, middleware, routing};
 use bindizr_core::metrics::TEXT_CONTENT_TYPE;
+use serde::Serialize;
 
 use crate::metrics::AdapterMetrics;
 use crate::upstream::{UpstreamClient, UpstreamError};
@@ -37,7 +38,7 @@ const NO_MANAGEABLE_NAMES: &str = "no manageable names: grant the API token's ro
 /// Build the webhook router served on the (localhost) provider listener.
 pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/", routing::get(negotiate))
+        .route("/", routing::get(handle_negotiate))
         .route("/records", routing::get(list_records).post(apply_changes))
         .route("/adjustendpoints", routing::post(adjust_endpoints))
         .route_layer(middleware::from_fn_with_state(
@@ -56,7 +57,6 @@ pub(crate) fn health_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-/// Serialize a webhook response with its JSON content type.
 impl IntoResponse for UpstreamError {
     /// Map upstream 5xx and transport failures to retryable 502; pass through 4xx.
     /// Map 401 to 503 so external-dns retries after token replacement; 403 stays permanent.
@@ -91,7 +91,7 @@ impl IntoResponse for UpstreamError {
 }
 
 /// Encode a webhook reply as JSON under the negotiated media type.
-fn build_json_response<T: serde::Serialize>(value: &T) -> Response {
+fn build_json_response<T: Serialize>(value: &T) -> Response {
     match serde_json::to_string(value) {
         // external-dns compares the negotiation Content-Type byte-for-byte,
         // so success responses carry the exact media-type string.
@@ -159,7 +159,7 @@ async fn track_webhook_metrics(
 }
 
 /// `GET /` — negotiation: return the DomainFilter of manageable names.
-async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+async fn handle_negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if !media_type::is_acceptable(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,
@@ -216,10 +216,10 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
     };
 
     let bindizr_changes = match changes.to_apply_changes_request() {
-        Ok(converted) => converted,
-        Err(message) => {
-            log::warn!("event=records_apply rejected={message}");
-            return (StatusCode::BAD_REQUEST, message.to_string()).into_response();
+        Ok(bindizr_changes) => bindizr_changes,
+        Err(error) => {
+            log::warn!("event=records_apply rejected={error}");
+            return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
         }
     };
 
@@ -255,9 +255,9 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
 
     let records = match wire::to_bindizr_records(&endpoints) {
         Ok(records) => records,
-        Err(message) => {
-            log::warn!("event=adjust_endpoints rejected={message}");
-            return (StatusCode::BAD_REQUEST, message.to_string()).into_response();
+        Err(error) => {
+            log::warn!("event=adjust_endpoints rejected={error}");
+            return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
         }
     };
 

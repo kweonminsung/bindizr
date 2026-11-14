@@ -1,8 +1,10 @@
+use domain::base::iana::{Class, Rtype};
+
 use super::*;
-use crate::dns::message::{Class, Edns, Rtype};
+use crate::dns::message::Edns;
 use crate::model::record::RecordType;
 
-/// Decode compressed SOA names and unsigned fields without crossing RDLENGTH.
+/// Verify that compressed SOA names and unsigned fields decode without crossing RDLENGTH.
 #[test]
 fn soa_update_decodes_compression_and_checks_rdata_length() {
     let mut message = build_minimal_update_with_ztype(6);
@@ -95,7 +97,7 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
         0x01, 0x2c, // Fudge
         0x00, 0x20, // MAC size: the 32 octets hmac-sha256 produces
     ]);
-    rdata.extend_from_slice(&[0u8; 32]);
+    rdata.extend_from_slice(&[0; 32]);
     rdata.extend_from_slice(&[
         0x12, 0x34, // Original ID
         0x00, 0x00, // Error
@@ -112,7 +114,7 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     message.extend_from_slice(&rdata);
 }
 
-/// TSIG belongs only at the end of Additional (RFC 8945, Section 5.2),
+/// Verify that TSIG is accepted only at the end of Additional (RFC 8945, Section 5.2),
 /// even when a misplaced owner would fail a later zone or grant check.
 #[test]
 fn parse_update_request_rejects_tsig_in_prerequisite_and_update_sections() {
@@ -128,28 +130,30 @@ fn parse_update_request_rejects_tsig_in_prerequisite_and_update_sections() {
                     append_tsig_record(&mut message);
                 }
 
-                assert!(matches!(
+                assert_eq!(
                     UpdateRequest::parse(&message),
                     Err(ParseUpdateError::InvalidTsig)
-                ));
+                );
             }
         }
     }
 }
 
-/// Reject non-SOA zone types before the service considers authority.
+/// Verify that non-SOA zone types are rejected before the service considers authority.
 #[test]
 fn parse_update_request_rejects_non_soa_zone_type() {
     for class in [Class::IN, Class::CH, Class::HS, Class::from_int(65280)] {
         let mut message = build_minimal_update_with_ztype(1);
         let class_start = message.len() - 2;
         message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
-        let error = UpdateRequest::parse(&message).unwrap_err();
-        assert!(matches!(error, ParseUpdateError::InvalidZoneSection));
+        assert_eq!(
+            UpdateRequest::parse(&message),
+            Err(ParseUpdateError::InvalidZoneSection)
+        );
     }
 }
 
-/// Preserve ZCLASS so the service can decide whether the zone is served.
+/// Verify that ZCLASS is preserved so the service can decide whether the zone is served.
 #[test]
 fn parse_update_request_preserves_zone_class() {
     for class in [
@@ -172,24 +176,24 @@ fn parse_update_request_preserves_zone_class() {
 
         for count in [0u16, 2] {
             message[4..6].copy_from_slice(&count.to_be_bytes());
-            assert!(matches!(
+            assert_eq!(
                 UpdateRequest::parse(&message),
                 Err(ParseUpdateError::InvalidHeader)
-            ));
+            );
         }
     }
 }
 
-/// A missing class field is malformed, not an unsupported zone class.
+/// Verify that a missing class field is malformed, not an unsupported zone class.
 #[test]
 fn parse_update_request_rejects_truncated_zone_class() {
     let message = build_minimal_update_with_ztype(6);
 
     for missing in [1, 2] {
-        assert!(matches!(
+        assert_eq!(
             UpdateRequest::parse(&message[..message.len() - missing]),
             Err(ParseUpdateError::InvalidZoneSection)
-        ));
+        );
     }
 }
 
@@ -219,7 +223,7 @@ fn parse_update_request_accepts_opt_before_tsig() {
     assert_eq!(tsig.fudge, 300);
 }
 
-/// Escaping keeps the one-label key name distinct from the multi-label name of
+/// Verify that escaping keeps the one-label key name distinct from the multi-label name of
 /// the same spelling, which decodes to different labels.
 #[test]
 fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
@@ -237,8 +241,8 @@ fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
     assert_eq!(request.tsig.unwrap().name, r"Key\046With\046Dot.");
 }
 
-/// The wire carries one label holding a dot; rendering it unescaped would let
-/// it read as two and land the update in a zone it is not in.
+/// Verify that a zone label holding a dot is rendered escaped; unescaped it would
+/// read as two labels and land the update in a zone it is not in.
 #[test]
 fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
     let mut message = Vec::new();
@@ -269,9 +273,10 @@ fn parse_update_request_rejects_tsig_before_other_additional_records() {
     append_tsig_record(&mut message);
     append_opt_record(&mut message);
 
-    let error = UpdateRequest::parse(&message).unwrap_err();
-
-    assert!(matches!(error, ParseUpdateError::InvalidTsig));
+    assert_eq!(
+        UpdateRequest::parse(&message),
+        Err(ParseUpdateError::InvalidTsig)
+    );
 }
 
 /// Verify that `to_record_value` preserves TXT character string boundaries.
@@ -301,7 +306,7 @@ fn to_record_value_preserves_txt_character_string_boundaries() {
     assert!(!RecordType::Txt.values_equal(&first_value, None, &second_value, None));
 }
 
-/// Keep RDLENGTH-delimited values from consuming the following record or TSIG.
+/// Verify that RDLENGTH-delimited values do not consume the following record or TSIG.
 #[test]
 fn variable_length_rdata_stops_before_the_next_record() {
     for (rtype, rdata) in [
@@ -378,8 +383,8 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     assert!(!error.to_string().is_empty());
 }
 
-/// Verify rejection of empty TXT RDATA, which lacks the character-string required by RFC 1035,
-/// Section 3.3.14.
+/// Verify that empty TXT RDATA, which lacks the character-string required by RFC 1035,
+/// Section 3.3.14, is rejected.
 #[test]
 fn to_record_value_rejects_empty_txt_rdata() {
     let record = update_record(Rtype::TXT, Class::IN, 300, Vec::new());
@@ -387,7 +392,7 @@ fn to_record_value_rejects_empty_txt_rdata() {
     assert!(!error.to_string().is_empty());
 }
 
-/// Preserve arbitrary TXT octets through UPDATE decoding.
+/// Verify that arbitrary TXT octets survive UPDATE decoding.
 #[test]
 fn to_record_value_preserves_non_utf8_txt_character_strings() {
     let record = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
@@ -426,7 +431,7 @@ fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> 
     }
 }
 
-/// Verify empty ANY-class deletes and NONE-class deletes of specific RDATA
+/// Verify that empty ANY-class deletes and NONE-class deletes of specific RDATA are accepted
 /// (RFC 2136, Section 2.5).
 #[test]
 fn update_shape_accepts_well_formed_deletes() {
@@ -457,7 +462,7 @@ fn update_shape_reports_malformed_delete_fields() {
             },
         ),
     ] {
-        assert_eq!(record.validate_update_shape().unwrap_err(), expected);
+        assert_eq!(record.validate_update_shape(), Err(expected));
     }
 }
 
@@ -480,12 +485,12 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
             Rtype::from_int(248),
             Rtype::from_int(65535),
         ] {
-            let data = if class == Class::ANY {
+            let rdata = if class == Class::ANY {
                 Vec::new()
             } else {
                 vec![1]
             };
-            let record = update_record(rtype, class, 0, data);
+            let record = update_record(rtype, class, 0, rdata);
             let result = record.validate_update_shape();
 
             if class == Class::ANY && rtype == Rtype::ANY {
@@ -501,12 +506,12 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
         // A valid data type may be absent from the storage model; its
         // deletion still has a well-formed wire shape (RFC 3597, Section 2).
         for rtype in [Rtype::A, Rtype::SOA, Rtype::HINFO, Rtype::from_int(65280)] {
-            let data = if class == Class::ANY {
+            let rdata = if class == Class::ANY {
                 Vec::new()
             } else {
                 vec![1]
             };
-            update_record(rtype, class, 0, data)
+            update_record(rtype, class, 0, rdata)
                 .validate_update_shape()
                 .unwrap();
         }
@@ -568,7 +573,7 @@ fn parse_update_request_reads_the_opt_record() {
     );
 }
 
-/// Unsupported ordinary types cannot become stored update values.
+/// Verify that unsupported ordinary types cannot become stored update values.
 #[test]
 fn to_record_value_rejects_unsupported_ordinary_types() {
     for rtype in [Rtype::HINFO, Rtype::from_int(65280)] {

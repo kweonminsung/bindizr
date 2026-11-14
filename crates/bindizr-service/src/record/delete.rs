@@ -26,9 +26,7 @@ pub async fn delete(
     // record (the create/bulk/import order); the reverse can deadlock.
     let zone_id = match bindizr_db::record::get(cx.db(), record_id).await {
         Ok(Some(record)) => record.zone_id,
-        Ok(None) => {
-            return Err(ServiceError::record_not_found(record_id));
-        }
+        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(error) => {
             log::error!("Failed to fetch record: {error}");
             return Err(ServiceError::internal_with_source(
@@ -62,9 +60,7 @@ pub async fn delete(
         let existing_record =
             match bindizr_db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
                 Ok(Some(record)) if record.zone_id == zone.id => record,
-                Ok(Some(_) | None) => {
-                    return Err(ServiceError::record_not_found(record_id));
-                }
+                Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
                 Err(error) => {
                     log::error!("Failed to fetch record: {error}");
                     return Err(ServiceError::internal_with_source(
@@ -179,6 +175,7 @@ pub async fn delete(
 
     Ok(response)
 }
+
 /// Delete the selected records atomically, advancing the serial once
 /// so secondaries cannot observe a partly removed set.
 pub async fn delete_matching(
@@ -211,7 +208,7 @@ pub async fn delete_matching(
 
     let mut tx = transaction::begin_tx(cx, "failed to delete records").await?;
 
-    let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
+    let apply_result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -250,12 +247,12 @@ pub async fn delete_matching(
             zone.id,
             records_at_name.iter().cloned().map(RecordData::from),
         );
-        let removed: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
+        let deleted_ids: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
         let after = caller.readable_records(
             zone.id,
             records_at_name
                 .iter()
-                .filter(|record| !removed.contains(&record.id))
+                .filter(|record| !deleted_ids.contains(&record.id))
                 .cloned()
                 .map(RecordData::from),
         );
@@ -302,7 +299,8 @@ pub async fn delete_matching(
     }
     .await;
 
-    let (response, owner) = transaction::finish_tx(tx, result, "failed to delete records").await?;
+    let (response, owner) =
+        transaction::finish_tx(tx, apply_result, "failed to delete records").await?;
 
     log::info!(
         "event=record_delete_matching zone={} name={} type={:?} deleted={} applied={}",

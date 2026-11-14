@@ -9,7 +9,8 @@ use crate::common::dns::tsig;
 use crate::common::dns::tsig::KeyRole;
 use crate::common::{TestApp, TestAppOptions, dns};
 
-/// Resolve equivalent catalog names through SOA, AXFR and IXFR without changing the question.
+/// Verify that equivalent catalog names resolve through SOA, AXFR and IXFR without changing
+/// the question.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn catalog_queries_match_equivalent_dns_escapes() {
@@ -28,17 +29,17 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
         .await;
         app.create_secondary("loopback", "127.0.0.1").await;
         app.create_test_zone().await;
-        let signing_key = tsig::create_tsig_key(&app, "catalog-key", KeyRole::Admin).await;
+        let key = tsig::create_tsig_key(&app, "catalog-key", KeyRole::Admin).await;
 
-        for key in [None, Some(&signing_key)] {
+        for key in [None, Some(&key)] {
             for qtype in [Rtype::SOA, Rtype::IXFR] {
                 let query = if qtype == Rtype::IXFR {
                     common::build_ixfr_query(question, 1)
                 } else {
                     common::build_edns_query(question, qtype, &[(0, false)])
                 };
-                let response = dns::exchange_request(query, key, |bytes| {
-                    dns::exchange_udp(app.dns_port(), bytes)
+                let response = dns::exchange_request(query, key, |message| {
+                    dns::exchange_udp(app.dns_port(), message)
                 })
                 .unwrap();
 
@@ -62,8 +63,8 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
                 } else {
                     common::build_edns_query(question, qtype, &[(0, false)])
                 };
-                let response = dns::exchange_request(query, key, |bytes| {
-                    crate::common::exchange_tcp(app.dns_port(), bytes)
+                let response = dns::exchange_request(query, key, |message| {
+                    crate::common::exchange_tcp(app.dns_port(), message)
                 })
                 .unwrap();
 
@@ -95,7 +96,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
     }
 }
 
-/// Serve every generated catalog owner at the longest accepted catalog name.
+/// Verify that every generated catalog owner is served at the longest accepted catalog name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn catalog_member_owners_fit_at_the_wire_length_boundary() {

@@ -13,7 +13,7 @@ use crate::socket::types::{
     DaemonDoctorResponse, DaemonResponse, DoctorCheckResponse, DoctorCheckStatus,
 };
 
-/// The daemon-side installation checks. The catalog zone is the one probed
+/// Run the daemon-side installation checks. The catalog zone is the one probed
 /// because it exists before any user zone, so serial comparison always works.
 pub(crate) async fn check_installation(
     cx: &Context,

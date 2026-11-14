@@ -20,7 +20,7 @@ pub enum LockLevel {
 }
 
 impl LockLevel {
-    /// The locking clause for this level, as a suffix appended after any
+    /// Return the locking clause for this level, as a suffix appended after any
     /// `ORDER BY`. SQLite locks the whole database instead, so it never calls
     /// this.
     pub(crate) fn clause(self) -> &'static str {
@@ -37,6 +37,7 @@ impl LockLevel {
 #[derive(Debug)]
 pub struct Transaction<'a>(pub(crate) TransactionKind<'a>);
 
+/// The backend-specific `sqlx::Transaction` a `Transaction` wraps.
 #[derive(Debug)]
 pub(crate) enum TransactionKind<'a> {
     MySql(sqlx::Transaction<'a, MySql>),

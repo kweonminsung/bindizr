@@ -55,7 +55,7 @@ pub async fn get(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
     let secondary = lookup_by_name(cx, name).await?;
-    load_response(cx, secondary).await
+    lookup_response(cx, &secondary).await
 }
 
 /// The enabled secondaries, for the DNS plane, which takes no caller.
@@ -69,13 +69,13 @@ pub async fn list_enabled(cx: &Context) -> Result<Vec<Secondary>, ServiceError> 
 }
 
 /// The API form of a secondary, naming its NOTIFY key.
-pub(crate) async fn load_response(
+pub(crate) async fn lookup_response(
     cx: &Context,
-    secondary: Secondary,
+    secondary: &Secondary,
 ) -> Result<SecondaryResponse, ServiceError> {
-    let tsig_key = super::find_notify_tsig_key(cx, &secondary).await?;
+    let tsig_key = super::find_notify_tsig_key(cx, secondary).await?;
     Ok(SecondaryResponse::from_secondary(
-        &secondary,
+        secondary,
         tsig_key.as_ref().map(|tsig_key| tsig_key.name.as_str()),
     ))
 }

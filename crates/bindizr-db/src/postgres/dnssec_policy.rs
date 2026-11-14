@@ -12,7 +12,7 @@ pub(crate) async fn create_tx(
 ) -> Result<DnssecPolicy, DatabaseError> {
     let now = Utc::now();
 
-    let result = sqlx::query(
+    let row = sqlx::query(
         r#"
         INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -30,13 +30,13 @@ pub(crate) async fn create_tx(
     .fetch_one(&mut **tx)
     .await?;
 
-    policy.id = PolicyId::from(result.get::<i32, _>(0));
+    policy.id = PolicyId::from(row.get::<i32, _>(0));
     policy.created_at = now;
 
     Ok(policy)
 }
 
-/// Find a DNSSEC policy by ID in the current transaction.
+/// Get a DNSSEC policy by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: PolicyId,
@@ -44,7 +44,7 @@ pub(crate) async fn get_tx(
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
         "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = $1{}",
-        lock_level.clause()
+        lock_level.clause(),
     )))
     .bind(id)
     .fetch_optional(&mut **tx)
@@ -53,7 +53,7 @@ pub(crate) async fn get_tx(
     Ok(policy)
 }
 
-/// Find a DNSSEC policy by name.
+/// Get a DNSSEC policy by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Postgres>,
     name: &str,
@@ -70,7 +70,7 @@ pub(crate) async fn get_by_name(
     Ok(policy)
 }
 
-/// Find a DNSSEC policy by name in the current transaction.
+/// Get a DNSSEC policy by name in the current transaction.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, Postgres>,
     name: &str,
@@ -78,7 +78,7 @@ pub(crate) async fn get_by_name_tx(
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
         "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = $1{}",
-        lock_level.clause()
+        lock_level.clause(),
     )))
     .bind(name)
     .fetch_optional(&mut **tx)
@@ -100,7 +100,8 @@ pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<DnssecPolicy>,
     Ok(policies)
 }
 
-/// Update a DNSSEC policy in the current transaction.
+/// Write the editable timing fields; the key layout, algorithm, and denial mode
+/// are fixed at creation.
 pub(crate) async fn update_tx(
     tx: &mut Transaction<'_, Postgres>,
     policy: DnssecPolicy,

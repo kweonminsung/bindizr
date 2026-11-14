@@ -21,6 +21,7 @@ const RESOLVE_FAILURE_TTL: Duration = Duration::from_secs(5);
 /// A resolver that never answers must not hold a DNS request open.
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// One hostname's resolved addresses, kept until they expire.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CachedAddrs {
     addrs: Vec<IpAddr>,
@@ -133,7 +134,7 @@ mod tests {
             .collect()
     }
 
-    /// Match either IP family regardless of port, without resolving earlier hostnames.
+    /// Verify that either IP family matches regardless of port, without resolving earlier hostnames.
     #[tokio::test]
     async fn acl_matches_literal_addresses_without_resolving_hostnames() {
         let addresses = targets(&[
@@ -150,7 +151,7 @@ mod tests {
         assert!(cache.locked().is_empty());
     }
 
-    /// Deny unmatched clients, including when the registry is empty.
+    /// Verify that unmatched clients are denied, including when the registry is empty.
     #[tokio::test]
     async fn acl_rejects_unconfigured_addresses() {
         let cache = AddressCache::new();
@@ -159,7 +160,7 @@ mod tests {
         assert!(!matches_client_address(&cache, targets(&["192.0.2.10"]).iter(), client_ip).await);
     }
 
-    /// Reuse successful and failed resolutions under the canonical hostname key.
+    /// Verify that successful and failed resolutions are reused under the canonical hostname key.
     #[tokio::test]
     async fn hostname_entries_reuse_cached_resolutions() {
         let addresses = targets(&["Missing.Example.", "Bind9.Example."]);

@@ -153,8 +153,8 @@ pub async fn apply(
             ));
         }
 
-        // Prerequisites are decoded and evaluated in wire order (Section 3.2.5);
-        // value-dependent sets are compared whole after the section (Section 3.2.3).
+        // Prerequisites are decoded and evaluated in wire order (RFC 2136, Section 3.2.5);
+        // value-dependent sets are compared whole after the section (RFC 2136, Section 3.2.3).
         let served = if update.prerequisites.is_empty() {
             RecordSets::new()
         } else {
@@ -166,8 +166,8 @@ pub async fn apply(
         for record in update.prerequisites {
             let prerequisite = decode::decode_prerequisite(record, &zone.name, update.message)?;
 
-            // A prerequisite reads what it names, so its read grant precedes its
-            // evaluation (Section 3.3.1); SOA and DNSSEC need one without a type restriction.
+            // A prerequisite reads what it names, so its read grant precedes its evaluation
+            // (RFC 2136, Section 3.3.1); SOA and DNSSEC need one without a type restriction.
             let record_type = prerequisite
                 .record_type()
                 .and_then(|rtype| RecordType::try_from(rtype).ok());
@@ -222,9 +222,10 @@ pub async fn apply(
                 bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
             }
 
-            let updated = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
-            dnssec::sign_zone_tx(&mut tx, &updated, new_serial).await?;
-            zone::save_version_tx(&mut tx, &updated, new_serial, caller.change_origin()).await?;
+            let updated_zone = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
+            dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
+            zone::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin())
+                .await?;
         }
 
         Ok((changed, zone, new_serial))
@@ -250,7 +251,7 @@ pub async fn apply(
     Ok(changed)
 }
 
-/// The owner of an update record. The wire carries owners absolutely, so a name
+/// Parse the owner of an update record. The wire carries owners absolutely, so a name
 /// outside the zone is NOTZONE rather than something to qualify.
 fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, NsupdateError> {
     if name.trim_end_matches('.').is_empty() {

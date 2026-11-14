@@ -1,8 +1,19 @@
 use std::fs;
 use std::os::unix::fs::MetadataExt;
+use std::sync::Arc;
+use std::time::Duration;
 
+use bindizr_core::config::Config;
+use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
+use bindizr_core::metrics::Metrics;
+use bindizr_db::Db;
+use bindizr_service::authorization::Caller;
+use bindizr_service::types::UpdateZoneRequest;
+use bindizr_service::{Context, secondary};
 use serde_json::json;
-use tokio::task;
+use tokio::net::UdpSocket;
+use tokio::sync::watch;
+use tokio::{task, time};
 
 use super::*;
 
@@ -37,8 +48,6 @@ fn command_rejects_wrongly_typed_fields() {
 /// payload nested under the command name.
 #[test]
 fn command_round_trips_between_client_and_server() {
-    use bindizr_service::types::UpdateZoneRequest;
-
     let sent = DaemonCommand::UpdateZone {
         zone_name: "example.com".to_string(),
         request: UpdateZoneRequest {
@@ -64,8 +73,8 @@ fn command_round_trips_between_client_and_server() {
 /// Verify that `prepare_socket_path` creates the parent directory owner-only.
 #[tokio::test]
 async fn prepare_socket_path_creates_parent_directory() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("run").join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("run").join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
 
     prepare_socket_path(socket_path).await.unwrap();
@@ -79,10 +88,11 @@ async fn prepare_socket_path_creates_parent_directory() {
 /// Verify that `prepare_socket_path` refuses a parent reached through a symlink.
 #[tokio::test]
 async fn prepare_socket_path_rejects_symlinked_parent_directory() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::create_dir(dir.path().join("real")).unwrap();
-    std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
-    let socket_path = dir.path().join("link").join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("real")).unwrap();
+    std::os::unix::fs::symlink(directory.path().join("real"), directory.path().join("link"))
+        .unwrap();
+    let socket_path = directory.path().join("link").join("bindizr.sock");
 
     let error = prepare_socket_path(socket_path.to_str().unwrap())
         .await
@@ -94,11 +104,11 @@ async fn prepare_socket_path_rejects_symlinked_parent_directory() {
     );
 }
 
-/// Verify the socket's owner and the UID both ends read for peer authorization.
+/// Verify that the socket's owner and the UID both ends read for peer authorization agree.
 #[tokio::test]
 async fn accepted_connection_returns_peer_uid() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
 
     let listener = bind_socket(socket_path).await.unwrap();
@@ -122,10 +132,10 @@ async fn accepted_connection_returns_peer_uid() {
 /// Verify that `prepare_socket_path` removes stale socket.
 #[tokio::test]
 async fn prepare_socket_path_removes_stale_socket() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
-    let listener = UnixListener::bind(socket_path).expect("failed to bind test socket");
+    let listener = UnixListener::bind(socket_path).unwrap();
     drop(listener);
 
     prepare_socket_path(socket_path).await.unwrap();
@@ -136,10 +146,10 @@ async fn prepare_socket_path_removes_stale_socket() {
 /// Verify that `prepare_socket_path` rejects active socket.
 #[tokio::test]
 async fn prepare_socket_path_rejects_active_socket() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
-    let listener = UnixListener::bind(socket_path).expect("failed to bind test socket");
+    let listener = UnixListener::bind(socket_path).unwrap();
 
     let error = prepare_socket_path(socket_path).await.unwrap_err();
 
@@ -151,8 +161,8 @@ async fn prepare_socket_path_rejects_active_socket() {
 /// Verify that `prepare_socket_path` rejects non socket file.
 #[tokio::test]
 async fn prepare_socket_path_rejects_non_socket_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
     fs::write(socket_path, "not a socket").unwrap();
 
@@ -162,21 +172,10 @@ async fn prepare_socket_path_rejects_non_socket_file() {
     assert!(Path::new(socket_path).exists());
 }
 
-/// Shutdown waits for committed commands and closes clients still waiting for input.
+/// Verify that shutdown waits for committed commands and closes clients still waiting for input.
 #[tokio::test]
 async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use bindizr_core::config::Config;
-    use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
-    use bindizr_core::metrics::Metrics;
-    use bindizr_service::authorization::Caller;
-    use bindizr_service::{Context, secondary};
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
-    use tokio::net::UdpSocket;
-    use tokio::sync::watch;
-    use tokio::time;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
     let mut config: Config = serde_json::from_str("{}").unwrap();
     config.database.sqlite.file_path = "sqlite::memory:".to_string();
@@ -185,7 +184,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     config.dns.notify.retries = 0;
     let tls = TlsCertificates::load(&config).unwrap();
 
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let db = Db::connect(&config.database).await.unwrap();
     let cx = Arc::new(Context::new(
         config,
         String::new(),

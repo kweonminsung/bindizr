@@ -8,7 +8,7 @@ mod history;
 mod import;
 mod status;
 
-/// Preserve escaped trailing spaces through CLI/socket writes and reject escaped wildcard zones.
+/// Verify that escaped trailing spaces are preserved through CLI/socket writes and escaped wildcard zones are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn escaped_zone_names_follow_the_same_policy_via_cli() {
@@ -33,14 +33,14 @@ async fn escaped_zone_names_follow_the_same_policy_via_cli() {
             None,
         )
         .await;
-    let created: Value = serde_json::from_str(&created).unwrap();
+    let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
 
     assert_eq!(created["zone"]["name"], canonical);
 
     let read = app
         .run_cli_success(&["zone", "get", &canonical, "--output", "json"], None)
         .await;
-    let read: Value = serde_json::from_str(&read).unwrap();
+    let read: Value = serde_json::from_str(&read).expect("CLI did not return valid JSON");
 
     assert_eq!(read["zone"]["name"], canonical);
     let wildcard = format!(r"\042.{base}");
@@ -54,8 +54,8 @@ async fn escaped_zone_names_follow_the_same_policy_via_cli() {
         "admin@example",
     ];
 
-    let output = app.run_cli(&args, None).await;
-    common::assert_cli_failure_contains(&args, &output, "wildcard");
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "wildcard");
 }
 
 /// Verify that zone create takes SOA timers.
@@ -102,7 +102,7 @@ async fn zone_create_takes_soa_timers() {
     assert_eq!(zone["minimum_ttl"], 120);
 }
 
-/// Verify zone creation, retrieval, and deletion.
+/// Verify that zones are created, retrieved, and deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_supports_create_read_and_delete_via_cli() {
@@ -172,22 +172,22 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
     assert_eq!(updated["mname"], format!("ns1.{zone_name}"));
 }
 
-/// Verify rejection of invalid zone names and TTLs.
+/// Verify that invalid zone names and TTLs are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_rejects_invalid_name_and_ttl_via_cli() {
     let app = TestApp::start().await;
 
-    for (name, ttl, expected_error) in [
+    for (zone_name, ttl, expected_error) in [
         ("bad..example", "3600", "empty labels"),
         ("low-ttl.example", "0", "ttl must be at least"),
     ] {
-        let mname = format!("ns1.{name}");
-        let rname = format!("hostmaster@{name}");
+        let mname = format!("ns1.{zone_name}");
+        let rname = format!("hostmaster@{zone_name}");
         let args = [
             "zone",
             "create",
-            name,
+            zone_name,
             "--mname",
             &mname,
             "--rname",
@@ -196,15 +196,14 @@ async fn zone_rejects_invalid_name_and_ttl_via_cli() {
             ttl,
         ];
 
-        let output = app.run_cli(&args, None).await;
-        common::assert_cli_failure_contains(&args, &output, expected_error);
+        let refused = app.run_cli(&args, None).await;
+        common::assert_cli_failure_contains(&args, &refused, expected_error);
     }
 
-    let status = app.run_cli(&["status"], None).await;
-    common::assert_cli_success(&["status"], &status);
+    app.run_cli_success(&["status"], None).await;
 }
 
-/// Verify zone filtering and pagination.
+/// Verify that zone listings filter and paginate.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_listing_filters_and_paginates_via_cli() {
@@ -212,8 +211,8 @@ async fn zone_listing_filters_and_paginates_via_cli() {
     let first_zone = app.zone_name("first.example");
     let filtered_zone = app.zone_name("filtered.example");
 
-    for (name, ttl) in [(&first_zone, "3600"), (&filtered_zone, "7200")] {
-        app.create_zone_cli(name, ttl).await;
+    for (zone_name, ttl) in [(&first_zone, "3600"), (&filtered_zone, "7200")] {
+        app.create_zone_cli(zone_name, ttl).await;
     }
 
     let zones = app

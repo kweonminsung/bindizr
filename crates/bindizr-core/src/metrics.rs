@@ -1,6 +1,7 @@
 //! The daemon's Prometheus registry, held by its `Context` and shared by the
 //! HTTP API and DNS layers.
 
+use domain::base::iana::{Rcode, Rtype};
 use prometheus::core::Collector;
 use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
@@ -8,12 +9,12 @@ use prometheus::{
 };
 use thiserror::Error;
 
-use crate::dns::message::{Rcode, Rtype};
 use crate::model::transfer::TransferTransport;
 
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
 
+/// The daemon's registered collectors, one set per process.
 #[derive(Debug)]
 pub struct Metrics {
     registry: Registry,
@@ -336,6 +337,7 @@ impl Metrics {
     }
 }
 
+/// How a zone transfer request ended, as the transfer counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XfrResult {
     Ok,
@@ -368,6 +370,7 @@ impl XfrResult {
     }
 }
 
+/// How an SOA query ended, as the SOA counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SoaResult {
     Ok,
@@ -390,6 +393,7 @@ impl SoaResult {
     }
 }
 
+/// How an UPDATE request ended, as the nsupdate counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NsupdateResult {
     /// A TSIG failure answers with its own NOTAUTH, so it is kept apart from
@@ -418,9 +422,8 @@ impl NsupdateResult {
 
     /// The metric label value of this nsupdate result.
     fn label(self) -> &'static str {
-        let rcode = match self {
-            Self::TsigFailed => return "tsig_failed",
-            Self::Rcode(rcode) => rcode,
+        let Self::Rcode(rcode) = self else {
+            return "tsig_failed";
         };
 
         match rcode {
@@ -439,6 +442,7 @@ impl NsupdateResult {
     }
 }
 
+/// How an outbound NOTIFY ended, as the NOTIFY counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotifyResult {
     Ok,
@@ -461,6 +465,7 @@ impl NotifyResult {
     }
 }
 
+/// How a scheduler pass ended, as the scheduler counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerResult {
     Ok,

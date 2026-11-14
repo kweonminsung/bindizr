@@ -1,8 +1,5 @@
 mod env_overrides;
 
-#[cfg(test)]
-mod tests;
-
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -15,6 +12,12 @@ use thiserror::Error;
 use crate::dns;
 use crate::dns::name::{ParseNameError, ZoneName};
 use crate::dns::{SoaInterval, Ttl};
+
+/// The configuration file read when no path is given.
+const DEFAULT_CONFIG_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
+
+/// The longest idle timeout the edns-tcp-keepalive option carries.
+const MAX_TCP_IDLE_TIMEOUT_SECS: u64 = 6553;
 
 /// Why the configuration could not be loaded or does not describe a runnable
 /// process. Each message names the setting an operator would fix.
@@ -97,8 +100,6 @@ pub enum ConfigError {
     #[error("dns.zone_defaults.{field} must be a positive number of seconds")]
     ZoneDefaultZero { field: &'static str },
 }
-
-const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 /// Top-level bindizr configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,7 +213,7 @@ pub struct DatabaseConfig {
 }
 
 /// Supported database backends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
     MySql,
@@ -220,6 +221,17 @@ pub enum DatabaseType {
     Sqlite,
     #[serde(rename = "postgresql")]
     Postgres,
+}
+
+impl DatabaseType {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MySql => "mysql",
+            Self::Sqlite => "sqlite",
+            Self::Postgres => "postgresql",
+        }
+    }
 }
 
 impl fmt::Display for DatabaseType {
@@ -298,7 +310,7 @@ impl DatabaseTlsConfig {
 
 /// How far the database connection insists on TLS, in PostgreSQL's words;
 /// MySQL's modes map one to one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DatabaseTlsMode {
     Disable,
@@ -343,13 +355,6 @@ impl FromStr for DatabaseTlsMode {
                 expected: "disable, prefer, require, verify-ca, or verify-full",
             }),
         }
-    }
-}
-
-impl serde::Serialize for DatabaseTlsMode {
-    /// Serialize through the canonical spelling.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -495,9 +500,6 @@ impl Default for NsupdateConfig {
 fn default_nsupdate_tsig_required() -> bool {
     true
 }
-
-/// The longest idle timeout the edns-tcp-keepalive option carries.
-const MAX_TCP_IDLE_TIMEOUT_SECS: u64 = 6553;
 
 /// Return the default idle timeout between queries on a connection.
 fn default_tcp_idle_timeout_secs() -> u64 {
@@ -695,7 +697,7 @@ pub struct HistoryConfig {
 pub struct RetentionConfig {
     /// Days kept before the scheduler pass prunes older entries; `0` keeps
     /// them forever.
-    #[serde(default = "default_history_days")]
+    #[serde(default = "default_history_max_days")]
     pub max_days: u32,
 }
 
@@ -703,13 +705,13 @@ impl Default for RetentionConfig {
     /// Build the default retention: a year.
     fn default() -> Self {
         Self {
-            max_days: default_history_days(),
+            max_days: default_history_max_days(),
         }
     }
 }
 
 /// Return the default days of history kept.
-fn default_history_days() -> u32 {
+fn default_history_max_days() -> u32 {
     365
 }
 
@@ -721,7 +723,7 @@ pub struct TransferHistoryConfig {
     pub save: SavedTransfers,
     /// Days kept before the scheduler pass prunes older entries; `0` keeps
     /// them forever. The newest transfer of each client and zone stays.
-    #[serde(default = "default_transfer_history_days")]
+    #[serde(default = "default_history_transfer_max_days")]
     pub max_days: u32,
 }
 
@@ -730,18 +732,18 @@ impl Default for TransferHistoryConfig {
     fn default() -> Self {
         Self {
             save: SavedTransfers::default(),
-            max_days: default_transfer_history_days(),
+            max_days: default_history_transfer_max_days(),
         }
     }
 }
 
 /// Return the default days of transfer log kept.
-fn default_transfer_history_days() -> u32 {
+fn default_history_transfer_max_days() -> u32 {
     90
 }
 
 /// Which transfers the transfer log saves.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SavedTransfers {
     /// Every transfer answered, refused, or failed.
@@ -749,6 +751,16 @@ pub enum SavedTransfers {
     All,
     /// Refusals and failures alone.
     Unserved,
+}
+
+impl SavedTransfers {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Unserved => "unserved",
+        }
+    }
 }
 
 impl fmt::Display for SavedTransfers {
@@ -785,12 +797,22 @@ pub struct LoggingConfig {
 }
 
 /// The shape of each log line.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogFormat {
     #[default]
     Text,
     Json,
+}
+
+impl LogFormat {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Json => "json",
+        }
+    }
 }
 
 impl fmt::Display for LogFormat {
@@ -816,7 +838,7 @@ impl FromStr for LogFormat {
 }
 
 /// Console log verbosity levels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Trace,
@@ -825,6 +847,19 @@ pub enum LogLevel {
     Info,
     Warn,
     Error,
+}
+
+impl LogLevel {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
 }
 
 impl fmt::Display for LogLevel {
@@ -854,40 +889,40 @@ impl FromStr for LogLevel {
 
 /// Resolve the config file path: explicit argument, then `BINDIZR_CONFIG_PATH`,
 /// then the default path.
-pub fn resolve_config_path(conf_file_path: Option<&str>) -> String {
-    resolve_config_path_with_env(conf_file_path, |name| env::var(name).ok())
+pub fn resolve_config_path(config_path: Option<&str>) -> String {
+    resolve_config_path_with_env(config_path, |name| env::var(name).ok())
 }
 
 /// Resolve the configuration path using the supplied environment lookup.
 fn resolve_config_path_with_env(
-    conf_file_path: Option<&str>,
+    config_path: Option<&str>,
     get_env: impl Fn(&str) -> Option<String>,
 ) -> String {
-    conf_file_path
+    config_path
         .map(str::to_string)
         .or_else(|| get_env("BINDIZR_CONFIG_PATH"))
-        .unwrap_or_else(|| BINDIZR_CONF_PATH.to_string())
+        .unwrap_or_else(|| DEFAULT_CONFIG_PATH.to_string())
 }
 
 impl Config {
-    /// Load and validate the file at `conf_file_path`, applying environment
+    /// Load and validate the file at `config_path`, applying environment
     /// overrides. The value is the caller's to hold; nothing is stored.
-    pub fn load(conf_file_path: &str) -> Result<Self, ConfigError> {
-        if !PathBuf::from(conf_file_path).exists() {
+    pub fn load(config_path: &str) -> Result<Self, ConfigError> {
+        if !PathBuf::from(config_path).exists() {
             return Err(ConfigError::NotFound {
-                path: conf_file_path.to_string(),
+                path: config_path.to_string(),
             });
         }
 
-        let text = fs::read_to_string(conf_file_path).map_err(|source| ConfigError::Read {
-            path: conf_file_path.to_string(),
+        let text = fs::read_to_string(config_path).map_err(|source| ConfigError::Read {
+            path: config_path.to_string(),
             source,
         })?;
 
         // A parse or validation failure names no file, and the path may be a
         // default the caller never spelled.
         Self::from_toml(&text, |name| env::var(name).ok()).map_err(|source| ConfigError::InFile {
-            path: conf_file_path.to_string(),
+            path: config_path.to_string(),
             source: Box::new(source),
         })
     }
@@ -946,15 +981,15 @@ impl Config {
         text: &str,
         get_env: impl Fn(&str) -> Option<String>,
     ) -> Result<Self, ConfigError> {
-        let mut bindizr_config = toml::from_str::<Self>(text).map_err(ConfigError::Parse)?;
+        let mut config = toml::from_str::<Self>(text).map_err(ConfigError::Parse)?;
 
-        bindizr_config.apply_env_overrides(get_env)?;
-        bindizr_config.api.validate()?;
-        bindizr_config.database.validate()?;
-        bindizr_config.dns.validate()?;
-        bindizr_config.validate_listeners()?;
+        config.apply_env_overrides(get_env)?;
+        config.api.validate()?;
+        config.database.validate()?;
+        config.dns.validate()?;
+        config.validate_listeners()?;
 
-        Ok(bindizr_config)
+        Ok(config)
     }
 
     /// Reject listeners sharing an endpoint so every server can bind at
@@ -1182,74 +1217,5 @@ impl DnsConfig {
     }
 }
 
-impl DatabaseType {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::MySql => "mysql",
-            Self::Sqlite => "sqlite",
-            Self::Postgres => "postgresql",
-        }
-    }
-}
-
-impl serde::Serialize for DatabaseType {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl SavedTransfers {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::All => "all",
-            Self::Unserved => "unserved",
-        }
-    }
-}
-
-impl serde::Serialize for SavedTransfers {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl LogFormat {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Text => "text",
-            Self::Json => "json",
-        }
-    }
-}
-
-impl serde::Serialize for LogFormat {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl LogLevel {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Trace => "trace",
-            Self::Debug => "debug",
-            Self::Info => "info",
-            Self::Warn => "warn",
-            Self::Error => "error",
-        }
-    }
-}
-
-impl serde::Serialize for LogLevel {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
+#[cfg(test)]
+mod tests;

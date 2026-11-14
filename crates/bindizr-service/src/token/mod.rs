@@ -12,8 +12,8 @@ use rand::distr::Alphanumeric;
 use ring::digest;
 use ring::digest::SHA256;
 
-use super::error::ServiceError;
 use crate::authorization::Caller;
+use crate::error::ServiceError;
 use crate::text::MAX_COLUMN_TEXT_LEN;
 use crate::types::{CreateTokenRequest, PaginatedResponse, TokenFilter, TokenResponse};
 use crate::{Context, audit, pagination, role, text, transaction};
@@ -108,9 +108,9 @@ pub async fn create(
         Ok(token)
     }
     .await;
-    let created = transaction::finish_tx(tx, result, "failed to create token").await?;
+    let token = transaction::finish_tx(tx, result, "failed to create token").await?;
 
-    Ok((TokenResponse::from_token(&created, &role.name), raw_token))
+    Ok((TokenResponse::from_token(&token, &role.name), raw_token))
 }
 
 /// List the API tokens, every one or one role's.
@@ -148,7 +148,7 @@ pub async fn list(
     ))
 }
 
-/// Describe `token` with its role's name; any token may read itself.
+/// Get `token` described with its role's name; any token may read itself.
 pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<TokenResponse, ServiceError> {
     let role = bindizr_db::role::get(cx.db(), token.role_id)
         .await?
@@ -204,8 +204,8 @@ async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceErr
 
 /// Lowercased so one name means one token on every backend (MySQL compares
 /// case-insensitively), and kept to one URL path segment for `/tokens/{name}`.
-pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
-    let name = text::normalize_identifier(name, "token name", MAX_COLUMN_TEXT_LEN)?;
+pub(crate) fn normalize_token_name(value: &str) -> Result<String, ServiceError> {
+    let name = text::normalize_identifier(value, "token name", MAX_COLUMN_TEXT_LEN)?;
 
     // Dot segments get normalized away; `self` is the lookup route.
     if name == "." || name == ".." || name == "self" {
@@ -263,7 +263,7 @@ mod tests {
         }
     }
 
-    /// Verify rejection of token names that cannot remain one URL path segment.
+    /// Verify that token names that cannot remain one URL path segment are rejected.
     ///
     /// `/` splits segments, `?` and `#` terminate them, and URL normalization removes dot segments.
     #[test]
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn normalize_expires_at_returns_optional_future_deadline() {
         assert!(normalize_expires_at(None).unwrap().is_none());
-        assert!(normalize_expires_at(Some(1)).unwrap().unwrap() > chrono::Utc::now());
+        assert!(normalize_expires_at(Some(1)).unwrap().unwrap() > Utc::now());
         assert!(normalize_expires_at(Some(MAX_EXPIRES_IN_DAYS)).is_ok());
     }
 

@@ -63,9 +63,9 @@ fn group_record_sets(
 
 /// Collect sorted, borrowed record identities for comparison without copying their contents.
 fn record_set_identities(record_set: &[RecordSetMember]) -> Vec<&MemberIdentity> {
-    let mut ids: Vec<_> = record_set.iter().map(|record| &record.identity).collect();
-    ids.sort();
-    ids
+    let mut identities: Vec<_> = record_set.iter().map(|record| &record.identity).collect();
+    identities.sort();
+    identities
 }
 
 /// Collect the record values belonging to an owner and type.

@@ -24,13 +24,12 @@ impl<'a> DnameRecordValue<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::DnameRecordValue;
+    use super::*;
+    use crate::dns::name;
 
-    /// Keep root targets distinct from literal dot labels.
+    /// Verify that root targets stay distinct from literal dot labels.
     #[test]
     fn dname_accepts_root_target_and_preserves_literal_dot() {
-        use crate::dns::name;
-
         for (input, expected) in [(".", vec![0]), (r"\.", vec![1, b'.', 0])] {
             let value = DnameRecordValue::parse(input).unwrap();
             assert_eq!(name::encode_name(&value.canonical()).unwrap(), expected);
@@ -41,7 +40,7 @@ mod tests {
         }
     }
 
-    /// Keep DNAME target case in stored and wire forms.
+    /// Verify that the DNAME target keeps its case in stored and wire forms.
     #[test]
     fn dname_preserves_target_case() {
         assert_eq!(
@@ -52,7 +51,7 @@ mod tests {
         );
     }
 
-    /// Verify rejection of invalid DNAME targets.
+    /// Verify that invalid DNAME targets are rejected.
     #[test]
     fn dname_rejects_invalid_target_name() {
         assert!(DnameRecordValue::parse("not a name").is_err());

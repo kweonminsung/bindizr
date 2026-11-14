@@ -86,9 +86,9 @@ mod tests {
         assert!(sql.ends_with("AND p.record_types = '*'"));
     }
 
-    /// Verify that mysql concatenates with a function.
+    /// Verify that the MySQL fragment concatenates with a function.
     #[test]
-    fn mysql_concatenates_with_a_function() {
+    fn grant_sql_concatenates_with_a_function_when_mysql() {
         // `||` is logical OR there, so the fragment must not use it.
         let sql = grant_record_match_sql("r", Some("record_type"), concat_fn);
 

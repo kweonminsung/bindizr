@@ -73,16 +73,14 @@ pub(crate) async fn summarize_transfers(
     Ok(build_transfer_summary(&latest))
 }
 
-/// Count each zone by its latest transfer among `transfers`.
-fn build_transfer_summary(transfers: &[TransferLogWithZone]) -> TransferSummaryResponse {
+/// Count each zone by its latest transfer among `logs`.
+fn build_transfer_summary(logs: &[TransferLogWithZone]) -> TransferSummaryResponse {
     let mut latest: HashMap<&str, &TransferLogWithZone> = HashMap::new();
 
-    for transfer in transfers {
-        let entry = latest
-            .entry(transfer.zone_name.as_str())
-            .or_insert(transfer);
-        if transfer.served_at > entry.served_at {
-            *entry = transfer;
+    for log in logs {
+        let entry = latest.entry(log.zone_name.as_str()).or_insert(log);
+        if log.served_at > entry.served_at {
+            *entry = log;
         }
     }
 
@@ -95,8 +93,8 @@ fn build_transfer_summary(transfers: &[TransferLogWithZone]) -> TransferSummaryR
         failed: 0,
     };
 
-    for transfer in latest.values() {
-        match (transfer.result, transfer.kind, transfer.incremental) {
+    for log in latest.values() {
+        match (log.result, log.kind, log.incremental) {
             (TransferResult::Refused, _, _) => summary.refused += 1,
             (TransferResult::Failed, _, _) => summary.failed += 1,
             (TransferResult::Ok, TransferKind::Axfr, _) => summary.axfr += 1,

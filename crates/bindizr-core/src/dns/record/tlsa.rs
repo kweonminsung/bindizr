@@ -91,7 +91,7 @@ impl TlsaRecordValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_RECORD_RDATA, TlsaRecordValue};
+    use super::*;
 
     /// Verify that `parse` joins spaced hex and canonicalizes.
     #[test]

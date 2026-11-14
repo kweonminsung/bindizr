@@ -1,4 +1,5 @@
 //! Compose TSIG failures separately from request authentication.
+
 use domain::base::Message;
 use domain::base::iana::{Class, OptRcode, Rcode, TsigRcode};
 use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
@@ -13,7 +14,7 @@ use crate::dns::message::{Edns, ResponseLimit};
 pub fn build_error_response(
     query_data: &[u8],
     key: Option<&TsigSigningKey>,
-    error: TsigRcode,
+    rcode: TsigRcode,
     now: Time48,
     limit: ResponseLimit,
 ) -> Result<Vec<u8>, TsigError> {
@@ -27,7 +28,7 @@ pub fn build_error_response(
             break;
         }
 
-        let response = match (error, key) {
+        let response = match (rcode, key) {
             (TsigRcode::BADTIME, Some(key)) => build_signed_error_response(
                 &message,
                 key,
@@ -42,7 +43,7 @@ pub fn build_error_response(
                 now,
                 include_question,
             ),
-            _ => build_unsigned_error_response(&message, error, include_question),
+            _ => build_unsigned_error_response(&message, rcode, include_question),
         };
 
         if let Some(response) = response
@@ -52,7 +53,7 @@ pub fn build_error_response(
         }
     }
 
-    Err(TsigError::BuildResponse { rcode: error })
+    Err(TsigError::BuildResponse { rcode })
 }
 
 /// Echo the question when it fits; a compact UDP error retains the request header.
@@ -82,7 +83,7 @@ fn start_error_response(
 }
 
 /// TSIG failures that follow successful MAC validation.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AuthenticatedError {
     BadTime,
     BadTrunc,
@@ -104,9 +105,9 @@ fn build_signed_error_response(
         .limit_to::<Tsig<_, _>>()
         .last()?
         .ok()?;
-    let request = request_tsig.data();
-    let mut builder = start_error_response(message, include_question)?;
-    Edns::from_message(message).push_response_opt(&mut builder, OptRcode::NOTAUTH, None, None);
+    let data = request_tsig.data();
+    let mut additional = start_error_response(message, include_question)?;
+    Edns::from_message(message).push_response_opt(&mut additional, OptRcode::NOTAUTH, None, None);
 
     // domain 0.12.3 omits OPT and hashes eight Other Data bytes; RFC 8945,
     // Section 4.3 requires the six carried on the wire.
@@ -115,7 +116,7 @@ fn build_signed_error_response(
     let (rcode, time_signed, other) = match error {
         AuthenticatedError::BadTime => (
             TsigRcode::BADTIME,
-            request.time_signed(),
+            data.time_signed(),
             Some(now.into_octets()),
         ),
         AuthenticatedError::BadTrunc => (TsigRcode::BADTRUNC, now, None),
@@ -124,20 +125,20 @@ fn build_signed_error_response(
 
     // The request MAC binds this signed error to the request that caused it.
     let mut digest = hmac::Context::with_key(&key.hmac);
-    digest.update(&u16::try_from(request.mac().len()).ok()?.to_be_bytes());
-    digest.update(request.mac());
-    digest.update(builder.as_slice());
+    digest.update(&u16::try_from(data.mac().len()).ok()?.to_be_bytes());
+    digest.update(data.mac());
+    digest.update(additional.as_slice());
     digest.update(name.as_slice());
     digest.update(&Class::ANY.to_int().to_be_bytes());
     digest.update(&0u32.to_be_bytes());
     digest.update(algorithm.as_slice());
     digest.update(&time_signed.into_octets());
-    digest.update(&request.fudge().to_be_bytes());
+    digest.update(&data.fudge().to_be_bytes());
     digest.update(&rcode.to_int().to_be_bytes());
     digest.update(&u16::try_from(other.len()).ok()?.to_be_bytes());
     digest.update(other);
     let mac = digest.sign();
-    builder
+    additional
         .push((
             key.domain.name(),
             Class::ANY,
@@ -145,7 +146,7 @@ fn build_signed_error_response(
             Tsig::new(
                 algorithm,
                 time_signed,
-                request.fudge(),
+                data.fudge(),
                 mac.as_ref(),
                 message.header().id(),
                 rcode,
@@ -155,41 +156,41 @@ fn build_signed_error_response(
         ))
         .ok()?;
 
-    Some(builder.finish().into_target())
+    Some(additional.finish().into_target())
 }
 
 /// Build NOTAUTH with an echoed, unsigned TSIG and empty MAC (RFC 8945, Section 5.3.2).
 fn build_unsigned_error_response(
     message: &Message<&[u8]>,
-    error: TsigRcode,
+    rcode: TsigRcode,
     include_question: bool,
 ) -> Option<Vec<u8>> {
-    let tsig_record = message
+    let request_tsig = message
         .additional()
         .ok()?
         .limit_to::<Tsig<_, _>>()
         .last()?
         .ok()?;
 
-    let mut builder = start_error_response(message, include_question)?;
-    Edns::from_message(message).push_response_opt(&mut builder, OptRcode::NOTAUTH, None, None);
-    builder
+    let mut additional = start_error_response(message, include_question)?;
+    Edns::from_message(message).push_response_opt(&mut additional, OptRcode::NOTAUTH, None, None);
+    additional
         .push((
-            tsig_record.owner(),
-            tsig_record.class(),
-            tsig_record.ttl(),
+            request_tsig.owner(),
+            request_tsig.class(),
+            request_tsig.ttl(),
             Tsig::new(
-                tsig_record.data().algorithm(),
-                tsig_record.data().time_signed(),
-                tsig_record.data().fudge(),
+                request_tsig.data().algorithm(),
+                request_tsig.data().time_signed(),
+                request_tsig.data().fudge(),
                 b"",
                 message.header().id(),
-                error,
+                rcode,
                 b"",
             )
             .ok()?,
         ))
         .ok()?;
 
-    Some(builder.finish().into_target())
+    Some(additional.finish().into_target())
 }

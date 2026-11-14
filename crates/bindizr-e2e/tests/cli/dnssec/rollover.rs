@@ -1,7 +1,7 @@
 use crate::common;
 use crate::common::TestApp;
 
-/// Verify DNSSEC rollover with NSEC3 through the CLI.
+/// Verify that the CLI rolls DNSSEC keys over with NSEC3.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
@@ -63,7 +63,7 @@ async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
         .await;
 
     assert!(!ds_seen.status.success());
-    let unchecked = [
+    let args = [
         "dnssec",
         "rollover",
         "ds-seen",
@@ -71,8 +71,8 @@ async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
         "--skip-ds-check",
     ];
 
-    let ds_seen = app.run_cli(&unchecked, None).await;
-    common::assert_cli_failure_contains(&unchecked, &ds_seen, "must stay published");
+    let ds_seen = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &ds_seen, "must stay published");
 
     // No parent stands in, so both skips promote at once.
     let promoted = app

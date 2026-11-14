@@ -8,8 +8,8 @@ use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{PermissionsResponse, PermittedActionsResponse, ZonePermissionsResponse};
 
-/// The caller's actions across all zones and where zone grants add to them;
-/// reading its own rights needs no grant.
+/// Get the caller's actions across all zones and where zone grants add to
+/// them; reading its own rights needs no grant.
 pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, ServiceError> {
     let Some(grants) = caller.grants() else {
         // Nothing bounds the caller, so all zones are covered whole.

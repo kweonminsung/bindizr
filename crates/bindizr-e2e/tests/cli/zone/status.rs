@@ -1,6 +1,6 @@
 use crate::common::TestApp;
 
-/// Verify zone status reporting through the CLI.
+/// Verify that the CLI reports zone status.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_status_returns_current_serial_via_cli() {

@@ -108,7 +108,7 @@ pub(crate) async fn load_status_tx(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(DnssecStatusResponse {
-        zone_name: zone.name.as_str().to_string(),
+        zone_name: zone.name.to_string(),
         enabled: !keys.is_empty(),
         policy: policy.map(DnssecPolicyResponse::from),
         keys: keys

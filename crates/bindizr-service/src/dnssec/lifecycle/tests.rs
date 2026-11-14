@@ -86,12 +86,8 @@ fn policy_move_rejects_key_layout_change() {
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
-    assert!(error.to_string().contains("key layout"), "{}", error);
-    assert!(
-        error.to_string().contains("split KSK/ZSK keys"),
-        "{}",
-        error
-    );
+    assert!(error.to_string().contains("key layout"), "{error}");
+    assert!(error.to_string().contains("split KSK/ZSK keys"), "{error}");
 }
 
 /// Verify that the key layout is still refused when the denial chain moves with it.
@@ -104,5 +100,5 @@ fn policy_move_rejects_combined_key_layout_and_denial_change() {
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
-    assert!(error.to_string().contains("key layout"), "{}", error);
+    assert!(error.to_string().contains("key layout"), "{error}");
 }

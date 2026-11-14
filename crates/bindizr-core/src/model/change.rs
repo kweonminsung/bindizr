@@ -140,7 +140,7 @@ mod tests {
 
     use super::*;
 
-    /// The scalar columns and API object preserve the same actor kind and name.
+    /// Verify that the scalar columns and API object preserve the same actor kind and name.
     #[test]
     fn actor_columns_match_the_api_identity() {
         for actor in [
@@ -167,7 +167,7 @@ mod tests {
         }
     }
 
-    /// Corrupt column pairs fail decoding instead of dropping or inventing an identity.
+    /// Verify that corrupt column pairs fail decoding instead of dropping or inventing an identity.
     #[test]
     fn actor_columns_decode_only_complete_known_identities() {
         assert_eq!(

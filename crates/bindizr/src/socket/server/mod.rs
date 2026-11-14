@@ -16,23 +16,23 @@ mod zone;
 
 use std::future::Future;
 use std::io;
-use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::sync::Arc;
 
 use bindizr_service::Context;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::ErrorResponse;
-use control::DaemonControl;
+use serde::Serialize;
 use thiserror::Error;
 use tokio::fs;
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::BufReader;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 use tokio::task::{JoinHandle, JoinSet};
 
 use crate::shutdown::Shutdown;
 use crate::socket;
+use crate::socket::server::control::DaemonControl;
 use crate::socket::types::{DaemonCommand, DaemonResponse};
 use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 use crate::tls::TlsCertificates;
@@ -127,7 +127,7 @@ async fn handle_client(
     stream: UnixStream,
     stop: impl Future<Output = ()>,
 ) {
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
     let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
@@ -282,7 +282,7 @@ async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathEr
 
 /// Prepare the control socket path and remove a stale socket if needed.
 async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathError> {
-    use std::os::unix::fs::FileTypeExt;
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
 
     if let Some(parent) = Path::new(socket_path).parent() {
         // No chmod of the socket by path, which a writable directory would let
@@ -352,21 +352,6 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::DeleteToken { name } => {
             encode_response(token::delete_token(cx, &name).await)
         }
-        DaemonCommand::CreateRole(request) => {
-            encode_response(role::create_role(cx, &request).await)
-        }
-        DaemonCommand::ListRoles(page) => encode_response(role::list_roles(cx, page).await),
-        DaemonCommand::GetRole { name } => encode_response(role::get_role(cx, &name).await),
-        DaemonCommand::DeleteRole { name } => encode_response(role::delete_role(cx, &name).await),
-        DaemonCommand::CreateRoleGrant { role_name, request } => {
-            encode_response(role::create_role_grant(cx, &role_name, &request).await)
-        }
-        DaemonCommand::ListRoleGrants { role_name, page } => {
-            encode_response(role::list_role_grants(cx, &role_name, page).await)
-        }
-        DaemonCommand::DeleteRoleGrant { role_name, id } => {
-            encode_response(role::delete_role_grant(cx, &role_name, id).await)
-        }
         DaemonCommand::CreateTsigKey(request) => {
             encode_response(tsig_key::create_tsig_key(cx, &request).await)
         }
@@ -381,6 +366,21 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         }
         DaemonCommand::ListAuditLogs(filter) => {
             encode_response(audit::list_audit_logs(cx, filter).await)
+        }
+        DaemonCommand::CreateRole(request) => {
+            encode_response(role::create_role(cx, &request).await)
+        }
+        DaemonCommand::ListRoles(page) => encode_response(role::list_roles(cx, page).await),
+        DaemonCommand::GetRole { name } => encode_response(role::get_role(cx, &name).await),
+        DaemonCommand::DeleteRole { name } => encode_response(role::delete_role(cx, &name).await),
+        DaemonCommand::CreateRoleGrant { role_name, request } => {
+            encode_response(role::create_role_grant(cx, &role_name, &request).await)
+        }
+        DaemonCommand::ListRoleGrants { role_name, page } => {
+            encode_response(role::list_role_grants(cx, &role_name, page).await)
+        }
+        DaemonCommand::DeleteRoleGrant { role_name, id } => {
+            encode_response(role::delete_role_grant(cx, &role_name, id).await)
         }
         DaemonCommand::CreateSecondary(request) => {
             encode_response(secondary::create_secondary(cx, &request).await)
@@ -533,7 +533,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
 }
 
 /// Encode a handler's response, or the error it failed with, as one JSON line.
-fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
+fn encode_response<T: Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
     match result {
         Ok(response) => serde_json::to_string(&response).unwrap_or_else(|error| {
             encode_error(&ServiceError::internal_with_source(

@@ -443,7 +443,7 @@ impl ServiceError {
     }
 
     /// Build an error explaining that credentials still authenticate into a role.
-    pub fn role_in_use(name: impl fmt::Display, tokens: &[String], keys: &[String]) -> Self {
+    pub fn role_in_use(name: impl fmt::Display, tokens: &[String], tsig_keys: &[String]) -> Self {
         let mut holders = Vec::new();
 
         if !tokens.is_empty() {
@@ -452,21 +452,20 @@ impl ServiceError {
             } else {
                 "API tokens"
             };
-            holders.push(format!("{} {}", noun, tokens.join(", ")));
+            holders.push(format!("{noun} {}", tokens.join(", ")));
         }
 
-        if !keys.is_empty() {
-            let noun = if keys.len() == 1 {
+        if !tsig_keys.is_empty() {
+            let noun = if tsig_keys.len() == 1 {
                 "TSIG key"
             } else {
                 "TSIG keys"
             };
-            holders.push(format!("{} {}", noun, keys.join(", ")));
+            holders.push(format!("{noun} {}", tsig_keys.join(", ")));
         }
 
         Self::RoleInUse(format!(
-            "role '{}' is still held by {}",
-            name,
+            "role '{name}' is still held by {}",
             holders.join(" and ")
         ))
     }
@@ -510,9 +509,8 @@ impl ServiceError {
     /// Build an error listing DS records that still block DNSSEC removal.
     pub fn dnssec_ds_published(zone_name: impl fmt::Display, key_tags: &[KeyTag]) -> Self {
         Self::DnssecDsPublished(format!(
-            "the parent zone still serves DS records for zone '{}' (key tag{} {}); remove \
+            "the parent zone still serves DS records for zone '{zone_name}' (key tag{} {}); remove \
                  them and wait out their TTL before disabling DNSSEC, or skip the DS check",
-            zone_name,
             if key_tags.len() == 1 {
                 ""
             } else {
@@ -529,7 +527,7 @@ impl ServiceError {
     /// Build an error listing DS records still required for key promotion.
     pub fn dnssec_ds_not_published(zone_name: impl fmt::Display, key_tags: &[KeyTag]) -> Self {
         Self::DnssecDsNotPublished(format!(
-            "the parent zone serves no DS yet for key tag{} {} of zone '{}'; register it \
+            "the parent zone serves no DS yet for key tag{} {} of zone '{zone_name}'; register it \
                  and wait out the DS TTL before confirming, or skip the DS check",
             if key_tags.len() == 1 {
                 ""
@@ -540,8 +538,7 @@ impl ServiceError {
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
-                .join(", "),
-            zone_name
+                .join(", ")
         ))
     }
 
@@ -549,7 +546,7 @@ impl ServiceError {
     pub fn dnssec_ds_digest_unsupported(zone_name: impl fmt::Display, key_tags: &[KeyTag]) -> Self {
         Self::DnssecDsUnverified {
             message: format!(
-                "the parent zone serves a DS for key tag{} {} of zone '{}', but only in digest \
+                "the parent zone serves a DS for key tag{} {} of zone '{zone_name}', but only in digest \
                  types bindizr cannot compute, so the match cannot be confirmed; ask the parent \
                  to publish SHA-256, or skip the DS check",
                 if key_tags.len() == 1 {
@@ -561,8 +558,7 @@ impl ServiceError {
                     .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
-                    .join(", "),
-                zone_name
+                    .join(", ")
             ),
             source: None,
         }
@@ -595,9 +591,7 @@ impl ServiceError {
     /// Build an error explaining that zones still use a DNSSEC policy.
     pub fn dnssec_policy_in_use(name: impl fmt::Display, zone_count: u64) -> Self {
         Self::DnssecPolicyInUse(format!(
-            "DNSSEC policy '{}' is used by {} signed zone{}",
-            name,
-            zone_count,
+            "DNSSEC policy '{name}' is used by {zone_count} signed zone{}",
             if zone_count == 1 {
                 ""
             } else {

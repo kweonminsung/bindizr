@@ -67,7 +67,7 @@ fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible_in: i64) ->
         state,
         state_changed_at: now,
         eligible_at: now + Duration::hours(eligible_in),
-        max_signed_ttl: Ttl::try_from(300).unwrap(),
+        max_signed_ttl: Ttl::from_secs(300),
         created_at: now,
     }
 }
@@ -109,7 +109,7 @@ fn rollover_rejects_ds_confirmation_for_zsk() {
     let error = promotable_sep_key_ids(&signed(&keys), Holddown::Wait).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::InvalidInput);
-    assert!(error.to_string().contains("ZSK"), "{}", error);
+    assert!(error.to_string().contains("ZSK"), "{error}");
 }
 
 /// Verify that a hold down still running names the time to retry.
@@ -123,7 +123,7 @@ fn rollover_reports_retry_time_during_hold_down() {
     let error = promotable_sep_key_ids(&signed(&keys), Holddown::Wait).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::InvalidInput);
-    assert!(error.to_string().contains("retry after"), "{}", error);
+    assert!(error.to_string().contains("retry after"), "{error}");
 }
 
 /// Verify that skipping the hold down promotes anyway.
@@ -159,7 +159,7 @@ fn rollover_waits_for_latest_published_key_deadline() {
 #[test]
 fn retiring_key_waits_for_signature_expiration() {
     let mut zsk = key(1, DnssecKeyRole::Zsk, DnssecKeyState::Active, 0);
-    zsk.max_signed_ttl = Ttl::try_from(900).unwrap();
+    zsk.max_signed_ttl = Ttl::from_secs(900);
 
     // A ZSK has no DS at the parent, so only its signatures hold it back.
     assert_eq!(zsk.retirement_interval_secs(Some(86400), 0), 900);
@@ -174,17 +174,17 @@ fn retiring_sep_key_waits_for_parent_ds_expiration() {
     // Resolvers that cached the parent's DS record set before the replacement was
     // added hold it for its TTL, and it names only the key being removed.
     let mut csk = key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, 0);
-    csk.max_signed_ttl = Ttl::try_from(900).unwrap();
+    csk.max_signed_ttl = Ttl::from_secs(900);
 
     assert_eq!(csk.retirement_interval_secs(Some(86400), 0), 86400);
 
     // A zone signed with a longer TTL than the parent's outlasts it.
-    csk.max_signed_ttl = Ttl::try_from(604_800).unwrap();
+    csk.max_signed_ttl = Ttl::from_secs(604_800);
 
     assert_eq!(csk.retirement_interval_secs(Some(86400), 0), 604_800);
 
     // Nothing observed the parent, so only the signatures are known.
-    csk.max_signed_ttl = Ttl::try_from(900).unwrap();
+    csk.max_signed_ttl = Ttl::from_secs(900);
 
     assert_eq!(csk.retirement_interval_secs(None, 0), 900);
 }

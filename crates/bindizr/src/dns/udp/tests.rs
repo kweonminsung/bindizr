@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use bindizr_core::dns::message::EncodeMessageError;
 use tokio::task::JoinSet;
 use tokio::time;
 
@@ -54,11 +55,7 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
 
         replies.spawn(async move {
             server
-                .send_to(
-                    &data,
-                    target,
-                    bindizr_core::dns::message::ResponseLimit::UDP,
-                )
+                .send_to(&data, target, ResponseLimit::UDP)
                 .await
                 .unwrap()
         });
@@ -81,7 +78,7 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     }
 }
 
-/// Specific IPv4 and IPv6 listeners preserve their configured address.
+/// Verify that specific IPv4 and IPv6 listeners preserve their configured address.
 #[tokio::test]
 async fn udp_replies_from_bound_address() {
     for ip in [
@@ -92,13 +89,13 @@ async fn udp_replies_from_bound_address() {
     }
 }
 
-/// IPv4 wildcard listeners reply using the packet's destination address.
+/// Verify that IPv4 wildcard listeners reply using the packet's destination address.
 #[tokio::test]
 async fn udp_preserves_destination_when_bound_to_ipv4_wildcard() {
     exchange(Ipv4Addr::UNSPECIFIED.into(), &[Ipv4Addr::LOCALHOST.into()]).await;
 }
 
-/// IPv6 wildcard listeners also handle IPv4-mapped requests on the same socket.
+/// Verify that IPv6 wildcard listeners also handle IPv4-mapped requests on the same socket.
 #[tokio::test]
 async fn udp_preserves_both_address_families_when_bound_to_ipv6_wildcard() {
     exchange(
@@ -112,7 +109,7 @@ async fn udp_preserves_both_address_families_when_bound_to_ipv6_wildcard() {
     .await;
 }
 
-/// Linux routes distinct 127/8 destinations locally without interface aliases.
+/// Verify that Linux routes distinct 127/8 destinations locally without interface aliases.
 #[cfg(target_os = "linux")]
 #[tokio::test]
 async fn udp_preserves_destination_across_interleaved_requests() {
@@ -127,7 +124,7 @@ async fn udp_preserves_destination_across_interleaved_requests() {
     exchange(Ipv6Addr::UNSPECIFIED.into(), &destinations).await;
 }
 
-/// A truncated datagram is rejected before it can be parsed or answered.
+/// Verify that a truncated datagram is rejected before it can be parsed or answered.
 #[tokio::test]
 async fn recv_from_rejects_truncated_datagram() {
     let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -143,7 +140,7 @@ async fn recv_from_rejects_truncated_datagram() {
     assert!(matches!(result, Err(UdpError::Truncated)));
 }
 
-/// Missing packet information never falls back to an OS-selected source address.
+/// Verify that missing packet information never falls back to an OS-selected source address.
 #[tokio::test]
 async fn recv_from_rejects_missing_destination() {
     let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await.unwrap();
@@ -162,7 +159,7 @@ async fn recv_from_rejects_missing_destination() {
     assert!(matches!(result, Err(UdpError::MissingDestination)));
 }
 
-/// The final UDP guard rejects overflow before I/O and allows the exact boundary.
+/// Verify that the final UDP guard rejects overflow before I/O and allows the exact boundary.
 #[tokio::test]
 async fn udp_send_enforces_the_response_budget() {
     let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -178,7 +175,7 @@ async fn udp_send_enforces_the_response_budget() {
 
     assert!(matches!(
         server.send_to(&[0; 513], target, ResponseLimit::UDP).await,
-        Err(DnsError::Protocol(message::EncodeMessageError::TooLarge {
+        Err(DnsError::Protocol(EncodeMessageError::TooLarge {
             len: 513,
             max_len: 512
         }))

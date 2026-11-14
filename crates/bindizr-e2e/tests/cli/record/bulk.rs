@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::common::TestApp;
 
@@ -45,7 +45,7 @@ async fn record_bulk_dry_run_shows_the_diff_via_cli() {
     );
 }
 
-/// Verify bulk record insertion from standard input.
+/// Verify that bulk record insertion reads standard input.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_reads_stdin() {
@@ -54,7 +54,7 @@ async fn record_bulk_insert_reads_stdin() {
 
     app.create_zone_cli(&zone_name, "3600").await;
 
-    let records = serde_json::json!([
+    let records = json!([
         { "name": "www", "type": "A", "value": "192.0.2.20", "ttl": 300 },
         { "name": "mail", "type": "A", "value": "192.0.2.21", "ttl": 300 },
     ])

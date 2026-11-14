@@ -276,7 +276,7 @@ fn authorize_whole_zone_rejects_a_constrained_grant() {
     assert_eq!(error.code(), ErrorCode::ZoneNotFound);
 }
 
-/// Equally privileged socket and API callers retain distinct request origins.
+/// Verify that equally privileged socket and API callers retain distinct request origins.
 #[test]
 fn change_origin_preserves_credential_across_access_scopes() {
     use bindizr_core::model::change::{ChangeActor, ChangeSource};

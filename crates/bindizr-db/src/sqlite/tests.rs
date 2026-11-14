@@ -16,7 +16,6 @@ use crate::dnssec_record::DnssecRecordFilter;
 use crate::error::DatabaseError;
 use crate::record::RecordFilter;
 use crate::schema::sqlite;
-use crate::sqlite::role;
 use crate::zone::ZoneFilter;
 
 /// Owner names text matching gets wrong: `evil\.sub` is one label (RFC 1035,
@@ -94,7 +93,7 @@ async fn fixture() -> Pool<Sqlite> {
     pool
 }
 
-/// A grant of `actions` in `zone` (all zones when `None`).
+/// Build a grant of `actions` in `zone` (all zones when `None`).
 fn grant(zone: Option<i32>, actions: &[Action], pattern: &str, types: &str) -> RoleGrant {
     RoleGrant {
         id: RoleGrantId::UNWRITTEN,
@@ -109,13 +108,14 @@ fn grant(zone: Option<i32>, actions: &[Action], pattern: &str, types: &str) -> R
 
 /// Write a role holding `grants` and return its id.
 async fn create_role(pool: &Pool<Sqlite>, index: usize, grants: &[RoleGrant]) -> RoleId {
-    let role_id: i32 =
-        sqlx::query_scalar("INSERT INTO roles (name, created_at) VALUES (?, ?) RETURNING id")
-            .bind(format!("role{index}"))
-            .bind(Utc::now())
-            .fetch_one(pool)
-            .await
-            .unwrap();
+    let role_id = sqlx::query_scalar::<_, i32>(
+        "INSERT INTO roles (name, created_at) VALUES (?, ?) RETURNING id",
+    )
+    .bind(format!("role{index}"))
+    .bind(Utc::now())
+    .fetch_one(pool)
+    .await
+    .unwrap();
 
     for grant in grants {
         sqlx::query(
@@ -273,7 +273,7 @@ async fn listings_match_role_grants_visibility() {
 async fn delete_tx_reports_whether_a_row_went() {
     let pool = fixture().await;
     let mut tx = pool.begin().await.unwrap();
-    let role = role::create_tx(
+    let role = super::role::create_tx(
         &mut tx,
         Role {
             id: RoleId::UNWRITTEN,
@@ -285,15 +285,15 @@ async fn delete_tx_reports_whether_a_row_went() {
     .await
     .unwrap();
 
-    assert!(role::delete_tx(&mut tx, role.id).await.unwrap());
-    assert!(!role::delete_tx(&mut tx, role.id).await.unwrap());
+    assert!(super::role::delete_tx(&mut tx, role.id).await.unwrap());
+    assert!(!super::role::delete_tx(&mut tx, role.id).await.unwrap());
 
     tx.rollback().await.unwrap();
 }
 
 /// Verify that a rowid past the 32-bit id range is refused, not truncated.
 #[tokio::test]
-async fn create_tx_refuses_a_rowid_past_the_32_bit_range() {
+async fn create_tx_rejects_a_rowid_past_the_32_bit_range() {
     let pool = fixture().await;
 
     // AUTOINCREMENT continues past the largest id the table has held.

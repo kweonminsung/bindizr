@@ -1,13 +1,13 @@
 //! Plain/TLS DNS streams and the write half shared by concurrent queries.
 
-use std::io;
 use std::pin::Pin;
-use std::task::{self, Poll};
+use std::task::Poll;
+use std::{io, task};
 
 use bindizr_core::dns::message;
 use bindizr_core::dns::message::{DnsMessageBuilder, EncodeMessageError};
 use bindizr_core::model::transfer::TransferTransport;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, ReadBuf, ReadHalf, WriteHalf};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, watch};
 use tokio_rustls::server::TlsStream;
@@ -199,6 +199,8 @@ impl ResponseWriter {
 
     /// Close healthy transports; suppress TLS close_notify after failure.
     pub(crate) async fn shutdown(&self) -> io::Result<()> {
+        use tokio::io::AsyncWriteExt as _;
+
         let mut writer = self.writer.lock().await;
         if *self.failure.borrow() {
             return Ok(());
@@ -217,7 +219,7 @@ mod tests {
 
     use super::*;
 
-    /// A known failure suppresses queued frames and wakes connection waiters.
+    /// Verify that a known failure suppresses queued frames and wakes connection waiters.
     #[tokio::test]
     async fn failed_connection_suppresses_queued_responses() {
         use tokio::io::AsyncReadExt as _;

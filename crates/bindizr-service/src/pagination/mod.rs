@@ -29,10 +29,8 @@ where
     T: Default + FromStr<Err = ParseSortError>,
 {
     match value {
+        Some(value) => value.parse::<T>().map_err(ServiceError::invalid_input),
         None => Ok(T::default()),
-        Some(value) => value
-            .parse()
-            .map_err(|error: ParseSortError| ServiceError::invalid_input(error.to_string())),
     }
 }
 

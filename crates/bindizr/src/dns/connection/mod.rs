@@ -5,14 +5,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bindizr_core::dns::message::{self, Keepalive, Rtype};
+use bindizr_core::dns::message;
+use bindizr_core::dns::message::{Keepalive, Opcode, OptRcode, ParsedQuery, QueryMetadata, Rtype};
 use tokio::task::JoinSet;
 use tokio::time;
 
 use super::error::DnsError;
-use super::server::{self, DnsContext};
+use super::server::DnsContext;
 use super::stream::{DnsStream, ResponseWriter};
-use super::wire;
+use super::{server, wire};
 
 /// Bound concurrent queries on one connection.
 const MAX_QUERIES_IN_FLIGHT: usize = 16;
@@ -98,17 +99,15 @@ pub(crate) async fn serve_connection(
         }
 
         // Separate retryable transfers from requests that must finish during shutdown.
-        let transfer =
-            message::ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(idle_timeout))
-                .is_ok_and(|query| {
-                    query.opcode == message::Opcode::QUERY
-                        && matches!(query.qtype, Rtype::AXFR | Rtype::IXFR)
-                });
+        let transfer = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(idle_timeout))
+            .is_ok_and(|query| {
+                query.opcode == Opcode::QUERY && server::is_xfr_query_type(query.qtype)
+            });
         let dns_cx = dns_cx.clone();
         let writer = writer.clone();
 
         let answer = async move {
-            dispatch_query(&dns_cx, &writer, client_addr, &query_data, idle_timeout).await;
+            handle_tcp_query(&dns_cx, &writer, client_addr, &query_data, idle_timeout).await;
         };
 
         if transfer {
@@ -141,7 +140,7 @@ pub(crate) async fn serve_connection(
 }
 
 /// Route a framed DNS query to its transfer, update, or SOA handler.
-async fn dispatch_query(
+async fn handle_tcp_query(
     dns_cx: &DnsContext,
     writer: &ResponseWriter,
     client_addr: SocketAddr,
@@ -158,7 +157,7 @@ async fn dispatch_query(
     // nsupdate parses its own message and TSIG; other queries share this parse.
     if server::nsupdate::is_nsupdate(query_data) {
         if let Err(error) =
-            server::nsupdate::handle_tcp_nsupdate(dns_cx, writer, query_data, client_addr).await
+            server::nsupdate::handle_tcp_nsupdate(dns_cx, writer, client_addr, query_data).await
         {
             log::error!("NSUPDATE {transport} handler failed for {client_addr}: {error}");
         }
@@ -183,16 +182,14 @@ async fn dispatch_query(
         }
     }
 
-    let query = match message::ParsedQuery::parse(query_data, keepalive) {
+    let query = match ParsedQuery::parse(query_data, keepalive) {
         Ok(query) => query,
         Err(error) => {
             log::warn!("Failed to parse DNS {transport} query from {client_addr}: {error}");
 
             if let Some(metadata) = error.query_metadata() {
                 let result = async {
-                    let rcode = metadata
-                        .format_error()
-                        .unwrap_or(message::OptRcode::FORMERR);
+                    let rcode = metadata.format_error().unwrap_or(OptRcode::FORMERR);
                     let response =
                         server::refuse_query(dns_cx, metadata, query_data, rcode, None).await?;
                     writer.write_message(&response).await
@@ -211,15 +208,10 @@ async fn dispatch_query(
     };
 
     let result = async {
-        if let Some((rcode, ede)) = server::query_refusal(&query, transport, client_addr) {
-            let response = server::refuse_query(
-                dns_cx,
-                &message::QueryMetadata::from(&query),
-                query_data,
-                rcode,
-                ede,
-            )
-            .await?;
+        if let Some((rcode, ede)) = server::query_refusal(client_addr, &query, transport) {
+            let response =
+                server::refuse_query(dns_cx, &QueryMetadata::from(&query), query_data, rcode, ede)
+                    .await?;
 
             writer.write_message(&response).await
         } else if query.qtype == Rtype::SOA {
@@ -232,13 +224,10 @@ async fn dispatch_query(
 
     if let Err(error) = result {
         log::error!(
-            "DNS {} query from {} failed (opcode={:?} qtype={:?} qclass={}): {}",
-            transport,
-            client_addr,
+            "DNS {transport} query from {client_addr} failed (opcode={:?} qtype={:?} qclass={}): {error}",
             query.opcode,
             query.qtype,
-            query.qclass,
-            error
+            query.qclass
         );
     }
 }

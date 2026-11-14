@@ -1,5 +1,7 @@
 //! Creates, lists, and deletes roles, which API tokens and TSIG keys authenticate into.
 
+pub mod grant;
+
 use std::collections::HashMap;
 
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
@@ -100,22 +102,22 @@ pub async fn list(
 
     // Management collections are small, so each is read once and counted
     // here rather than queried per role.
-    let mut grants: HashMap<RoleId, u64> = HashMap::new();
+    let mut grant_counts: HashMap<RoleId, u64> = HashMap::new();
 
     for grant in bindizr_db::role_grant::list_all(cx.db()).await? {
-        *grants.entry(grant.role_id).or_default() += 1;
+        *grant_counts.entry(grant.role_id).or_default() += 1;
     }
 
-    let mut tokens: HashMap<RoleId, u64> = HashMap::new();
+    let mut token_counts: HashMap<RoleId, u64> = HashMap::new();
 
     for token in bindizr_db::api_token::list_all(cx.db()).await? {
-        *tokens.entry(token.role_id).or_default() += 1;
+        *token_counts.entry(token.role_id).or_default() += 1;
     }
 
-    let mut keys: HashMap<RoleId, u64> = HashMap::new();
+    let mut tsig_key_counts: HashMap<RoleId, u64> = HashMap::new();
 
     for tsig_key in bindizr_db::tsig_key::list_all(cx.db()).await? {
-        *keys.entry(tsig_key.role_id).or_default() += 1;
+        *tsig_key_counts.entry(tsig_key.role_id).or_default() += 1;
     }
 
     Ok(pagination::build_page(
@@ -124,9 +126,9 @@ pub async fn list(
             .map(|role| RoleResponse {
                 id: role.id,
                 builtin: role.is_builtin(),
-                grant_count: grants.get(&role.id).copied().unwrap_or(0),
-                token_count: tokens.get(&role.id).copied().unwrap_or(0),
-                tsig_key_count: keys.get(&role.id).copied().unwrap_or(0),
+                grant_count: grant_counts.get(&role.id).copied().unwrap_or(0),
+                token_count: token_counts.get(&role.id).copied().unwrap_or(0),
+                tsig_key_count: tsig_key_counts.get(&role.id).copied().unwrap_or(0),
                 name: role.name,
                 description: role.description,
                 created_at: role.created_at,
@@ -137,21 +139,21 @@ pub async fn list(
     ))
 }
 
-/// Fetch one role by name, with how many grants, tokens, and keys it has.
+/// Get one role by name, with how many grants, tokens, and keys it has.
 pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<RoleResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let role = lookup_by_name(cx, name).await?;
     let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), role.id).await?;
     let tokens = bindizr_db::api_token::list_by_role_id(cx.db(), role.id).await?;
-    let keys = bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?;
+    let tsig_keys = bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?;
 
     Ok(RoleResponse {
         id: role.id,
         builtin: role.is_builtin(),
         grant_count: grants.len() as u64,
         token_count: tokens.len() as u64,
-        tsig_key_count: keys.len() as u64,
+        tsig_key_count: tsig_keys.len() as u64,
         name: role.name,
         description: role.description,
         created_at: role.created_at,
@@ -166,19 +168,23 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     refuse_builtin(&role)?;
 
     // Named, so the refusal says which credentials to move or delete first.
-    let tokens: Vec<String> = bindizr_db::api_token::list_by_role_id(cx.db(), role.id)
+    let token_names: Vec<String> = bindizr_db::api_token::list_by_role_id(cx.db(), role.id)
         .await?
         .into_iter()
         .map(|token| token.name)
         .collect();
-    let keys: Vec<String> = bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id)
+    let tsig_key_names: Vec<String> = bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id)
         .await?
         .into_iter()
         .map(|tsig_key| tsig_key.name)
         .collect();
 
-    if !tokens.is_empty() || !keys.is_empty() {
-        return Err(ServiceError::role_in_use(&role.name, &tokens, &keys));
+    if !token_names.is_empty() || !tsig_key_names.is_empty() {
+        return Err(ServiceError::role_in_use(
+            &role.name,
+            &token_names,
+            &tsig_key_names,
+        ));
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete role").await?;
@@ -244,8 +250,8 @@ fn refuse_builtin(role: &Role) -> Result<(), ServiceError> {
 
 /// Lowercased so one name means one role on every backend, and kept to one
 /// URL path segment for `/roles/{name}`.
-fn normalize_role_name(name: &str) -> Result<String, ServiceError> {
-    let name = text::normalize_identifier(name, "role name", MAX_COLUMN_TEXT_LEN)?;
+fn normalize_role_name(value: &str) -> Result<String, ServiceError> {
+    let name = text::normalize_identifier(value, "role name", MAX_COLUMN_TEXT_LEN)?;
 
     // Dot segments get normalized away.
     if name == "." || name == ".." {
@@ -256,5 +262,3 @@ fn normalize_role_name(name: &str) -> Result<String, ServiceError> {
 
     Ok(name)
 }
-
-pub mod grant;

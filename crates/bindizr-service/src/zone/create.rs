@@ -5,10 +5,10 @@ use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::Transaction;
 use chrono::Utc;
 
+use super::validation;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse};
-use crate::zone::validation;
 use crate::{Context, notify, serial, text, transaction, ttl};
 
 /// Create a zone and NOTIFY the catalog; add an ordinary apex NS naming MNAME
@@ -43,8 +43,9 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create zone").await?;
+
     let apply_result: Result<_, ServiceError> = async {
-        let caller = caller.reauthenticate_tx(&mut tx).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_action(Action::ZoneCreate)?;
 
         if request.dry_run {
@@ -79,6 +80,7 @@ pub async fn create(
         Ok(created_zone)
     }
     .await;
+
     let created_zone = transaction::finish_tx(tx, apply_result, "failed to create zone").await?;
 
     log::info!(
@@ -131,10 +133,9 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
             ServiceError::invalid_zone_field,
         )?,
         default_ttl: soa.ttl,
-        serial: match request.serial {
-            Some(serial) => serial,
-            None => serial::generate_serial(None),
-        },
+        serial: request
+            .serial
+            .unwrap_or_else(|| serial::generate_serial(None)),
         refresh: ttl::normalize_soa_interval(request.refresh, defaults.refresh, "refresh")?,
         retry: ttl::normalize_soa_interval(request.retry, defaults.retry, "retry")?,
         expire: ttl::normalize_soa_interval(request.expire, defaults.expire, "expire")?,

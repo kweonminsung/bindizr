@@ -31,13 +31,13 @@ fn test_zone() -> Zone {
 
 /// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
-            OwnerName::parse_in_zone(name, &zone).unwrap()
+            OwnerName::parse_in_zone(name, &zone_name).unwrap()
         },
         record_type,
         value: value.to_string(),
@@ -150,7 +150,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     );
 }
 
-/// Verify signatures while serving the original case of name-bearing RDATA.
+/// Verify that signatures validate while name-bearing RDATA is served in its original case.
 #[test]
 fn signatures_validate_case_preserving_rdata() {
     let zone = test_zone();
@@ -220,7 +220,7 @@ fn signatures_validate_case_preserving_rdata() {
             .unwrap()
             .rdata;
 
-        // RFC 4034: RRSIG fields without the signature, then the canonical RR.
+        // RFC 4034: RRSIG fields without the signature, then the canonical record.
         let mut signed_data = wire[..wire.len() - signature.signature().len()].to_vec();
         signed_data.extend_from_slice(records[0].name.to_wire_name(&zone.name).unwrap().as_slice());
         signed_data.extend_from_slice(&record_type.wire_type().to_be_bytes());
@@ -366,8 +366,8 @@ fn signing_leaves_delegation_ns_and_glue_unsigned() {
     );
 }
 
-/// A stored NS/DS pair below a zone cut belongs to the delegated child,
-/// so it must not acquire signatures from this zone (RFC 4035, Section 2.2).
+/// Verify that a stored NS/DS pair below a zone cut, which belongs to the delegated child,
+/// acquires no signatures from this zone (RFC 4035, Section 2.2).
 #[test]
 fn signing_excludes_ds_below_an_existing_delegation() {
     let zone = test_zone();
@@ -413,7 +413,7 @@ fn signing_excludes_ds_below_an_existing_delegation() {
     }
 }
 
-/// Verify that mixed TTL RRSET signs at the minimum.
+/// Verify that a mixed-TTL record set signs at the minimum.
 #[test]
 fn mixed_ttl_record_set_signs_at_the_minimum() {
     let zone = test_zone();

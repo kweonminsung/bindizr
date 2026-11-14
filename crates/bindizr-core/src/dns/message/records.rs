@@ -41,8 +41,8 @@ impl DnsMessageBuilder {
                     .as_deref()
                     .ok_or(EncodeMessageError::MissingValue)?;
                 self.add_record_parts(
-                    zone_name,
                     &change.record_name,
+                    zone_name,
                     record_type,
                     value,
                     change.record_ttl,
@@ -86,15 +86,15 @@ impl DnsMessageBuilder {
     }
 
     /// Adds an SOA from a serial-specific version.
-    pub fn add_version_soa(&mut self, soa: &ZoneVersion) -> Result<(), EncodeMessageError> {
+    pub fn add_version_soa(&mut self, version: &ZoneVersion) -> Result<(), EncodeMessageError> {
         let rdata = SoaRecordValue {
-            mname: &soa.mname,
-            rname: &soa.rname,
-            serial: soa.serial.as_u32(),
-            refresh: soa.refresh.as_secs(),
-            retry: soa.retry.as_secs(),
-            expire: soa.expire.as_secs(),
-            minimum: soa.minimum_ttl.as_secs(),
+            mname: &version.mname,
+            rname: &version.rname,
+            serial: version.serial.as_u32(),
+            refresh: version.refresh.as_secs(),
+            retry: version.retry.as_secs(),
+            expire: version.expire.as_secs(),
+            minimum: version.minimum_ttl.as_secs(),
         }
         .to_rdata()?;
 
@@ -102,7 +102,7 @@ impl DnsMessageBuilder {
         self.add_raw_rdata(
             self.qname.clone(),
             SOA_WIRE_TYPE,
-            soa.default_ttl.as_secs(),
+            version.default_ttl.as_secs(),
             rdata,
         )
     }
@@ -111,9 +111,9 @@ impl DnsMessageBuilder {
     pub fn add_text_rdata(
         &mut self,
         name: &str,
-        ttl: u32,
         record_type: &RecordType,
         value: &str,
+        ttl: u32,
         priority: Option<i32>,
     ) -> Result<(), EncodeMessageError> {
         let EncodedRdata { record_type, rdata } =
@@ -126,9 +126,9 @@ impl DnsMessageBuilder {
         let owner_name = zone.name.to_fqdn();
         self.add_text_rdata(
             &owner_name,
-            zone.default_ttl.as_secs(),
             &RecordType::Ns,
             "invalid",
+            zone.default_ttl.as_secs(),
             None,
         )
     }
@@ -142,9 +142,9 @@ impl DnsMessageBuilder {
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_text_rdata(
             &version_name,
-            zone.default_ttl.as_secs(),
             &RecordType::Txt,
             &TxtRecordValue::from_string("2").to_presentation(),
+            zone.default_ttl.as_secs(),
             None,
         )
     }
@@ -160,9 +160,9 @@ impl DnsMessageBuilder {
 
         self.add_text_rdata(
             &ptr_name,
-            zone.default_ttl.as_secs(),
             &RecordType::Ptr,
             &ptr_target,
+            zone.default_ttl.as_secs(),
             None,
         )
     }
@@ -174,8 +174,8 @@ impl DnsMessageBuilder {
         zone_name: &ZoneName,
     ) -> Result<(), EncodeMessageError> {
         self.add_record_parts(
-            zone_name,
             &record.name,
+            zone_name,
             &record.record_type,
             &record.value,
             record.ttl,
@@ -187,8 +187,8 @@ impl DnsMessageBuilder {
     /// rows share this shape). Unsupported types are skipped.
     pub fn add_record_parts(
         &mut self,
-        zone_name: &ZoneName,
         name: &OwnerName,
+        zone_name: &ZoneName,
         record_type: &RecordType,
         value: &str,
         ttl: Ttl,

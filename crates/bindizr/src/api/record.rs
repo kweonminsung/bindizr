@@ -77,9 +77,8 @@ pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<IdParams>,
 ) -> Result<Response, ApiError> {
-    let response = SingleRecordResponse {
-        record: record::get(&cx, &caller, params.id).await?,
-    };
+    let record = record::get(&cx, &caller, params.id).await?;
+    let response = SingleRecordResponse { record };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -91,8 +90,8 @@ pub(crate) async fn get_record(
         summary = "Create a new DNS record",
         request_body = CreateRecordRequest,
         responses(
-            (status = 201, description = "DNS record created successfully", body = WriteRecordResponse),
             (status = 200, description = "Dry run validated successfully, nothing applied", body = WriteRecordResponse),
+            (status = 201, description = "DNS record created successfully", body = WriteRecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's role does not permit this record write", body = ErrorResponse),
@@ -201,9 +200,9 @@ pub(crate) async fn delete_record(
 pub(crate) async fn delete_matching_records(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(request): Query<DeleteRecordsRequest>,
+    Query(query): Query<DeleteRecordsRequest>,
 ) -> Result<Response, ApiError> {
-    let response = record::delete_matching(&cx, &caller, &request).await?;
+    let response = record::delete_matching(&cx, &caller, &query).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -216,8 +215,8 @@ pub(crate) async fn delete_matching_records(
         description = "Insert many records into the named zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.",
         request_body = CreateBulkRecordsRequest,
         responses(
-            (status = 201, description = "DNS records created successfully", body = CreateBulkRecordsResponse),
             (status = 200, description = "Dry run validated successfully, nothing applied", body = CreateBulkRecordsResponse),
+            (status = 201, description = "DNS records created successfully", body = CreateBulkRecordsResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's role does not permit this record write", body = ErrorResponse),

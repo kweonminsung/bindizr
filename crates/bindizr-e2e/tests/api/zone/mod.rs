@@ -20,7 +20,7 @@ fn zone_path(name: &str) -> String {
     )
 }
 
-/// Preserve equivalent escaped names across creation, lookup, duplicate detection and rename.
+/// Verify that equivalent escaped names are preserved across creation, lookup, duplicate detection and rename.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn escaped_zone_names_round_trip_through_management() {
@@ -30,7 +30,7 @@ async fn escaped_zone_names_round_trip_through_management() {
         let base = app.zone_name(&format!("escaped-{byte}"));
         let simple = format!("{base}\\{}", char::from(byte));
         let canonical = format!("{base}\\{byte:03}");
-        let request = json!({"name": simple, "mname": "ns.example", "rname": "admin@example"});
+        let request = json!({ "name": simple, "mname": "ns.example", "rname": "admin@example" });
 
         let (status, body) = app
             .send_request(Method::POST, "/zones", Some(request))
@@ -41,11 +41,12 @@ async fn escaped_zone_names_round_trip_through_management() {
 
         for name in [&simple, &canonical] {
             let (status, body) = app.send_request(Method::GET, &zone_path(name), None).await;
+
             assert_eq!(status, StatusCode::OK, "{name:?}: {body}");
             assert_eq!(body["zone"]["name"], canonical);
         }
 
-        let request = json!({"name": canonical, "mname": "ns.example", "rname": "admin@example"});
+        let request = json!({ "name": canonical, "mname": "ns.example", "rname": "admin@example" });
 
         let (status, body) = app
             .send_request(Method::POST, "/zones", Some(request))
@@ -59,7 +60,7 @@ async fn escaped_zone_names_round_trip_through_management() {
             .send_request(
                 Method::PUT,
                 &zone_path(&simple),
-                Some(json!({"name": renamed})),
+                Some(json!({ "name": renamed })),
             )
             .await;
 
@@ -76,16 +77,16 @@ async fn escaped_zone_names_round_trip_through_management() {
     }
 }
 
-/// Reject wildcard spellings in both creation and rename without changing a stored zone.
+/// Verify that wildcard spellings are rejected in both creation and rename without changing a stored zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn escaped_wildcard_zones_are_rejected_atomically() {
+async fn zone_rejects_escaped_wildcard_names_atomically() {
     let app = TestApp::start_local().await;
     let original = app.create_test_zone().await;
-    let name = original["name"].as_str().unwrap();
+    let zone_name = original["name"].as_str().unwrap();
 
     for label in ["*", r"\*", r"\042"] {
-        let wildcard = format!("{label}.{name}");
+        let wildcard = format!("{label}.{zone_name}");
 
         let (status, body) = app
             .send_request(
@@ -103,8 +104,8 @@ async fn escaped_wildcard_zones_are_rejected_atomically() {
         let (status, body) = app
             .send_request(
                 Method::PUT,
-                &zone_path(name),
-                Some(json!({"name": wildcard})),
+                &zone_path(zone_name),
+                Some(json!({ "name": wildcard })),
             )
             .await;
 
@@ -112,9 +113,11 @@ async fn escaped_wildcard_zones_are_rejected_atomically() {
         assert_eq!(body["code"], "INVALID_ZONE_FIELD");
     }
 
-    let (status, body) = app.send_request(Method::GET, &zone_path(name), None).await;
+    let (status, body) = app
+        .send_request(Method::GET, &zone_path(zone_name), None)
+        .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zone"], original);
 }
 
@@ -164,7 +167,7 @@ async fn zone_accepts_zero_soa_timers() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 }
 
-/// Verify zone creation, retrieval, update, and deletion.
+/// Verify that zones can be created, retrieved, updated, and deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_supports_create_read_update_and_delete() {
@@ -187,7 +190,7 @@ async fn zone_supports_create_read_update_and_delete() {
         .send_request(Method::POST, "/zones", Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let created_zone_name = body["zone"]["name"].as_str().unwrap();
 
@@ -197,11 +200,11 @@ async fn zone_supports_create_read_update_and_delete() {
         .send_request(Method::GET, &format!("/zones/{created_zone_name}"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zone"]["name"], zone_name);
 
     // Rename the zone and replace its SOA settings through the original name.
-    let update_zone_request = json!({
+    let request = json!({
         "name": updated_zone_name,
         "mname": "ns2.external-dns.net",
         "rname": "admin@updated-test.com",
@@ -216,11 +219,11 @@ async fn zone_supports_create_read_update_and_delete() {
         .send_request(
             Method::PUT,
             &format!("/zones/{created_zone_name}"),
-            Some(update_zone_request),
+            Some(request),
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let actual_updated_zone_name = body["zone"]["name"].as_str().unwrap();
 
     assert_eq!(actual_updated_zone_name, updated_zone_name);
@@ -234,7 +237,7 @@ async fn zone_supports_create_read_update_and_delete() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zone"]["default_ttl"], 300);
     assert_eq!(body["zone"]["mname"], "ns2.external-dns.net");
     assert_eq!(body["zone"]["rname"], "admin@updated-test.com");
@@ -262,14 +265,14 @@ async fn zone_supports_create_read_update_and_delete() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Verify serial initialization and rejection of out-of-range serials.
+/// Verify that serials are initialized and out-of-range serials are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_create_accepts_seed_serial_and_rejects_out_of_range() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("seeded-serial.example.com");
 
-    // Secondaries compare serials per RFC 1982, so a takeover has to continue
+    // Secondaries compare serials per RFC 1982, Section 3.2, so a takeover has to continue
     // from the previous primary's serial instead of restarting at 1.
     let seeded_zone = json!({
         "name": zone_name,
@@ -283,10 +286,10 @@ async fn zone_create_accepts_seed_serial_and_rejects_out_of_range() {
         .send_request(Method::POST, "/zones", Some(seeded_zone))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["zone"]["serial"], 2026072501i64);
 
-    let update_zone_request = json!({
+    let request = json!({
         "name": zone_name,
         "mname": format!("ns1.{zone_name}"),
         "rname": "hostmaster@example.com",
@@ -294,17 +297,13 @@ async fn zone_create_accepts_seed_serial_and_rejects_out_of_range() {
     });
 
     let (status, body) = app
-        .send_request(
-            Method::PUT,
-            &format!("/zones/{zone_name}"),
-            Some(update_zone_request),
-        )
+        .send_request(Method::PUT, &format!("/zones/{zone_name}"), Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zone"]["serial"], 2026072502i64);
 
-    // RFC 1982 serials span the complete unsigned 32-bit range.
+    // Serials span the complete unsigned 32-bit range (RFC 1982, Section 2).
     for out_of_range_serial in [-1i64, i64::from(u32::MAX) + 1] {
         let out_of_range_zone = json!({
             "name": app.zone_name("out-of-range-serial.example.com"),
@@ -340,7 +339,7 @@ async fn zone_serial_defaults_to_one_and_rejects_explicit_update() {
         .send_request(Method::POST, "/zones", Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["zone"]["serial"].as_i64().unwrap(), 1);
 
     let record = json!({
@@ -354,11 +353,7 @@ async fn zone_serial_defaults_to_one_and_rejects_explicit_update() {
 
     assert_eq!(status, StatusCode::CREATED);
 
-    let (_, after) = app
-        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
-        .await;
-
-    assert_eq!(after["zone"]["serial"].as_i64().unwrap(), 2);
+    assert_eq!(app.read_zone_serial(&zone_name).await, 2);
 
     let update_with_serial = json!({
         "name": zone_name,
@@ -376,7 +371,7 @@ async fn zone_serial_defaults_to_one_and_rejects_explicit_update() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(
         body["error"]
             .as_str()
@@ -388,11 +383,11 @@ async fn zone_serial_defaults_to_one_and_rejects_explicit_update() {
         .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}"),
-            Some(json!({"serial": null})),
+            Some(json!({ "serial": null })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(
         body["error"]
             .as_str()
@@ -410,18 +405,19 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let (status, detail) = app
+    let serial = zone["serial"].as_i64().unwrap();
+    let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions/{}", zone["serial"]),
+            &format!("/zones/{zone_name}/versions/{serial}"),
             None,
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    let names: Vec<&str> = detail["records"]
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let names: Vec<&str> = body["records"]
         .as_array()
-        .expect("version records")
+        .unwrap()
         .iter()
         .map(|record| record["name"].as_str().unwrap_or_default())
         .collect();
@@ -447,7 +443,7 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
                     "name": spelling,
                     "type": "NS",
                     "value": ns["value"],
-                    "ttl": 1200,
+                    "ttl": 1200
                 })),
             )
             .await;
@@ -456,7 +452,7 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
     }
 }
 
-/// Verify zone filtering and pagination.
+/// Verify that zone listings filter and paginate.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_listing_filters_and_paginates() {
@@ -493,7 +489,7 @@ async fn zone_listing_filters_and_paginates() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let zones = body["items"].as_array().unwrap();
 
     assert_eq!(zones.len(), 1);
@@ -507,7 +503,7 @@ async fn zone_listing_filters_and_paginates() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let zones = body["items"].as_array().unwrap();
 
     assert_eq!(zones.len(), 1);
@@ -540,27 +536,27 @@ async fn zone_listing_sorts_and_filters_on_more_than_the_name() {
     let app = TestApp::start().await;
     let prefix = app.namespace().to_string();
 
-    let mut names = Vec::new();
+    let mut zone_names = Vec::new();
 
     for (label, serial) in [("a-sort", 30), ("b-sort", 10), ("c-sort", 20)] {
-        let name = app.zone_name(label);
+        let zone_name = app.zone_name(label);
 
         let (status, body) = app
             .send_request(
                 Method::POST,
                 "/zones",
                 Some(json!({
-                    "name": name,
-                    "mname": format!("ns1.{name}"),
+                    "name": zone_name,
+                    "mname": format!("ns1.{zone_name}"),
                     "rname": "admin@example.com",
                     "default_ttl": 3600,
-                    "serial": serial,
+                    "serial": serial
                 })),
             )
             .await;
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
-        names.push(name);
+        zone_names.push(zone_name);
     }
 
     let listed = async |app: &TestApp, query: &str| -> Vec<String> {
@@ -585,21 +581,29 @@ async fn zone_listing_sorts_and_filters_on_more_than_the_name() {
     // Creation order is a, b, c; serial order is b, c, a.
     assert_eq!(
         listed(&app, "sort=serial").await,
-        [names[1].clone(), names[2].clone(), names[0].clone()]
+        [
+            zone_names[1].clone(),
+            zone_names[2].clone(),
+            zone_names[0].clone()
+        ]
     );
     assert_eq!(
         listed(&app, "sort=serial&order=desc").await,
-        [names[0].clone(), names[2].clone(), names[1].clone()]
+        [
+            zone_names[0].clone(),
+            zone_names[2].clone(),
+            zone_names[1].clone()
+        ]
     );
 
     // Omitted, a listing still sorts by name.
-    assert_eq!(listed(&app, "").await, names);
+    assert_eq!(listed(&app, "").await, zone_names);
 
     assert_eq!(
         listed(&app, "min_serial=20").await,
-        [names[0].clone(), names[2].clone()]
+        [zone_names[0].clone(), zone_names[2].clone()]
     );
-    assert_eq!(listed(&app, "max_serial=10").await, [names[1].clone()]);
+    assert_eq!(listed(&app, "max_serial=10").await, [zone_names[1].clone()]);
 
     // None of these is signed, so the DNSSEC filter splits them all one way.
     assert!(listed(&app, "signed=true").await.is_empty());
@@ -675,7 +679,10 @@ async fn zone_rename_enforces_record_wire_length_limit() {
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body.to_string().contains("bytes or fewer"), "{body}");
+    assert!(
+        body["error"].as_str().unwrap().contains("bytes or fewer"),
+        "{body}"
+    );
 
     let (status, _) = app.send_request(Method::GET, "/zones/a.co", None).await;
 
@@ -694,13 +701,13 @@ async fn zone_rename_enforces_record_wire_length_limit() {
 async fn zone_rejects_catalog_zone_name() {
     let app = TestApp::start().await;
 
-    for name in ["catalog.bindizr", "Catalog.Bindizr", " catalog.bindizr. "] {
+    for zone_name in ["catalog.bindizr", "Catalog.Bindizr", " catalog.bindizr. "] {
         let (status, body) = app
             .send_request(
                 Method::POST,
                 "/zones",
                 Some(json!({
-                    "name": name,
+                    "name": zone_name,
                     "mname": "ns1.catalog.bindizr",
                     "rname": "hostmaster@catalog.bindizr",
                     "default_ttl": 3600
@@ -708,15 +715,18 @@ async fn zone_rejects_catalog_zone_name() {
             )
             .await;
 
-        assert_eq!(status, StatusCode::BAD_REQUEST, "name: {name}");
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{zone_name}: {body}");
         assert!(
-            body.to_string().contains("catalog zone name"),
-            "name: {name}, body: {body}"
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("catalog zone name"),
+            "{zone_name}: {body}"
         );
     }
 }
 
-/// Verify zone-field validation and normalization.
+/// Verify that zone fields are validated and normalized.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_normalizes_names_and_validates_soa() {
@@ -743,6 +753,7 @@ async fn zone_normalizes_names_and_validates_soa() {
         let (status, _) = app
             .send_request(Method::POST, "/zones", Some(invalid_rname))
             .await;
+
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
@@ -757,7 +768,7 @@ async fn zone_normalizes_names_and_validates_soa() {
         .send_request(Method::POST, "/zones", Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["zone"]["name"], zone_name);
     assert_eq!(body["zone"]["mname"], format!("ns1.{zone_name}"));
 
@@ -806,7 +817,7 @@ async fn zone_normalizes_names_and_validates_soa() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zone"]["name"], zone_name);
     assert_eq!(body["zone"]["mname"], format!("ns1.{zone_name}"));
     assert_eq!(body["zone"]["rname"], "Host.Master@example.com");
@@ -854,7 +865,7 @@ async fn zone_normalizes_names_and_validates_soa() {
     }
 }
 
-/// Verify rejection of invalid zone names and TTLs.
+/// Verify that invalid zone names and TTLs are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_rejects_invalid_name_and_ttl() {
@@ -907,6 +918,7 @@ async fn zone_rejects_invalid_name_and_ttl() {
         let (status, _) = app
             .send_request(Method::POST, "/zones", Some(invalid_zone))
             .await;
+
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
@@ -929,6 +941,7 @@ async fn zone_rejects_invalid_name_and_ttl() {
         let (status, _) = app
             .send_request(Method::POST, "/zones", Some(valid_zone))
             .await;
+
         assert_eq!(status, StatusCode::CREATED);
     }
 }
@@ -942,7 +955,7 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
     app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
-    let server = format!("127.0.0.1:{}", app.dns_port());
+    let address = format!("127.0.0.1:{}", app.dns_port());
 
     assert!(
         common::probe_zone_soa(app.dns_port(), zone_name),
@@ -975,7 +988,7 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(json!({ "from_server": server, "mode": "replace" })),
+            Some(json!({ "from_server": address, "mode": "replace" })),
         )
         .await;
 
@@ -1034,7 +1047,7 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
     );
 }
 
-/// Keep an apex NS while the zone is enabled.
+/// Verify that an apex NS is kept while the zone is enabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_preserves_last_apex_ns_while_enabled() {
@@ -1071,6 +1084,7 @@ async fn zone_preserves_last_apex_ns_while_enabled() {
         format!("/records?zone_name={zone_name}&name=@&type=NS"),
     ] {
         let (status, body) = app.send_request(Method::DELETE, &path, None).await;
+
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
     }
 
@@ -1080,7 +1094,7 @@ async fn zone_preserves_last_apex_ns_while_enabled() {
                 Method::POST,
                 &format!("/zones/{zone_name}/import"),
                 Some(
-                    json!({"content": "www IN A 192.0.2.1", "mode": "replace", "dry_run": dry_run}),
+                    json!({ "content": "www IN A 192.0.2.1", "mode": "replace", "dry_run": dry_run }),
                 ),
             )
             .await;
@@ -1109,7 +1123,7 @@ async fn zone_preserves_last_apex_ns_while_enabled() {
     assert_eq!(records[0]["value"], "replacement.example.net.");
 }
 
-/// Require apex NS before explicitly enabling a preparation zone.
+/// Verify that an apex NS is required before explicitly enabling a preparation zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_create_omits_records_when_apex_ns_is_disabled() {
@@ -1124,7 +1138,7 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
                 "name": zone_name,
                 "mname": format!("ns1.{zone_name}"),
                 "rname": "admin@example.com",
-                "apex_ns": false,
+                "apex_ns": false
             })),
         )
         .await;
@@ -1139,18 +1153,24 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
     let path = format!("/zones/{zone_name}");
 
     let (status, body) = app
-        .send_request(Method::PUT, &path, Some(json!({"enabled": true})))
+        .send_request(Method::PUT, &path, Some(json!({ "enabled": true })))
         .await;
 
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(app.read_zone_serial(&zone_name).await, serial);
 
-    let (status, body) = app.send_request(Method::POST, "/records", Some(json!({"zone_name": zone_name, "name": "@", "type": "NS", "value": format!("ns1.{zone_name}")}))).await;
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({ "zone_name": zone_name, "name": "@", "type": "NS", "value": format!("ns1.{zone_name}") })),
+        )
+        .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let (status, body) = app
-        .send_request(Method::PUT, &path, Some(json!({"enabled": true})))
+        .send_request(Method::PUT, &path, Some(json!({ "enabled": true })))
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");

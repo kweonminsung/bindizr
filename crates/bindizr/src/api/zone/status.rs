@@ -35,6 +35,6 @@ pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = zone::get_status(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
-    Ok((StatusCode::OK, Json(status)).into_response())
+    let response = zone::get_status(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

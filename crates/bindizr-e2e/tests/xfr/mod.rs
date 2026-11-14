@@ -18,7 +18,7 @@ use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
 use domain::base::{Message, MessageBuilder, Name, Ttl};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::rdata::{A, Soa};
-use domain::tsig::{Algorithm, ClientSequence, ClientTransaction};
+use domain::tsig::{Algorithm, ClientSequence, ClientTransaction, Key, KeyName};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::time;
@@ -28,22 +28,18 @@ use crate::common::dns::tsig::{KeyRole, SigningKey};
 use crate::common::dns::{nsupdate, tsig};
 use crate::common::{TestApp, TestAppOptions, TransferResult, dns};
 
-/// A bindizr whose transfer ACL admits the test's own loopback pull.
+/// Start a bindizr whose transfer ACL admits the test's own loopback pull.
 async fn transfer_app() -> TestApp {
     let app = TestApp::start_local().await;
     app.create_secondary("loopback", "127.0.0.1").await;
     app
 }
 
-/// UDP errors fit without losing their signed error; streams retain the question.
+/// Verify that UDP errors fit without losing their signed error and that streams retain the
+/// question.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn oversized_tsig_errors_preserve_error_and_authentication_across_transports() {
-    use domain::tsig::Algorithm;
-
-    use crate::common::dns;
-    use crate::common::dns::tsig::SigningKey;
-
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
         ..Default::default()
@@ -71,7 +67,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                 Method::POST,
                 "/tsig-keys",
                 Some(
-                    json!({"name": name, "role_name": "admin", "algorithm": algorithm.to_string()}),
+                    json!({ "name": name, "role_name": "admin", "algorithm": algorithm.to_string() }),
                 ),
             )
             .await;
@@ -95,7 +91,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                         (Opcode::QUERY, Rtype::AXFR),
                         (Opcode::UPDATE, Rtype::SOA),
                     ] {
-                        let zone = format!(
+                        let zone_name = format!(
                             "{}.{}.{}.{}",
                             "a".repeat(63),
                             "b".repeat(63),
@@ -116,7 +112,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                         builder.header_mut().set_rd(true);
                         let mut question = builder.question();
                         question
-                            .push((dns::parse_name(&zone).unwrap(), qtype))
+                            .push((dns::parse_name(&zone_name).unwrap(), qtype))
                             .unwrap();
                         let mut query = question.additional();
 
@@ -130,7 +126,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                                 .unwrap();
                         }
 
-                        let time = Time48::from_u64(
+                        let signed_at = Time48::from_u64(
                             u64::from(Time48::now())
                                 - if stale {
                                     3600
@@ -146,7 +142,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                         ClientTransaction::request_with_fudge(
                             key.to_tsig_key_with_mac_len(mac_len).unwrap(),
                             &mut query,
-                            time,
+                            signed_at,
                             17,
                         )
                         .unwrap();
@@ -155,7 +151,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                         assert_eq!(query.len(), 509);
 
                         for transport in ["udp", "tcp", "tls"] {
-                            let bytes = match transport {
+                            let response = match transport {
                                 "udp" => dns::exchange_udp(app.dns_port(), &query),
                                 "tcp" => crate::common::exchange_tcp(app.dns_port(), &query),
                                 _ => dns::exchange_xot(
@@ -165,7 +161,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                                 ),
                             }
                             .unwrap();
-                            let response = Message::from_octets(bytes).unwrap();
+                            let response = Message::from_octets(response).unwrap();
                             let limit = usize::from(edns.unwrap_or(512));
 
                             if transport == "udp" {
@@ -200,7 +196,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                             assert_eq!(tsig.data().fudge(), 17);
 
                             if stale {
-                                assert_eq!(tsig.data().time_signed(), time);
+                                assert_eq!(tsig.data().time_signed(), signed_at);
                             }
 
                             assert_eq!(
@@ -224,7 +220,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
     }
 }
 
-/// An upper-case TSIG algorithm name names the same key (RFC 1035, Section
+/// Verify that an upper-case TSIG algorithm name names the same key (RFC 1035, Section
 /// 2.3.3); the digest takes the canonical form, so the MAC verifies.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -237,45 +233,44 @@ async fn tsig_algorithm_names_match_regardless_of_case() {
 
     let mut query = common::build_edns_query(zone_name, Rtype::SOA, &[]);
     tsig::sign(&mut query, &key).unwrap();
-    let mut request = query.finish();
+    let mut query = query.finish();
     let label = b"hmac-sha256";
-    let index = request
+    let index = query
         .windows(label.len())
         .rposition(|window| window == label)
         .expect("the TSIG names its algorithm");
-    request[index..index + label.len()].make_ascii_uppercase();
+    query[index..index + label.len()].make_ascii_uppercase();
 
-    for bytes in [
-        dns::exchange_udp(app.dns_port(), &request).unwrap(),
-        crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
+    for response in [
+        dns::exchange_udp(app.dns_port(), &query).unwrap(),
+        crate::common::exchange_tcp(app.dns_port(), &query).unwrap(),
     ] {
-        let response = Message::from_octets(bytes).unwrap();
+        let response = Message::from_octets(response).unwrap();
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
         assert!(tsig::parse_tsig_presence(&response).unwrap());
-        tsig::verify_response_mac(&request, &response, &key).unwrap();
+        tsig::verify_response_mac(&query, &response, &key).unwrap();
     }
 }
 
-/// SHA1 authenticates queries and updates (RFC 8945, Section 6).
+/// Verify that SHA1 authenticates queries and updates (RFC 8945, Section 6).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn sha1_tsig_key_authenticates_queries_and_updates() {
     use base64::Engine;
-    use domain::tsig::{Algorithm, Key, KeyName};
 
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
 
     let (status, body) = app
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({"name": "sha1-key", "role_name": "admin", "algorithm": "hmac-sha1"})),
+            Some(json!({ "name": "sha1-key", "role_name": "admin", "algorithm": "hmac-sha1" })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha1");
     let secret = general_purpose::STANDARD
         .decode(body["secret"].as_str().unwrap())
@@ -292,7 +287,7 @@ async fn sha1_tsig_key_authenticates_queries_and_updates() {
     );
 
     for opcode in [Opcode::QUERY, Opcode::UPDATE] {
-        let mut query = common::build_edns_query(name, Rtype::SOA, &[]);
+        let mut query = common::build_edns_query(zone_name, Rtype::SOA, &[]);
         query.header_mut().set_opcode(opcode);
         let client = ClientTransaction::request(key.clone(), &mut query, Time48::now()).unwrap();
         let response = dns::exchange_udp(app.dns_port(), &query.finish()).unwrap();
@@ -361,9 +356,9 @@ async fn transfer_returns_notauth_for_invalid_zone_name() {
 
     // RFC 5936, Section 2.2.1: a refusal is an RCODE, not a dropped
     // connection; the underscore label is one the zone type refuses.
-    for zone in ["nozone.example.", "_foo.example."] {
-        let outcome = crate::common::axfr(app.dns_port(), zone, None).expect("AXFR");
-        assert_eq!(outcome.refusal(), Rcode::NOTAUTH, "zone {zone}");
+    for zone_name in ["nozone.example.", "_foo.example."] {
+        let outcome = crate::common::axfr(app.dns_port(), zone_name, None).expect("AXFR");
+        assert_eq!(outcome.refusal(), Rcode::NOTAUTH, "zone {zone_name}");
     }
 }
 
@@ -386,26 +381,26 @@ async fn udp_ixfr_returns_current_soa() {
 
     // RFC 1995, Section 2: Windows DNS asks this way after a NOTIFY and goes
     // to TCP only when the answer's serial is ahead of its own.
-    let (query_id, buffer) =
+    let (query_id, response) =
         crate::common::exchange_dns_query(app.dns_port(), zone_name, Rtype::IXFR.to_int()).unwrap();
 
-    let response = Message::from_octets(buffer.as_slice()).unwrap();
+    let response = Message::from_octets(response.as_slice()).unwrap();
     let header = response.header();
 
     assert_eq!(header.id(), query_id);
     assert_eq!(header.rcode(), Rcode::NOERROR);
     assert!(header.aa() && !header.tc());
     assert_eq!(response.sole_question().unwrap().qtype(), Rtype::IXFR);
-    let answer: Vec<_> = response
+    let answers: Vec<_> = response
         .answer()
         .unwrap()
         .limit_to::<Soa<_>>()
         .map(Result::unwrap)
         .collect();
 
-    assert_eq!(answer.len(), 1);
+    assert_eq!(answers.len(), 1);
     assert_eq!(
-        u64::from(answer[0].data().serial().into_int()),
+        u64::from(answers[0].data().serial().into_int()),
         zone["serial"].as_u64().unwrap()
     );
 
@@ -420,7 +415,8 @@ async fn udp_ixfr_returns_current_soa() {
     );
 }
 
-/// Check IXFR serial ordering for ordinary and catalog zones on both transports.
+/// Verify that IXFR serial ordering selects SOA-only replies for ordinary and catalog zones on
+/// both transports.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ixfr_serial_order_selects_soa_only_replies() {
@@ -513,7 +509,7 @@ async fn ixfr_serial_order_selects_soa_only_replies() {
     );
 }
 
-/// Require transfer permission even when IXFR would return only an SOA.
+/// Verify that transfer permission is required even when IXFR would return only an SOA.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ixfr_soa_only_replies_require_transfer_permission() {
@@ -543,13 +539,13 @@ async fn ixfr_soa_only_replies_require_transfer_permission() {
     }
 }
 
-/// Local SOA diagnostics do not exempt UDP IXFR from the transfer address ACL.
+/// Verify that local SOA diagnostics do not exempt UDP IXFR from the transfer address ACL.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn unsigned_local_ixfr_requires_a_registered_secondary() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
     let serial = u32::try_from(zone["serial"].as_u64().unwrap()).unwrap();
 
     for registered in [false, true] {
@@ -558,15 +554,15 @@ async fn unsigned_local_ixfr_requires_a_registered_secondary() {
         }
 
         for qtype in [Rtype::SOA, Rtype::IXFR, Rtype::AXFR] {
-            let wire = if qtype == Rtype::IXFR {
-                common::build_ixfr_query(name, serial).finish()
+            let query = if qtype == Rtype::IXFR {
+                common::build_ixfr_query(zone_name, serial).finish()
             } else {
-                common::build_edns_query(name, qtype, &[]).finish()
+                common::build_edns_query(zone_name, qtype, &[]).finish()
             };
 
             for response in [
-                dns::exchange_udp(app.dns_port(), &wire).unwrap(),
-                crate::common::exchange_tcp(app.dns_port(), &wire).unwrap(),
+                dns::exchange_udp(app.dns_port(), &query).unwrap(),
+                crate::common::exchange_tcp(app.dns_port(), &query).unwrap(),
             ] {
                 let response = Message::from_octets(response).unwrap();
                 let expected = if registered || qtype == Rtype::SOA {
@@ -667,9 +663,9 @@ async fn signed_transfer_limits_zones_to_key_role_grants() {
 
     assert!(outcome.records() >= 3);
 
-    for zone in [&narrowed, &ungranted] {
-        let outcome = crate::common::axfr(app.dns_port(), zone, Some(&key)).expect("AXFR");
-        assert_eq!(outcome.refusal(), Rcode::REFUSED, "zone {zone}");
+    for zone_name in [&narrowed, &ungranted] {
+        let outcome = crate::common::axfr(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
+        assert_eq!(outcome.refusal(), Rcode::REFUSED, "zone {zone_name}");
     }
 }
 
@@ -741,11 +737,6 @@ async fn signed_transfer_rejects_unknown_key_without_address_fallback() {
     );
 }
 
-const DNSKEY: u16 = 48;
-const RRSIG: u16 = 46;
-const NSEC3PARAM: u16 = 51;
-const CDS: u16 = 59;
-
 /// Verify that signed zone propagates DNSSEC records and signed IXFR.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -770,7 +761,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
                 "name": "www",
                 "type": "A",
                 "value": "192.0.2.10",
-                "zone_name": zone_name,
+                "zone_name": zone_name
             })),
         )
         .await;
@@ -782,7 +773,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
 
@@ -791,13 +782,13 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
     // Phase 3: the signed view reaches both secondaries. Explicit-type
     // queries return DNSSEC records without the DO bit.
     for port in app.dns_secondary_ports() {
-        crate::common::wait_for_any_dns_record(*port, &zone_name, DNSKEY).await;
-        crate::common::wait_for_any_dns_record(*port, &zone_name, RRSIG).await;
+        crate::common::wait_for_any_dns_record(*port, &zone_name, Rtype::DNSKEY.to_int()).await;
+        crate::common::wait_for_any_dns_record(*port, &zone_name, Rtype::RRSIG.to_int()).await;
     }
 
     // Phase 4: mutation re-signs the zone in one transaction; verifying the new
     // A record on both secondaries exercises the signed IXFR delta.
-    let serial_before = app.read_zone_serial(&zone_name).await;
+    let base_serial = app.read_zone_serial(&zone_name).await;
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -806,13 +797,13 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
                 "name": "api",
                 "type": "A",
                 "value": "192.0.2.11",
-                "zone_name": zone_name,
+                "zone_name": zone_name
             })),
         )
         .await;
 
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(app.read_zone_serial(&zone_name).await, serial_before + 1);
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 1);
 
     // Phase 5: both secondaries converge on the bumped serial.
     let mut attempts = 0;
@@ -861,7 +852,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
                 "name": "www",
                 "type": "A",
                 "value": "192.0.2.10",
-                "zone_name": zone_name,
+                "zone_name": zone_name
             })),
         )
         .await;
@@ -884,7 +875,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy_name": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "policy_name": policy_name, "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
 
@@ -893,8 +884,8 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
     // NSEC3PARAM at the apex shows the NSEC3 denial plane transferred; CDS
     // (RFC 7344) shows the derived key record set plane did too.
     for port in app.dns_secondary_ports() {
-        crate::common::wait_for_any_dns_record(*port, &zone_name, NSEC3PARAM).await;
-        crate::common::wait_for_any_dns_record(*port, &zone_name, CDS).await;
+        crate::common::wait_for_any_dns_record(*port, &zone_name, Rtype::NSEC3PARAM.to_int()).await;
+        crate::common::wait_for_any_dns_record(*port, &zone_name, Rtype::CDS.to_int()).await;
     }
 }
 
@@ -918,7 +909,8 @@ async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) ->
     }
 }
 
-/// Verify the transfer log and its per-zone summary, including refusals before secondary registration.
+/// Verify that the transfer log and its per-zone summary are returned, including refusals
+/// before secondary registration.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn transfer_history_returns_served_secondary_transfers() {
@@ -1073,7 +1065,7 @@ async fn transfer_history_returns_served_secondary_transfers() {
     assert!(stdout.contains("Transfers: 1 zones:"), "{stdout}");
 }
 
-/// Verify malformed TSIG gets unsigned FORMERR even from an allowed address
+/// Verify that a malformed TSIG gets unsigned FORMERR even from an allowed address
 /// (RFC 8945, Section 5.2).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -1114,7 +1106,7 @@ async fn malformed_tsig_returns_unsigned_formerr() {
         algorithm,
         Time48::now(),
         300,
-        vec![0u8; 4],
+        vec![0; 4],
         42,
         TsigRcode::NOERROR,
         Vec::new(),
@@ -1131,8 +1123,8 @@ async fn malformed_tsig_returns_unsigned_formerr() {
     let short_mac = additional.finish();
 
     for (label, query) in [("not last", not_last), ("short MAC", short_mac)] {
-        let frame = crate::common::exchange_tcp(app.dns_port(), &query).expect(label);
-        let response = Message::from_octets(frame).unwrap();
+        let response = crate::common::exchange_tcp(app.dns_port(), &query).expect(label);
+        let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::FORMERR, "{label}");
         assert_eq!(
@@ -1167,7 +1159,8 @@ async fn query_response_preserves_rd_bit() {
     }
 }
 
-/// Reject multiple questions before choosing a handler or checking EDNS versions.
+/// Verify that multiple questions are rejected before a handler is chosen or EDNS versions are
+/// checked.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn multi_question_queries_receive_formerr() {
@@ -1221,7 +1214,7 @@ async fn multi_question_queries_receive_formerr() {
     }
 }
 
-/// Return a header-only FORMERR for a QUERY whose question cannot be read:
+/// Verify that a QUERY whose question cannot be read receives a header-only FORMERR:
 /// none (RFC 9619, Section 4), an unreadable one, or more than one.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -1257,7 +1250,7 @@ async fn queries_without_a_readable_question_receive_formerr() {
     }
 }
 
-/// Echo DO in ordinary, truncated, refused and BADVERS responses.
+/// Verify that DO is echoed in ordinary, truncated, refused and BADVERS responses.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn query_response_preserves_edns_dnssec_ok() {
@@ -1313,7 +1306,7 @@ async fn query_response_preserves_edns_dnssec_ok() {
     }
 }
 
-/// Preserve DO when TSIG verification rejects a key or MAC.
+/// Verify that DO is preserved when TSIG verification rejects a key or MAC.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn query_tsig_error_preserves_edns_dnssec_ok() {
@@ -1363,7 +1356,7 @@ async fn query_tsig_error_preserves_edns_dnssec_ok() {
     }
 }
 
-/// Return authenticated BADTIME with OPT for stale TCP and UDP queries.
+/// Verify that stale TCP and UDP queries receive an authenticated BADTIME with OPT.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn badtime_query_responses_preserve_edns_and_verify() {
@@ -1435,7 +1428,7 @@ async fn badtime_query_responses_preserve_edns_and_verify() {
     }
 }
 
-/// Authenticate truncated queries before applying time and length policy.
+/// Verify that truncated queries are authenticated before time and length policy applies.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn truncated_queries_follow_tsig_validation_order() {
@@ -1509,7 +1502,7 @@ async fn truncated_queries_follow_tsig_validation_order() {
     }
 }
 
-/// Verify the OPT handling of RFC 6891, Sections 6.1.1 and 6.1.3, and that
+/// Verify that OPT handling follows RFC 6891, Sections 6.1.1 and 6.1.3, and that
 /// an AXFR envelope carries the OPT too (RFC 9103, Section 6.3.4).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -1652,12 +1645,12 @@ async fn tcp_connection_completes_pipelined_transfers() {
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
 
-    for (id, zone) in [(1u16, &first), (2u16, &second)] {
+    for (id, zone_name) in [(1u16, &first), (2u16, &second)] {
         let mut builder = MessageBuilder::new_vec();
         builder.header_mut().set_id(id);
         let mut question = builder.question();
         question
-            .push((&dns::parse_name(zone).unwrap(), Rtype::AXFR))
+            .push((&dns::parse_name(zone_name).unwrap(), Rtype::AXFR))
             .unwrap();
         let query = question.finish();
         dns::write_frame(&mut stream, &query).unwrap();
@@ -1668,13 +1661,13 @@ async fn tcp_connection_completes_pipelined_transfers() {
     let mut soas: HashMap<u16, usize> = HashMap::new();
 
     while soas.values().filter(|&&seen| seen >= 2).count() < 2 {
-        let frame = crate::common::read_frame(&mut stream)
+        let response = crate::common::read_frame(&mut stream)
             .expect("read")
             .expect("the server closed before both transfers ended");
-        let message = Message::from_octets(frame.as_slice()).unwrap();
+        let response = Message::from_octets(response.as_slice()).unwrap();
 
-        assert_eq!(message.header().rcode(), Rcode::NOERROR);
-        let seen = message
+        assert_eq!(response.header().rcode(), Rcode::NOERROR);
+        let seen = response
             .answer()
             .unwrap()
             .filter(|record| {
@@ -1683,14 +1676,14 @@ async fn tcp_connection_completes_pipelined_transfers() {
                     .is_ok_and(|record| record.rtype() == Rtype::SOA)
             })
             .count();
-        *soas.entry(message.header().id()).or_default() += seen;
+        *soas.entry(response.header().id()).or_default() += seen;
     }
 
     assert_eq!(soas.get(&1), Some(&2));
     assert_eq!(soas.get(&2), Some(&2));
 }
 
-/// Rejected queries do not prevent later requests on the same TCP connection.
+/// Verify that rejected queries do not prevent later requests on the same TCP connection.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn rejected_queries_keep_the_tcp_connection_usable() {
@@ -1706,12 +1699,12 @@ async fn rejected_queries_keep_the_tcp_connection_usable() {
     malformed.truncate(12);
     malformed[4..6].copy_from_slice(&2u16.to_be_bytes());
     dns::write_frame(&mut stream, &malformed).unwrap();
-    let frame = crate::common::read_frame(&mut stream)
+    let response = crate::common::read_frame(&mut stream)
         .unwrap()
         .expect("FORMERR response");
 
     assert_eq!(
-        Message::from_octets(frame).unwrap().header().rcode(),
+        Message::from_octets(response).unwrap().header().rcode(),
         Rcode::FORMERR
     );
 
@@ -1728,20 +1721,20 @@ async fn rejected_queries_keep_the_tcp_connection_usable() {
             .push((&dns::parse_name(zone_name).unwrap(), qtype, qclass))
             .unwrap();
         dns::write_frame(&mut stream, &question.finish()).unwrap();
-        let frame = crate::common::read_frame(&mut stream)
+        let response = crate::common::read_frame(&mut stream)
             .unwrap()
             .expect("refusal response");
-        let response = Message::from_octets(frame).unwrap();
+        let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().id(), 1234);
         assert_eq!(response.header().rcode(), expected);
 
         let query = common::build_edns_query(zone_name, Rtype::SOA, &[]).finish();
         dns::write_frame(&mut stream, &query).unwrap();
-        let frame = crate::common::read_frame(&mut stream)
+        let response = crate::common::read_frame(&mut stream)
             .unwrap()
             .expect("SOA response after refusal");
-        let response = Message::from_octets(frame).unwrap();
+        let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
         assert_eq!(response.header_counts().ancount(), 1);

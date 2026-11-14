@@ -48,8 +48,8 @@ impl Serial {
 
 impl From<u32> for Serial {
     /// Take a wire serial as it is.
-    fn from(serial: u32) -> Self {
-        Self(serial)
+    fn from(value: u32) -> Self {
+        Self(value)
     }
 }
 
@@ -64,10 +64,10 @@ impl TryFrom<i64> for Serial {
     type Error = ConvertSerialError;
 
     /// Read a stored serial, rejecting values outside the DNS wire range.
-    fn try_from(serial: i64) -> Result<Self, Self::Error> {
-        u32::try_from(serial)
-            .map(Serial)
-            .map_err(|_| ConvertSerialError::OutOfRange { serial })
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        u32::try_from(value)
+            .map(Self)
+            .map_err(|_| ConvertSerialError::OutOfRange { serial: value })
     }
 }
 
@@ -75,8 +75,8 @@ impl TryFrom<i32> for Serial {
     type Error = ConvertSerialError;
 
     /// Convert a signed application value without reinterpreting negative bits.
-    fn try_from(serial: i32) -> Result<Self, Self::Error> {
-        Self::try_from(i64::from(serial))
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Self::try_from(i64::from(value))
     }
 }
 
@@ -102,7 +102,7 @@ impl utoipa::PartialSchema for Serial {
         ObjectBuilder::new()
             .schema_type(Type::Integer)
             .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
-            .minimum(Some(0_u64))
+            .minimum(Some(0u64))
             .maximum(Some(u64::from(Self::MAX.as_u32())))
             .examples([serde_json::json!(42)])
             .into()
@@ -153,9 +153,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::Serial;
+    use super::*;
 
-    /// Advance wraps past the maximum to one, never zero (RFC 2136, Section 7.11).
+    /// Verify that advancing wraps past the maximum to one, never zero (RFC 2136, Section 7.11).
     #[test]
     fn next_skips_zero_when_wrapping() {
         for (serial, next) in [(0, 1), (1, 2), (u32::MAX - 1, u32::MAX), (u32::MAX, 1)] {
@@ -163,9 +163,9 @@ mod tests {
         }
     }
 
-    /// Check ordinary, wrapped, equal, and undefined serial comparisons.
+    /// Verify that ordinary, wrapped, equal, and undefined serial comparisons follow RFC 1982.
     #[test]
-    fn newer_follows_rfc1982_arithmetic() {
+    fn is_newer_than_follows_rfc1982_arithmetic() {
         for (candidate, current, newer) in [
             (11, 10, true),
             (10, 10, false),

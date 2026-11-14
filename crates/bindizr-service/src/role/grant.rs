@@ -55,7 +55,6 @@ pub async fn create(
     }
 
     let zone = match request.zone_name.as_deref() {
-        None => None,
         Some(zone_name) => {
             if let Some(action) = actions.iter().find(|action| action.needs_all_zones()) {
                 return Err(ServiceError::invalid_input(format!(
@@ -65,6 +64,7 @@ pub async fn create(
 
             Some(zone::lookup_by_name(cx, &zone::normalize_name(zone_name)?).await?)
         }
+        None => None,
     };
 
     let mut tx = transaction::begin_tx(cx, "failed to create role grant").await?;
@@ -174,7 +174,6 @@ pub async fn revoke(
             .await?
             .authorize_action(Action::AccessManage)?;
 
-        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         // Read for the audit row's detail alone; a zone gone meanwhile reads as its id.
         let zone_name = match grant.zone_scope.zone_id() {
             Some(zone_id) => Some(
@@ -185,6 +184,7 @@ pub async fn revoke(
             None => None,
         };
 
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         if !bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await? {
             return Err(ServiceError::role_grant_not_found(grant.id));
         }

@@ -1,4 +1,5 @@
 //! Prepare NOTIFY targets and collect per-address send results.
+
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::metrics::NotifyResult;
 use bindizr_core::model::secondary::Secondary;
@@ -132,19 +133,19 @@ async fn send_notify(
             }
         };
         preparations.spawn(async move {
-            let addresses = dns_client::resolve_address_entry(&secondary.address, timeout).await;
-            (secondary.address, key, addresses)
+            let addrs = dns_client::resolve_address_entry(&secondary.address, timeout).await;
+            (secondary.address, key, addrs)
         });
     }
 
     let mut handles = Vec::new();
 
     while let Some(result) = preparations.join_next().await {
-        let (address, key, addresses) = result.map_err(|error| {
+        let (address, key, addrs) = result.map_err(|error| {
             ServiceError::internal_with_source("NOTIFY address resolution task failed", error)
         })?;
-        let addresses = match addresses {
-            Ok(addresses) => addresses,
+        let addrs = match addrs {
+            Ok(addrs) => addrs,
             Err(error) => {
                 cx.metrics().track_notify(NotifyResult::ResolveFailed);
                 results.push((address.to_string(), Err(SendNotifyError::Resolve(error))));
@@ -152,16 +153,16 @@ async fn send_notify(
             }
         };
 
-        for address in addresses {
+        for addr in addrs {
             match cx
                 .notify_client()
-                .start(&qname, address, timeout, retries, key.as_ref())
+                .send(&qname, addr, timeout, retries, key.as_ref())
                 .await
             {
-                Ok(handle) => handles.push((address, handle)),
+                Ok(handle) => handles.push((addr, handle)),
                 Err(error) => {
                     cx.metrics().track_notify(NotifyResult::Failed);
-                    results.push((address.to_string(), Err(SendNotifyError::Send(error))));
+                    results.push((addr.to_string(), Err(SendNotifyError::Send(error))));
                 }
             }
         }
@@ -170,20 +171,20 @@ async fn send_notify(
     // Release preparation slots before waiting for ACKs.
     drop(permit);
 
-    for (address, handle) in handles {
+    for (addr, handle) in handles {
         let result = match handle.wait().await {
             Ok(()) => {
-                log::info!("NOTIFY sent successfully to {address}");
+                log::info!("NOTIFY sent successfully to {addr}");
                 cx.metrics().track_notify(NotifyResult::Ok);
                 Ok(())
             }
             Err(error) => {
-                log::error!("Failed to send NOTIFY to {address}: {error}");
+                log::error!("Failed to send NOTIFY to {addr}: {error}");
                 cx.metrics().track_notify(NotifyResult::Failed);
                 Err(SendNotifyError::Send(error))
             }
         };
-        results.push((address.to_string(), result));
+        results.push((addr.to_string(), result));
     }
 
     Ok(results)

@@ -174,7 +174,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                 DaemonCommand::ListRoles(PageRequest { limit, offset }),
             )
             .await?;
-            output::print_page(&response.data, output, |item| RoleRow::from(item))?;
+            output::print_page(&response.data, output, |role| RoleRow::from(role))?;
         }
         RoleCommand::Get { name, output } => {
             let response =
@@ -229,7 +229,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                 },
             )
             .await?;
-            output::print_page(&response.data, output, |item| RoleGrantRow::from(item))?;
+            output::print_page(&response.data, output, |grant| RoleGrantRow::from(grant))?;
         }
         RoleCommand::Revoke { name, id, output } => {
             let response =

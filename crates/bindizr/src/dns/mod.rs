@@ -125,21 +125,23 @@ pub(crate) async fn start(
     log::info!("DNS UDP server listening on {listen_addr}");
 
     let tcp_stop = shutdown.waiter();
-    let tcp_cx = dns_cx.clone();
+    let tcp_task = {
+        let dns_cx = dns_cx.clone();
 
-    let tcp_task = tokio::spawn(async move {
-        if let Err(error) = tcp::run_tcp_server(tcp_cx, tcp_listener, tcp_stop).await {
-            log::error!("DNS TCP server error: {error}");
-        }
-    });
+        tokio::spawn(async move {
+            if let Err(error) = tcp::run_tcp_server(dns_cx, tcp_listener, tcp_stop).await {
+                log::error!("DNS TCP server error: {error}");
+            }
+        })
+    };
 
     let tls_task = tls_listener.map(|(tls_addr, listener, server_config)| {
         log::info!("DNS TLS server listening on {tls_addr} (XoT)");
         let tls_stop = shutdown.waiter();
-        let tls_cx = dns_cx.clone();
+        let dns_cx = dns_cx.clone();
 
         tokio::spawn(async move {
-            if let Err(error) = tls::run_tls_server(tls_cx, listener, server_config, tls_stop).await
+            if let Err(error) = tls::run_tls_server(dns_cx, listener, server_config, tls_stop).await
             {
                 log::error!("DNS TLS server error: {error}");
             }
@@ -147,8 +149,7 @@ pub(crate) async fn start(
     });
 
     let udp_stop = shutdown.waiter();
-    let udp_cx = dns_cx;
-    let udp_task = tokio::spawn(udp::run_udp_server(udp_cx, udp_socket, udp_stop));
+    let udp_task = tokio::spawn(udp::run_udp_server(dns_cx, udp_socket, udp_stop));
 
     Ok(DnsServers {
         tcp: tcp_task,

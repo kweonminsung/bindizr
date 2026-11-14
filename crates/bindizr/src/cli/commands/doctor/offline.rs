@@ -1,7 +1,8 @@
 //! Checks run from this process when no daemon is up: the database and the
 //! listen ports.
 
-use std::io::{self, ErrorKind};
+use std::io;
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::time::Duration;

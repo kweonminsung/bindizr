@@ -85,9 +85,9 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
     match subcommand {
         TsigKeyCommand::Create {
             name,
+            role,
             algorithm,
             secret,
-            role,
             output,
         } => {
             let response = client::send_command::<SingleTsigKeyResponse>(
@@ -100,7 +100,9 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             )
             .await?;
             log::debug!("TSIG key creation result: {response:?}");
-            output::print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
+            output::print_response(&response.data, output, |response| {
+                vec![TsigKeyRow::from(response)]
+            })?;
         }
         TsigKeyCommand::List {
             role,
@@ -117,14 +119,18 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             )
             .await?;
             log::debug!("TSIG key list result: {response:?}");
-            output::print_page(&response.data, output, |item| TsigKeyRow::from(item))?;
+            output::print_page(&response.data, output, |tsig_key| {
+                TsigKeyRow::from(tsig_key)
+            })?;
         }
         TsigKeyCommand::Get { name, output } => {
             let response =
                 client::send_command::<SingleTsigKeyResponse>(DaemonCommand::GetTsigKey { name })
                     .await?;
             log::debug!("TSIG key get result: {response:?}");
-            output::print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
+            output::print_response(&response.data, output, |response| {
+                vec![TsigKeyRow::from(response)]
+            })?;
         }
         TsigKeyCommand::Export { name } => {
             let response =
@@ -151,9 +157,9 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 
 /// The `key` statement BIND, Knot and NSD all read a TSIG key from, so the
 /// secret reaches a secondary as something to paste rather than reformat.
-fn print_bind_key(key: &SingleTsigKeyResponse) {
-    outln!("key \"{}\" {{", key.tsig_key.name);
-    outln!("    algorithm {};", key.tsig_key.algorithm);
-    outln!("    secret \"{}\";", key.secret);
+fn print_bind_key(response: &SingleTsigKeyResponse) {
+    outln!("key \"{}\" {{", response.tsig_key.name);
+    outln!("    algorithm {};", response.tsig_key.algorithm);
+    outln!("    secret \"{}\";", response.secret);
     outln!("}};");
 }

@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
 
-/// Keep SOA minimum bounds aligned across the live schema and zone writes.
+/// Verify that SOA minimum bounds stay aligned across the live schema and zone writes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn minimum_ttl_schema_matches_zone_write_boundaries() {
@@ -12,12 +12,12 @@ async fn minimum_ttl_schema_matches_zone_write_boundaries() {
         ..Default::default()
     })
     .await;
-    let (status, document) = app.send_request(Method::GET, "/openapi.json", None).await;
+    let (status, body) = app.send_request(Method::GET, "/openapi.json", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
 
     for schema in ["CreateZoneRequest", "UpdateZoneRequest"] {
-        let minimum = &document["components"]["schemas"][schema]["properties"]["minimum_ttl"];
+        let minimum = &body["components"]["schemas"][schema]["properties"]["minimum_ttl"];
         assert_eq!(minimum["minimum"], 0, "{schema}");
         assert_eq!(minimum["maximum"], u32::MAX, "{schema}");
     }
@@ -25,12 +25,18 @@ async fn minimum_ttl_schema_matches_zone_write_boundaries() {
     let zone = app.create_test_zone().await;
 
     for ttl in [-1, 0, i64::from(u32::MAX), i64::from(u32::MAX) + 1] {
-        let name = app.zone_name(&format!("minimum-{}.example", ttl + 1));
+        let zone_name = app.zone_name(&format!("minimum-{}.example", ttl + 1));
         let accepted = (0..=i64::from(u32::MAX)).contains(&ttl);
 
-        let (status, body) = app.send_request(Method::POST, "/zones", Some(json!({
-            "name": name, "mname": "ns.example.com", "rname": "admin@example.com", "minimum_ttl": ttl
-        }))).await;
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/zones",
+                Some(json!({
+                    "name": zone_name, "mname": "ns.example.com", "rname": "admin@example.com", "minimum_ttl": ttl
+                })),
+            )
+            .await;
 
         assert_eq!(
             status,
@@ -50,7 +56,7 @@ async fn minimum_ttl_schema_matches_zone_write_boundaries() {
             .send_request(
                 Method::PUT,
                 &format!("/zones/{}", zone["name"].as_str().unwrap()),
-                Some(json!({"minimum_ttl": ttl})),
+                Some(json!({ "minimum_ttl": ttl })),
             )
             .await;
 
@@ -78,6 +84,7 @@ async fn openapi_omits_document_when_disabled() {
 
     for path in ["/openapi.json", "/openapi.yaml"] {
         let (status, _) = app.send_request(Method::GET, path, None).await;
+
         assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
     }
 }
@@ -95,7 +102,7 @@ async fn openapi_serves_documents_without_token_when_enabled() {
 
     let (status, body) = app.send_request(Method::GET, "/openapi.json", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body["paths"]["/zones"]["get"].is_object());
     let optional_serial =
         &body["components"]["schemas"]["CreateZoneRequest"]["properties"]["serial"];
@@ -158,7 +165,7 @@ async fn openapi_serves_documents_without_token_when_enabled() {
         "ExternalDnsRecord",
     ] {
         let ttl = &body["components"]["schemas"][name]["properties"]["ttl"];
-        let alternatives = ttl["oneOf"].as_array().expect("TTL accepts null");
+        let alternatives = ttl["oneOf"].as_array().unwrap();
 
         assert!(alternatives.iter().any(|schema| schema["type"] == "null"));
         let integer = alternatives
@@ -215,14 +222,14 @@ async fn openapi_serves_documents_without_token_when_enabled() {
     // YAML is not JSON, so the harness hands it back as a plain string.
     let (status, body) = app.send_request(Method::GET, "/openapi.yaml", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
         body.as_str().is_some_and(|yaml| yaml.contains("openapi:")),
         "YAML document was not served"
     );
 }
 
-/// Keep documented page limits aligned with the API's accepted query values.
+/// Verify that documented page limits stay aligned with the API's accepted query values.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn pagination_limits_match_the_openapi_contract() {
@@ -232,11 +239,11 @@ async fn pagination_limits_match_the_openapi_contract() {
     })
     .await;
 
-    let (status, document) = app.send_request(Method::GET, "/openapi.json", None).await;
+    let (status, body) = app.send_request(Method::GET, "/openapi.json", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
 
-    for (path, item) in document["paths"].as_object().unwrap() {
+    for (path, item) in body["paths"].as_object().unwrap() {
         let Some(parameters) = item["get"]["parameters"].as_array() else {
             continue;
         };
@@ -261,16 +268,16 @@ async fn pagination_limits_match_the_openapi_contract() {
             (1000, StatusCode::OK),
             (1001, StatusCode::BAD_REQUEST),
         ] {
-            let url = format!("{path}?limit={limit}");
+            let limit_path = format!("{path}?limit={limit}");
 
-            let (status, body) = app.send_request(Method::GET, &url, None).await;
+            let (status, body) = app.send_request(Method::GET, &limit_path, None).await;
 
-            assert_eq!(status, expected_status, "{url}: {body}");
+            assert_eq!(status, expected_status, "{limit_path}: {body}");
 
             if status == StatusCode::OK {
-                assert_eq!(body["pagination"]["limit"], limit, "{url}");
+                assert_eq!(body["pagination"]["limit"], limit, "{limit_path}");
             } else {
-                assert_eq!(body["code"], "INVALID_INPUT", "{url}: {body}");
+                assert_eq!(body["code"], "INVALID_INPUT", "{limit_path}: {body}");
             }
         }
     }

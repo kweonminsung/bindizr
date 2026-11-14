@@ -1,16 +1,17 @@
 //! The UDP listener: one datagram in, one answer out; a transfer is sent on
 //! to TCP.
 
-#[cfg(test)]
-mod tests;
-
 use std::future::Future;
-use std::io::{self, IoSlice, IoSliceMut};
+use std::io;
+use std::io::{IoSlice, IoSliceMut};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
 
-use bindizr_core::dns::message::{self, Keepalive, ResponseLimit, Rtype};
+use bindizr_core::dns::message;
+use bindizr_core::dns::message::{
+    Keepalive, OptRcode, ParsedQuery, QueryMetadata, ResponseLimit, Rtype,
+};
 use bindizr_core::model::transfer::TransferTransport;
 use nix::libc::{in_addr, in_pktinfo, in6_addr, in6_pktinfo};
 use nix::sys::socket;
@@ -20,7 +21,8 @@ use tokio::io::Interest;
 use tokio::task::JoinSet;
 
 use super::error::DnsError;
-use super::server::{self, DnsContext};
+use super::server;
+use super::server::DnsContext;
 
 /// Datagrams answered at once; past this the listener drops, since a caller retries.
 const MAX_UDP_IN_FLIGHT: usize = 256;
@@ -191,7 +193,7 @@ pub(crate) async fn run_udp_server(
     let mut in_flight = JoinSet::new();
 
     // The extra byte distinguishes an oversized/truncated datagram from a full DNS message.
-    let mut buffer = vec![0u8; usize::from(u16::MAX) + 1];
+    let mut buffer = vec![0; usize::from(u16::MAX) + 1];
     tokio::pin!(stop);
 
     loop {
@@ -262,7 +264,7 @@ async fn handle_udp_query(
 
     if server::nsupdate::is_nsupdate(query_data) {
         if let Err(error) =
-            server::nsupdate::handle_udp_nsupdate(dns_cx, socket, query_data, target).await
+            server::nsupdate::handle_udp_nsupdate(dns_cx, socket, target, query_data).await
         {
             log::error!("NSUPDATE UDP handler failed for {client_addr}: {error}");
         }
@@ -288,13 +290,11 @@ async fn handle_udp_query(
         }
     }
 
-    let query = match message::ParsedQuery::parse(query_data, Keepalive::None) {
+    let query = match ParsedQuery::parse(query_data, Keepalive::None) {
         Ok(query) => query,
         Err(error) => {
             if let Some(metadata) = error.query_metadata() {
-                let rcode = metadata
-                    .format_error()
-                    .unwrap_or(message::OptRcode::FORMERR);
+                let rcode = metadata.format_error().unwrap_or(OptRcode::FORMERR);
 
                 match server::refuse_query(dns_cx, metadata, query_data, rcode, None).await {
                     Ok(response) => {
@@ -311,15 +311,9 @@ async fn handle_udp_query(
         }
     };
 
-    if let Some((rcode, ede)) = server::query_refusal(&query, TransferTransport::Udp, client_addr) {
-        match server::refuse_query(
-            dns_cx,
-            &message::QueryMetadata::from(&query),
-            query_data,
-            rcode,
-            ede,
-        )
-        .await
+    if let Some((rcode, ede)) = server::query_refusal(client_addr, &query, TransferTransport::Udp) {
+        match server::refuse_query(dns_cx, &QueryMetadata::from(&query), query_data, rcode, ede)
+            .await
         {
             Ok(response) => {
                 send_udp_response(socket, target, &response, query.response_limit()).await;
@@ -365,9 +359,11 @@ async fn send_udp_response(
 ) {
     if let Err(error) = socket.send_to(response, target, limit).await {
         log::warn!(
-            "Failed to answer DNS UDP query from {}: {}",
-            target.client_addr,
-            error
+            "Failed to answer DNS UDP query from {}: {error}",
+            target.client_addr
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

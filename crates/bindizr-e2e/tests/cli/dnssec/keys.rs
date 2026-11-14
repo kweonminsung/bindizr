@@ -56,7 +56,7 @@ async fn write_exported_pairs(app: &TestApp, zone_name: &str, dir: &Path) -> Vec
     pairs
 }
 
-/// Verify DNSSEC key export and import through the CLI.
+/// Verify that the CLI exports and imports DNSSEC keys.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
@@ -239,7 +239,8 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
         ));
     }
 
-    pairs.sort(); // ksk before zsk
+    // ksk before zsk
+    pairs.sort();
 
     app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;

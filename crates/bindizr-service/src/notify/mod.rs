@@ -2,6 +2,7 @@
 
 pub mod queue;
 mod send;
+
 use std::sync::Arc;
 
 use bindizr_core::dns::name::ZoneName;
@@ -32,22 +33,19 @@ pub enum NotifyError {
     #[error(transparent)]
     Zone(#[from] NotifyZoneError),
     /// All zones whose NOTIFY failed, when all were sent.
-    #[error("NOTIFY failed for {}", failures.iter().map(|(zone, error)| format!("{zone}: {error}")).collect::<Vec<_>>().join("; "))]
+    #[error("NOTIFY failed for {}", failures.iter().map(|(zone_name, error)| format!("{zone_name}: {error}")).collect::<Vec<_>>().join("; "))]
     Zones {
         failures: Vec<(String, NotifyZoneError)>,
     },
 }
 
-/// Report post-commit NOTIFY failures as server errors; the requester cannot repair secondaries.
 impl From<NotifyError> for ServiceError {
-    /// Report the NOTIFY failure as an internal error, keeping it as source.
+    /// Report a post-commit NOTIFY failure as an internal error, keeping it as
+    /// source; the requester cannot repair secondaries.
     fn from(error: NotifyError) -> Self {
         match error {
             NotifyError::Service(error) => error,
-            other => Self::Internal {
-                message: other.to_string(),
-                source: Some(Box::new(other)),
-            },
+            other => Self::internal_with_source(other.to_string(), other),
         }
     }
 }
@@ -57,36 +55,39 @@ pub(crate) async fn send_notify(
     cx: &Arc<Context>,
     target: NotifyTarget<'_>,
 ) -> Result<(), NotifyError> {
-    let NotifyTarget::Zone(zone_name) = target else {
-        let zones = zone::list(cx).await?;
+    match target {
+        NotifyTarget::All => {
+            let zones = zone::list(cx).await?;
 
-        let mut failures = Vec::new();
-        let mut tasks = JoinSet::new();
+            let mut failures = Vec::new();
+            let mut tasks = JoinSet::new();
 
-        for zone in zones {
-            let cx = cx.clone();
-            tasks.spawn(async move {
-                let result = send::send_zone_notify(&cx, &zone.name).await;
-                (zone.name.to_string(), result)
-            });
-        }
+            for zone in zones {
+                let cx = cx.clone();
+                tasks.spawn(async move {
+                    let result = send::send_zone_notify(&cx, &zone.name).await;
+                    (zone.name.to_string(), result)
+                });
+            }
 
-        while let Some(result) = tasks.join_next().await {
-            let (zone_name, result) = result
-                .map_err(|error| ServiceError::internal_with_source("NOTIFY task failed", error))?;
-            if let Err(error) = result {
-                log::warn!("Failed to send NOTIFY for zone {zone_name}: {error}");
-                failures.push((zone_name, error));
+            while let Some(result) = tasks.join_next().await {
+                let (zone_name, result) = result.map_err(|error| {
+                    ServiceError::internal_with_source("NOTIFY task failed", error)
+                })?;
+                if let Err(error) = result {
+                    log::warn!("Failed to send NOTIFY for zone {zone_name}: {error}");
+                    failures.push((zone_name, error));
+                }
+            }
+
+            if failures.is_empty() {
+                Ok(())
+            } else {
+                Err(NotifyError::Zones { failures })
             }
         }
-
-        return if failures.is_empty() {
-            Ok(())
-        } else {
-            Err(NotifyError::Zones { failures })
-        };
-    };
-    Ok(send::send_zone_notify(cx, zone_name).await?)
+        NotifyTarget::Zone(zone_name) => Ok(send::send_zone_notify(cx, zone_name).await?),
+    }
 }
 
 /// NOTIFY after commit, queued when batching is enabled and inline otherwise.

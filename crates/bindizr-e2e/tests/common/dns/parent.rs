@@ -6,8 +6,8 @@ use std::thread;
 
 use base64::Engine;
 use base64::engine::general_purpose;
-use domain::base::iana::{Class, DigestAlgorithm, OptRcode, SecurityAlgorithm};
-use domain::base::{Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl};
+use domain::base::iana::{Class, DigestAlgorithm, OptRcode, Rtype, SecurityAlgorithm};
+use domain::base::{Message, MessageBuilder, Name, Serial, ToName, Ttl};
 use domain::rdata::{Ds, Soa};
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
 use serde_json::Value;
@@ -35,8 +35,10 @@ impl DsRecord {
 
         Self {
             key_tag,
-            algorithm: record["algorithm"].as_u64().expect("DS algorithm") as u8,
-            digest_type: record["digest_type"].as_u64().expect("DS digest type") as u8,
+            algorithm: u8::try_from(record["algorithm"].as_u64().expect("DS algorithm"))
+                .expect("DS algorithm fits an octet"),
+            digest_type: u8::try_from(record["digest_type"].as_u64().expect("DS digest type"))
+                .expect("DS digest type fits an octet"),
             digest: (0..digest.len())
                 .step_by(2)
                 .map(|i| u8::from_str_radix(&digest[i..i + 2], 16).expect("hex digest"))
@@ -132,7 +134,7 @@ impl FakeParent {
         let served = Arc::clone(&response);
 
         thread::spawn(move || {
-            let mut buffer = [0_u8; 4096];
+            let mut buffer = [0; 4096];
 
             loop {
                 let Ok((len, peer)) = socket.recv_from(&mut buffer) else {

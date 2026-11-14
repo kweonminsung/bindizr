@@ -4,13 +4,13 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing};
-use bindizr_service::Context;
-use bindizr_service::role::{self, grant};
+use bindizr_service::role::grant;
 use bindizr_service::types::{
     CreateRoleGrantRequest, CreateRoleRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, MessageResponse,
     PageRequest, PaginatedResponse, RoleGrantResponse, RoleResponse, SingleRoleGrantResponse,
     SingleRoleResponse,
 };
+use bindizr_service::{Context, role};
 
 use crate::api::RequestCaller;
 use crate::api::error::{ApiError, Path, Query};
@@ -79,9 +79,8 @@ pub(crate) async fn create_role(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRoleRequest>,
 ) -> Result<Response, ApiError> {
-    let response = SingleRoleResponse {
-        role: role::create(&cx, &caller, &body).await?,
-    };
+    let role = role::create(&cx, &caller, &body).await?;
+    let response = SingleRoleResponse { role };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -107,9 +106,8 @@ pub(crate) async fn get_role(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let response = SingleRoleResponse {
-        role: role::get(&cx, &caller, &params.name).await?,
-    };
+    let role = role::get(&cx, &caller, &params.name).await?;
+    let response = SingleRoleResponse { role };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

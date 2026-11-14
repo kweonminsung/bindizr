@@ -17,10 +17,8 @@ pub(crate) async fn force_increment_serial(
 
     let apply_result = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        caller
-            .reauthenticate_tx(&mut tx)
-            .await?
-            .authorize_zone_action(Action::ZoneUpdate, &zone)?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
+        caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
 
         let new_serial = serial::generate_serial(Some(zone.serial));
 

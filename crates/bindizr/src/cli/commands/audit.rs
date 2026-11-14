@@ -91,7 +91,7 @@ pub(crate) async fn handle_command(subcommand: AuditCommand) -> Result<(), CliEr
             )
             .await?;
             log::debug!("Audit list result: {response:?}");
-            output::print_page(&response.data, output, |item| AuditLogRow::from(item))?;
+            output::print_page(&response.data, output, |log| AuditLogRow::from(log))?;
         }
     }
 

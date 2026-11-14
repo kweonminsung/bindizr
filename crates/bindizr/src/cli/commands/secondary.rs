@@ -148,7 +148,9 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             )
             .await?;
             log::debug!("Secondary list result: {response:?}");
-            output::print_page(&response.data, output, |item| SecondaryRow::from(item))?;
+            output::print_page(&response.data, output, |secondary| {
+                SecondaryRow::from(secondary)
+            })?;
         }
         SecondaryCommand::Get { name, output } => {
             let response =
@@ -179,6 +181,28 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             log::debug!("Secondary update result: {response:?}");
             print_secondary(&response.data, output)?;
         }
+        SecondaryCommand::Check { name, output } => {
+            let response =
+                client::send_command::<CheckSecondaryResponse>(DaemonCommand::CheckSecondary {
+                    name: name.clone(),
+                })
+                .await?;
+            log::debug!("Secondary check result: {response:?}");
+            let check = &response.data;
+
+            if output == OutputFormat::Table {
+                print_check(check);
+            } else {
+                output::print_payload(check, output)?;
+            }
+
+            // A failed part exits non-zero, so a script can branch on it.
+            if !check.is_healthy() {
+                return Err(CliError::request(format!(
+                    "secondary '{name}' failed the check"
+                )));
+            }
+        }
         SecondaryCommand::Transfers {
             name,
             limit,
@@ -207,28 +231,6 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 outln!("{}", output::display_transfer_summary(&transfers.summary));
             } else {
                 output::print_payload(transfers, output)?;
-            }
-        }
-        SecondaryCommand::Check { name, output } => {
-            let response =
-                client::send_command::<CheckSecondaryResponse>(DaemonCommand::CheckSecondary {
-                    name: name.clone(),
-                })
-                .await?;
-            log::debug!("Secondary check result: {response:?}");
-            let check = &response.data;
-
-            if output == OutputFormat::Table {
-                print_check(check);
-            } else {
-                output::print_payload(check, output)?;
-            }
-
-            // A failed part exits non-zero, so a script can branch on it.
-            if !check.is_healthy() {
-                return Err(CliError::request(format!(
-                    "secondary '{name}' failed the check"
-                )));
             }
         }
         SecondaryCommand::Delete { name, output } => {
@@ -267,42 +269,38 @@ fn print_check(check: &CheckSecondaryResponse) {
     );
 
     match &check.resolve_error {
-        Some(error) => outln!("Resolution failed: {}", error),
+        Some(error) => outln!("Resolution failed: {error}"),
         None => outln!("Resolves to: {}", check.addresses.join(", ")),
     }
 
     if let Some(error) = &check.listener_error {
-        outln!("Bindizr's own listener did not answer: {}", error);
+        outln!("Bindizr's own listener did not answer: {error}");
     }
 
     let catalog = &check.catalog;
 
     match (catalog.visible_serial, catalog.status) {
         (Some(serial), SecondaryStatus::InSync | SecondaryStatus::Reachable) => outln!(
-            "Catalog zone {}: {} at serial {}",
+            "Catalog zone {}: {} at serial {serial}",
             check.catalog_zone_name,
-            catalog.status,
-            serial
+            catalog.status
         ),
         (Some(serial), status) => outln!(
-            "Catalog zone {}: {} at serial {} (bindizr serves {})",
+            "Catalog zone {}: {status} at serial {serial} (bindizr serves {})",
             check.catalog_zone_name,
-            status,
-            serial,
             check.catalog_serial.map_or(0, Serial::as_u32)
         ),
         (None, status) => outln!(
-            "Catalog zone {}: {} ({})",
+            "Catalog zone {}: {status} ({})",
             check.catalog_zone_name,
-            status,
             catalog.error.as_deref().unwrap_or("unknown error")
         ),
     }
 
     for notify in &check.notifies {
         match &notify.error {
+            Some(error) => outln!("NOTIFY to {}: rejected ({error})", notify.address),
             None => outln!("NOTIFY to {}: accepted", notify.address),
-            Some(error) => outln!("NOTIFY to {}: rejected ({})", notify.address, error),
         }
     }
 

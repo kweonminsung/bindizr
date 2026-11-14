@@ -7,8 +7,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 
-use super::name;
-use super::name::MAX_DOMAIN_LEN;
+use crate::dns::name;
+use crate::dns::name::MAX_DOMAIN_LEN;
 
 /// The port a `host` without one is taken to serve DNS on.
 pub const DEFAULT_DNS_PORT: u16 = 53;
@@ -48,7 +48,7 @@ impl AddressTarget {
 
         // A trailing root dot names the same host, so one server has one spelling.
         let host_port = match host_port.rsplit_once(':') {
-            Some((host, port)) => format!("{}:{}", host.strip_suffix('.').unwrap_or(host), port),
+            Some((host, port)) => format!("{}:{port}", host.strip_suffix('.').unwrap_or(host)),
             None => host_port,
         };
 
@@ -114,8 +114,8 @@ where
 /// A wildcard listen address is not connectable; probe it via loopback.
 pub fn loopback_if_unspecified(addr: IpAddr) -> IpAddr {
     match addr {
-        IpAddr::V4(a) if a.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
-        IpAddr::V6(a) if a.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
+        IpAddr::V4(ip) if ip.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V6(ip) if ip.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
         addr => addr,
     }
 }

@@ -3,7 +3,7 @@ use serde_json::Value;
 use crate::common;
 use crate::common::TestApp;
 
-/// Verify TSIG key creation, listing, retrieval, and deletion through the CLI.
+/// Verify that the CLI creates, lists, retrieves, and deletes TSIG keys.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tsig_key_supports_create_list_get_and_delete_via_cli() {

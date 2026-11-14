@@ -16,6 +16,7 @@ use tokio::time;
 use tokio::time::Instant;
 
 use super::{ExchangeMessageError, SendNotifyError};
+use crate::dns_client::UDP_RESPONSE_BUFFER_LEN;
 
 /// A daemon's active NOTIFY target sockets; idle sockets have no strong owner.
 #[derive(Debug)]
@@ -76,12 +77,12 @@ impl NotifyClient {
     /// Get a target socket and reserve an ID before the request is signed.
     async fn reserve(
         &self,
-        address: SocketAddr,
+        server_addr: SocketAddr,
     ) -> Result<(Arc<TargetSocket>, u16), ExchangeMessageError> {
         let mut targets = self.targets.lock().await;
         targets.retain(|_, target| target.strong_count() != 0);
 
-        if let Some(target) = targets.get(&address).and_then(Weak::upgrade)
+        if let Some(target) = targets.get(&server_addr).and_then(Weak::upgrade)
             && !target.jobs.is_closed()
             && let Some(id) = target.reserve_id().await
         {
@@ -89,13 +90,13 @@ impl NotifyClient {
         }
 
         // A fresh socket avoids reusing IDs that late replies could still carry.
-        let socket = UdpSocket::bind(if address.is_ipv4() {
+        let socket = UdpSocket::bind(if server_addr.is_ipv4() {
             "0.0.0.0:0"
         } else {
             "[::]:0"
         })
         .await?;
-        socket.connect(address).await?;
+        socket.connect(server_addr).await?;
 
         let (jobs, rx) = mpsc::unbounded_channel();
         let target = Arc::new(TargetSocket {
@@ -108,22 +109,22 @@ impl NotifyClient {
             .await
             .expect("a new socket has unused IDs");
 
-        targets.insert(address, Arc::downgrade(&target));
-        tokio::spawn(serve(address, socket, rx));
+        targets.insert(server_addr, Arc::downgrade(&target));
+        tokio::spawn(serve(server_addr, socket, rx));
 
         Ok((target, id))
     }
 
-    /// Start a NOTIFY request, retrying the same bytes/socket only on silence.
-    pub(crate) async fn start(
+    /// Send a NOTIFY request, retrying the same bytes/socket only on silence.
+    pub(crate) async fn send(
         &self,
         qname: &Name<Vec<u8>>,
-        address: SocketAddr,
+        server_addr: SocketAddr,
         timeout: Duration,
         retries: u32,
         key: Option<&TsigSigningKey>,
     ) -> Result<NotifyHandle, SendNotifyError> {
-        let (target, id) = self.reserve(address).await?;
+        let (target, id) = self.reserve(server_addr).await?;
 
         let (_, mut builder) = query::build_notify_query(qname, key);
 
@@ -132,13 +133,13 @@ impl NotifyClient {
         let verifier = key
             .map(|key| tsig::sign_request(&mut builder, key.clone()))
             .transpose()?;
-        let wire = builder.finish();
-        let limit = QueryMetadata::parse(&wire, Keepalive::None)
+        let query = builder.finish();
+        let limit = QueryMetadata::parse(&query, Keepalive::None)
             .map_err(ExchangeMessageError::from)?
             .response_limit();
         let (reply, response) = oneshot::channel();
         let request = PendingNotify {
-            request: wire,
+            request: query,
             limit,
             verifier,
             timeout,
@@ -183,7 +184,7 @@ impl NotifyHandle {
 
 /// Run all outstanding transactions for a connected peer without per-zone tasks.
 async fn serve(
-    address: SocketAddr,
+    server_addr: SocketAddr,
     socket: UdpSocket,
     mut rx: mpsc::UnboundedReceiver<PendingNotify>,
 ) {
@@ -193,7 +194,7 @@ async fn serve(
     let mut timers = BTreeSet::new();
     let mut ready = VecDeque::new();
     let mut accepting = true;
-    let mut buffer = [0; super::super::UDP_RESPONSE_BUF];
+    let mut buffer = [0; UDP_RESPONSE_BUFFER_LEN];
 
     loop {
         // A cancelled caller no longer needs retries.
@@ -248,15 +249,17 @@ async fn serve(
                     ready.push_back(id);
                     log::info!(
                         "Retransmitting NOTIFY to {} after {:?} of silence",
-                        address,
+                        server_addr,
                         request.timeout
                     );
                 } else {
-                    let request = requests.remove(&id).unwrap();
+                    let request = requests
+                        .remove(&id)
+                        .expect("timers belong to live requests");
                     let error = if request.waiting {
                         ExchangeMessageError::ResponseTimedOut {
                             what: "NOTIFY",
-                            server: address
+                            server: server_addr
                         }
                     } else {
                         ExchangeMessageError::SendTimedOut { what: "NOTIFY" }
@@ -271,8 +274,10 @@ async fn serve(
                     break;
                 }
 
-                let id = *ready.front().unwrap();
-                let request = requests.get_mut(&id).unwrap();
+                let id = *ready.front().expect("this branch runs only with a ready request");
+                let request = requests
+                    .get_mut(&id)
+                    .expect("ready IDs belong to live requests");
 
                 // Readiness can become stale before the actual send attempt.
                 match socket.try_send(&request.request) {
@@ -291,12 +296,14 @@ async fn serve(
                             request.deadline = Instant::now() + request.timeout;
                             timers.insert((request.deadline, id));
                         } else {
-                            let request = requests.remove(&id).unwrap();
+                            let request = requests
+                                .remove(&id)
+                                .expect("the sent request is live");
                             let _ = request
                                 .reply
                                 .send(Err(ExchangeMessageError::IncompleteSend {
                                     what: "NOTIFY",
-                                    server: address,
+                                    server: server_addr,
                                     sent,
                                     len: request.request.len(),
                                 }
@@ -343,13 +350,15 @@ async fn serve(
                     && !error.is_authenticated()
                 {
                     log::warn!(
-                        "Ignoring an unauthenticated NOTIFY response from {address}: {error}"
+                        "Ignoring an unauthenticated NOTIFY response from {server_addr}: {error}"
                     );
                     continue;
                 }
 
                 // A matching reply or an authenticated error completes this request.
-                let request = requests.remove(&id).unwrap();
+                let request = requests
+                    .remove(&id)
+                    .expect("the matched request is live");
                 timers.remove(&(request.deadline, id));
 
                 let result = verified.map_err(SendNotifyError::Verify).and_then(|_| {
@@ -357,7 +366,7 @@ async fn serve(
                         // RFC 1996, Section 3.12: a validated NOTIMP completes the transaction.
                         Err(ParseResponseError::NotifyRcode(OptRcode::NOTIMP)) => {
                             log::warn!(
-                                "Server {address} does not support NOTIFY; transaction complete"
+                                "Server {server_addr} does not support NOTIFY; transaction complete"
                             );
                             Ok(())
                         }
