@@ -18,7 +18,7 @@ pub(crate) async fn create_dnssec_policy(
     Ok(DaemonResponse {
         message: "DNSSEC policy created successfully".to_string(),
         data: SingleDnssecPolicyResponse {
-            dnssec_policy: DnssecPolicyResponse::from(&policy),
+            dnssec_policy: policy,
         },
     })
 }
@@ -45,7 +45,7 @@ pub(crate) async fn get_dnssec_policy(
     Ok(DaemonResponse {
         message: "DNSSEC policy retrieved successfully".to_string(),
         data: SingleDnssecPolicyResponse {
-            dnssec_policy: DnssecPolicyResponse::from(&policy),
+            dnssec_policy: policy,
         },
     })
 }
@@ -61,7 +61,7 @@ pub(crate) async fn update_dnssec_policy(
     Ok(DaemonResponse {
         message: "DNSSEC policy updated successfully".to_string(),
         data: SingleDnssecPolicyResponse {
-            dnssec_policy: DnssecPolicyResponse::from(&policy),
+            dnssec_policy: policy,
         },
     })
 }

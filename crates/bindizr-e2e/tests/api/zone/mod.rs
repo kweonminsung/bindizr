@@ -27,28 +27,30 @@ async fn escaped_zone_names_round_trip_through_management() {
     let app = TestApp::start_local().await;
 
     for byte in [9u8, 10, 11, 12, 13, 32] {
-        let base = app.zone_name(&format!("escaped-{byte}"));
-        let simple = format!("{base}\\{}", char::from(byte));
-        let canonical = format!("{base}\\{byte:03}");
-        let request = json!({ "name": simple, "mname": "ns.example", "rname": "admin@example" });
+        let base_zone_name = app.zone_name(&format!("escaped-{byte}"));
+        let simple_zone_name = format!("{base_zone_name}\\{}", char::from(byte));
+        let canonical_zone_name = format!("{base_zone_name}\\{byte:03}");
+        let request =
+            json!({ "name": simple_zone_name, "mname": "ns.example", "rname": "admin@example" });
 
         let (status, body) = app
             .send_request(Method::POST, "/zones", Some(request))
             .await;
 
-        assert_eq!(status, StatusCode::CREATED, "{simple:?}: {body}");
-        assert_eq!(body["zone"]["name"], canonical);
+        assert_eq!(status, StatusCode::CREATED, "{simple_zone_name:?}: {body}");
+        assert_eq!(body["zone"]["name"], canonical_zone_name);
 
-        for zone_name in [&simple, &canonical] {
+        for zone_name in [&simple_zone_name, &canonical_zone_name] {
             let (status, body) = app
                 .send_request(Method::GET, &zone_path(zone_name), None)
                 .await;
 
             assert_eq!(status, StatusCode::OK, "{zone_name:?}: {body}");
-            assert_eq!(body["zone"]["name"], canonical);
+            assert_eq!(body["zone"]["name"], canonical_zone_name);
         }
 
-        let request = json!({ "name": canonical, "mname": "ns.example", "rname": "admin@example" });
+        let request =
+            json!({ "name": canonical_zone_name, "mname": "ns.example", "rname": "admin@example" });
 
         let (status, body) = app
             .send_request(Method::POST, "/zones", Some(request))
@@ -56,12 +58,12 @@ async fn escaped_zone_names_round_trip_through_management() {
 
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
 
-        let renamed = format!("renamed-{simple}");
+        let renamed = format!("renamed-{simple_zone_name}");
 
         let (status, body) = app
             .send_request(
                 Method::PUT,
-                &zone_path(&simple),
+                &zone_path(&simple_zone_name),
                 Some(json!({ "name": renamed })),
             )
             .await;
@@ -69,7 +71,7 @@ async fn escaped_zone_names_round_trip_through_management() {
         assert_eq!(status, StatusCode::OK, "{body}");
         let renamed_canonical = body["zone"]["name"].as_str().unwrap();
 
-        assert_eq!(renamed_canonical, format!("renamed-{canonical}"));
+        assert_eq!(renamed_canonical, format!("renamed-{canonical_zone_name}"));
 
         let (status, body) = app
             .send_request(Method::GET, &zone_path(renamed_canonical), None)

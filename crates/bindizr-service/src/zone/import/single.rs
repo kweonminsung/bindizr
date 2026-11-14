@@ -1,6 +1,5 @@
 //! Read one import payload and select zone-file text or an AXFR source.
 
-use bindizr_core::dns::address;
 use bindizr_core::dns::name::ZoneName;
 
 use super::{ImportOptions, ImportSource, MissingZoneAction};
@@ -44,7 +43,7 @@ pub async fn import(
         (None, Some(address)) => {
             let address = address.trim();
 
-            if !address::is_address_target(address) {
+            if !bindizr_core::dns::address::is_address_target(address) {
                 return Err(ServiceError::invalid_input(
                     "from_server must name one server as host[:port]",
                 ));

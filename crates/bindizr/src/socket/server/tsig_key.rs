@@ -13,10 +13,10 @@ pub(crate) async fn create_tsig_key(
     cx: &Context,
     request: &CreateTsigKeyRequest,
 ) -> Result<DaemonResponse<SingleTsigKeyResponse>, ServiceError> {
-    let response = tsig_key::create(cx, &Caller::socket(), request).await?;
+    let (tsig_key, secret) = tsig_key::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "TSIG key created successfully".to_string(),
-        data: response,
+        data: SingleTsigKeyResponse { tsig_key, secret },
     })
 }
 
@@ -37,10 +37,10 @@ pub(crate) async fn get_tsig_key(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<SingleTsigKeyResponse>, ServiceError> {
-    let response = tsig_key::get(cx, &Caller::socket(), name).await?;
+    let (tsig_key, secret) = tsig_key::get(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),
-        data: response,
+        data: SingleTsigKeyResponse { tsig_key, secret },
     })
 }
 

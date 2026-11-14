@@ -79,8 +79,8 @@ pub enum VerifyResponseError {
     Rejected(#[source] LibraryError),
     #[error("authenticated TSIG server clock error: {0}")]
     ServerBadTime(#[source] LibraryError),
-    #[error("authenticated TSIG server error: {0}")]
-    ServerError(TsigRcode),
+    #[error("authenticated TSIG server error: {rcode}")]
+    ServerError { rcode: TsigRcode },
     #[error("TSIG response MAC is shorter than the full-length policy permits")]
     TruncatedMac,
 }
@@ -88,7 +88,7 @@ pub enum VerifyResponseError {
 impl VerifyResponseError {
     /// Return whether MAC validation authenticated the server error.
     pub fn is_authenticated(&self) -> bool {
-        matches!(self, Self::ServerBadTime(_) | Self::ServerError(_))
+        matches!(self, Self::ServerBadTime(_) | Self::ServerError { .. })
     }
 }
 
@@ -192,7 +192,9 @@ pub fn verify_response(
         return Err(rejected(ValidationError::BadTime));
     }
     if data.error() != TsigRcode::NOERROR {
-        return Err(VerifyResponseError::ServerError(data.error()));
+        return Err(VerifyResponseError::ServerError {
+            rcode: data.error(),
+        });
     }
 
     Ok(())

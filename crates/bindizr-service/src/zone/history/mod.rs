@@ -54,7 +54,7 @@ pub async fn list_versions(
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
     pagination::validate_page_limit(limit)?;
 
-    let zone = super::get_by_name(cx, caller, zone_name).await?;
+    let zone = super::lookup_by_name(cx, zone_name).await?;
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let total = bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, filter).await?;

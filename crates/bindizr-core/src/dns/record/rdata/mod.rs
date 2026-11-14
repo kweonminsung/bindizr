@@ -127,7 +127,7 @@ impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for Rdata
 where
     Vec<u8>: sqlx::Decode<'r, DB>,
 {
-    /// Decode the stored bytes into record data.
+    /// Read the row form; bytes over the 16-bit RDATA limit fail the row.
     fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as sqlx::Decode<'r, DB>>::decode(value)?;
         Ok(Self::new(bytes)?)

@@ -217,7 +217,7 @@ impl TestApp {
         &self,
         method: Method,
         path: &str,
-        body: Option<Value>,
+        request: Option<Value>,
     ) -> (StatusCode, Value) {
         let should_verify_dns = method != Method::GET;
 
@@ -227,7 +227,7 @@ impl TestApp {
             .then(|| path.strip_prefix("/zones/"))
             .flatten();
 
-        let (status, body) = self.send_http(method, path, body).await;
+        let (status, body) = self.send_http(method, path, request).await;
 
         if let Some(previous_zone_name) = updated_zone_name
             && status.is_success()
@@ -248,19 +248,19 @@ impl TestApp {
         &self,
         method: Method,
         path: &str,
-        body: Option<Value>,
+        request: Option<Value>,
     ) -> (StatusCode, Value) {
         let url = format!("{}{path}", self.base_url);
-        let mut request = self.client.request(method, url);
+        let mut builder = self.client.request(method, url);
 
         if let Some(token) = &self.auth_token {
-            request = request.bearer_auth(token);
+            builder = builder.bearer_auth(token);
         }
-        if let Some(body) = body {
-            request = request.json(&body);
+        if let Some(request) = request {
+            builder = builder.json(&request);
         }
 
-        let response = request.send().await.expect("failed to send HTTP request");
+        let response = builder.send().await.expect("failed to send HTTP request");
         let status = response.status();
 
         let bytes = response

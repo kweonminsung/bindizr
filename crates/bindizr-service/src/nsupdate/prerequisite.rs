@@ -92,25 +92,31 @@ pub(crate) fn evaluate_prerequisite(
                 return Err(NsupdateError::YxDomain(format!("owner '{name}' exists")));
             }
         }
-        Prerequisite::RecordSetExists { record_type, .. } => {
-            if !served.contains_key(&(name.clone(), *record_type)) {
+        Prerequisite::RecordSetExists {
+            record_type: rtype, ..
+        } => {
+            if !served.contains_key(&(name.clone(), *rtype)) {
                 return Err(NsupdateError::NxRrset(format!(
-                    "no {record_type} records at {name}"
+                    "no {rtype} records at {name}"
                 )));
             }
         }
-        Prerequisite::RecordSetAbsent { record_type, .. } => {
-            if served.contains_key(&(name.clone(), *record_type)) {
+        Prerequisite::RecordSetAbsent {
+            record_type: rtype, ..
+        } => {
+            if served.contains_key(&(name.clone(), *rtype)) {
                 return Err(NsupdateError::YxRrset(format!(
-                    "{record_type} records at {name} exist"
+                    "{rtype} records at {name} exist"
                 )));
             }
         }
         Prerequisite::RecordValueMatches {
-            record_type, rdata, ..
+            record_type: rtype,
+            rdata,
+            ..
         } => {
             wanted
-                .entry((name.clone(), *record_type))
+                .entry((name.clone(), *rtype))
                 .or_default()
                 .insert(rdata.clone());
         }

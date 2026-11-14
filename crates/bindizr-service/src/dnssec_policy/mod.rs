@@ -34,7 +34,7 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     request: &CreateDnssecPolicyRequest,
-) -> Result<DnssecPolicy, ServiceError> {
+) -> Result<DnssecPolicyResponse, ServiceError> {
     caller.authorize_action(Action::DnssecManage)?;
 
     let name = normalize_name(&request.name)?;
@@ -122,7 +122,9 @@ pub async fn create(
     }
     .await;
 
-    transaction::finish_tx(tx, apply_result, "failed to create DNSSEC policy").await
+    let policy = transaction::finish_tx(tx, apply_result, "failed to create DNSSEC policy").await?;
+
+    Ok(DnssecPolicyResponse::from(&policy))
 }
 
 /// List DNSSEC policies visible to an authorized caller.
@@ -144,10 +146,15 @@ pub async fn list(
 }
 
 /// Get a named DNSSEC policy for an authorized caller.
-pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<DnssecPolicy, ServiceError> {
+pub async fn get(
+    cx: &Context,
+    caller: &Caller,
+    name: &str,
+) -> Result<DnssecPolicyResponse, ServiceError> {
     caller.authorize_action(Action::DnssecRead)?;
 
-    lookup_by_name(cx, name).await
+    let policy = lookup_by_name(cx, name).await?;
+    Ok(DnssecPolicyResponse::from(&policy))
 }
 
 /// Look up one policy by name. This is the unchecked lookup for
@@ -166,7 +173,7 @@ pub async fn update(
     caller: &Caller,
     name: &str,
     request: &UpdateDnssecPolicyRequest,
-) -> Result<DnssecPolicy, ServiceError> {
+) -> Result<DnssecPolicyResponse, ServiceError> {
     caller.authorize_action(Action::DnssecManage)?;
     let name = normalize_name(name)?;
 
@@ -240,7 +247,9 @@ pub async fn update(
     }
     .await;
 
-    transaction::finish_tx(tx, apply_result, "failed to update DNSSEC policy").await
+    let policy = transaction::finish_tx(tx, apply_result, "failed to update DNSSEC policy").await?;
+
+    Ok(DnssecPolicyResponse::from(&policy))
 }
 
 /// Delete a policy by name; refused for the built-in `default` and while

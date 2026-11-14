@@ -22,9 +22,7 @@ pub(crate) async fn get_zone(
 
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
-        data: SingleZoneResponse {
-            zone: ZoneResponse::from(&zone),
-        },
+        data: SingleZoneResponse { zone },
     })
 }
 

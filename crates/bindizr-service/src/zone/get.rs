@@ -126,10 +126,10 @@ pub async fn get_by_name(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-) -> Result<Zone, ServiceError> {
+) -> Result<ZoneResponse, ServiceError> {
     let zone = lookup_by_name(cx, zone_name).await?;
     caller.authorize_zone_visible(&zone)?;
-    Ok(zone)
+    Ok(ZoneResponse::from(&zone))
 }
 
 /// Look up a zone unchecked, `NotFound` on a miss, for service-internal use;

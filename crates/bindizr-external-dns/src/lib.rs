@@ -113,7 +113,7 @@ pub async fn execute() {
     );
 
     // Both servers watch one flag, so a signal or a failed server stops both.
-    let (stop, _) = watch::channel(false);
+    let stop = watch::channel(false).0;
     let webhook = axum::serve(webhook_listener, server::webhook_router(state.clone()))
         .with_graceful_shutdown(wait_for_stop(stop.subscribe()));
     let health = axum::serve(health_listener, server::health_router(state))

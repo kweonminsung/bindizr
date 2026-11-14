@@ -72,9 +72,9 @@ pub(crate) async fn refresh_catalog_from_zones(
     // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = zones
         .iter()
-        .map(|zone| zone.name.clone())
-        .filter(|zone_name| zone_name != catalog_zone_name)
-        .map(|zone_name| zone_name.to_string())
+        .map(|zone| &zone.name)
+        .filter(|zone_name| *zone_name != catalog_zone_name)
+        .map(ToString::to_string)
         .collect();
 
     log::info!("Catalog zone contains {} member zones", member_zones.len());

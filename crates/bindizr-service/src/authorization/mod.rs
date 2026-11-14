@@ -510,7 +510,7 @@ impl Caller {
     }
 }
 
-/// Check whether the supplied grants cover every action at its name and type.
+/// Authorize every action at its name and type against the supplied grants.
 fn authorize_with_grants(
     grants: &RoleGrants,
     zone: &Zone,

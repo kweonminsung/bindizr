@@ -45,7 +45,9 @@ pub(crate) async fn get_daemon_status(
     let response = DaemonStatusResponse {
         pid: Some(process::id()),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        started_at_ms: cx.started_at().map_or(0, |at| at.timestamp_millis() as u64),
+        started_at_ms: cx
+            .started_at()
+            .map_or(0, |at| u64::try_from(at.timestamp_millis()).unwrap_or(0)),
         api_url: format!(
             "{scheme}://{}",
             SocketAddr::new(config.api.listen_addr, config.api.listen_port)

@@ -74,13 +74,3 @@ pub struct SingleTsigKeyResponse {
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: String,
 }
-
-impl SingleTsigKeyResponse {
-    /// Build a TSIG key response, with its secret and its role's name.
-    pub(crate) fn from_tsig_key(tsig_key: &TsigKey, role_name: &str) -> Self {
-        Self {
-            tsig_key: TsigKeyResponse::from_tsig_key(tsig_key, role_name),
-            secret: tsig_key.secret.clone(),
-        }
-    }
-}

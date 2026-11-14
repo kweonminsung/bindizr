@@ -1,7 +1,6 @@
 //! Resolve a bulk import's zone list and report each zone's independent outcome.
 
 use bindizr_core::dns;
-use bindizr_core::dns::address;
 
 use super::{ImportOptions, MissingZoneAction};
 use crate::authorization::Caller;
@@ -35,7 +34,7 @@ pub async fn import_many(
     };
     let address = request.from_server.trim();
 
-    if !address::is_address_target(address) {
+    if !bindizr_core::dns::address::is_address_target(address) {
         return Err(ServiceError::invalid_input(
             "from_server must name one server as host[:port]",
         ));

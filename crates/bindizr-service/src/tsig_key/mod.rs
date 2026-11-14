@@ -15,9 +15,7 @@ use rand::RngExt;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::text::MAX_COLUMN_TEXT_LEN;
-use crate::types::{
-    CreateTsigKeyRequest, PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse,
-};
+use crate::types::{CreateTsigKeyRequest, PaginatedResponse, TsigKeyFilter, TsigKeyResponse};
 use crate::{Context, audit, pagination, role, transaction};
 
 /// Imported secrets must contain at least 128 bits. RFC 8945, Section 8
@@ -31,7 +29,7 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     request: &CreateTsigKeyRequest,
-) -> Result<SingleTsigKeyResponse, ServiceError> {
+) -> Result<(TsigKeyResponse, String), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_name(&request.name)?;
@@ -106,7 +104,10 @@ pub async fn create(
 
     let tsig_key = transaction::finish_tx(tx, apply_result, "failed to create TSIG key").await?;
 
-    Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
+    Ok((
+        TsigKeyResponse::from_tsig_key(&tsig_key, &role.name),
+        tsig_key.secret,
+    ))
 }
 
 /// List the TSIG keys, every one or one role's.
@@ -149,7 +150,7 @@ pub async fn get(
     cx: &Context,
     caller: &Caller,
     name: &str,
-) -> Result<SingleTsigKeyResponse, ServiceError> {
+) -> Result<(TsigKeyResponse, String), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let tsig_key = lookup_by_name(cx, name).await?;
@@ -157,7 +158,10 @@ pub async fn get(
         .await?
         .ok_or_else(|| ServiceError::role_not_found(tsig_key.role_id))?;
 
-    Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
+    Ok((
+        TsigKeyResponse::from_tsig_key(&tsig_key, &role.name),
+        tsig_key.secret,
+    ))
 }
 
 /// Look up one TSIG key by name. This is the unchecked lookup for

@@ -72,7 +72,8 @@ pub(crate) async fn create_tsig_key(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
 ) -> Result<Response, ApiError> {
-    let response = tsig_key::create(&cx, &caller, &body).await?;
+    let (tsig_key, secret) = tsig_key::create(&cx, &caller, &body).await?;
+    let response = SingleTsigKeyResponse { tsig_key, secret };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -99,7 +100,8 @@ pub(crate) async fn get_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let response = tsig_key::get(&cx, &caller, &params.name).await?;
+    let (tsig_key, secret) = tsig_key::get(&cx, &caller, &params.name).await?;
+    let response = SingleTsigKeyResponse { tsig_key, secret };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
