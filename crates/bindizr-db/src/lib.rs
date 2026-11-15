@@ -1,6 +1,7 @@
 //! Data access: the `Db` a daemon connects to, and one module per entity
 //! whose functions run its queries on whichever backend it holds.
 
+pub mod access_log;
 pub mod api_token;
 pub mod audit_log;
 pub mod catalog_zone;

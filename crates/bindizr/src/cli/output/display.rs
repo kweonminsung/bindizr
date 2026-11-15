@@ -6,7 +6,7 @@ use std::fmt;
 use bindizr_core::dns::Serial;
 use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
 use bindizr_service::types::{
-    RecordValue, SecondaryStatus, TransferResponse, TransferSummaryResponse,
+    AccessLogResponse, RecordValue, SecondaryStatus, TransferLogResponse, TransferSummaryResponse,
 };
 use chrono::{DateTime, Utc};
 
@@ -104,9 +104,14 @@ pub(crate) fn display_uptime(started_at_ms: u64) -> String {
     }
 }
 
+/// Render what a request asked as one cell: its method and its path or zone.
+pub(crate) fn display_access_request(log: &AccessLogResponse) -> String {
+    format!("{} {}", log.method, log.target)
+}
+
 /// Render what a transfer was: the kind and whether a delta, or that it was
 /// refused or failed.
-pub(crate) fn display_transfer_kind(transfer: &TransferResponse) -> String {
+pub(crate) fn display_transfer_kind(transfer: &TransferLogResponse) -> String {
     match (transfer.result, transfer.kind, transfer.incremental) {
         (TransferResult::Ok, TransferKind::Ixfr, true) => format!("{} delta", transfer.kind),
         (TransferResult::Ok, TransferKind::Ixfr, false) => format!("{} full", transfer.kind),
@@ -117,7 +122,7 @@ pub(crate) fn display_transfer_kind(transfer: &TransferResponse) -> String {
 
 /// Render a served transfer as one cell: what it was, the serial reached, when, and
 /// `over TLS` when it was.
-pub(crate) fn display_transfer(transfer: &TransferResponse) -> String {
+pub(crate) fn display_transfer(transfer: &TransferLogResponse) -> String {
     let over_tls = match transfer.transport {
         TransferTransport::Tls => " over TLS",
         TransferTransport::Udp | TransferTransport::Tcp => "",

@@ -13,11 +13,11 @@ use bindizr_core::model::secondary::SecondaryId;
 use bindizr_core::model::tsig_key::TsigKeyId;
 use bindizr_core::model::zone::ZoneId;
 use bindizr_service::types::{
-    AuditLogResponse, CreateTokenResponse, DnssecKeyResponse, DnssecPolicyResponse,
-    ImportZoneResponse, ImportZonesItemResponse, RecordResponse, RoleGrantResponse, RoleResponse,
-    RollbackZoneResponse, SecondaryResponse, SecondaryStatusResponse, SingleTsigKeyResponse,
-    TokenResponse, TransferResponse, TsigKeyResponse, VersionRecordResponse, ZoneResponse,
-    ZoneStatusResponse, ZoneVersionResponse,
+    AccessLogResponse, AuditLogResponse, CreateTokenResponse, DnssecKeyResponse,
+    DnssecPolicyResponse, ImportZoneResponse, ImportZonesItemResponse, RecordResponse,
+    RoleGrantResponse, RoleResponse, RollbackZoneResponse, SecondaryResponse,
+    SecondaryStatusResponse, SingleTsigKeyResponse, TokenResponse, TransferLogResponse,
+    TsigKeyResponse, VersionRecordResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -641,10 +641,9 @@ impl From<&RoleGrantResponse> for RoleGrantRow {
     }
 }
 
-/// One transfer Bindizr served a secondary, as `secondary transfers` lists
-/// it.
+/// One transfer Bindizr answered, refused, or failed, as `log transfer` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
-pub(crate) struct TransferRow {
+pub(crate) struct TransferLogRow {
     #[tabled(rename = "ZONE")]
     pub(crate) zone_name: String,
     #[tabled(rename = "TRANSFER")]
@@ -661,9 +660,9 @@ pub(crate) struct TransferRow {
     pub(crate) error: String,
 }
 
-impl From<&TransferResponse> for TransferRow {
+impl From<&TransferLogResponse> for TransferLogRow {
     /// Build a CLI table row from one served transfer.
-    fn from(transfer: &TransferResponse) -> Self {
+    fn from(transfer: &TransferLogResponse) -> Self {
         Self {
             zone_name: transfer.zone_name.clone(),
             transfer: display::display_transfer_kind(transfer),
@@ -676,7 +675,44 @@ impl From<&TransferResponse> for TransferRow {
     }
 }
 
-/// One management change, as `audit list` lists it.
+/// One request a front end answered, as `log access` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
+pub(crate) struct AccessLogRow {
+    #[tabled(rename = "AT")]
+    pub(crate) at: String,
+    #[tabled(rename = "SOURCE")]
+    pub(crate) source: String,
+    #[tabled(rename = "ADDRESS")]
+    pub(crate) address: String,
+    #[tabled(rename = "REQUEST")]
+    pub(crate) request: String,
+    #[tabled(rename = "STATUS")]
+    pub(crate) status: String,
+    #[tabled(rename = "RESULT")]
+    pub(crate) result: String,
+    #[tabled(rename = "CALLER")]
+    pub(crate) caller: String,
+    #[tabled(rename = "ERROR")]
+    pub(crate) error: String,
+}
+
+impl From<&AccessLogResponse> for AccessLogRow {
+    /// Build a CLI table row from one access log row.
+    fn from(log: &AccessLogResponse) -> Self {
+        Self {
+            at: display::display_time(log.requested_at),
+            source: log.source.to_string(),
+            address: log.address.clone(),
+            request: display::display_access_request(log),
+            status: log.status.clone(),
+            result: log.result.to_string(),
+            caller: display::display_option(&log.caller),
+            error: display::display_option(&log.error),
+        }
+    }
+}
+
+/// One management change, as `log audit` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct AuditLogRow {
     #[tabled(rename = "AT")]

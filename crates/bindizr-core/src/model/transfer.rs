@@ -20,7 +20,7 @@ use crate::model::zone::ZoneId;
 pub enum ParseTransferError {
     #[error("unsupported transfer kind '{value}'")]
     Kind { value: String },
-    #[error("unsupported transfer result '{value}'")]
+    #[error("unsupported transfer result '{value}' (supported: ok, refused, failed)")]
     Result { value: String },
     #[error("unsupported transfer transport '{value}'")]
     Transport { value: String },

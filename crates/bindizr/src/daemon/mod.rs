@@ -15,12 +15,13 @@ use bindizr_core::metrics::{Metrics, RegisterMetricsError};
 use bindizr_core::{config, logger};
 use bindizr_db::Db;
 use bindizr_db::error::DatabaseError;
+use bindizr_service::access::AccessLogWorker;
 use bindizr_service::context::ReloadConfigError;
 use bindizr_service::error::ServiceError;
 use bindizr_service::notify::queue;
 use bindizr_service::notify::queue::NotifyWorker;
 use bindizr_service::scheduler::SchedulerWorker;
-use bindizr_service::{Context, scheduler, token, zone};
+use bindizr_service::{Context, access, scheduler, token, zone};
 use chrono::Utc;
 use thiserror::Error;
 use tokio::signal::unix;
@@ -177,6 +178,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     // The channels come before the context, which holds their senders; the
     // workers come after it, since they need the context back.
     let (notify_tx, notify_rx) = sync::mpsc::unbounded_channel();
+    let (access_tx, access_rx) = access::channel();
     let (period_tx, period_rx) = sync::watch::channel(config.dns.scheduler_interval_secs);
     let authentication_required = config.api.authentication_required;
     let cx = Arc::new(Context::new(
@@ -185,9 +187,11 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         db,
         Metrics::new()?,
         notify_tx,
+        access_tx,
         period_tx,
     ));
     let notify_worker = queue::spawn(cx.clone(), notify_rx);
+    let access_log_worker = access::spawn(cx.clone(), access_rx);
 
     zone::validate_catalog_zone_name(&cx).await?;
 
@@ -288,7 +292,14 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         }
     };
 
-    drain(&shutdown, servers, scheduler_worker, notify_worker).await;
+    drain(
+        &shutdown,
+        servers,
+        scheduler_worker,
+        notify_worker,
+        access_log_worker,
+    )
+    .await;
     server::remove_socket_file(&socket_path).await;
 
     match outcome {
@@ -319,13 +330,15 @@ impl RunResult {
     }
 }
 
-/// Drain requests and scheduler work, then flush NOTIFY within the shutdown timeout.
-/// Zone transfers may be interrupted for secondaries to retry.
+/// Drain requests and scheduler work, then flush NOTIFY and the access log
+/// within the shutdown timeout. Zone transfers may be interrupted for
+/// secondaries to retry.
 async fn drain(
     shutdown: &Shutdown,
     mut servers: Servers,
     scheduler_worker: SchedulerWorker,
     notify_worker: NotifyWorker,
+    access_log_worker: AccessLogWorker,
 ) {
     shutdown.trigger();
 
@@ -339,6 +352,9 @@ async fn drain(
 
         // Flush only after every NOTIFY producer has stopped.
         let _ = notify_worker.stop().await;
+
+        // The front ends were the access log's producers, and they have stopped.
+        let _ = access_log_worker.stop().await;
     })
     .await;
 

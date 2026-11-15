@@ -106,10 +106,10 @@ deny rules. How grants combine, and what each operation needs, is in
 | `record:delete` | Deleting records, found by id without `record:read`; also required for nsupdate CNAME, DNAME, or matching WKS replacement |
 | `dnssec:read` | DNSSEC status, `dnssec check-ds`; listing DNSSEC policies |
 | `dnssec:manage` | Every other DNSSEC operation; changing DNSSEC policies |
-| `secondary:read` | Listing secondaries, their details and transfers — needs all zones |
+| `secondary:read` | Listing secondaries and their details — needs all zones |
 | `secondary:manage` | Creating, updating, deleting, and checking secondaries — needs all zones |
 | `access:manage` | Tokens, TSIG keys, and roles — needs all zones |
-| `audit:read` | Reading the [audit log](#audit-log) — needs all zones |
+| `log:read` | Reading the [audit, access, and transfer logs](#logs) — needs all zones |
 
 A response never carries a record the role cannot read: a write's preview
 shows the records it changes and the readable ones beside them, and every
@@ -199,7 +199,25 @@ NOTIFY. See
 [Which actions each credential exercises](advanced.md#which-actions-each-credential-exercises)
 and [Signing zone transfers](advanced.md#signing-zone-transfers).
 
-## Audit log
+## Logs
+
+Three logs say what happened, and nothing decides on them. Each is read with
+`bindizr log <subject>` or `GET /logs/<subject>`, newest first, and needs
+`log:read`, which only a grant without `--zone` carries:
+
+| Log | What it holds | Kept |
+| --- | --- | --- |
+| `audit` | Management changes: who changed a token, role, grant, key, secondary, or policy, or deleted a zone | `audit_log.max_days`, 365 days |
+| `access` | Management API requests and nsupdates: who asked what, from where, and how it ended | `access_log.max_days`, 30 days |
+| `transfer` | Zone transfers answered, refused, or failed — see [Secondaries](secondaries.md#transfer-log) | `transfer_log.max_days`, 90 days |
+
+`--since` and `--until` take a span ago (`7d`, `12h`, `30m`), a date (midnight
+UTC, as the times listed are), or an RFC 3339 timestamp; over HTTP they are
+RFC 3339, beside `limit` and `offset`. `max_days = 0` keeps a log forever,
+and the scheduler pass prunes what is older — see
+[Configuration](../configuration.md).
+
+### Audit log
 
 Every change to a token, role, grant, TSIG key, secondary, or DNSSEC policy,
 and every zone deletion, leaves an entry naming the entity, the operation,
@@ -211,27 +229,50 @@ field names (`role_name admin, expires_at never`), what an update moved
 its role's name. Changes to
 a zone's records and settings are in its [versions](zones.md#zone-history)
 instead, so the two together answer who changed what, and when. A request
-that was refused or failed leaves nothing.
+that was refused or failed leaves nothing here; the access log has it.
 
 ```bash
 # Newest first; narrow by entity, name, or time, or sort by a column
-bindizr audit list
-bindizr audit list --entity token --name cluster-a
-bindizr audit list --since 7d -o json
-bindizr audit list --since 2026-10-01 --until 2026-11-01
-bindizr audit list --sort entity_name --order asc
+bindizr log audit
+bindizr log audit --entity token --name cluster-a
+bindizr log audit --since 7d -o json
+bindizr log audit --since 2026-10-01 --until 2026-11-01
+bindizr log audit --sort entity_name --order asc
 ```
 
-`--since` and `--until` take a span ago (`7d`, `12h`, `30m`), a date (midnight
-UTC, as the times listed are), or an RFC 3339 timestamp. `--sort` takes
-`created_at` (the default), `entity`, `entity_name`, or `operation`, and
-`--order` is `desc` (the default) or `asc`.
+`--sort` takes `created_at` (the default), `entity`, `entity_name`, or
+`operation`, and `--order` is `desc` (the default) or `asc`. Over HTTP the
+same is `GET /logs/audit`, with the same `entity`, `entity_name`, `sort`, and
+`order` parameters.
 
-Over HTTP the same is `GET /audit`, with the same `entity`, `entity_name`,
-`since`, `until` (RFC 3339), `sort`, `order`, `limit`, and `offset` parameters. Reading the log needs
-`audit:read`, which only a grant without `--zone` carries. Entries older
-than `history.audit.max_days` (365 by default; `0` keeps them forever) are
-pruned by the scheduler pass — see [Configuration](../configuration.md).
+### Access log
+
+Every management API request and every nsupdate leaves an entry once it is
+answered: the source (`api` or `nsupdate`), the client address, the method
+and path (`GET /zones/example.com`) or `UPDATE` and the zone, the HTTP status
+or RCODE, the token or TSIG key that verified, and the error it was answered
+with. The result is `ok`, `denied` — HTTP 401 or 403, or an nsupdate whose
+TSIG was rejected or that was `REFUSED` — or `failed` for any other error.
+A zone a role may not see answers 404 and is `failed` like any other, so the
+log tells a scope no more than the response did.
+
+No query string, body, token, or secret is kept, and a token that did not
+verify names no caller. The client address is the connection's peer: behind a
+proxy, the proxy's. `/health`, `/metrics`, the OpenAPI document, and daemon
+socket commands are not logged.
+
+```bash
+bindizr log access
+bindizr log access --result denied --since 1d
+bindizr log access --caller external-dns
+bindizr log access --source nsupdate --address 192.0.2.10 -o json
+```
+
+Over HTTP the same is `GET /logs/access`, with `source`, `result`,
+`caller_name`, and `address`. Entries are written off the request path, so
+a request never waits on its own; under a flood the queue drops what it
+cannot hold and counts it in `bindizr_access_log_dropped_total`.
+`access_log.save = "denied"` keeps denials alone.
 
 ## Examples
 
@@ -284,12 +325,12 @@ bindizr tsig-key create notify-key --role notify-only
 
 ### Read-only monitoring
 
-A dashboard or an audit job that reads everything, the audit log included,
-and changes nothing:
+A dashboard or an audit job that reads everything, the logs included, and
+changes nothing:
 
 ```bash
 bindizr role create monitoring
 bindizr role grant monitoring \
-    --actions zone:read,record:read,dnssec:read,secondary:read,audit:read
+    --actions zone:read,record:read,dnssec:read,secondary:read,log:read
 bindizr token create grafana --role monitoring
 ```

@@ -5,14 +5,15 @@ use bindizr_core::model::record::RecordId;
 use bindizr_core::model::role_grant::RoleGrantId;
 use bindizr_core::model::zone_version::VersionFilter;
 use bindizr_service::types::{
-    AuditLogFilter, CheckNotifyResponse, CreateBulkRecordsRequest, CreateDnssecPolicyRequest,
-    CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest,
-    CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsRequest, DsCheck,
-    EnableDnssecRequest, Holddown, ImportDnssecKeysRequest, ImportZoneRequest, ImportZonesRequest,
-    NotifySerial, PageRequest, RecordFilter, Run, SecondaryStatusResponse, SecondaryTransferFilter,
-    SecondaryTransferSummaryResponse, StartDnssecRolloverRequest, TokenFilter, TsigKeyFilter,
-    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
-    UpdateSecondaryRequest, UpdateZoneRequest, ZoneFilter, ZoneView,
+    AccessLogFilter, AuditLogFilter, CheckNotifyResponse, CreateBulkRecordsRequest,
+    CreateDnssecPolicyRequest, CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest,
+    CreateSecondaryRequest, CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest,
+    DeleteRecordsRequest, DsCheck, EnableDnssecRequest, Holddown, ImportDnssecKeysRequest,
+    ImportZoneRequest, ImportZonesRequest, NotifySerial, PageRequest, RecordFilter, Run,
+    SecondaryStatusResponse, SecondaryTransferSummaryResponse, StartDnssecRolloverRequest,
+    TokenFilter, TransferLogFilter, TsigKeyFilter, UpdateDnssecPolicyRequest,
+    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
+    ZoneFilter, ZoneView,
 };
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -41,6 +42,8 @@ pub(crate) enum DaemonCommand {
         name: String,
     },
     ListAuditLogs(AuditLogFilter),
+    ListAccessLogs(AccessLogFilter),
+    ListTransferLogs(TransferLogFilter),
     CreateRole(CreateRoleRequest),
     ListRoles(PageRequest),
     GetRole {
@@ -75,10 +78,6 @@ pub(crate) enum DaemonCommand {
     },
     CheckSecondary {
         name: String,
-    },
-    ListSecondaryTransfers {
-        name: String,
-        filter: SecondaryTransferFilter,
     },
     CreateDnssecPolicy(CreateDnssecPolicyRequest),
     ListDnssecPolicies(PageRequest),

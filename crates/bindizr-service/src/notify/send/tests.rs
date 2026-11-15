@@ -29,6 +29,7 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
         db,
         Metrics::new().unwrap(),
         mpsc::unbounded_channel().0,
+        mpsc::channel(1).0,
         watch::channel(0).0,
     );
     let mut servers = Vec::new();

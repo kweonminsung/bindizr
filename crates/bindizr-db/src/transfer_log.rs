@@ -2,21 +2,25 @@
 //! client address and zone.
 
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone};
+use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone, TransferResult};
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
 use crate::{Backend, Db, mysql, postgres, sqlite};
 
-/// Which of one client address's transfer log rows a listing selects.
+/// Which transfer log rows a listing selects; paging rides along.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TransferLogFilter {
+    /// Transfers answered to one of these addresses; any address when absent.
+    pub client_addrs: Option<Vec<String>>,
     pub zone_name: Option<ZoneName>,
+    pub result: Option<TransferResult>,
     /// Transfers answered at or after this time.
     pub since: Option<DateTime<Utc>>,
     /// Transfers answered before this time.
     pub until: Option<DateTime<Utc>>,
     pub limit: Option<u32>,
+    pub offset: Option<u64>,
 }
 
 /// Append a transfer log row.
@@ -28,34 +32,26 @@ pub async fn create(db: &Db, log: TransferLog) -> Result<(), DatabaseError> {
     }
 }
 
-/// List the rows of a client address `filter` selects, newest first, with zone
-/// names.
-pub async fn list_by_client_addr_and_filter_with_zone(
+/// List the rows `filter` selects, newest first, with zone names.
+pub async fn list_by_filter_with_zone(
     db: &Db,
-    client_addr: &str,
     filter: &TransferLogFilter,
 ) -> Result<Vec<TransferLogWithZone>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => {
-            mysql::transfer_log::list_by_client_addr_and_filter_with_zone(pool, client_addr, filter)
-                .await
-        }
+        Backend::MySql(pool) => mysql::transfer_log::list_by_filter_with_zone(pool, filter).await,
         Backend::Postgres(pool) => {
-            postgres::transfer_log::list_by_client_addr_and_filter_with_zone(
-                pool,
-                client_addr,
-                filter,
-            )
-            .await
+            postgres::transfer_log::list_by_filter_with_zone(pool, filter).await
         }
-        Backend::Sqlite(pool) => {
-            sqlite::transfer_log::list_by_client_addr_and_filter_with_zone(
-                pool,
-                client_addr,
-                filter,
-            )
-            .await
-        }
+        Backend::Sqlite(pool) => sqlite::transfer_log::list_by_filter_with_zone(pool, filter).await,
+    }
+}
+
+/// Count the rows `filter` selects, its paging aside.
+pub async fn count_by_filter(db: &Db, filter: &TransferLogFilter) -> Result<u64, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::transfer_log::count_by_filter(pool, filter).await,
+        Backend::Postgres(pool) => postgres::transfer_log::count_by_filter(pool, filter).await,
+        Backend::Sqlite(pool) => sqlite::transfer_log::count_by_filter(pool, filter).await,
     }
 }
 

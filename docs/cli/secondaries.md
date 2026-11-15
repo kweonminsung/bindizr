@@ -93,27 +93,26 @@ The catalog status compares the two serials: `in sync`, `lagging`, `ahead`,
 or `unreachable`. If Bindizr's listener cannot be queried, a responding
 secondary is reported only as `reachable`. The check sends a real catalog
 NOTIFY, signed when a key is configured. Transfer counts summarize
-[what it pulled](#what-it-pulled); they do not determine the check result.
+[what it pulled](#transfer-log); they do not determine the check result.
 
 The command exits non-zero when any line fails, so a script can branch on
 it; `-o json` carries the same fields.
 
-## What it pulled
+## Transfer log
 
 Bindizr logs every transfer it answered each client address, refusals and
-failures included. `bindizr secondary transfers <name>` lists them newest
-first for the addresses the secondary resolves to, `zone status` shows each
-zone's last transfer in its `LAST-TRANSFER` column, and `doctor` prints the
-summary per secondary:
+failures included. `bindizr log transfer` lists them newest first;
+`--secondary` narrows them to the addresses a secondary resolves to now,
+`zone status` shows each zone's last transfer in its `LAST-TRANSFER` column,
+and `secondary check` and `doctor` print a summary per secondary:
 
 ```text
-$ bindizr secondary transfers ns2
+$ bindizr log transfer --secondary ns2
 ZONE            TRANSFER     TRANSPORT  SERIAL  ADDRESS     AT                    ERROR
 example.com     IXFR delta   TLS        42      10.0.0.14   2026-09-28T09:41:05Z  -
 example.net     AXFR         TLS        7       10.0.0.14   2026-09-28T09:40:58Z  -
 internal.test   refused      TCP        -       10.0.0.14   2026-09-28T09:40:58Z  role does not permit 'zone:transfer' in zone 'internal.test'
 example.com     IXFR delta   TLS        41      10.0.0.14   2026-09-28T09:12:31Z  -
-3 zones: 1 IXFR delta, 0 IXFR full, 1 AXFR, 1 refused, 0 failed
 ```
 
 `IXFR full` is an IXFR answered with the whole zone; `refused` and `failed`
@@ -123,18 +122,23 @@ catalogs (RFC 1995, Section 2).
 UDP IXFRs return the current SOA. Serial comparisons follow RFC 1982, Section 3.2.
 `TRANSPORT` says whether the request came over plain TCP or TLS, and `zone
 status` marks a TLS transfer with `over TLS`.
-`--zone` narrows the list, `--since` and `--until` bound it in time (a span
-ago such as `7d`, a UTC date, or RFC 3339), and `--limit` shortens it; the
-summary counts each zone's last transfer regardless. The rows are in the
-database, so a restart keeps them and deleting a zone drops them.
 
-The log keeps `history.transfer.max_days` of transfers (90 by default; `0`
+Without `--secondary` the log covers every client, so a refusal to an address
+no secondary has — a server probing for zones — shows up too; `--address`
+selects one. `--zone` and `--result` (`ok`, `refused`, `failed`) narrow the
+list, `--since` and `--until` bound it in time (a span ago such as `7d`, a
+UTC date, or RFC 3339), and `--limit` and `--offset` page it. A transfer of
+a zone Bindizr does not have leaves no row. The rows are in the database, so
+a restart keeps them and deleting a zone drops them. Reading the log needs
+`log:read`, like the [other logs](access-control.md#logs).
+
+The log keeps `transfer_log.max_days` of transfers (90 by default; `0`
 keeps them forever), and each client's last transfer of a zone beyond that.
-`history.transfer.save = "unserved"` logs refusals and failures alone, so the
+`transfer_log.save = "unserved"` logs refusals and failures alone, so the
 summary and `LAST-TRANSFER` then show no successful transfer — see
 [Configuration](../configuration.md).
 
 Secondaries are also manageable over the HTTP API (`/secondaries`, with
-`POST /secondaries/{name}/check` for the check and
-`GET /secondaries/{name}/transfers` for the transfers) — see the
+`POST /secondaries/{name}/check` for the check; the transfer log is
+`GET /logs/transfer?secondary_name={name}`) — see the
 [API Reference](https://kweonminsung.github.io/bindizr/api/).

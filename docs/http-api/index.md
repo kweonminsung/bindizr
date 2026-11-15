@@ -79,7 +79,6 @@ curl -H "Authorization: Bearer $BINDIZR_TOKEN" \
 `/zones` and `/records` also accept `sort` and `order`; tied values are ordered
 by ID. CLI list commands use `--limit` and `--offset` and return all matching
 items when `--limit` is omitted. An explicit limit must be 1–1000.
-`secondary transfers` has a separate default of 1000 entries.
 
 To include generated DNSSEC records, use
 `GET /records?zone_name=example.com&signed=true`. They follow user records in

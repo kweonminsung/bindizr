@@ -31,6 +31,7 @@ pub struct Metrics {
     nsupdate_requests_total: IntCounterVec,
     zone_serial_bumps_total: IntCounter,
     pruned_rows_total: IntCounterVec,
+    access_log_dropped_total: IntCounter,
     pub dnssec_zones_total: IntGauge,
     pub dnssec_keys_total: IntGaugeVec,
     pub dnssec_rrsigs_expiring_total: IntGauge,
@@ -199,6 +200,14 @@ impl Metrics {
         .map_err(RegisterMetricsError)?;
         register(&registry, &pruned_rows_total)?;
 
+        let access_log_dropped_total = IntCounter::new(
+            "bindizr_access_log_dropped_total",
+            "Access log rows dropped unsaved because the write queue was full or had \
+             stopped; the requests were answered, only their rows are missing",
+        )
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &access_log_dropped_total)?;
+
         let dnssec_zones_total = IntGauge::new(
             "bindizr_dnssec_zones_total",
             "Number of DNSSEC-signed zones, refreshed at scrape time.",
@@ -294,7 +303,7 @@ impl Metrics {
             dnssec_scheduler_runs_total.with_label_values(&[result.label()]);
         }
 
-        for table in ["journal", "version", "audit", "transfer"] {
+        for table in ["journal", "version", "audit", "access", "transfer"] {
             pruned_rows_total.with_label_values(&[table]);
         }
 
@@ -317,6 +326,7 @@ impl Metrics {
             nsupdate_requests_total,
             zone_serial_bumps_total,
             pruned_rows_total,
+            access_log_dropped_total,
             dnssec_zones_total,
             dnssec_keys_total,
             dnssec_rrsigs_expiring_total,
@@ -539,6 +549,18 @@ impl Metrics {
         self.pruned_rows_total
             .with_label_values(&["audit"])
             .inc_by(rows);
+    }
+
+    /// Count the access log rows the retention pass pruned.
+    pub fn track_pruned_access_log_rows(&self, rows: u64) {
+        self.pruned_rows_total
+            .with_label_values(&["access"])
+            .inc_by(rows);
+    }
+
+    /// Count an access log row dropped because the write queue was full.
+    pub fn track_access_log_dropped(&self) {
+        self.access_log_dropped_total.inc();
     }
 
     /// Count the transfer log rows the retention pass pruned.

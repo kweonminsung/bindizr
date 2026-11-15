@@ -424,11 +424,11 @@ async fn tls_transfer_requires_key_and_registered_address() {
 
     // The transfer log and the metric say which transport served each one.
     let (status, body) = app
-        .send_request(Method::GET, "/secondaries/loopback/transfers", None)
+        .send_request(Method::GET, "/logs/transfer?secondary_name=loopback", None)
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["transfers"][0]["transport"], "tls", "{body}");
+    assert_eq!(body["items"][0]["transport"], "tls", "{body}");
 
     let tls_ok = common::read_counter(
         &app,
@@ -741,9 +741,8 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
     assert_eq!(response.header().rcode(), Rcode::REFUSED);
     assert!(dns::probe_zone_soa(app.dns_port(), zone_name));
 
-    // Read the refusal while it is the zone's last transfer, which the summary counts.
-    let body = xfr::wait_for_transfer_summary(&app, "refused", 1).await;
-    let refused = &body["transfers"][0];
+    let body = xfr::wait_for_transfer_log(&app, "secondary_name=loopback&result=refused", 1).await;
+    let refused = &body["items"][0];
 
     assert_eq!(refused["result"], "refused", "{body}");
     assert_eq!(refused["transport"], "tcp", "{body}");

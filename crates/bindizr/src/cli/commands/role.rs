@@ -92,11 +92,11 @@ Actions:
                     also read signing policies
   dnssec:manage     enable, disable and re-sign, manage keys and rollovers; in
                     all zones, also change signing policies
-  secondary:read    list secondaries and their transfers (all zones only)
+  secondary:read    list and read secondaries (all zones only)
   secondary:manage  register, change, check and remove secondaries (all zones only)
   access:manage     manage roles, API tokens and TSIG keys (all zones only);
                     equivalent to admin, since its holder can grant itself anything
-  audit:read        read the audit log of management changes (all zones only)
+  log:read          read the audit, access and transfer logs (all zones only)
 
 --pattern and --types narrow the record:* actions only. A grant permits its
 actions together; a role permits what any one of its grants does.")]

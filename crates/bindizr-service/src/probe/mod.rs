@@ -10,7 +10,7 @@ use tokio::task::JoinSet;
 
 use crate::dns_client::probe::ProbeSoaError;
 use crate::error::ServiceError;
-use crate::types::{SecondaryStatus, SecondaryStatusResponse, TransferResponse};
+use crate::types::{SecondaryStatus, SecondaryStatusResponse, TransferLogResponse};
 use crate::{Context, dns_client, secondary, transfer};
 
 impl From<ProbeSoaError> for ServiceError {
@@ -138,7 +138,7 @@ async fn attach_last_transfer(
 
     status.last_transfer =
         match transfer::find_by_clients_and_zone_name(cx, clients, zone_name).await {
-            Ok(transfer_log) => transfer_log.as_ref().map(TransferResponse::from),
+            Ok(transfer_log) => transfer_log.as_ref().map(TransferLogResponse::from),
             Err(error) => {
                 log::warn!("Failed to read the transfers of {zone_name}: {error}");
                 None

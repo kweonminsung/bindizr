@@ -1,5 +1,5 @@
-//! The audit log over HTTP: what a management change leaves, whom it names,
-//! and who may read it.
+//! The logs over HTTP: what a management change leaves in the audit log, what
+//! a request leaves in the access log, whom each names, and who may read them.
 
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -9,7 +9,7 @@ use crate::common::{TestApp, TestAppOptions};
 /// List the rows `query` selects, newest first, with the total the page reports.
 async fn list_audit_log(app: &TestApp, query: &str) -> (Vec<Value>, u64) {
     let (status, body) = app
-        .send_request(Method::GET, &format!("/audit?{query}"), None)
+        .send_request(Method::GET, &format!("/logs/audit?{query}"), None)
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -259,7 +259,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
     assert_eq!(logs[1]["entity"], "role_grant");
 
     let (status, body) = app
-        .send_request(Method::GET, "/audit?sort=detail", None)
+        .send_request(Method::GET, "/logs/audit?sort=detail", None)
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -267,7 +267,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
 
     // The entity filter is the closed set; a time window is half-open and ordered.
     let (status, body) = app
-        .send_request(Method::GET, "/audit?entity=record", None)
+        .send_request(Method::GET, "/logs/audit?entity=record", None)
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -280,7 +280,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            "/audit?since=2100-01-01T00:00:00Z&until=2000-01-01T00:00:00Z",
+            "/logs/audit?since=2100-01-01T00:00:00Z&until=2000-01-01T00:00:00Z",
             None,
         )
         .await;
@@ -293,10 +293,10 @@ async fn audit_log_records_management_changes_with_their_actor() {
     assert_eq!(logs.len(), 1);
 }
 
-/// Verify that reading the log needs `audit:read`, which only an all-zones grant carries.
+/// Verify that reading the log needs `log:read`, which only an all-zones grant carries.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn audit_log_requires_audit_read_in_all_zones() {
+async fn audit_log_requires_log_read_in_all_zones() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -311,7 +311,7 @@ async fn audit_log_requires_audit_read_in_all_zones() {
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.set_auth_token(scoped_token.clone());
 
-    let (status, body) = app.send_request(Method::GET, "/audit", None).await;
+    let (status, body) = app.send_request(Method::GET, "/logs/audit", None).await;
 
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     assert_eq!(body["code"], "FORBIDDEN");
@@ -323,7 +323,7 @@ async fn audit_log_requires_audit_read_in_all_zones() {
         .send_request(
             Method::POST,
             &format!("/roles/{scoped_name}/grants"),
-            Some(json!({ "zone_name": zone_name, "actions": ["audit:read"] })),
+            Some(json!({ "zone_name": zone_name, "actions": ["log:read"] })),
         )
         .await;
 
@@ -334,7 +334,7 @@ async fn audit_log_requires_audit_read_in_all_zones() {
         .send_request(
             Method::POST,
             &format!("/roles/{scoped_name}/grants"),
-            Some(json!({ "actions": ["audit:read"] })),
+            Some(json!({ "actions": ["log:read"] })),
         )
         .await;
 
@@ -355,4 +355,167 @@ async fn audit_log_requires_audit_read_in_all_zones() {
         logs[0]["changed_by"],
         json!({ "kind": "token", "name": admin_name })
     );
+}
+
+/// Verify that a management request leaves an access row naming its token and outcome, that
+/// a refusal by the auth layer leaves one naming no caller, and that probes and queries do not.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn access_log_records_requests_with_their_caller_and_outcome() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (admin_name, admin_token) = app.create_api_token().await;
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    let zone_name = app.zone_name("access-log.example");
+    let zone_path = format!("/zones/{zone_name}");
+
+    // Answered: the token that verified is the caller; the query is not kept.
+    app.set_auth_token(admin_token.clone());
+    app.create_named_zone(&zone_name).await;
+
+    let (status, body) = app
+        .send_request(Method::GET, &format!("{zone_path}?secret=not-kept"), None)
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let log = app
+        .wait_for_access_log(&format!("caller_name={admin_name}&result=ok"), |log| {
+            log["method"] == "GET" && log["target"] == zone_path
+        })
+        .await;
+
+    assert_eq!(log["source"], "api", "{log}");
+    assert_eq!(log["status"], "200", "{log}");
+    assert_eq!(log["address"], "127.0.0.1", "{log}");
+    assert_eq!(
+        log["caller"],
+        json!({ "kind": "token", "name": admin_name })
+    );
+    assert!(log["error"].is_null(), "{log}");
+
+    // Denied by the role: 403, under the token that verified.
+    app.set_auth_token(scoped_token);
+
+    let (status, body) = app.send_request(Method::DELETE, &zone_path, None).await;
+
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "a zone the scope cannot see stays hidden: {body}"
+    );
+
+    let (status, body) = app.send_request(Method::GET, "/logs/access", None).await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    app.set_auth_token(admin_token.clone());
+
+    let hidden = app
+        .wait_for_access_log(&format!("caller_name={scoped_name}"), |log| {
+            log["method"] == "DELETE" && log["target"] == zone_path
+        })
+        .await;
+
+    // A zone the role cannot see is a failure like any 404, so the log
+    // cannot tell a scope that the zone exists.
+    assert_eq!(hidden["result"], "failed", "{hidden}");
+    assert_eq!(hidden["status"], "404", "{hidden}");
+
+    let forbidden = app
+        .wait_for_access_log(&format!("caller_name={scoped_name}&result=denied"), |log| {
+            log["target"] == "/logs/access"
+        })
+        .await;
+
+    assert_eq!(forbidden["status"], "403", "{forbidden}");
+    assert!(
+        forbidden["error"].as_str().unwrap().contains("log:read"),
+        "{forbidden}"
+    );
+
+    // Refused by the auth layer: 401, and no token verified to name.
+    app.set_auth_token("not-a-token".to_string());
+
+    let (status, body) = app.send_request(Method::GET, &zone_path, None).await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+
+    let (status, body) = app.send_request(Method::GET, "/health", None).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    app.set_auth_token(admin_token);
+
+    let refused = app
+        .wait_for_access_log("result=denied&source=api", |log| {
+            log["target"] == zone_path && log["status"] == "401"
+        })
+        .await;
+
+    assert!(refused["caller"].is_null(), "{refused}");
+    assert_eq!(refused["error"], "invalid or expired token", "{refused}");
+
+    // Answered by the router's fallbacks, which no route's layer covers: an
+    // unknown path and a method its path does not take are saved too.
+    let (status, body) = app.send_request(Method::GET, "/no-such-route", None).await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+
+    let (status, body) = app.send_request(Method::PATCH, "/zones", None).await;
+
+    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED, "{body}");
+
+    // An extension method may be any length; it is cut to the column's width
+    // so the insert cannot fail on MySQL or PostgreSQL.
+    let long_method = Method::from_bytes(b"LONGCUSTOMREQUEST").unwrap();
+    let (status, body) = app.send_request(long_method, "/zones", None).await;
+
+    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED, "{body}");
+
+    for (method, target, status) in [
+        ("GET", "/no-such-route", "404"),
+        ("PATCH", "/zones", "405"),
+        ("LONGCUSTOMREQUES", "/zones", "405"),
+    ] {
+        let log = app
+            .wait_for_access_log("result=failed&source=api", |log| {
+                log["method"] == method && log["target"] == target
+            })
+            .await;
+
+        assert_eq!(log["status"], status, "{log}");
+    }
+
+    let (status, body) = app
+        .send_request(Method::GET, "/logs/access?limit=1000", None)
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|log| log["target"] != "/health"
+                && !log["target"].as_str().unwrap().contains('?')),
+        "{body}"
+    );
+
+    for query in [
+        "source=socket",
+        "result=refused",
+        "address=localhost",
+        "since=2026-01-02T00:00:00Z&until=2026-01-01T00:00:00Z",
+    ] {
+        let (status, body) = app
+            .send_request(Method::GET, &format!("/logs/access?{query}"), None)
+            .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}: {body}");
+        assert_eq!(body["code"], "INVALID_INPUT", "{query}: {body}");
+    }
 }

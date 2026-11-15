@@ -1,4 +1,4 @@
-//! The periodic scheduler pass: journal retention, signature refresh, and
+//! The periodic scheduler pass: history and log retention, signature refresh, and
 //! the rollover steps that advance on deadlines rather than operator action.
 
 use std::sync::Arc;
@@ -109,7 +109,7 @@ async fn run_scheduler_pass(cx: &Context) {
 
     // Bound retained IXFR and rollback history before maintaining signed zones,
     // one zone per transaction under its lock, like every other step here.
-    let zone_max_days = config.history.zone.max_days;
+    let zone_max_days = config.history.max_days;
 
     if zone_max_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(zone_max_days));
@@ -148,7 +148,7 @@ async fn run_scheduler_pass(cx: &Context) {
     }
 
     // The audit log has no row lock to take: one statement bounds it.
-    let audit_max_days = config.history.audit.max_days;
+    let audit_max_days = config.audit_log.max_days;
 
     if audit_max_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(audit_max_days));
@@ -167,9 +167,29 @@ async fn run_scheduler_pass(cx: &Context) {
         }
     }
 
+    // One statement bounds the access log too.
+    let access_max_days = config.access_log.max_days;
+
+    if access_max_days > 0 {
+        let cutoff = Utc::now() - Duration::days(i64::from(access_max_days));
+
+        match bindizr_db::access_log::prune_older_than(cx.db(), cutoff).await {
+            Ok(pruned) => {
+                cx.metrics().track_pruned_access_log_rows(pruned);
+                if pruned > 0 {
+                    log::info!("Pruned {pruned} access log rows");
+                }
+            }
+            Err(error) => {
+                failed = true;
+                log::error!("Access log pruning failed: {error}");
+            }
+        }
+    }
+
     // One statement bounds the transfer log too; the newest row of each
     // client address and zone outlives the cutoff as its last transfer.
-    let transfer_max_days = config.history.transfer.max_days;
+    let transfer_max_days = config.transfer_log.max_days;
 
     if transfer_max_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(transfer_max_days));

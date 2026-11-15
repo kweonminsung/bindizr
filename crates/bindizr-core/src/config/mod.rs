@@ -114,6 +114,12 @@ pub struct Config {
     #[serde(default)]
     pub history: HistoryConfig,
     #[serde(default)]
+    pub audit_log: AuditLogConfig,
+    #[serde(default)]
+    pub access_log: AccessLogConfig,
+    #[serde(default)]
+    pub transfer_log: TransferLogConfig,
+    #[serde(default)]
     pub logging: LoggingConfig,
 }
 
@@ -149,6 +155,15 @@ impl Config {
         }
         if self.history != next.history {
             changed.push("history".to_string());
+        }
+        if self.audit_log != next.audit_log {
+            changed.push("audit_log".to_string());
+        }
+        if self.access_log != next.access_log {
+            changed.push("access_log".to_string());
+        }
+        if self.transfer_log != next.transfer_log {
+            changed.push("transfer_log".to_string());
         }
         if self.logging != next.logging {
             changed.push("logging".to_string());
@@ -988,35 +1003,20 @@ fn default_notify_timeout_secs() -> u64 {
     3
 }
 
-/// What Bindizr keeps of the past and for how long: zone versions and the
-/// audit and transfer logs. The scheduler pass prunes what is older.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HistoryConfig {
-    /// Zone versions, for diff and rollback, and the IXFR journal behind
-    /// incremental updates to secondaries; a pruned serial falls back to AXFR.
-    #[serde(default)]
-    pub zone: RetentionConfig,
-    /// The audit log of management changes.
-    #[serde(default)]
-    pub audit: RetentionConfig,
-    /// The transfer log of what each client pulled.
-    #[serde(default)]
-    pub transfer: TransferHistoryConfig,
-}
-
-/// How long one kind of history is kept.
+/// How long zone versions are kept, for diff and rollback, with the IXFR
+/// journal behind incremental updates to secondaries; a pruned serial falls
+/// back to AXFR. The scheduler pass prunes what is older.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RetentionConfig {
-    /// Days kept before the scheduler pass prunes older entries; `0` keeps
+pub struct HistoryConfig {
+    /// Days kept before the scheduler pass prunes older versions; `0` keeps
     /// them forever.
     #[serde(default = "default_history_max_days")]
     pub max_days: u32,
 }
 
-impl Default for RetentionConfig {
-    /// Build the default retention: a year.
+impl Default for HistoryConfig {
+    /// Build the default zone history: a year.
     fn default() -> Self {
         Self {
             max_days: default_history_max_days(),
@@ -1024,35 +1024,132 @@ impl Default for RetentionConfig {
     }
 }
 
-/// Return the default days of history kept.
+/// Return the default days of zone history kept.
 fn default_history_max_days() -> u32 {
     365
 }
 
-/// The transfer log: which transfers are saved, and for how long.
+/// The audit log of management changes, read under `/logs/audit`: how long
+/// its entries are kept. Bindizr's own output is `[logging]`, not this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct TransferHistoryConfig {
+pub struct AuditLogConfig {
+    /// Days kept before the scheduler pass prunes older entries; `0` keeps
+    /// them forever.
+    #[serde(default = "default_audit_log_max_days")]
+    pub max_days: u32,
+}
+
+impl Default for AuditLogConfig {
+    /// Build the default audit log settings: a year.
+    fn default() -> Self {
+        Self {
+            max_days: default_audit_log_max_days(),
+        }
+    }
+}
+
+/// Return the default days of audit log kept.
+fn default_audit_log_max_days() -> u32 {
+    365
+}
+
+/// The access log of API requests and nsupdates, read under `/logs/access`:
+/// which requests are saved, and for how long.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccessLogConfig {
+    #[serde(default)]
+    pub save: SavedRequests,
+    /// Days kept before the scheduler pass prunes older entries; `0` keeps
+    /// them forever.
+    #[serde(default = "default_access_log_max_days")]
+    pub max_days: u32,
+}
+
+impl Default for AccessLogConfig {
+    /// Build the default access log settings: every request, for 30 days.
+    fn default() -> Self {
+        Self {
+            save: SavedRequests::default(),
+            max_days: default_access_log_max_days(),
+        }
+    }
+}
+
+/// Return the default days of access log kept.
+fn default_access_log_max_days() -> u32 {
+    30
+}
+
+/// Which requests the access log saves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SavedRequests {
+    /// Every request answered, denied, or failed.
+    #[default]
+    All,
+    /// Requests denied by authentication or authorization alone.
+    Denied,
+}
+
+impl SavedRequests {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Denied => "denied",
+        }
+    }
+}
+
+impl fmt::Display for SavedRequests {
+    /// Write the setting in its display form.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for SavedRequests {
+    type Err = ConfigError;
+
+    /// Parse the setting from its text representation.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "all" => Ok(Self::All),
+            "denied" => Ok(Self::Denied),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "all or denied",
+            }),
+        }
+    }
+}
+
+/// The transfer log of what each client pulled, read under `/logs/transfer`:
+/// which transfers are saved, and for how long.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransferLogConfig {
     #[serde(default)]
     pub save: SavedTransfers,
     /// Days kept before the scheduler pass prunes older entries; `0` keeps
     /// them forever. The newest transfer of each client and zone stays.
-    #[serde(default = "default_history_transfer_max_days")]
+    #[serde(default = "default_transfer_log_max_days")]
     pub max_days: u32,
 }
 
-impl Default for TransferHistoryConfig {
+impl Default for TransferLogConfig {
     /// Build the default transfer log settings: every transfer, for 90 days.
     fn default() -> Self {
         Self {
             save: SavedTransfers::default(),
-            max_days: default_history_transfer_max_days(),
+            max_days: default_transfer_log_max_days(),
         }
     }
 }
 
 /// Return the default days of transfer log kept.
-fn default_history_transfer_max_days() -> u32 {
+fn default_transfer_log_max_days() -> u32 {
     90
 }
 

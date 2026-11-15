@@ -12,9 +12,9 @@ use bindizr_core::{errln, stream};
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 
-use crate::cli::commands::audit::AuditCommand;
 use crate::cli::commands::config::ConfigCommand;
 use crate::cli::commands::dnssec::DnssecCommand;
+use crate::cli::commands::logs::LogCommand;
 use crate::cli::commands::record::RecordCommand;
 use crate::cli::commands::role::RoleCommand;
 use crate::cli::commands::secondary::SecondaryCommand;
@@ -104,10 +104,10 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: TsigKeyCommand,
     },
-    /// Read the audit log: who changed a token, role, grant, key, secondary or policy, and when
-    Audit {
+    /// Read the logs: management changes (audit), API requests and nsupdates (access), and zone transfers (transfer)
+    Log {
         #[command(subcommand)]
-        subcommand: AuditCommand,
+        subcommand: LogCommand,
     },
     /// Manage DNSSEC: each zone's signing (keys, DS records, re-signing) and the policies zones sign under
     Dnssec {
@@ -153,7 +153,7 @@ pub async fn execute() {
         Command::Role { subcommand } => commands::role::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
-        Command::Audit { subcommand } => commands::audit::handle_command(subcommand).await,
+        Command::Log { subcommand } => commands::logs::handle_command(subcommand).await,
         Command::Dnssec { subcommand } => commands::dnssec::handle_command(subcommand).await,
         Command::Completion { shell } => commands::completion::handle_command(shell),
         Command::Man => commands::completion::handle_man_command(),

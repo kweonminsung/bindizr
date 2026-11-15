@@ -2,8 +2,7 @@ use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::{
     CheckSecondaryResponse, CreateSecondaryRequest, MessageResponse, PageRequest,
-    PaginatedResponse, SecondaryResponse, SecondaryTransferFilter, SecondaryTransfersResponse,
-    SingleSecondaryResponse, UpdateSecondaryRequest,
+    PaginatedResponse, SecondaryResponse, SingleSecondaryResponse, UpdateSecondaryRequest,
 };
 use bindizr_service::{Context, secondary};
 
@@ -85,23 +84,6 @@ pub(crate) async fn check_secondary(
 
     Ok(DaemonResponse {
         message,
-        data: response,
-    })
-}
-
-/// List the transfers Bindizr served one secondary.
-pub(crate) async fn list_secondary_transfers(
-    cx: &Context,
-    name: &str,
-    filter: &SecondaryTransferFilter,
-) -> Result<DaemonResponse<SecondaryTransfersResponse>, ServiceError> {
-    let response = secondary::list_transfers(cx, &Caller::socket(), name, filter).await?;
-
-    Ok(DaemonResponse {
-        message: format!(
-            "{} transfer(s) served to secondary '{name}'",
-            response.transfers.len()
-        ),
         data: response,
     })
 }

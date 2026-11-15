@@ -1,12 +1,12 @@
 mod common;
 
 mod api {
-    mod audit;
     mod common;
     mod dnssec;
     mod dnssec_policy;
     mod external_dns;
     mod health;
+    mod logs;
     mod metrics;
     mod notify;
     mod openapi;
@@ -19,12 +19,12 @@ mod api {
 }
 
 mod cli {
-    mod audit;
     mod common;
     mod config;
     mod daemon;
     mod dnssec;
     mod doctor;
+    mod logs;
     mod notify;
     mod record;
     mod role;

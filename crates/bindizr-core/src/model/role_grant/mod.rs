@@ -49,11 +49,11 @@ pub struct ParseActionError {
 ///   also read signing policies
 /// - `dnssec:manage` — enable, disable and re-sign, manage keys and rollovers;
 ///   in all zones, also change signing policies
-/// - `secondary:read` — list secondaries and the transfers served them; all zones only
+/// - `secondary:read` — list and read secondaries; all zones only
 /// - `secondary:manage` — register, change, check and remove secondaries; all zones only
 /// - `access:manage` — manage roles, API tokens and TSIG keys; all zones only,
 ///   and equivalent to admin since its holder can grant itself anything
-/// - `audit:read` — read the audit log of management changes; all zones only
+/// - `log:read` — read the audit, access and transfer logs; all zones only
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
 )]
@@ -86,8 +86,8 @@ pub enum Action {
     SecondaryManage,
     #[serde(rename = "access:manage")]
     AccessManage,
-    #[serde(rename = "audit:read")]
-    AuditRead,
+    #[serde(rename = "log:read")]
+    LogRead,
 }
 
 impl Action {
@@ -107,7 +107,7 @@ impl Action {
         Self::SecondaryRead,
         Self::SecondaryManage,
         Self::AccessManage,
-        Self::AuditRead,
+        Self::LogRead,
     ];
 
     /// Return the canonical wire spelling.
@@ -127,7 +127,7 @@ impl Action {
             Self::SecondaryRead => "secondary:read",
             Self::SecondaryManage => "secondary:manage",
             Self::AccessManage => "access:manage",
-            Self::AuditRead => "audit:read",
+            Self::LogRead => "log:read",
         }
     }
 
@@ -140,7 +140,7 @@ impl Action {
                 | Self::SecondaryRead
                 | Self::SecondaryManage
                 | Self::AccessManage
-                | Self::AuditRead
+                | Self::LogRead
         )
     }
 

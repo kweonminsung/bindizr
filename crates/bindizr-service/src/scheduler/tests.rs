@@ -23,6 +23,7 @@ async fn context(period: u64) -> (Arc<Context>, watch::Receiver<u64>) {
         db,
         Metrics::new().unwrap(),
         mpsc::unbounded_channel().0,
+        mpsc::channel(1).0,
         period_tx,
     ));
 

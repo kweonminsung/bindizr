@@ -40,28 +40,31 @@ pub(crate) enum UpdateError {
     LoadTsigKey(#[source] ServiceError),
 }
 
-/// Apply UPDATE and report whether data changed, retaining a verified signer for any response.
+/// Apply UPDATE and report whether data changed, retaining a verified signer
+/// for any response and the key it verified for the access log.
 pub(crate) async fn apply_update(
     dns_cx: &DnsContext,
     request: UpdateRequest,
     query_data: &[u8],
     transport: TransferTransport,
-) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
+) -> (
+    Result<bool, UpdateError>,
+    Option<ResponseSigner>,
+    Option<TsigKey>,
+) {
     let cx = dns_cx.daemon();
     let mut signer = None;
+    let mut verified_key = None;
 
     let result = async {
         // A signature is verified first, whatever the listener's answer:
         // keys are zone-independent, and every refusal below is then signed.
-        let tsig_key = match &request.tsig {
-            Some(tsig) => {
-                let (tsig_key, verified) =
-                    authenticate_tsig_key(dns_cx, query_data, &tsig.name).await?;
-                signer = Some(verified);
-                tsig_key
-            }
-            None => None,
-        };
+        if let Some(tsig) = &request.tsig {
+            let (tsig_key, verified) =
+                authenticate_tsig_key(dns_cx, query_data, &tsig.name).await?;
+            signer = Some(verified);
+            verified_key = tsig_key;
+        }
 
         // RFC 6891, Section 6.1.3: BADVERS precedes every policy refusal.
         if let Some(rcode) = request.edns.format_error() {
@@ -77,8 +80,8 @@ pub(crate) async fn apply_update(
 
         // Unsigned UPDATE admits every reachable client; the service refuses it
         // under `tsig_required` after the authority check (RFC 2136, Section 3.1.1).
-        let caller = match tsig_key {
-            Some(tsig_key) => Caller::authenticate_tsig_key(cx, &tsig_key)
+        let caller = match &verified_key {
+            Some(tsig_key) => Caller::authenticate_tsig_key(cx, tsig_key)
                 .await
                 .map_err(NsupdateError::from)?,
             None => Caller::unsigned_dns(),
@@ -109,7 +112,7 @@ pub(crate) async fn apply_update(
     }
     .await;
 
-    (result, signer)
+    (result, signer, verified_key)
 }
 
 /// Authenticate the request by the key `key_name` names: its TSIG verified,

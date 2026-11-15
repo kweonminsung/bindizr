@@ -13,17 +13,19 @@ use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 use utoipa::OpenApi;
 
 use crate::api::error::ApiError;
-use crate::api::middleware::auth;
 use crate::api::middleware::body_parser::DEFAULT_BODY_BYTES;
+use crate::api::middleware::{access_log, auth};
 use crate::api::openapi::ApiDoc;
 use crate::api::{
-    audit, dnssec, dnssec_policy, external_dns, health, metrics, notify, permission, record, role,
+    dnssec, dnssec_policy, external_dns, health, logs, metrics, notify, permission, record, role,
     secondary, token, tsig_key, zone,
 };
 
 /// Build the full axum router with auth, CORS, and the optional route groups,
 /// every handler reading the daemon's state through `State`.
 pub(crate) fn routes(cx: Arc<Context>) -> Router {
+    use axum::handler::Handler as _;
+
     let config = cx.config();
     let api_config = &config.api;
 
@@ -38,7 +40,7 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
         .merge(permission::routes())
         .merge(dnssec::routes())
         .merge(dnssec_policy::routes())
-        .merge(audit::routes())
+        .merge(logs::routes())
         .route("/", routing::get(handle_home));
 
     // Unregistered when disabled, so the endpoints fall through to 404.
@@ -56,6 +58,13 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
         // error the extractor rejects instead of implying full access.
         api_router = api_router.layer(Extension(Caller::unauthenticated_api()));
     }
+
+    // Outside the auth layer, so a request it refuses is saved too; the
+    // probe, scrape and document routes below are not.
+    api_router = api_router.layer(middleware::from_fn_with_state(
+        cx.clone(),
+        access_log::save_access_log,
+    ));
 
     let mut router = api_router;
 
@@ -79,9 +88,16 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
             .route("/openapi.yaml", routing::get(handle_openapi_disabled));
     }
 
+    // The fallbacks answer outside the routes' layers, so they take the access
+    // log themselves: a scan of unknown paths or methods is saved too.
     router = router
-        .fallback(handle_not_found)
-        .method_not_allowed_fallback(handle_method_not_allowed);
+        .fallback(handle_not_found.layer(middleware::from_fn_with_state(
+            cx.clone(),
+            access_log::save_access_log,
+        )))
+        .method_not_allowed_fallback(handle_method_not_allowed.layer(
+            middleware::from_fn_with_state(cx.clone(), access_log::save_access_log),
+        ));
 
     // Layered after the fallback so every route, including 404s, is measured.
     if api_config.metrics_enabled {

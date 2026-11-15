@@ -1,4 +1,4 @@
-use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone};
+use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone, TransferResult};
 use chrono::{DateTime, Utc};
 use sqlx::{Pool, Postgres};
 
@@ -30,37 +30,76 @@ pub(crate) async fn create(pool: &Pool<Postgres>, log: TransferLog) -> Result<()
     Ok(())
 }
 
-/// List the rows of a client address `filter` selects, newest first, with zone
-/// names.
-pub(crate) async fn list_by_client_addr_and_filter_with_zone(
+/// List the rows `filter` selects, newest first, with zone names.
+pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<Postgres>,
-    client_addr: &str,
     filter: &TransferLogFilter,
 ) -> Result<Vec<TransferLogWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
+
+    let result = filter.result.map(TransferResult::as_str);
 
     let logs = sqlx::query_as::<_, TransferLogWithZone>(
         r#"
         SELECT t.client_addr, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
         FROM transfer_log t
         INNER JOIN zones z ON z.id = t.zone_id
-        WHERE t.client_addr = $1
+        WHERE ($1::TEXT[] IS NULL OR t.client_addr = ANY($1))
           AND ($2::TEXT IS NULL OR z.name = $2)
-          AND ($3::TIMESTAMPTZ IS NULL OR t.served_at >= $3)
-          AND ($4::TIMESTAMPTZ IS NULL OR t.served_at < $4)
+          AND ($3::TEXT IS NULL OR t.result = $3)
+          AND ($4::TIMESTAMPTZ IS NULL OR t.served_at >= $4)
+          AND ($5::TIMESTAMPTZ IS NULL OR t.served_at < $5)
         ORDER BY t.id DESC
-        LIMIT $5
+        LIMIT $6 OFFSET $7
         "#,
     )
-    .bind(client_addr)
+    .bind(&filter.client_addrs)
     .bind(&filter.zone_name)
+    .bind(result)
     .bind(filter.since)
     .bind(filter.until)
     .bind(filter.limit.map_or(i64::MAX, i64::from))
+    .bind(
+        filter
+            .offset
+            .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
+    )
     .fetch_all(&mut *connection)
     .await?;
 
     Ok(logs)
+}
+
+/// Count the rows `filter` selects, its paging aside.
+pub(crate) async fn count_by_filter(
+    pool: &Pool<Postgres>,
+    filter: &TransferLogFilter,
+) -> Result<u64, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+
+    let result = filter.result.map(TransferResult::as_str);
+
+    let count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM transfer_log t
+        INNER JOIN zones z ON z.id = t.zone_id
+        WHERE ($1::TEXT[] IS NULL OR t.client_addr = ANY($1))
+          AND ($2::TEXT IS NULL OR z.name = $2)
+          AND ($3::TEXT IS NULL OR t.result = $3)
+          AND ($4::TIMESTAMPTZ IS NULL OR t.served_at >= $4)
+          AND ($5::TIMESTAMPTZ IS NULL OR t.served_at < $5)
+        "#,
+    )
+    .bind(&filter.client_addrs)
+    .bind(&filter.zone_name)
+    .bind(result)
+    .bind(filter.since)
+    .bind(filter.until)
+    .fetch_one(&mut *connection)
+    .await?;
+
+    Ok(count as u64)
 }
 
 /// List the newest row of each zone a client address asked for, with zone

@@ -33,6 +33,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         db,
         Metrics::new().unwrap(),
         mpsc::unbounded_channel().0,
+        mpsc::channel(1).0,
         watch::channel(0).0,
     ));
 

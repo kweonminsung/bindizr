@@ -1,8 +1,8 @@
-pub(crate) mod audit;
 pub(crate) mod completion;
 pub(crate) mod config;
 pub(crate) mod dnssec;
 pub(crate) mod doctor;
+pub(crate) mod logs;
 pub(crate) mod record;
 pub(crate) mod restart;
 pub(crate) mod role;

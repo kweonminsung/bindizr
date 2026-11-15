@@ -79,20 +79,26 @@ bindizr:
     service:
       port: 53
 
+  # Days of zone versions kept, for diff, rollback, and incremental updates
+  # to secondaries; older versions are pruned by the scheduler pass (0 = forever).
   history:
-    # Days of history kept; older entries are pruned by the scheduler pass
-    # (0 = forever). Zone versions serve diff, rollback, and incremental
-    # updates to secondaries; the audit log says who changed what.
-    zone:
-      maxDays: 365
-    audit:
-      maxDays: 365
-    # The transfer log: the zone transfers each client was answered. `save`
-    # is all, or unserved for refusals and failures alone; each client's last
-    # transfer of a zone stays past maxDays.
-    transfer:
-      save: all
-      maxDays: 90
+    maxDays: 365
+  # The logs read with `bindizr log <subject>` and GET /logs/<subject>, each
+  # kept maxDays (0 = forever); `logging` below is Bindizr's own process log.
+  # Who changed a token, role, grant, key, secondary, or policy.
+  auditLog:
+    maxDays: 365
+  # The API requests and nsupdates answered: `save` is all, or denied for
+  # 401/403, TSIG rejections and REFUSED alone.
+  accessLog:
+    save: all
+    maxDays: 30
+  # The zone transfers each client was answered: `save` is all, or
+  # unserved for refusals and failures alone; each client's last transfer
+  # of a zone stays past maxDays.
+  transferLog:
+    save: all
+    maxDays: 90
 
   logging:
     level: info

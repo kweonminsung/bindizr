@@ -1,5 +1,6 @@
 //! The MySQL SQL, one module per entity; the crate root dispatches here.
 
+pub(crate) mod access_log;
 pub(crate) mod api_token;
 pub(crate) mod audit_log;
 pub(crate) mod catalog_zone;

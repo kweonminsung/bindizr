@@ -9,101 +9,6 @@ info:
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   version: 0.1.0
 paths:
-  /audit:
-    get:
-      tags:
-      - Audit
-      summary: List the audit log
-      description: 'The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone''s versions instead. Needs `audit:read` in all zones.'
-      operationId: list_audit_logs
-      parameters:
-      - name: entity
-        in: query
-        description: |-
-          Only changes to this kind of entity: `token`, `role`, `role_grant`,
-          `tsig_key`, `secondary`, `dnssec_policy`, or `zone`.
-        required: false
-        schema:
-          type: string
-      - name: entity_name
-        in: query
-        description: Only changes to the entity of this name; a grant's is its role's.
-        required: false
-        schema:
-          type: string
-      - name: since
-        in: query
-        description: Only changes made at or after this time (RFC 3339).
-        required: false
-        schema:
-          type: string
-          format: date-time
-      - name: until
-        in: query
-        description: Only changes made before this time (RFC 3339).
-        required: false
-        schema:
-          type: string
-          format: date-time
-      - name: sort
-        in: query
-        description: '`created_at` (the default), `entity`, `entity_name`, or `operation`.'
-        required: false
-        schema:
-          type: string
-      - name: order
-        in: query
-        description: '`desc` (the default) or `asc`.'
-        required: false
-        schema:
-          type: string
-      - name: limit
-        in: query
-        description: Items per page; the HTTP API defaults it, the daemon socket does not.
-        required: false
-        schema:
-          type: integer
-          format: int32
-          maximum: 1000
-          minimum: 1
-      - name: offset
-        in: query
-        required: false
-        schema:
-          type: integer
-          format: int64
-          minimum: 0
-      responses:
-        '200':
-          description: The rows selected
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedResponse_AuditLogResponse'
-        '400':
-          description: Invalid query parameters
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: The caller's role does not permit this
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
   /dnssec-policies:
     get:
       tags:
@@ -594,6 +499,293 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /logs/access:
+    get:
+      tags:
+      - Log
+      summary: List the access log
+      description: 'The management API requests and nsupdates Bindizr answered, newest first: the method and path or the zone, the client address, the token or TSIG key that verified, the status or RCODE, and the error. `denied` is HTTP 401 or 403, or an nsupdate whose TSIG was rejected or that was REFUSED; a zone the caller may not see answers 404 and is `failed`. No query string, body, token or secret is kept. `/health`, `/metrics`, the OpenAPI document and the daemon socket are not logged. Kept for `access_log.max_days`; `access_log.save = "denied"` keeps denials alone. Needs `log:read` in all zones.'
+      operationId: list_access_logs
+      parameters:
+      - name: source
+        in: query
+        description: 'Only requests that arrived here: `api` or `nsupdate`.'
+        required: false
+        schema:
+          type: string
+      - name: result
+        in: query
+        description: 'Only requests that ended this way: `ok`, `denied`, or `failed`.'
+        required: false
+        schema:
+          type: string
+      - name: caller_name
+        in: query
+        description: Only requests made with the token or TSIG key of this name.
+        required: false
+        schema:
+          type: string
+      - name: address
+        in: query
+        description: Only requests from this client IP address.
+        required: false
+        schema:
+          type: string
+      - name: since
+        in: query
+        description: Only requests made at or after this time (RFC 3339).
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: until
+        in: query
+        description: Only requests made before this time (RFC 3339).
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: The rows selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse_AccessLogResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /logs/audit:
+    get:
+      tags:
+      - Log
+      summary: List the audit log
+      description: 'The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone''s versions instead. Kept for `audit_log.max_days`. Needs `log:read` in all zones.'
+      operationId: list_audit_logs
+      parameters:
+      - name: entity
+        in: query
+        description: |-
+          Only changes to this kind of entity: `token`, `role`, `role_grant`,
+          `tsig_key`, `secondary`, `dnssec_policy`, or `zone`.
+        required: false
+        schema:
+          type: string
+      - name: entity_name
+        in: query
+        description: Only changes to the entity of this name; a grant's is its role's.
+        required: false
+        schema:
+          type: string
+      - name: since
+        in: query
+        description: Only changes made at or after this time (RFC 3339).
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: until
+        in: query
+        description: Only changes made before this time (RFC 3339).
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: sort
+        in: query
+        description: '`created_at` (the default), `entity`, `entity_name`, or `operation`.'
+        required: false
+        schema:
+          type: string
+      - name: order
+        in: query
+        description: '`desc` (the default) or `asc`.'
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: The rows selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse_AuditLogResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /logs/transfer:
+    get:
+      tags:
+      - Log
+      summary: List the transfer log
+      description: 'The zone transfers Bindizr answered, refused, or failed, newest first, by client address and zone: AXFR, IXFR as a delta or as the whole zone, or why it was refused. A transfer of a zone Bindizr does not have leaves no row. `secondary_name` selects the addresses a secondary resolves to now. Kept for `transfer_log.max_days`, and each client''s last transfer of each zone beyond that; `transfer_log.save = "unserved"` keeps refusals and failures alone. Needs `log:read` in all zones.'
+      operationId: list_transfer_logs
+      parameters:
+      - name: secondary_name
+        in: query
+        description: Only transfers answered to the addresses this secondary resolves to now.
+        required: false
+        schema:
+          type: string
+      - name: address
+        in: query
+        description: Only transfers answered to this client IP address.
+        required: false
+        schema:
+          type: string
+      - name: zone_name
+        in: query
+        description: Only the transfers of this zone.
+        required: false
+        schema:
+          type: string
+      - name: result
+        in: query
+        description: 'Only transfers that turned out this way: `ok`, `refused`, or `failed`.'
+        required: false
+        schema:
+          type: string
+      - name: since
+        in: query
+        description: Only transfers answered at or after this time (RFC 3339).
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: until
+        in: query
+        description: Only transfers answered before this time (RFC 3339).
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: The rows selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse_TransferLogResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
           content:
             application/json:
               schema:
@@ -1899,80 +2091,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error, including Bindizr's own DNS listener not answering
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /secondaries/{name}/transfers:
-    get:
-      tags:
-      - Secondary
-      summary: List a secondary's transfers
-      description: 'The transfers Bindizr answered the secondary''s addresses, newest first, and a summary of how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Every transfer is kept for `history.transfer.max_days`, and each zone''s last one beyond that; `history.transfer.save = "unserved"` keeps refusals and failures alone. The summary counts every zone, whatever the query selects.'
-      operationId: list_secondary_transfers
-      parameters:
-      - name: name
-        in: path
-        description: The name of the secondary.
-        required: true
-        schema:
-          type: string
-      - name: limit
-        in: query
-        description: At most this many transfers, newest first; 1000 when omitted.
-        required: false
-        schema:
-          type: integer
-          format: int32
-          maximum: 1000
-          minimum: 1
-      - name: zone_name
-        in: query
-        description: Only the transfers of this zone.
-        required: false
-        schema:
-          type: string
-      - name: since
-        in: query
-        description: Only transfers answered at or after this time (RFC 3339).
-        required: false
-        schema:
-          type: string
-          format: date-time
-      - name: until
-        in: query
-        description: Only transfers answered before this time (RFC 3339).
-        required: false
-        schema:
-          type: string
-          format: date-time
-      responses:
-        '200':
-          description: The transfers served
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SecondaryTransfersResponse'
-        '400':
-          description: Invalid query parameters
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: The caller's role does not permit this
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Secondary not found
           content:
             application/json:
               schema:
@@ -3873,6 +3991,70 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
+    AccessLogResponse:
+      type: object
+      description: 'One request a front end answered: what it asked, who asked, and how it ended.'
+      required:
+      - source
+      - address
+      - method
+      - target
+      - status
+      - result
+      - requested_at
+      properties:
+        address:
+          type: string
+          description: The connection's peer address; a proxy in front shows as itself.
+          example: 192.0.2.10
+        caller:
+          oneOf:
+          - $ref: '#/components/schemas/ChangeActor'
+            description: |-
+              The token or TSIG key the request authenticated with. Null when it
+              presented none or what it presented did not verify, and when API
+              authentication is off.
+          - type: 'null'
+        error:
+          type:
+          - string
+          - 'null'
+          description: The error the request was answered with; never a token or secret.
+          example: role does not permit 'zone:delete' in zone 'example.com'
+        method:
+          type: string
+          description: The HTTP method, or `UPDATE` for an nsupdate.
+          example: DELETE
+        requested_at:
+          type: string
+          format: date-time
+        result:
+          $ref: '#/components/schemas/AccessResult'
+        source:
+          $ref: '#/components/schemas/AccessSource'
+        status:
+          type: string
+          description: The HTTP status code, or the DNS RCODE.
+          example: '403'
+        target:
+          type: string
+          description: The request path without its query, or the zone an nsupdate named.
+          example: /zones/example.com
+    AccessResult:
+      type: string
+      description: |-
+        How a request ended: answered, denied by authentication or authorization,
+        or failed for any other reason.
+      enum:
+      - ok
+      - denied
+      - failed
+    AccessSource:
+      type: string
+      description: The front end a request arrived at.
+      enum:
+      - api
+      - nsupdate
     Action:
       type: string
       description: |-
@@ -3895,11 +4077,11 @@ components:
           also read signing policies
         - `dnssec:manage` — enable, disable and re-sign, manage keys and rollovers;
           in all zones, also change signing policies
-        - `secondary:read` — list secondaries and the transfers served them; all zones only
+        - `secondary:read` — list and read secondaries; all zones only
         - `secondary:manage` — register, change, check and remove secondaries; all zones only
         - `access:manage` — manage roles, API tokens and TSIG keys; all zones only,
           and equivalent to admin since its holder can grant itself anything
-        - `audit:read` — read the audit log of management changes; all zones only
+        - `log:read` — read the audit, access and transfer logs; all zones only
       enum:
       - zone:read
       - zone:create
@@ -3915,7 +4097,7 @@ components:
       - secondary:read
       - secondary:manage
       - access:manage
-      - audit:read
+      - log:read
     AdjustExternalDnsRecordsRequest:
       type: object
       description: Request body for canonicalizing desired records without applying them.
@@ -5437,6 +5619,66 @@ components:
         message:
           type: string
           example: Deleted successfully
+    PaginatedResponse_AccessLogResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: 'One request a front end answered: what it asked, who asked, and how it ended.'
+            required:
+            - source
+            - address
+            - method
+            - target
+            - status
+            - result
+            - requested_at
+            properties:
+              address:
+                type: string
+                description: The connection's peer address; a proxy in front shows as itself.
+                example: 192.0.2.10
+              caller:
+                oneOf:
+                - $ref: '#/components/schemas/ChangeActor'
+                  description: |-
+                    The token or TSIG key the request authenticated with. Null when it
+                    presented none or what it presented did not verify, and when API
+                    authentication is off.
+                - type: 'null'
+              error:
+                type:
+                - string
+                - 'null'
+                description: The error the request was answered with; never a token or secret.
+                example: role does not permit 'zone:delete' in zone 'example.com'
+              method:
+                type: string
+                description: The HTTP method, or `UPDATE` for an nsupdate.
+                example: DELETE
+              requested_at:
+                type: string
+                format: date-time
+              result:
+                $ref: '#/components/schemas/AccessResult'
+              source:
+                $ref: '#/components/schemas/AccessSource'
+              status:
+                type: string
+                description: The HTTP status code, or the DNS RCODE.
+                example: '403'
+              target:
+                type: string
+                description: The request path without its query, or the zone an nsupdate named.
+                example: /zones/example.com
+        pagination:
+          $ref: '#/components/schemas/PaginationResponse'
     PaginatedResponse_AuditLogResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -5818,6 +6060,68 @@ components:
                 type: string
                 description: The role the token authenticates into.
                 example: external-dns-prod
+        pagination:
+          $ref: '#/components/schemas/PaginationResponse'
+    PaginatedResponse_TransferLogResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: One transfer Bindizr answered, refused, or failed for a client address.
+            required:
+            - address
+            - zone_name
+            - kind
+            - result
+            - transport
+            - incremental
+            - at
+            properties:
+              address:
+                type: string
+                description: The client address the transfer was served to.
+                example: 10.0.0.14
+              at:
+                type: string
+                format: date-time
+              error:
+                type:
+                - string
+                - 'null'
+                description: Why the transfer was refused or failed.
+              incremental:
+                type: boolean
+                description: |-
+                  Whether the answer was a delta; an IXFR the journal could not serve
+                  went out as the whole zone.
+                example: true
+              kind:
+                $ref: '#/components/schemas/TransferKind'
+              result:
+                $ref: '#/components/schemas/TransferResult'
+                description: Answered, refused, or allowed and then broken off by a failure.
+              serial:
+                oneOf:
+                - type: integer
+                  format: int64
+                  examples:
+                  - 42
+                  maximum: 4294967295
+                  minimum: 0
+                - type: 'null'
+                description: The serial the answer reached; absent when nothing was transferred.
+              transport:
+                $ref: '#/components/schemas/TransferTransport'
+                description: Plain TCP or TLS (XoT).
+              zone_name:
+                type: string
+                example: example.com
         pagination:
           $ref: '#/components/schemas/PaginationResponse'
     PaginatedResponse_TsigKeyResponse:
@@ -6475,7 +6779,7 @@ components:
           - 'null'
         last_transfer:
           oneOf:
-          - $ref: '#/components/schemas/TransferResponse'
+          - $ref: '#/components/schemas/TransferLogResponse'
             description: The latest transfer of this zone Bindizr served the address.
           - type: 'null'
         status:
@@ -6505,28 +6809,6 @@ components:
           example: ns2
         summary:
           $ref: '#/components/schemas/TransferSummaryResponse'
-    SecondaryTransfersResponse:
-      type: object
-      description: The transfers Bindizr served one secondary.
-      required:
-      - secondary_name
-      - address
-      - summary
-      - transfers
-      properties:
-        address:
-          type: string
-          example: ns2.example.net:53
-        secondary_name:
-          type: string
-          example: ns2
-        summary:
-          $ref: '#/components/schemas/TransferSummaryResponse'
-        transfers:
-          type: array
-          items:
-            $ref: '#/components/schemas/TransferResponse'
-          description: Newest first, at most the requested `limit`.
     ServedRecordType:
       oneOf:
       - $ref: '#/components/schemas/RecordType'
@@ -6658,9 +6940,9 @@ components:
       enum:
       - axfr
       - ixfr
-    TransferResponse:
+    TransferLogResponse:
       type: object
-      description: One transfer Bindizr answered, refused, or failed for a secondary's address.
+      description: One transfer Bindizr answered, refused, or failed for a client address.
       required:
       - address
       - zone_name
@@ -7283,8 +7565,8 @@ tags:
   description: API tokens, each authenticating into a role.
 - name: Role
   description: 'Roles and their grants: the actions API tokens and TSIG keys holding a role may perform.'
-- name: Audit
-  description: 'The audit log of management changes: who created, changed or deleted a token, role, grant, TSIG key, secondary or DNSSEC policy, or deleted a zone, and when.'
+- name: Log
+  description: 'What Bindizr changed, served and answered, read back under `log:read`: the audit log of management changes, the access log of API requests and nsupdates, and the transfer log of zone transfers.'
 - name: DNSSEC
   description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone and the parent''s check of them, key rollover, and re-signing.'
 - name: ExternalDNS
