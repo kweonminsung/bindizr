@@ -1,4 +1,4 @@
-//! Save management changes in their transaction; reads require `audit:read`.
+//! Save management changes in their transaction; reads require `log:read`.
 
 use std::fmt;
 
@@ -56,7 +56,7 @@ pub async fn list(
     caller: &Caller,
     filter: &AuditLogFilter,
 ) -> Result<PaginatedResponse<AuditLogResponse>, ServiceError> {
-    caller.authorize_action(Action::AuditRead)?;
+    caller.authorize_action(Action::LogRead)?;
 
     let filter = normalize_filter(filter)?;
 

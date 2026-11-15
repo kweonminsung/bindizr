@@ -3631,3 +3631,60 @@ async fn soa_replacement_preserves_mailbox_domain_octets() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zone"]["rname"], r"admin@\255.example.com");
 }
+
+/// Verify that every nsupdate leaves an access row: an unsigned one the policy refuses is
+/// denied under no caller, and a signed one is saved under the key that verified.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn nsupdate_leaves_access_log_rows_with_their_key_and_outcome() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        nsupdate_tsig_required: true,
+        ..Default::default()
+    })
+    .await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = tsig::create_tsig_key(&app, "access-log-key", KeyRole::Admin).await;
+    let add = [UpdateRecord::AddA {
+        name: format!("host.{zone_name}."),
+        ttl: 300,
+        addr: "192.0.2.80".to_string(),
+    }];
+
+    assert_eq!(
+        nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &add, None).expect("update"),
+        Rcode::REFUSED
+    );
+    assert_eq!(
+        nsupdate::send_update_tcp(app.dns_port(), zone_name, &[], &add, Some(&key))
+            .expect("update"),
+        Rcode::NOERROR
+    );
+
+    let refused = app
+        .wait_for_access_log("source=nsupdate&result=denied", |log| {
+            log["target"] == zone_name
+        })
+        .await;
+
+    assert_eq!(refused["method"], "UPDATE", "{refused}");
+    assert_eq!(refused["status"], "REFUSED", "{refused}");
+    assert_eq!(refused["address"], "127.0.0.1", "{refused}");
+    assert!(refused["caller"].is_null(), "{refused}");
+    assert!(refused["error"].is_string(), "{refused}");
+
+    let applied = app
+        .wait_for_access_log(&format!("caller_name={}", key.name), |log| {
+            log["target"] == zone_name
+        })
+        .await;
+
+    assert_eq!(applied["source"], "nsupdate", "{applied}");
+    assert_eq!(applied["result"], "ok", "{applied}");
+    assert_eq!(applied["status"], "NOERROR", "{applied}");
+    assert_eq!(
+        applied["caller"],
+        json!({ "kind": "tsig_key", "name": key.name })
+    );
+    assert!(applied["error"].is_null(), "{applied}");
+}

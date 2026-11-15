@@ -1,10 +1,10 @@
 //! Serve globally authorized CLI commands over Unix sockets, restricted to the daemon user or root.
 
-mod audit;
 pub(crate) mod control;
 mod dnssec;
 mod dnssec_policy;
 mod doctor;
+mod logs;
 mod notify;
 mod record;
 mod role;
@@ -365,7 +365,13 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(tsig_key::delete_tsig_key(cx, &name).await)
         }
         DaemonCommand::ListAuditLogs(filter) => {
-            encode_response(audit::list_audit_logs(cx, &filter).await)
+            encode_response(logs::list_audit_logs(cx, &filter).await)
+        }
+        DaemonCommand::ListAccessLogs(filter) => {
+            encode_response(logs::list_access_logs(cx, &filter).await)
+        }
+        DaemonCommand::ListTransferLogs(filter) => {
+            encode_response(logs::list_transfer_logs(cx, &filter).await)
         }
         DaemonCommand::CreateRole(request) => {
             encode_response(role::create_role(cx, &request).await)
@@ -399,9 +405,6 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         }
         DaemonCommand::CheckSecondary { name } => {
             encode_response(secondary::check_secondary(cx, &name).await)
-        }
-        DaemonCommand::ListSecondaryTransfers { name, filter } => {
-            encode_response(secondary::list_secondary_transfers(cx, &name, &filter).await)
         }
         DaemonCommand::CreateDnssecPolicy(request) => {
             encode_response(dnssec_policy::create_dnssec_policy(cx, &request).await)

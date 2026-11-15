@@ -27,6 +27,7 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
         db,
         Metrics::new().unwrap(),
         mpsc::unbounded_channel().0,
+        mpsc::channel(1).0,
         watch::channel(0).0,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

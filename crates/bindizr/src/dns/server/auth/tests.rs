@@ -34,6 +34,7 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
         db,
         Metrics::new().unwrap(),
         mpsc::unbounded_channel().0,
+        mpsc::channel(1).0,
         watch::channel(0).0,
     ));
 

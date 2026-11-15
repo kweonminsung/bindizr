@@ -201,6 +201,29 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS access_log (
+            id BIGINT PRIMARY KEY AUTO_INCREMENT,
+            source VARCHAR(8) NOT NULL,
+            client_addr VARCHAR(45) COLLATE utf8mb4_bin NOT NULL,
+            method VARCHAR(16) NOT NULL,
+            target TEXT NOT NULL,
+            status VARCHAR(16) NOT NULL,
+            result VARCHAR(6) NOT NULL,
+            caller_kind VARCHAR(16),
+            caller_name VARCHAR(255) COLLATE utf8mb4_bin,
+            error TEXT NULL,
+            requested_at DATETIME NOT NULL,
+            CONSTRAINT chk_access_log_caller CHECK (
+                (caller_kind IS NULL AND caller_name IS NULL)
+                OR (caller_kind IS NOT NULL AND caller_name IS NOT NULL
+                    AND caller_kind IN ('token', 'tsig_key'))
+            ),
+            INDEX idx_access_log_requested (requested_at),
+            INDEX idx_access_log_client (client_addr),
+            INDEX idx_access_log_caller (caller_name)
+        );
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS role_grants (
             id INT PRIMARY KEY AUTO_INCREMENT,
             role_id INT NOT NULL,

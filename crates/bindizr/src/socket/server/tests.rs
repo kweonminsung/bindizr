@@ -190,6 +190,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
         db,
         Metrics::new().unwrap(),
         mpsc::unbounded_channel().0,
+        mpsc::channel(1).0,
         watch::channel(0).0,
     ));
 

@@ -227,6 +227,35 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity, entity_name);
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS access_log (
+            id BIGSERIAL PRIMARY KEY,
+            source VARCHAR(8) NOT NULL,
+            client_addr VARCHAR(45) NOT NULL,
+            method VARCHAR(16) NOT NULL,
+            target TEXT NOT NULL,
+            status VARCHAR(16) NOT NULL,
+            result VARCHAR(6) NOT NULL,
+            caller_kind VARCHAR(16),
+            caller_name VARCHAR(255),
+            error TEXT NULL,
+            requested_at TIMESTAMPTZ NOT NULL,
+            CONSTRAINT chk_access_log_caller CHECK (
+                (caller_kind IS NULL AND caller_name IS NULL)
+                OR (caller_kind IS NOT NULL AND caller_name IS NOT NULL
+                    AND caller_kind IN ('token', 'tsig_key'))
+            )
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_access_log_requested ON access_log(requested_at);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_access_log_client ON access_log(client_addr);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_access_log_caller ON access_log(caller_name);
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS role_grants (
             id SERIAL PRIMARY KEY,
             role_id INTEGER NOT NULL,

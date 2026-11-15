@@ -1,6 +1,7 @@
 //! Request and response payloads, grouped by entity and re-exported as `types::X`.
 //! HTTP and the daemon socket share this contract; CLI responses also need `Deserialize`.
 
+mod access;
 mod audit;
 mod common;
 mod dnssec;
@@ -13,10 +14,12 @@ mod record;
 mod role;
 mod secondary;
 mod token;
+mod transfer;
 mod tsig;
 mod version;
 mod zone;
 
+pub use access::{AccessLogFilter, AccessLogResponse};
 pub use audit::{AuditLogFilter, AuditLogResponse};
 pub use common::{ErrorResponse, HealthResponse, HealthStatus, MessageResponse, Run};
 pub use dnssec::{
@@ -53,13 +56,13 @@ pub use role::{
 };
 pub use secondary::{
     CheckNotifyResponse, CheckSecondariesResponse, CheckSecondaryResponse, CreateSecondaryRequest,
-    SecondaryResponse, SecondaryTransferFilter, SecondaryTransferSummaryResponse,
-    SecondaryTransfersResponse, SingleSecondaryResponse, TransferResponse, TransferSummaryResponse,
-    UpdateSecondaryRequest,
+    SecondaryResponse, SecondaryTransferSummaryResponse, SingleSecondaryResponse,
+    TransferSummaryResponse, UpdateSecondaryRequest,
 };
 pub use token::{
     CreateTokenRequest, CreateTokenResponse, SingleTokenResponse, TokenFilter, TokenResponse,
 };
+pub use transfer::{TransferLogFilter, TransferLogResponse};
 pub use tsig::{CreateTsigKeyRequest, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse};
 pub use version::{
     DiffZoneVersionsResponse, GetZoneVersionResponse, RecordChange, RecordDiffEntryResponse,

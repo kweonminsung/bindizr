@@ -57,6 +57,7 @@ macro_rules! id_newtype {
     };
 }
 
+pub mod access_log;
 pub mod api_token;
 pub mod audit_log;
 pub mod change;

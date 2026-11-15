@@ -1,21 +1,22 @@
 //! The transfer log: each transfer, refusal, or failure a client was answered,
-//! kept across restarts and instances.
+//! kept across restarts and instances; reads require `log:read`.
 
-use std::cmp::Reverse;
 use std::net::IpAddr;
 
 use bindizr_core::config::SavedTransfers;
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::transfer::{
     TransferKind, TransferLog, TransferLogWithZone, TransferResult, TransferTransport,
 };
 use bindizr_core::model::zone::ZoneId;
-use bindizr_db::transfer_log::TransferLogFilter;
 use chrono::Utc;
 
-use crate::Context;
+use crate::authorization::Caller;
 use crate::error::ServiceError;
+use crate::types::{PaginatedResponse, TransferLogFilter, TransferLogResponse};
+use crate::{Context, pagination, secondary, zone};
 
 /// Save a transfer answered for `zone_id` up to `serial`. A failure to
 /// save is logged; the transfer already went out.
@@ -28,8 +29,8 @@ pub async fn save_ok(
     incremental: bool,
     serial: Serial,
 ) {
-    // `history.transfer.save = "unserved"` keeps refusals and failures alone.
-    if cx.config().history.transfer.save == SavedTransfers::Unserved {
+    // `transfer_log.save = "unserved"` keeps refusals and failures alone.
+    if cx.config().transfer_log.save == SavedTransfers::Unserved {
         return;
     }
 
@@ -141,34 +142,96 @@ async fn save_unserved(
     }
 }
 
-/// List the transfers `filter` selects among those answered to any of `client_ips`,
-/// newest first.
-pub(crate) async fn list_by_clients(
+/// List the transfer log rows `filter` selects, newest first. Count and page
+/// are plain statements; drift between the two is accepted.
+pub async fn list(
     cx: &Context,
-    client_ips: &[IpAddr],
+    caller: &Caller,
     filter: &TransferLogFilter,
-) -> Result<Vec<TransferLogWithZone>, ServiceError> {
-    let mut logs = Vec::new();
+) -> Result<PaginatedResponse<TransferLogResponse>, ServiceError> {
+    caller.authorize_action(Action::LogRead)?;
 
-    for client_ip in client_ips {
-        logs.extend(
-            bindizr_db::transfer_log::list_by_client_addr_and_filter_with_zone(
-                cx.db(),
-                &client_ip.to_string(),
-                filter,
-            )
-            .await?,
-        );
+    let filter = normalize_filter(cx, filter).await?;
+
+    let total = bindizr_db::transfer_log::count_by_filter(cx.db(), &filter).await?;
+    let logs = bindizr_db::transfer_log::list_by_filter_with_zone(cx.db(), &filter).await?;
+
+    Ok(pagination::build_paginated_response(
+        logs.iter().map(TransferLogResponse::from).collect(),
+        filter.limit,
+        filter.offset,
+        total,
+    ))
+}
+
+/// Parse the listing's zone, result and address, resolve its secondary to the
+/// addresses that key its rows, and bound its page. A secondary and an address
+/// together select the address only when the secondary resolves to it.
+async fn normalize_filter(
+    cx: &Context,
+    filter: &TransferLogFilter,
+) -> Result<bindizr_db::transfer_log::TransferLogFilter, ServiceError> {
+    let zone_name = filter
+        .zone_name
+        .as_deref()
+        .map(zone::normalize_name)
+        .transpose()?;
+    let result = filter
+        .result
+        .as_deref()
+        .map(str::trim)
+        .filter(|result| !result.is_empty())
+        .map(str::parse::<TransferResult>)
+        .transpose()
+        .map_err(ServiceError::invalid_input)?;
+    let address = filter
+        .address
+        .as_deref()
+        .map(str::trim)
+        .filter(|address| !address.is_empty())
+        .map(|address| {
+            address.parse::<IpAddr>().map_err(|_| {
+                ServiceError::invalid_input(format!("address '{address}' is not an IP address"))
+            })
+        })
+        .transpose()?;
+
+    if let (Some(since), Some(until)) = (filter.since, filter.until)
+        && since >= until
+    {
+        return Err(ServiceError::invalid_input("since must be before until"));
     }
 
-    // Each address gave its newest `limit`, so the newest of them all are here.
-    logs.sort_by_key(|log| Reverse(log.served_at));
+    pagination::validate_page_limit(filter.limit)?;
 
-    if let Some(limit) = filter.limit {
-        logs.truncate(limit as usize);
-    }
+    let secondary_ips = match filter.secondary_name.as_deref() {
+        Some(secondary_name) => {
+            let secondary = secondary::lookup_by_name(cx, secondary_name).await?;
+            Some(secondary::resolve_ips(cx, &secondary).await)
+        }
+        None => None,
+    };
+    let client_ips: Option<Vec<IpAddr>> = match (secondary_ips, address) {
+        (Some(secondary_ips), Some(address)) => Some(
+            secondary_ips
+                .into_iter()
+                .filter(|ip| *ip == address)
+                .collect(),
+        ),
+        (Some(secondary_ips), None) => Some(secondary_ips),
+        (None, Some(address)) => Some(vec![address]),
+        (None, None) => None,
+    };
 
-    Ok(logs)
+    Ok(bindizr_db::transfer_log::TransferLogFilter {
+        client_addrs: client_ips.map(|ips| ips.iter().map(IpAddr::to_string).collect()),
+        zone_name,
+        result,
+        since: filter.since,
+        until: filter.until,
+        limit: filter.limit,
+        offset: filter.offset,
+    })
 }
 
 /// List the latest transfer of each zone answered to each of `client_ips`.
@@ -197,16 +260,19 @@ pub(crate) async fn find_by_clients_and_zone_name(
     client_ips: &[IpAddr],
     zone_name: &ZoneName,
 ) -> Result<Option<TransferLogWithZone>, ServiceError> {
-    let filter = TransferLogFilter {
+    let filter = bindizr_db::transfer_log::TransferLogFilter {
+        client_addrs: Some(client_ips.iter().map(IpAddr::to_string).collect()),
         zone_name: Some(zone_name.clone()),
         limit: Some(1),
         ..Default::default()
     };
 
-    Ok(list_by_clients(cx, client_ips, &filter)
-        .await?
-        .into_iter()
-        .next())
+    Ok(
+        bindizr_db::transfer_log::list_by_filter_with_zone(cx.db(), &filter)
+            .await?
+            .into_iter()
+            .next(),
+    )
 }
 
 #[cfg(test)]

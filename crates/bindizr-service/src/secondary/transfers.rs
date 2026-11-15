@@ -1,68 +1,14 @@
-//! Read the transfer log rows matching a secondary's current addresses.
+//! Summarize the transfer log rows matching a secondary's current addresses.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 
-use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::secondary::Secondary;
 use bindizr_core::model::transfer::{TransferKind, TransferLogWithZone, TransferResult};
-use bindizr_db::transfer_log::TransferLogFilter;
 
-use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::types::{
-    SecondaryTransferFilter, SecondaryTransfersResponse, TransferResponse, TransferSummaryResponse,
-};
-use crate::{Context, dns_client, pagination, secondary, transfer, zone};
-
-/// List the transfers Bindizr answered `name`, newest first, with how each zone
-/// was last served.
-pub async fn list_transfers(
-    cx: &Context,
-    caller: &Caller,
-    name: &str,
-    filter: &SecondaryTransferFilter,
-) -> Result<SecondaryTransfersResponse, ServiceError> {
-    caller.authorize_action(Action::SecondaryRead)?;
-    let limit = filter.limit.unwrap_or(1000);
-    pagination::validate_page_limit(Some(limit))?;
-
-    if let (Some(since), Some(until)) = (filter.since, filter.until)
-        && since >= until
-    {
-        return Err(ServiceError::invalid_input("since must be before until"));
-    }
-
-    let secondary = secondary::lookup_by_name(cx, name).await?;
-
-    let zone_name = filter
-        .zone_name
-        .as_deref()
-        .map(zone::normalize_name)
-        .transpose()?;
-
-    // The summary counts every zone's last transfer, whatever the filter selects.
-    let client_ips = resolve_ips(cx, &secondary).await;
-    let latest = transfer::list_latest_by_clients(cx, &client_ips).await?;
-    let logs = transfer::list_by_clients(
-        cx,
-        &client_ips,
-        &TransferLogFilter {
-            zone_name,
-            since: filter.since,
-            until: filter.until,
-            limit: Some(limit),
-        },
-    )
-    .await?;
-
-    Ok(SecondaryTransfersResponse {
-        secondary_name: secondary.name,
-        address: secondary.address.to_string(),
-        summary: build_transfer_summary(&latest),
-        transfers: logs.iter().map(TransferResponse::from).collect(),
-    })
-}
+use crate::types::TransferSummaryResponse;
+use crate::{Context, dns_client, transfer};
 
 /// Summarize how Bindizr last served `secondary` each zone, for the check and doctor.
 pub(crate) async fn summarize_transfers(
@@ -108,7 +54,7 @@ fn build_transfer_summary(logs: &[TransferLogWithZone]) -> TransferSummaryRespon
 
 /// Resolve the addresses the secondary resolves to now, which key the transfer log
 /// rows; none when it does not resolve.
-async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
+pub(crate) async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
     let timeout = cx.config().dns.notify.timeout();
     match dns_client::resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs.iter().map(SocketAddr::ip).collect(),

@@ -1,8 +1,9 @@
-use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone};
+use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone, TransferResult};
 use chrono::{DateTime, Utc};
-use sqlx::{MySql, Pool};
+use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::error::DatabaseError;
+use crate::sql;
 use crate::transfer_log::TransferLogFilter;
 
 /// Append a transfer log row.
@@ -30,40 +31,112 @@ pub(crate) async fn create(pool: &Pool<MySql>, log: TransferLog) -> Result<(), D
     Ok(())
 }
 
-/// List the rows of a client address `filter` selects, newest first, with zone
-/// names.
-pub(crate) async fn list_by_client_addr_and_filter_with_zone(
+/// List the rows `filter` selects, newest first, with zone names.
+pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<MySql>,
-    client_addr: &str,
     filter: &TransferLogFilter,
 ) -> Result<Vec<TransferLogWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let logs = sqlx::query_as::<_, TransferLogWithZone>(
+    let client_addrs = filter.client_addrs.as_deref().unwrap_or_default();
+    // An empty address list selects nothing; `IN ()` is not valid SQL.
+    let client_addr_clause = match &filter.client_addrs {
+        Some(client_addrs) if client_addrs.is_empty() => "AND 1 = 0".to_string(),
+        Some(client_addrs) => format!(
+            "AND t.client_addr IN ({})",
+            sql::placeholders(client_addrs.len())
+        ),
+        None => String::new(),
+    };
+    let result = filter.result.map(TransferResult::as_str);
+
+    let mut query = sqlx::query_as::<_, TransferLogWithZone>(AssertSqlSafe(format!(
         r#"
         SELECT t.client_addr, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
         FROM transfer_log t
         INNER JOIN zones z ON z.id = t.zone_id
-        WHERE t.client_addr = ?
-          AND (? IS NULL OR z.name = ?)
+        WHERE (? IS NULL OR z.name = ?)
+          AND (? IS NULL OR t.result = ?)
           AND (? IS NULL OR t.served_at >= ?)
           AND (? IS NULL OR t.served_at < ?)
+          {client_addr_clause}
         ORDER BY t.id DESC
-        LIMIT ?
-        "#,
-    )
-    .bind(client_addr)
+        LIMIT ? OFFSET ?
+        "#
+    )))
     .bind(&filter.zone_name)
     .bind(&filter.zone_name)
+    .bind(result)
+    .bind(result)
     .bind(filter.since)
     .bind(filter.since)
     .bind(filter.until)
-    .bind(filter.until)
-    .bind(filter.limit.map_or(i64::MAX, i64::from))
-    .fetch_all(&mut *connection)
-    .await?;
+    .bind(filter.until);
+
+    for client_addr in client_addrs {
+        query = query.bind(client_addr);
+    }
+
+    let logs = query
+        .bind(filter.limit.map_or(i64::MAX, i64::from))
+        .bind(
+            filter
+                .offset
+                .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
+        )
+        .fetch_all(&mut *connection)
+        .await?;
 
     Ok(logs)
+}
+
+/// Count the rows `filter` selects, its paging aside.
+pub(crate) async fn count_by_filter(
+    pool: &Pool<MySql>,
+    filter: &TransferLogFilter,
+) -> Result<u64, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+
+    let client_addrs = filter.client_addrs.as_deref().unwrap_or_default();
+    // An empty address list selects nothing; `IN ()` is not valid SQL.
+    let client_addr_clause = match &filter.client_addrs {
+        Some(client_addrs) if client_addrs.is_empty() => "AND 1 = 0".to_string(),
+        Some(client_addrs) => format!(
+            "AND t.client_addr IN ({})",
+            sql::placeholders(client_addrs.len())
+        ),
+        None => String::new(),
+    };
+    let result = filter.result.map(TransferResult::as_str);
+
+    let mut query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
+        r#"
+        SELECT COUNT(*)
+        FROM transfer_log t
+        INNER JOIN zones z ON z.id = t.zone_id
+        WHERE (? IS NULL OR z.name = ?)
+          AND (? IS NULL OR t.result = ?)
+          AND (? IS NULL OR t.served_at >= ?)
+          AND (? IS NULL OR t.served_at < ?)
+          {client_addr_clause}
+        "#
+    )))
+    .bind(&filter.zone_name)
+    .bind(&filter.zone_name)
+    .bind(result)
+    .bind(result)
+    .bind(filter.since)
+    .bind(filter.since)
+    .bind(filter.until)
+    .bind(filter.until);
+
+    for client_addr in client_addrs {
+        query = query.bind(client_addr);
+    }
+
+    let count = query.fetch_one(&mut *connection).await?;
+
+    Ok(count as u64)
 }
 
 /// List the newest row of each zone a client address asked for, with zone

@@ -2,12 +2,13 @@ use std::net::Ipv4Addr;
 
 use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
-use bindizr_db::Db;
+use bindizr_db::{Db, transfer_log};
 use chrono::{DateTime, Duration};
 use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::authorization::Caller;
+use crate::error::ErrorCode;
 use crate::types::CreateZoneRequest;
 use crate::zone;
 
@@ -18,7 +19,7 @@ const CLIENT: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
 async fn context(save: SavedTransfers, zone_names: &[&str]) -> (Context, Vec<ZoneId>) {
     let mut config: Config = serde_json::from_str("{}").unwrap();
     config.database.sqlite.file_path = "sqlite::memory:".to_string();
-    config.history.transfer.save = save;
+    config.transfer_log.save = save;
 
     let db = Db::connect(&config.database).await.unwrap();
     let cx = Context::new(
@@ -27,6 +28,7 @@ async fn context(save: SavedTransfers, zone_names: &[&str]) -> (Context, Vec<Zon
         db,
         Metrics::new().unwrap(),
         mpsc::unbounded_channel().0,
+        mpsc::channel(1).0,
         watch::channel(0).0,
     );
     let mut zone_ids = Vec::new();
@@ -82,16 +84,25 @@ async fn save_at(cx: &Context, now: DateTime<Utc>, transfers: &[(ZoneId, i64)]) 
     }
 }
 
-/// List the zone and age in days of each transfer answered to the fixture client, newest first.
+/// List every row `filter` selects, newest first.
+async fn list_logs(
+    cx: &Context,
+    filter: &transfer_log::TransferLogFilter,
+) -> Vec<TransferLogWithZone> {
+    bindizr_db::transfer_log::list_by_filter_with_zone(cx.db(), filter)
+        .await
+        .unwrap()
+}
+
+/// List the zone and age in days of each transfer `filter` selects, newest first.
 /// Ages round to the nearest day, since a backend may store whole seconds.
 async fn list_ages(
     cx: &Context,
     now: DateTime<Utc>,
-    filter: &TransferLogFilter,
+    filter: &transfer_log::TransferLogFilter,
 ) -> Vec<(String, i64)> {
-    list_by_clients(cx, &[CLIENT], filter)
+    list_logs(cx, filter)
         .await
-        .unwrap()
         .iter()
         .map(|log| {
             let age = now - log.served_at + Duration::hours(12);
@@ -118,9 +129,7 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
     save_ok(&cx, CLIENT, zone_ids[0], axfr, tcp, false, Serial::from(7)).await;
     save_failed(&cx, CLIENT, "example.test", axfr, tcp, "closed".to_string()).await;
 
-    let logs = list_by_clients(&cx, &[CLIENT], &TransferLogFilter::default())
-        .await
-        .unwrap();
+    let logs = list_logs(&cx, &transfer_log::TransferLogFilter::default()).await;
     let results: Vec<_> = logs.iter().map(|log| log.result).collect();
 
     assert_eq!(
@@ -145,7 +154,7 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
     assert_eq!(found.map(|log| log.result), Some(TransferResult::Failed));
 }
 
-/// Verify that `history.transfer.save = "unserved"` saves refusals and failures alone.
+/// Verify that `transfer_log.save = "unserved"` saves refusals and failures alone.
 #[tokio::test]
 async fn save_ok_leaves_no_row_when_only_unserved_transfers_are_saved() {
     let (cx, zone_ids) = context(SavedTransfers::Unserved, &["example.test"]).await;
@@ -162,17 +171,15 @@ async fn save_ok_leaves_no_row_when_only_unserved_transfers_are_saved() {
     )
     .await;
 
-    let logs = list_by_clients(&cx, &[CLIENT], &TransferLogFilter::default())
-        .await
-        .unwrap();
+    let logs = list_logs(&cx, &transfer_log::TransferLogFilter::default()).await;
 
     assert_eq!(logs.len(), 1, "{logs:?}");
     assert_eq!(logs[0].result, TransferResult::Refused);
 }
 
-/// Verify that a listing applies its zone, its time window, and its limit.
+/// Verify that a listing applies its zone, its time window, and its page.
 #[tokio::test]
-async fn list_by_clients_applies_zone_time_window_and_limit() {
+async fn list_by_filter_with_zone_applies_zone_time_window_and_page() {
     let (cx, zone_ids) = context(SavedTransfers::All, &["a.test", "b.test"]).await;
     let now = Utc::now();
     let half_day = Duration::hours(12);
@@ -186,18 +193,18 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
 
     for (filter, expected) in [
         (
-            TransferLogFilter::default(),
+            transfer_log::TransferLogFilter::default(),
             vec![("a.test", 1), ("b.test", 2), ("a.test", 3)],
         ),
         (
-            TransferLogFilter {
+            transfer_log::TransferLogFilter {
                 zone_name: Some(ZoneName::parse("a.test").unwrap()),
                 ..Default::default()
             },
             vec![("a.test", 1), ("a.test", 3)],
         ),
         (
-            TransferLogFilter {
+            transfer_log::TransferLogFilter {
                 since: Some(now - Duration::days(2) - half_day),
                 until: Some(now - Duration::days(1) - half_day),
                 ..Default::default()
@@ -205,11 +212,33 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
             vec![("b.test", 2)],
         ),
         (
-            TransferLogFilter {
+            transfer_log::TransferLogFilter {
                 limit: Some(2),
                 ..Default::default()
             },
             vec![("a.test", 1), ("b.test", 2)],
+        ),
+        (
+            transfer_log::TransferLogFilter {
+                limit: Some(1),
+                offset: Some(1),
+                ..Default::default()
+            },
+            vec![("b.test", 2)],
+        ),
+        (
+            transfer_log::TransferLogFilter {
+                client_addrs: Some(vec!["192.0.2.99".to_string()]),
+                ..Default::default()
+            },
+            Vec::new(),
+        ),
+        (
+            transfer_log::TransferLogFilter {
+                client_addrs: Some(Vec::new()),
+                ..Default::default()
+            },
+            Vec::new(),
         ),
     ] {
         let expected: Vec<_> = expected
@@ -253,7 +282,68 @@ async fn prune_older_than_keeps_the_newest_row_of_each_client_and_zone() {
 
     assert_eq!(pruned, 3);
     assert_eq!(
-        list_ages(&cx, now, &TransferLogFilter::default()).await,
+        list_ages(&cx, now, &transfer_log::TransferLogFilter::default()).await,
         [("a.test".to_string(), 1), ("b.test".to_string(), 20)]
     );
+}
+
+/// Verify that `list` reads the address and result, and refuses what it cannot parse or find.
+#[tokio::test]
+async fn list_selects_by_address_and_result_and_rejects_bad_filters() {
+    let (cx, zone_ids) = context(SavedTransfers::All, &["example.test"]).await;
+    let (axfr, tcp) = (TransferKind::Axfr, TransferTransport::Tcp);
+
+    save_ok(&cx, CLIENT, zone_ids[0], axfr, tcp, false, Serial::from(7)).await;
+    save_refused(
+        &cx,
+        CLIENT,
+        "example.test",
+        axfr,
+        tcp,
+        "refused".to_string(),
+    )
+    .await;
+
+    let refused = list(
+        &cx,
+        &Caller::socket(),
+        &TransferLogFilter {
+            address: Some(CLIENT.to_string()),
+            result: Some("Refused".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(refused.pagination.total, 1, "{refused:?}");
+    assert_eq!(refused.items[0].result, TransferResult::Refused);
+
+    for (filter, code) in [
+        (
+            TransferLogFilter {
+                result: Some("served".to_string()),
+                ..Default::default()
+            },
+            ErrorCode::InvalidInput,
+        ),
+        (
+            TransferLogFilter {
+                address: Some("ns2.example.net".to_string()),
+                ..Default::default()
+            },
+            ErrorCode::InvalidInput,
+        ),
+        (
+            TransferLogFilter {
+                secondary_name: Some("ns9".to_string()),
+                ..Default::default()
+            },
+            ErrorCode::SecondaryNotFound,
+        ),
+    ] {
+        let error = list(&cx, &Caller::socket(), &filter).await.unwrap_err();
+
+        assert_eq!(error.code(), code, "{filter:?}");
+    }
 }

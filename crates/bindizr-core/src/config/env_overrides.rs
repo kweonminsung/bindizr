@@ -165,19 +165,23 @@ impl Config {
                 parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_HISTORY_ZONE_MAX_DAYS") {
-            self.history.zone.max_days = parse_env_value("BINDIZR_HISTORY_ZONE_MAX_DAYS", &value)?;
+        if let Some(value) = get_env("BINDIZR_HISTORY_MAX_DAYS") {
+            self.history.max_days = parse_env_value("BINDIZR_HISTORY_MAX_DAYS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_HISTORY_AUDIT_MAX_DAYS") {
-            self.history.audit.max_days =
-                parse_env_value("BINDIZR_HISTORY_AUDIT_MAX_DAYS", &value)?;
+        if let Some(value) = get_env("BINDIZR_AUDIT_LOG_MAX_DAYS") {
+            self.audit_log.max_days = parse_env_value("BINDIZR_AUDIT_LOG_MAX_DAYS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_HISTORY_TRANSFER_SAVE") {
-            self.history.transfer.save = parse_env_value("BINDIZR_HISTORY_TRANSFER_SAVE", &value)?;
+        if let Some(value) = get_env("BINDIZR_ACCESS_LOG_SAVE") {
+            self.access_log.save = parse_env_value("BINDIZR_ACCESS_LOG_SAVE", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_HISTORY_TRANSFER_MAX_DAYS") {
-            self.history.transfer.max_days =
-                parse_env_value("BINDIZR_HISTORY_TRANSFER_MAX_DAYS", &value)?;
+        if let Some(value) = get_env("BINDIZR_ACCESS_LOG_MAX_DAYS") {
+            self.access_log.max_days = parse_env_value("BINDIZR_ACCESS_LOG_MAX_DAYS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_TRANSFER_LOG_SAVE") {
+            self.transfer_log.save = parse_env_value("BINDIZR_TRANSFER_LOG_SAVE", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_TRANSFER_LOG_MAX_DAYS") {
+            self.transfer_log.max_days = parse_env_value("BINDIZR_TRANSFER_LOG_MAX_DAYS", &value)?;
         }
 
         if let Some(value) = get_env("BINDIZR_LOGGING_LEVEL") {

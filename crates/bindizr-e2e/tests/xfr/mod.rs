@@ -892,19 +892,19 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
     }
 }
 
-/// Poll transfer counts until `field` reaches `expected`, returning the last summary on timeout.
-/// Saving follows the transfer response, so an immediate read may not see the new row yet.
-async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) -> Value {
+/// Poll `/logs/transfer?{query}` until it selects `expected` rows, returning the last body on
+/// timeout. Saving follows the transfer response, so an immediate read may not see the new row yet.
+async fn wait_for_transfer_log(app: &TestApp, query: &str, expected: u64) -> Value {
     let deadline = Instant::now() + Duration::from_secs(5);
 
     loop {
         let (status, body) = app
-            .send_request(Method::GET, "/secondaries/loopback/transfers", None)
+            .send_request(Method::GET, &format!("/logs/transfer?{query}"), None)
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
 
-        if body["summary"][field] == expected || Instant::now() > deadline {
+        if body["pagination"]["total"] == expected || Instant::now() > deadline {
             return body;
         }
 
@@ -912,128 +912,85 @@ async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) ->
     }
 }
 
-/// Verify that the transfer log and its per-zone summary are returned, including refusals
-/// before secondary registration.
+/// Verify that the transfer log lists served and refused transfers by address and by
+/// secondary, a refusal to an address no secondary had included.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn transfer_history_returns_served_secondary_transfers() {
+async fn transfer_log_lists_transfers_by_address_and_secondary() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Refused while unregistered; rows key by address, so registering it
-    // afterwards reveals the refusal.
+    // Refused while no secondary has the address; the log shows it by address.
     let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
+    let body = wait_for_transfer_log(&app, "address=127.0.0.1", 1).await;
+
+    assert_eq!(body["items"][0]["zone_name"], zone_name, "{body}");
+    assert_eq!(body["items"][0]["kind"], "axfr");
+    assert_eq!(body["items"][0]["result"], "refused");
+    assert!(body["items"][0]["serial"].is_null(), "{body}");
+    assert!(!body["items"][0]["error"].is_null(), "{body}");
+
     app.create_secondary("loopback", "127.0.0.1").await;
-
-    let body = wait_for_transfer_summary(&app, "refused", 1).await;
-
-    assert_eq!(body["summary"]["zones"], 1, "{body}");
-    assert_eq!(body["summary"]["refused"], 1, "{body}");
-    assert_eq!(body["transfers"][0]["zone_name"], zone_name);
-    assert_eq!(body["transfers"][0]["kind"], "axfr");
-    assert_eq!(body["transfers"][0]["result"], "refused");
-    assert!(body["transfers"][0]["serial"].is_null(), "{body}");
-    assert!(!body["transfers"][0]["error"].is_null(), "{body}");
 
     let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
 
     assert!(outcome.records() >= 3);
 
-    let body = wait_for_transfer_summary(&app, "axfr", 1).await;
+    // Rows key by address, so the secondary registered afterwards reads both.
+    let body = wait_for_transfer_log(&app, "secondary_name=loopback", 2).await;
 
-    assert_eq!(body["summary"]["zones"], 1, "{body}");
-    assert_eq!(body["summary"]["axfr"], 1, "{body}");
-    assert_eq!(body["summary"]["refused"], 0, "{body}");
-    assert_eq!(body["summary"]["failed"], 0, "{body}");
-    assert_eq!(body["transfers"][0]["kind"], "axfr");
-    assert_eq!(body["transfers"][0]["result"], "ok");
-    assert_eq!(body["transfers"][0]["transport"], "tcp");
-    assert_eq!(body["transfers"][0]["incremental"], false);
-    assert_eq!(body["transfers"][0]["serial"], zone["serial"], "{body}");
-    assert!(body["transfers"][0]["error"].is_null(), "{body}");
-    assert_eq!(body["transfers"][0]["address"], "127.0.0.1");
+    assert_eq!(body["items"][0]["kind"], "axfr", "{body}");
+    assert_eq!(body["items"][0]["result"], "ok");
+    assert_eq!(body["items"][0]["transport"], "tcp");
+    assert_eq!(body["items"][0]["incremental"], false);
+    assert_eq!(body["items"][0]["serial"], zone["serial"], "{body}");
+    assert!(body["items"][0]["error"].is_null(), "{body}");
+    assert_eq!(body["items"][0]["address"], "127.0.0.1");
+    assert_eq!(body["items"][1]["result"], "refused", "{body}");
 
-    // The log keeps the refusal beneath the transfer that followed it.
-    assert_eq!(body["transfers"][1]["result"], "refused", "{body}");
-    assert_eq!(
-        body["transfers"].as_array().map(Vec::len),
-        Some(2),
-        "{body}"
-    );
+    for (query, expected) in [
+        ("result=refused".to_string(), 1),
+        ("until=2000-01-01T00:00:00Z".to_string(), 0),
+        ("zone_name=other.example".to_string(), 0),
+        // The filter is a zone name, so the absolute spelling selects the same rows.
+        (format!("zone_name={zone_name}."), 2),
+        ("address=192.0.2.1".to_string(), 0),
+        ("secondary_name=loopback&address=192.0.2.1".to_string(), 0),
+    ] {
+        let (status, body) = app
+            .send_request(Method::GET, &format!("/logs/transfer?{query}"), None)
+            .await;
 
-    // A time window past both leaves the summary and empties the list, and
-    // one that ends before it starts is refused.
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            "/secondaries/loopback/transfers?until=2000-01-01T00:00:00Z",
-            None,
-        )
-        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body["pagination"]["total"], expected, "{query}: {body}");
+    }
 
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["summary"]["axfr"], 1, "{body}");
-    assert_eq!(
-        body["transfers"].as_array().map(Vec::len),
-        Some(0),
-        "{body}"
-    );
+    for (query, status, code) in [
+        (
+            "since=2026-01-02T00:00:00Z&until=2026-01-01T00:00:00Z",
+            StatusCode::BAD_REQUEST,
+            "INVALID_INPUT",
+        ),
+        ("zone_name=*", StatusCode::BAD_REQUEST, "INVALID_ZONE_FIELD"),
+        ("result=served", StatusCode::BAD_REQUEST, "INVALID_INPUT"),
+        ("address=loopback", StatusCode::BAD_REQUEST, "INVALID_INPUT"),
+        (
+            "secondary_name=missing",
+            StatusCode::NOT_FOUND,
+            "SECONDARY_NOT_FOUND",
+        ),
+    ] {
+        let (actual, body) = app
+            .send_request(Method::GET, &format!("/logs/transfer?{query}"), None)
+            .await;
 
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            "/secondaries/loopback/transfers?since=2026-01-02T00:00:00Z&until=2026-01-01T00:00:00Z",
-            None,
-        )
-        .await;
-
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert_eq!(body["code"], "INVALID_INPUT", "{body}");
-
-    // A zone filter for another zone leaves the summary and empties the list.
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            "/secondaries/loopback/transfers?zone_name=other.example",
-            None,
-        )
-        .await;
-
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["summary"]["zones"], 1, "{body}");
-    assert_eq!(
-        body["transfers"].as_array().map(Vec::len),
-        Some(0),
-        "{body}"
-    );
-
-    // The filter is a zone name: the absolute spelling selects the same
-    // rows, and one that is no name is refused.
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/secondaries/loopback/transfers?zone_name={zone_name}."),
-            None,
-        )
-        .await;
-
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["transfers"][0]["zone_name"], zone_name, "{body}");
-
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            "/secondaries/loopback/transfers?zone_name=*",
-            None,
-        )
-        .await;
-
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert_eq!(body["code"], "INVALID_ZONE_FIELD", "{body}");
+        assert_eq!(actual, status, "{query}: {body}");
+        assert_eq!(body["code"], code, "{query}: {body}");
+    }
 
     // The zone's status carries the same transfer beside the probe, which
     // finds nothing listening on the registered address.
@@ -1052,16 +1009,16 @@ async fn transfer_history_returns_served_secondary_transfers() {
     );
 
     let listed = app
-        .run_cli_success(&["secondary", "transfers", "loopback"], None)
+        .run_cli_success(&["log", "transfer", "--secondary", "loopback"], None)
         .await;
 
     assert!(
-        listed.contains(zone_name) && listed.contains("AXFR") && listed.contains("1 zones:"),
+        listed.contains(zone_name) && listed.contains("AXFR") && listed.contains("refused"),
         "{listed}"
     );
 
     // The check fails, since nothing answers on the registered address, but
-    // still reports the transfers.
+    // still reports how each zone was last served.
     let checked = app.run_cli(&["secondary", "check", "loopback"], None).await;
     let stdout = String::from_utf8_lossy(&checked.stdout);
 

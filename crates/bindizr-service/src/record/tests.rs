@@ -25,6 +25,7 @@ async fn context() -> Context {
         db,
         Metrics::new().unwrap(),
         mpsc::unbounded_channel().0,
+        mpsc::channel(1).0,
         watch::channel(0).0,
     )
 }

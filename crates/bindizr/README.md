@@ -17,7 +17,7 @@ there.
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 - **nsupdate** — RFC 2136 updates with TSIG-signed requests and managed keys.
 - **Role-Based Access Control** — API tokens and TSIG keys authenticate into roles whose grants set the zones, actions, record names, and record types each may touch.
-- **Audit Log** — every change to a token, role, grant, TSIG key, secondary, or policy, and every zone deletion, is logged with who made it and when; a zone's own changes are its versions.
+- **Logs** — every management change (audit), API request and nsupdate (access), and zone transfer (transfer) is logged with who made it, when, and how it ended; a zone's own changes are its versions.
 - **DNSSEC** — named signing policies, automatic signing and re-signing, ZSK rollovers the scheduler starts and completes on a policy's key lifetime, operator-started CSK/KSK rollovers that complete once the parent serves the new DS, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in the zones and subtrees its token's role is granted, through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
@@ -102,17 +102,22 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # expire = 3600000              # SOA expire
 # minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
-[history.zone]                # Zone versions: diff and rollback, and incremental updates to secondaries
-# max_days = 365              # Days kept; older entries are pruned by the scheduler pass (0 = forever)
+[history]                     # Zone versions: diff and rollback, and incremental updates to secondaries
+# max_days = 365              # Days kept; older versions are pruned by the scheduler pass (0 = forever)
 
-[history.audit]               # Audit log: who changed a token, role, grant, key, secondary, or policy, or deleted a zone
+# The logs read with `bindizr log <subject>` and GET /logs/<subject>; [logging] below is Bindizr's own output
+[audit_log]                   # Who changed a token, role, grant, key, secondary, or policy, or deleted a zone
 # max_days = 365              # Days kept (0 = forever)
 
-[history.transfer]            # Transfer log: the zone transfers each client was answered
+[access_log]                  # The API requests and nsupdates answered, denied, or failed
+# save = "all"                # all, or denied for 401/403, TSIG rejections and REFUSED alone
+# max_days = 30               # Days kept (0 = forever)
+
+[transfer_log]                # The zone transfers each client was answered
 # save = "all"                # all, or unserved for refusals and failures alone
 # max_days = 90               # Days kept (0 = forever); each client's last transfer of a zone stays
 
-[logging]
+[logging]                     # Bindizr's own process log, not the logs above
 # level = "info"                # error, warn, info, debug, trace
 # format = "text"             # text, or json for one object per line
 ```
@@ -153,9 +158,9 @@ This workspace is split into several crates:
   (record types, wire format, DNSSEC signing, TSIG, zone files).
 - `bindizr-db`: database access over MySQL, PostgreSQL, and SQLite, and the schema.
 - `bindizr-service`: business logic and authorization (zones, records, roles, tokens
-  and TSIG keys, secondaries, the audit log, DNSSEC, notifications), RFC 2136 apply,
-  the shared `Context`, and the outbound DNS calls (NOTIFY, SOA and parent-DS probes,
-  inbound AXFR).
+  and TSIG keys, secondaries, the audit, access and transfer logs, DNSSEC,
+  notifications), RFC 2136 apply, the shared `Context`, and the outbound DNS calls
+  (NOTIFY, SOA and parent-DS probes, inbound AXFR).
 - `bindizr-external-dns`: the ExternalDNS webhook provider adapter, shipped as a
   second binary.
 - `bindizr-e2e`: API, CLI, and DNS end-to-end tests; not published.

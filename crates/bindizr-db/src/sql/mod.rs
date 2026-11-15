@@ -17,6 +17,12 @@ pub(crate) fn refresh_bound(cutoff: DateTime<Utc>, max_refresh_days: i32) -> Dat
         .unwrap_or(DateTime::<Utc>::MAX_UTC)
 }
 
+/// Return `count` comma-separated `?` placeholders, for an `IN` list on the
+/// backends whose placeholders are positional.
+pub(crate) fn placeholders(count: usize) -> String {
+    vec!["?"; count].join(", ")
+}
+
 /// Return the owner name the apex is stored under, as an SQL literal.
 pub(crate) fn apex_owner_sql() -> String {
     format!("'{}'", OwnerName::apex().to_stored())

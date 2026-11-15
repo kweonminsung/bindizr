@@ -1,11 +1,11 @@
 //! HTTP API server: routing, middleware, and the zone/record/notify endpoints.
 
-mod audit;
 mod dnssec;
 mod dnssec_policy;
 mod error;
 mod external_dns;
 mod health;
+mod logs;
 mod metrics;
 mod middleware;
 mod notify;
@@ -131,7 +131,10 @@ pub(crate) async fn start(
         let stop = shutdown.waiter();
 
         return Ok(tokio::spawn(async move {
-            if let Err(error) = axum::serve(listener, router::routes(cx))
+            // The access log reads each request's peer from its connect info.
+            let service = router::routes(cx).into_make_service_with_connect_info::<SocketAddr>();
+
+            if let Err(error) = axum::serve(listener, service)
                 .with_graceful_shutdown(stop)
                 .await
             {
@@ -164,7 +167,7 @@ pub(crate) async fn start(
     Ok(tokio::spawn(async move {
         if let Err(error) = server
             .handle(handle)
-            .serve(router::routes(cx).into_make_service())
+            .serve(router::routes(cx).into_make_service_with_connect_info::<SocketAddr>())
             .await
         {
             log::error!("API server error: {error:?}");

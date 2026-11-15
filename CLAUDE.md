@@ -260,7 +260,7 @@ than returning anything.
   or `Zone(ZoneId)`. `Action` is a closed enum spelled `<resource>:<action>`:
   `zone:read|create|update|delete|transfer`, `record:read|create|update|delete`,
   `dnssec:read|manage`, `secondary:read|manage`, `access:manage`,
-  `audit:read`. The name
+  `log:read`. The name
   pattern and type list (the `grant_pattern` grammar: `*`, `@`, `*.sub`, an
   exact relative name; `*` or comma-separated types) constrain `record:*`
   actions only. A role's rights are the union of its grants: an operation is
@@ -272,7 +272,7 @@ than returning anything.
   repeats its name and type match for paging and is held to it by test.
 - **Objects no zone owns need an `All` grant**: `zone:create` (a rename
   too, since a new name is one), `secondary:*`,
-  DNSSEC policies under `dnssec:manage`, `audit:read`, and `access:manage`,
+  DNSSEC policies under `dnssec:manage`, `log:read`, and `access:manage`,
   which administers tokens, TSIG keys and roles — and so is equivalent to
   admin, since its holder can grant itself anything. The built-in `admin` role (every
   action, `All`) is ensured at startup and can be neither changed nor deleted;
@@ -356,8 +356,8 @@ and before commit: a change that rolled back leaves no row and a committed
 one always has one. The entry names the entity kind and name (a grant's is
 its role's), the operation, and the `ChangeSource` and `ChangeActor` a
 version carries. Reads, refused requests, and startup setup (the built-in
-`admin` role) leave none. `audit:read`, an all-zones action, lists the log;
-`history.audit.max_days` bounds it, as [Logs and history](#logs-and-history)
+`admin` role) leave none. `log:read`, an all-zones action, lists the log;
+`audit_log.max_days` bounds it, as [Logs and history](#logs-and-history)
 describes.
 
 ### Logs and history
@@ -366,24 +366,35 @@ A log holds rows that only say what happened: nothing decides on them. Its
 table is `<subject>_log`, singular where entity tables are plural, and its row
 type and db module carry that name (`audit_log`, `AuditLog`;
 `transfer_log`, `TransferLog`); the service module keeps the subject (`audit`,
-`transfer`). The audit log holds management changes; the transfer log holds
-every transfer Bindizr answered, refused, or failed, by client address and
-zone. `zone_journal` and `zone_versions` are not logs: IXFR, diff, and rollback
-are served from them.
+`access`, `transfer`). The audit log holds management changes; the access log
+every management API request and nsupdate answered, by the front end, client
+address and verified credential; the transfer log every transfer Bindizr
+answered, refused, or failed, by client address and zone. `zone_journal` and
+`zone_versions` are not logs: IXFR, diff, and rollback are served from them.
+
+Every log is read the same way: `GET /logs/<subject>`, `bindizr log
+<subject>`, and a paged `list` in its service module under `log:read`, an
+all-zones action. A log never stores what a request carried beyond what it
+named: no query string, body, token or secret.
 
 A log is append-only. `save_*` writes a row once the outcome is known and
-nothing updates it: the audit row inside its change's transaction, every other
-log on the pool, where a failure to save is logged and leaves the answer
-already given as it was.
+nothing updates it: the audit row inside its change's transaction, the
+transfer log on the pool, and the access log through a bounded queue to one
+writer task, so no request waits on its row; a full queue drops the row and
+counts it. A failure to save is logged and leaves the answer already given
+as it was.
 
-Zone history and each log have a `[history.<subject>]` table. `max_days`
-bounds it, pruned by the scheduler pass, and `0` keeps it forever. `save`
-narrows what a log writes, where a narrower set means something:
-`history.transfer.save = "unserved"` keeps refusals and failures alone, so
-zone status and a secondary's summary then show no successful transfer. The
-audit log has no `save`, since a committed change always has its row. The
-transfer log's prune keeps the newest row of each client address and zone
-whatever its age: that row is the last transfer those reports read.
+Zone history has a `[history]` table and each log a `[<subject>_log]` one,
+named as its table is (`[access_log]` for `access_log`), so no log setting
+reads like `[logging]`, the process's own output. `max_days` bounds each, pruned by the scheduler
+pass, and `0` keeps it forever. `save` narrows what a log writes, where a
+narrower set means something: `transfer_log.save = "unserved"` keeps
+refusals and failures alone, so zone status and a secondary's summary then
+show no successful transfer, and `access_log.save = "denied"` keeps 401,
+403, TSIG rejections and REFUSED alone. The audit log has no `save`, since a
+committed change always has its row. The transfer log's prune keeps the
+newest row of each client address and zone whatever its age: that row is the
+last transfer those reports read.
 
 ### Transactions and locking
 
@@ -512,8 +523,8 @@ Listing services validate an explicit page limit before querying. An omitted
 limit remains unbounded; HTTP supplies its default of 50, while the daemon
 socket supplies none. An explicit limit is 1 through 1000. Collection paging and
 response metadata only apply the validated window; they do not validate input or
-choose another default. A documented use-case default, such as the secondary
-transfer log's 1000, is resolved by that service entry point.
+choose another default. A documented use-case default is resolved by that
+service entry point.
 
 ### Names and record values
 

@@ -2,15 +2,14 @@ use bindizr_core::dns::Serial;
 use bindizr_core::outln;
 use bindizr_service::types::{
     CheckSecondaryResponse, CreateSecondaryRequest, MessageResponse, PageRequest,
-    PaginatedResponse, SecondaryResponse, SecondaryStatus, SecondaryTransferFilter,
-    SecondaryTransfersResponse, SingleSecondaryResponse, UpdateSecondaryRequest,
+    PaginatedResponse, SecondaryResponse, SecondaryStatus, SingleSecondaryResponse,
+    UpdateSecondaryRequest,
 };
-use chrono::{DateTime, Utc};
 use clap::Subcommand;
 
 use crate::cli::error::CliError;
-use crate::cli::output::{OutputFormat, RenderOutputError, SecondaryRow, TransferRow};
-use crate::cli::{output, time};
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, RenderOutputError, SecondaryRow};
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
@@ -80,28 +79,6 @@ pub(crate) enum SecondaryCommand {
         /// Name of the secondary
         #[arg(value_name = "NAME")]
         name: String,
-        /// Output format
-        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    /// The transfers Bindizr served a secondary, newest first: AXFR, IXFR as a delta or the whole zone, refused, or failed
-    Transfers {
-        /// Name of the secondary
-        #[arg(value_name = "NAME")]
-        name: String,
-        /// At most this many transfers (1000 when omitted)
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Only the transfers of this zone
-        #[arg(long, value_name = "ZONE")]
-        zone: Option<String>,
-        /// Only transfers at or after this time: a span ago (7d, 12h, 30m), a
-        /// UTC date (2026-10-01), or RFC 3339
-        #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
-        since: Option<DateTime<Utc>>,
-        /// Only transfers before this time, in the same forms
-        #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
-        until: Option<DateTime<Utc>>,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -201,36 +178,6 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 return Err(CliError::request(format!(
                     "secondary '{name}' failed the check"
                 )));
-            }
-        }
-        SecondaryCommand::Transfers {
-            name,
-            limit,
-            zone,
-            since,
-            until,
-            output,
-        } => {
-            let response = client::send_command::<SecondaryTransfersResponse>(
-                DaemonCommand::ListSecondaryTransfers {
-                    name,
-                    filter: SecondaryTransferFilter {
-                        limit,
-                        zone_name: zone,
-                        since,
-                        until,
-                    },
-                },
-            )
-            .await?;
-            log::debug!("Secondary transfers result: {response:?}");
-            let transfers = &response.data;
-
-            if output == OutputFormat::Table {
-                output::print_table(transfers.transfers.iter().map(TransferRow::from).collect());
-                outln!("{}", output::display_transfer_summary(&transfers.summary));
-            } else {
-                output::print_payload(transfers, output)?;
             }
         }
         SecondaryCommand::Delete { name, output } => {

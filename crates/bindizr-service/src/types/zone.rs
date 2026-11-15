@@ -10,7 +10,7 @@ use utoipa::openapi::RefOr;
 use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, Schema, SchemaFormat, SchemaType, Type};
 use utoipa::{IntoParams, ToSchema};
 
-use crate::types::secondary::TransferResponse;
+use crate::types::transfer::TransferLogResponse;
 
 /// Which records a zone reads back as: the user records alone, or with the
 /// derived DNSSEC records bindizr generates.
@@ -381,7 +381,7 @@ pub struct SecondaryStatusResponse {
     pub visible_serial: Option<Serial>,
     pub error: Option<String>,
     /// The latest transfer of this zone Bindizr served the address.
-    pub last_transfer: Option<TransferResponse>,
+    pub last_transfer: Option<TransferLogResponse>,
 }
 
 impl SecondaryStatusResponse {

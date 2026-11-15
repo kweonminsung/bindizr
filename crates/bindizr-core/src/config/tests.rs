@@ -142,10 +142,12 @@ fn from_toml_defaults_missing_optional_fields() {
     assert!(parsed.dns.nsupdate.tsig_required);
     assert_eq!(parsed.dns.catalog_zone_name.as_str(), "catalog.bindizr");
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
-    assert_eq!(parsed.history.zone.max_days, 365);
-    assert_eq!(parsed.history.audit.max_days, 365);
-    assert_eq!(parsed.history.transfer.save, SavedTransfers::All);
-    assert_eq!(parsed.history.transfer.max_days, 90);
+    assert_eq!(parsed.history.max_days, 365);
+    assert_eq!(parsed.audit_log.max_days, 365);
+    assert_eq!(parsed.access_log.save, SavedRequests::All);
+    assert_eq!(parsed.access_log.max_days, 30);
+    assert_eq!(parsed.transfer_log.save, SavedTransfers::All);
+    assert_eq!(parsed.transfer_log.max_days, 90);
     assert_eq!(parsed.logging.format, LogFormat::Text);
 }
 
@@ -155,7 +157,7 @@ fn from_toml_defaults_listeners_backend_and_logging() {
     let minimal = "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n";
     let omitted = Config::from_toml(minimal, |_| None).unwrap();
     let empty_sections = Config::from_toml(
-        &format!("[api]\n[database]\n[dns]\n[history]\n[logging]\n{minimal}"),
+        &format!("[api]\n[database]\n[dns]\n[history]\n[audit_log]\n[access_log]\n[transfer_log]\n[logging]\n{minimal}"),
         |_| None,
     )
     .unwrap();
@@ -347,10 +349,12 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_TLS_KEY_FILE" => Some("/tls/xot.key".to_string()),
             "BINDIZR_DNS_SCHEDULER_INTERVAL_SECS" => Some("0".to_string()),
             "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
-            "BINDIZR_HISTORY_ZONE_MAX_DAYS" => Some("0".to_string()),
-            "BINDIZR_HISTORY_AUDIT_MAX_DAYS" => Some("30".to_string()),
-            "BINDIZR_HISTORY_TRANSFER_SAVE" => Some("unserved".to_string()),
-            "BINDIZR_HISTORY_TRANSFER_MAX_DAYS" => Some("7".to_string()),
+            "BINDIZR_HISTORY_MAX_DAYS" => Some("0".to_string()),
+            "BINDIZR_AUDIT_LOG_MAX_DAYS" => Some("30".to_string()),
+            "BINDIZR_ACCESS_LOG_SAVE" => Some("denied".to_string()),
+            "BINDIZR_ACCESS_LOG_MAX_DAYS" => Some("3".to_string()),
+            "BINDIZR_TRANSFER_LOG_SAVE" => Some("unserved".to_string()),
+            "BINDIZR_TRANSFER_LOG_MAX_DAYS" => Some("7".to_string()),
             "BINDIZR_LOGGING_LEVEL" => Some("info".to_string()),
             "BINDIZR_LOGGING_FORMAT" => Some("json".to_string()),
             _ => None,
@@ -397,10 +401,12 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     // 0 is the off switch, not a rejected value.
     assert_eq!(overridden.dns.scheduler_interval_secs, 0);
     assert_eq!(overridden.dns.zone_defaults.ttl.as_secs(), 600);
-    assert_eq!(overridden.history.zone.max_days, 0);
-    assert_eq!(overridden.history.audit.max_days, 30);
-    assert_eq!(overridden.history.transfer.save, SavedTransfers::Unserved);
-    assert_eq!(overridden.history.transfer.max_days, 7);
+    assert_eq!(overridden.history.max_days, 0);
+    assert_eq!(overridden.audit_log.max_days, 30);
+    assert_eq!(overridden.access_log.save, SavedRequests::Denied);
+    assert_eq!(overridden.access_log.max_days, 3);
+    assert_eq!(overridden.transfer_log.save, SavedTransfers::Unserved);
+    assert_eq!(overridden.transfer_log.max_days, 7);
     assert_eq!(overridden.logging.level, LogLevel::Info);
     assert_eq!(overridden.logging.format, LogFormat::Json);
 }
@@ -944,22 +950,38 @@ fn saved_transfers_spells_itself_once() {
     }
 }
 
-/// Verify that each kind of history reads its own `[history.<subject>]` table.
+/// Verify that `SavedRequests` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
-fn from_toml_reads_history_tables() {
+fn saved_requests_spells_itself_once() {
+    for value in [SavedRequests::All, SavedRequests::Denied] {
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+        assert_eq!(
+            serde_json::from_value::<SavedRequests>(json!(value.as_str())).unwrap(),
+            value
+        );
+        assert_eq!(value.as_str().parse::<SavedRequests>().unwrap(), value);
+    }
+}
+
+/// Verify that zone history reads `[history]` and each log its own `[<subject>_log]` table.
+#[test]
+fn from_toml_reads_history_and_log_tables() {
     let parsed = Config::from_toml(
         "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n\
-         [history.zone]\nmax_days = 30\n\
-         [history.audit]\nmax_days = 0\n\
-         [history.transfer]\nsave = \"unserved\"\nmax_days = 14\n",
+         [history]\nmax_days = 30\n\
+         [audit_log]\nmax_days = 0\n\
+         [access_log]\nsave = \"denied\"\nmax_days = 7\n\
+         [transfer_log]\nsave = \"unserved\"\nmax_days = 14\n",
         |_| None,
     )
     .unwrap();
 
-    assert_eq!(parsed.history.zone.max_days, 30);
-    assert_eq!(parsed.history.audit.max_days, 0);
-    assert_eq!(parsed.history.transfer.save, SavedTransfers::Unserved);
-    assert_eq!(parsed.history.transfer.max_days, 14);
+    assert_eq!(parsed.history.max_days, 30);
+    assert_eq!(parsed.audit_log.max_days, 0);
+    assert_eq!(parsed.access_log.save, SavedRequests::Denied);
+    assert_eq!(parsed.access_log.max_days, 7);
+    assert_eq!(parsed.transfer_log.save, SavedTransfers::Unserved);
+    assert_eq!(parsed.transfer_log.max_days, 14);
 }
 
 /// Verify that `LogFormat` has one spelling across `as_str`, serde, and `FromStr`.

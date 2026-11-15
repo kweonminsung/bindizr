@@ -13,11 +13,11 @@ use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 use utoipa::OpenApi;
 
 use crate::api::error::ApiError;
-use crate::api::middleware::auth;
 use crate::api::middleware::body_parser::DEFAULT_BODY_BYTES;
+use crate::api::middleware::{access_log, auth};
 use crate::api::openapi::ApiDoc;
 use crate::api::{
-    audit, dnssec, dnssec_policy, external_dns, health, metrics, notify, permission, record, role,
+    dnssec, dnssec_policy, external_dns, health, logs, metrics, notify, permission, record, role,
     secondary, token, tsig_key, zone,
 };
 
@@ -38,7 +38,7 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
         .merge(permission::routes())
         .merge(dnssec::routes())
         .merge(dnssec_policy::routes())
-        .merge(audit::routes())
+        .merge(logs::routes())
         .route("/", routing::get(handle_home));
 
     // Unregistered when disabled, so the endpoints fall through to 404.
@@ -56,6 +56,13 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
         // error the extractor rejects instead of implying full access.
         api_router = api_router.layer(Extension(Caller::unauthenticated_api()));
     }
+
+    // Outside the auth layer, so a request it refuses is saved too; the
+    // probe, scrape and document routes below are not.
+    api_router = api_router.layer(middleware::from_fn_with_state(
+        cx.clone(),
+        access_log::save_access_log,
+    ));
 
     let mut router = api_router;
 

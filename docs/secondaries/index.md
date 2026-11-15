@@ -104,8 +104,8 @@ key was actually used is visible rather than assumed:
 XFR TCP query: zone="example.com", qtype=Rtype::AXFR, from=10.0.0.14, signed=false
 ```
 
-A transfer over TLS logs as `XFR TLS query`, and `secondary transfers` lists
-the transport beside each one. Over TLS the key and the registered address
+A transfer over TLS logs as `XFR TLS query`, and `log transfer` lists the
+transport beside each one. Over TLS the key and the registered address
 are required together, as RFC 9103, Section 7.5 asks of a server without
 mutual TLS; either alone is refused there. A query the listener does not
 serve, an update included, is refused with extended DNS error 21, Not
@@ -138,7 +138,7 @@ whose transfers are XoT; SOA queries keep answering on every listener.
 | `bindizr doctor` | Installation health and catalog synchronization |
 | `bindizr zone status <zone>` | The member zone's serial on each secondary |
 | `bindizr secondary check <name>` | One secondary's catalog serial and NOTIFY acceptance |
-| `bindizr secondary transfers <name>` | Transfers, refusals, and failures, newest first |
+| `bindizr log transfer --secondary <name>` | Transfers, refusals, and failures, newest first |
 
 A synchronized catalog does not guarantee that every member zone loaded.
 Check the zone's status as well; each server page includes its own inspection

@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::SystemTime;
-use std::{env, process, time};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{env, process};
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 use compose::ComposeStack;
@@ -21,6 +21,7 @@ use rustls::crypto::ring;
 use rustls::pki_types::CertificateDer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
+use tokio::time;
 use verify::PreviousRecordKey;
 
 /// Every record action, the grant a test role needs to read and change a zone's records.
@@ -215,6 +216,38 @@ impl TestApp {
     /// Return the ports of the compose stack's BIND9 secondaries; empty in local mode.
     pub(crate) fn dns_secondary_ports(&self) -> &[u16] {
         &self.dns_secondary_ports
+    }
+
+    /// Poll `/logs/access?{query}` until a row `matches`, returning it. The
+    /// writer saves a row after its request is answered, so a read right away
+    /// may miss it.
+    pub(crate) async fn wait_for_access_log(
+        &self,
+        query: &str,
+        matches: impl Fn(&Value) -> bool,
+    ) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(5);
+
+        loop {
+            let (status, body) = self
+                .send_request(Method::GET, &format!("/logs/access?{query}"), None)
+                .await;
+
+            assert_eq!(status, StatusCode::OK, "{body}");
+
+            if let Some(log) = body["items"]
+                .as_array()
+                .and_then(|items| items.iter().find(|log| matches(log)))
+            {
+                return log.clone();
+            }
+
+            assert!(
+                Instant::now() < deadline,
+                "no access log row of {query} matched: {body}"
+            );
+            time::sleep(Duration::from_millis(50)).await;
+        }
     }
 
     /// Send one API request; in compose mode every mutating call also asserts
@@ -484,7 +517,7 @@ impl Drop for TestApp {
 fn test_namespace() -> String {
     let run_id = RUN_ID.get_or_init(|| {
         let elapsed = SystemTime::now()
-            .duration_since(time::UNIX_EPOCH)
+            .duration_since(UNIX_EPOCH)
             .expect("system clock is before the Unix epoch");
         format!("e2e-{}-{}", elapsed.as_millis(), process::id())
     });
