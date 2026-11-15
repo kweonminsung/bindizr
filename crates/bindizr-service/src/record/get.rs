@@ -3,6 +3,7 @@ use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::dnssec_record::DnssecRecordType;
 use bindizr_core::model::record::{RecordId, RecordType};
 use bindizr_db::dnssec_record::DnssecRecordFilter;
+use bindizr_db::{RecordSortField, SortOrder};
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
@@ -118,8 +119,8 @@ pub async fn list_by_filter_with_zone(
         max_priority: filter.max_priority,
         search: filter.search.clone(),
         scope_role_id,
-        sort: pagination::parse_setting(filter.sort.as_deref())?,
-        order: pagination::parse_setting(filter.order.as_deref())?,
+        sort: pagination::parse_setting(filter.sort.as_deref(), RecordSortField::default())?,
+        order: pagination::parse_setting(filter.order.as_deref(), SortOrder::default())?,
         limit,
         offset,
     };

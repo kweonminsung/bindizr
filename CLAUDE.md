@@ -391,8 +391,11 @@ pass, and `0` keeps it forever. `save` narrows what a log writes, where a
 narrower set means something: `transfer_log.save = "unserved"` keeps
 refusals and failures alone, so zone status and a secondary's summary then
 show no successful transfer, and `access_log.save = "denied"` keeps 401,
-403, TSIG rejections and REFUSED alone. The audit log has no `save`, since a
-committed change always has its row. The transfer log's prune keeps the
+403, TSIG rejections and REFUSED alone; `"none"` turns either log off. The
+audit log has no `save`, since a committed change always has its row. A
+setting spelled with a fixed set of words, booleans included, lists them in
+the commented config and the chart values as `a | b | c` (`true | false`)
+before what they mean; a number needs no list. The transfer log's prune keeps the
 newest row of each client address and zone whatever its age: that row is the
 last transfer those reports read.
 

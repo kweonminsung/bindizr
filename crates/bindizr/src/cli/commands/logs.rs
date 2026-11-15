@@ -97,6 +97,12 @@ the OpenAPI document and daemon socket commands are not logged.")]
         /// Only requests before this time, in the same forms
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
         until: Option<DateTime<Utc>>,
+        /// Sort by: requested_at (default), source, target, status, result, address
+        #[arg(long, value_name = "FIELD")]
+        sort: Option<String>,
+        /// Sort order: desc (default) or asc
+        #[arg(long, value_name = "asc|desc")]
+        order: Option<String>,
         /// Maximum number of rows to return
         #[arg(long)]
         limit: Option<u32>,
@@ -142,6 +148,12 @@ secondary resolves to now.")]
         /// Only transfers before this time, in the same forms
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
         until: Option<DateTime<Utc>>,
+        /// Sort by: at (default), address, zone_name, kind, result
+        #[arg(long, value_name = "FIELD")]
+        sort: Option<String>,
+        /// Sort order: desc (default) or asc
+        #[arg(long, value_name = "asc|desc")]
+        order: Option<String>,
         /// Maximum number of rows to return
         #[arg(long)]
         limit: Option<u32>,
@@ -191,6 +203,8 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
             address,
             since,
             until,
+            sort,
+            order,
             limit,
             offset,
             output,
@@ -203,6 +217,8 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
                     address,
                     since,
                     until,
+                    sort,
+                    order,
                     limit,
                     offset,
                 }),
@@ -218,6 +234,8 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
             result,
             since,
             until,
+            sort,
+            order,
             limit,
             offset,
             output,
@@ -230,6 +248,8 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
                     result,
                     since,
                     until,
+                    sort,
+                    order,
                     limit,
                     offset,
                 }),

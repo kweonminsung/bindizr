@@ -11,7 +11,7 @@ use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
 /// Which audit log rows a listing selects and how they are ordered; paging
 /// rides along.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditLogFilter {
     pub entity: Option<AuditEntity>,
     pub entity_name: Option<String>,
@@ -23,6 +23,22 @@ pub struct AuditLogFilter {
     pub order: SortOrder,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
+}
+
+impl Default for AuditLogFilter {
+    /// Select every row, newest first: the log's natural order.
+    fn default() -> Self {
+        Self {
+            entity: None,
+            entity_name: None,
+            since: None,
+            until: None,
+            sort: AuditLogSortField::default(),
+            order: SortOrder::Desc,
+            limit: None,
+            offset: None,
+        }
+    }
 }
 
 /// Insert an audit log row in the current transaction, the change's own.

@@ -23,14 +23,15 @@ pub(crate) fn validate_page_limit(limit: Option<u32>) -> Result<(), ServiceError
     Ok(())
 }
 
-/// Parse a listing's sort or order using its query enum, or take the default.
-pub(crate) fn parse_setting<T>(value: Option<&str>) -> Result<T, ServiceError>
+/// Parse a listing's sort or order using its query enum, ignoring case and
+/// surrounding space; an omitted or empty value takes `default`.
+pub(crate) fn parse_setting<T>(value: Option<&str>, default: T) -> Result<T, ServiceError>
 where
-    T: Default + FromStr<Err = ParseSortError>,
+    T: FromStr<Err = ParseSortError>,
 {
-    match value {
+    match value.map(str::trim).filter(|value| !value.is_empty()) {
         Some(value) => value.parse::<T>().map_err(ServiceError::invalid_input),
-        None => Ok(T::default()),
+        None => Ok(default),
     }
 }
 

@@ -1091,6 +1091,8 @@ pub enum SavedRequests {
     All,
     /// Requests denied by authentication or authorization alone.
     Denied,
+    /// No request: the access log stays empty.
+    None,
 }
 
 impl SavedRequests {
@@ -1099,6 +1101,7 @@ impl SavedRequests {
         match self {
             Self::All => "all",
             Self::Denied => "denied",
+            Self::None => "none",
         }
     }
 }
@@ -1118,8 +1121,9 @@ impl FromStr for SavedRequests {
         match value {
             "all" => Ok(Self::All),
             "denied" => Ok(Self::Denied),
+            "none" => Ok(Self::None),
             _ => Err(ConfigError::UnknownValue {
-                expected: "all or denied",
+                expected: "all, denied, or none",
             }),
         }
     }
@@ -1162,6 +1166,8 @@ pub enum SavedTransfers {
     All,
     /// Refusals and failures alone.
     Unserved,
+    /// No transfer: zone status and a secondary's summary then show none.
+    None,
 }
 
 impl SavedTransfers {
@@ -1170,6 +1176,7 @@ impl SavedTransfers {
         match self {
             Self::All => "all",
             Self::Unserved => "unserved",
+            Self::None => "none",
         }
     }
 }
@@ -1189,8 +1196,9 @@ impl FromStr for SavedTransfers {
         match value {
             "all" => Ok(Self::All),
             "unserved" => Ok(Self::Unserved),
+            "none" => Ok(Self::None),
             _ => Err(ConfigError::UnknownValue {
-                expected: "all or unserved",
+                expected: "all, unserved, or none",
             }),
         }
     }

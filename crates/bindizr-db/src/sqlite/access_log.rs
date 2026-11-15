@@ -1,7 +1,7 @@
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
 use chrono::{DateTime, Utc};
-use sqlx::{Pool, Sqlite};
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 use crate::access_log::AccessLogFilter;
 use crate::error::DatabaseError;
@@ -34,7 +34,7 @@ pub(crate) async fn create(pool: &Pool<Sqlite>, log: &AccessLog) -> Result<(), D
     Ok(())
 }
 
-/// List the rows `filter` selects, newest first.
+/// List the rows `filter` selects, in its order.
 pub(crate) async fn list_by_filter(
     pool: &Pool<Sqlite>,
     filter: &AccessLogFilter,
@@ -44,7 +44,9 @@ pub(crate) async fn list_by_filter(
     let source = filter.source.map(AccessSource::as_str);
     let result = filter.result.map(AccessResult::as_str);
 
-    let logs = sqlx::query_as::<_, AccessLog>(
+    let order_by = filter.sort.order_by_sql(filter.order);
+
+    let logs = sqlx::query_as::<_, AccessLog>(AssertSqlSafe(format!(
         r#"
         SELECT source, client_addr, method, target, status, result,
                caller_kind AS changed_by_kind, caller_name AS changed_by_name, error, requested_at
@@ -55,10 +57,10 @@ pub(crate) async fn list_by_filter(
           AND (? IS NULL OR client_addr = ?)
           AND (? IS NULL OR requested_at >= ?)
           AND (? IS NULL OR requested_at < ?)
-        ORDER BY id DESC
+        {order_by}
         LIMIT ? OFFSET ?
-        "#,
-    )
+        "#
+    )))
     .bind(source)
     .bind(source)
     .bind(result)

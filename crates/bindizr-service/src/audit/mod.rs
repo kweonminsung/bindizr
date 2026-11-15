@@ -4,7 +4,6 @@ use std::fmt;
 
 use bindizr_core::model::audit_log::{AuditEntity, AuditLog, AuditLogId, AuditOperation};
 use bindizr_core::model::role_grant::Action;
-use bindizr_db::{AuditLogSortField, SortOrder};
 use chrono::Utc;
 
 use crate::authorization::Caller;
@@ -98,12 +97,9 @@ fn normalize_filter(
     }
 
     // Newest first is the log's natural order, whatever the field.
-    let order = match filter.order.as_deref() {
-        Some(order) => order
-            .parse::<SortOrder>()
-            .map_err(ServiceError::invalid_input)?,
-        None => SortOrder::Desc,
-    };
+    let defaults = bindizr_db::audit_log::AuditLogFilter::default();
+    let sort = pagination::parse_setting(filter.sort.as_deref(), defaults.sort)?;
+    let order = pagination::parse_setting(filter.order.as_deref(), defaults.order)?;
     pagination::validate_page_limit(filter.limit)?;
 
     Ok(bindizr_db::audit_log::AuditLogFilter {
@@ -111,7 +107,7 @@ fn normalize_filter(
         entity_name,
         since: filter.since,
         until: filter.until,
-        sort: pagination::parse_setting::<AuditLogSortField>(filter.sort.as_deref())?,
+        sort,
         order,
         limit: filter.limit,
         offset: filter.offset,
@@ -120,6 +116,7 @@ fn normalize_filter(
 
 #[cfg(test)]
 mod tests {
+    use bindizr_db::{AuditLogSortField, SortOrder};
     use chrono::TimeZone;
 
     use super::*;

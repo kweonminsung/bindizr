@@ -6,10 +6,12 @@ use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone, TransferRe
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
+use crate::sql::{SortOrder, TransferLogSortField};
 use crate::{Backend, Db, mysql, postgres, sqlite};
 
-/// Which transfer log rows a listing selects; paging rides along.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Which transfer log rows a listing selects and how they are ordered;
+/// paging rides along.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferLogFilter {
     /// Transfers answered to one of these addresses; any address when absent.
     pub client_addrs: Option<Vec<String>>,
@@ -19,8 +21,27 @@ pub struct TransferLogFilter {
     pub since: Option<DateTime<Utc>>,
     /// Transfers answered before this time.
     pub until: Option<DateTime<Utc>>,
+    pub sort: TransferLogSortField,
+    pub order: SortOrder,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
+}
+
+impl Default for TransferLogFilter {
+    /// Select every row, newest first: the log's natural order.
+    fn default() -> Self {
+        Self {
+            client_addrs: None,
+            zone_name: None,
+            result: None,
+            since: None,
+            until: None,
+            sort: TransferLogSortField::default(),
+            order: SortOrder::Desc,
+            limit: None,
+            offset: None,
+        }
+    }
 }
 
 /// Append a transfer log row.
@@ -32,7 +53,7 @@ pub async fn create(db: &Db, log: TransferLog) -> Result<(), DatabaseError> {
     }
 }
 
-/// List the rows `filter` selects, newest first, with zone names.
+/// List the rows `filter` selects, in its order, with zone names.
 pub async fn list_by_filter_with_zone(
     db: &Db,
     filter: &TransferLogFilter,

@@ -122,6 +122,29 @@ async fn save_keeps_only_denials_when_only_denied_requests_are_saved() {
     );
 }
 
+/// Verify that `access_log.save = "none"` saves no request, denials included.
+#[tokio::test]
+async fn save_keeps_nothing_when_no_requests_are_saved() {
+    let (cx, access_rx) = context(SavedRequests::None, 16).await;
+    let now = Utc::now();
+
+    save_all(
+        &cx,
+        access_rx,
+        vec![
+            test_log(AccessResult::Ok, "200", None, now),
+            test_log(AccessResult::Denied, "403", None, now),
+        ],
+    )
+    .await;
+
+    assert!(
+        list_statuses(&cx, AccessLogFilter::default())
+            .await
+            .is_empty()
+    );
+}
+
 /// Verify that a full queue drops the row and counts the drop instead of waiting.
 #[tokio::test]
 async fn save_drops_and_counts_a_row_the_full_queue_cannot_take() {
@@ -139,9 +162,9 @@ async fn save_drops_and_counts_a_row_the_full_queue_cannot_take() {
     );
 }
 
-/// Verify that a listing applies its result, caller, address, time window and page.
+/// Verify that a listing applies its result, caller, address, time window, order and page.
 #[tokio::test]
-async fn list_applies_result_caller_address_window_and_page() {
+async fn list_applies_result_caller_address_window_order_and_page() {
     let (cx, access_rx) = context(SavedRequests::All, 16).await;
     let now = Utc::now();
     let mut from_other = test_log(AccessResult::Ok, "201", Some("deploy"), now);
@@ -206,6 +229,16 @@ async fn list_applies_result_caller_address_window_and_page() {
             },
             vec!["403"],
         ),
+        (
+            AccessLogFilter {
+                // Sort and order read like every other parameter: case and
+                // surrounding space aside.
+                sort: Some(" Status ".to_string()),
+                order: Some("ASC".to_string()),
+                ..Default::default()
+            },
+            vec!["200", "201", "403"],
+        ),
     ] {
         assert_eq!(
             list_statuses(&cx, filter.clone()).await,
@@ -215,7 +248,7 @@ async fn list_applies_result_caller_address_window_and_page() {
     }
 }
 
-/// Verify that `normalize_filter` rejects unknown values, a non-IP address and an empty window.
+/// Verify that `normalize_filter` rejects unknown values and sorts, a non-IP address and an empty window.
 #[test]
 fn normalize_filter_rejects_unknown_values_and_inverted_window() {
     let later = Utc.with_ymd_and_hms(2026, 10, 2, 0, 0, 0).unwrap();
@@ -236,6 +269,10 @@ fn normalize_filter_rejects_unknown_values_and_inverted_window() {
         AccessLogFilter {
             since: Some(later),
             until: Some(later),
+            ..Default::default()
+        },
+        AccessLogFilter {
+            sort: Some("method".to_string()),
             ..Default::default()
         },
     ] {

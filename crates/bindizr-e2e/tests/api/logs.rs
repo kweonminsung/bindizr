@@ -510,6 +510,7 @@ async fn access_log_records_requests_with_their_caller_and_outcome() {
         "result=refused",
         "address=localhost",
         "since=2026-01-02T00:00:00Z&until=2026-01-01T00:00:00Z",
+        "sort=method",
     ] {
         let (status, body) = app
             .send_request(Method::GET, &format!("/logs/access?{query}"), None)

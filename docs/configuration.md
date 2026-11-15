@@ -50,17 +50,17 @@ queried by the client, including with wildcard listeners (RFC 2181, Section 4.1)
 [api]
 # listen_addr = "0.0.0.0"
 # listen_port = 3000
-# authentication_required = true # Require an API token; `bindizr token create` makes the first one
-# metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
-# external_dns_enabled = false  # ExternalDNS provider API at /external-dns
-# openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
+# authentication_required = true # true | false; true requires an API token, which `bindizr token create` makes first
+# metrics_enabled = true        # true | false; Prometheus metrics at /metrics (unauthenticated)
+# external_dns_enabled = false  # true | false; ExternalDNS provider API at /external-dns
+# openapi_enabled = false       # true | false; OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
 
 [api.tls]                     # Set both files to serve HTTPS
 # cert_file = "/etc/bindizr/tls/tls.crt"
 # key_file = "/etc/bindizr/tls/tls.key"
 
 [database]
-# type = "sqlite"               # sqlite, mysql, or postgresql
+# type = "sqlite"             # sqlite | mysql | postgresql
 
 # [database.mysql]
 # url = "mysql://user:password@hostname:port/database"
@@ -72,7 +72,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # url = "postgresql://user:password@hostname:port/database"
 
 [database.tls]                # TLS to the MySQL or PostgreSQL server; unset leaves it to the URL
-# mode = "verify-full"        # disable, prefer, require, verify-ca, verify-full
+# mode = "verify-full"        # disable | prefer | require | verify-ca | verify-full
 # ca_file = "/etc/bindizr/db-ca.crt"  # A private issuer; needs verify-ca or verify-full
 
 [dns]
@@ -89,7 +89,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # timeout_secs = 3            # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query
 
 [dns.nsupdate]                # nsupdate (RFC 2136)
-# tsig_required = true          # false admits unsigned updates from anyone
+# tsig_required = true          # true | false; false admits unsigned updates from anyone
 
 [dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
 # listen_port = 853           # On dns.listen_addr; never 53 (RFC 7858, Section 3.1)
@@ -98,7 +98,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 
 [dns.transfer]                # Zone transfers
 # cache_max_records = 500000  # Total cached records; oversized zones bypass the cache (0 = disabled)
-# require_tls = false         # Require [dns.tls] for AXFR/IXFR; SOA queries remain available
+# require_tls = false         # true | false; true requires [dns.tls] for AXFR/IXFR; SOA queries remain available
 
 [dns.import]                  # zone import --from-server: the AXFR Bindizr pulls
 # timeout_secs = 30
@@ -119,16 +119,16 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # max_days = 365              # Days kept (0 = forever)
 
 [access_log]                  # The API requests and nsupdates answered, denied, or failed
-# save = "all"                # all, or denied for 401/403, TSIG rejections and REFUSED alone
+# save = "all"                # all | denied | none; denied keeps 401/403, TSIG rejections and REFUSED alone
 # max_days = 30               # Days kept (0 = forever)
 
 [transfer_log]                # The zone transfers each client was answered
-# save = "all"                # all, or unserved for refusals and failures alone
+# save = "all"                # all | unserved | none; unserved keeps refusals and failures alone
 # max_days = 90               # Days kept (0 = forever); each client's last transfer of a zone stays
 
 [logging]                     # Bindizr's own process log, not the logs above
-# level = "info"                # error, warn, info, debug, trace
-# format = "text"             # text, or json for one object per line
+# level = "info"              # error | warn | info | debug | trace
+# format = "text"             # text | json; json writes one object per line
 ```
 
 A reserved character in the user, password, or database of a database `url`
@@ -164,10 +164,10 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_CONFIG_PATH` | configuration file path | Falls back to `/etc/bindizr/bindizr.conf.toml` |
 | `BINDIZR_API_LISTEN_ADDR` | `api.listen_addr` | |
 | `BINDIZR_API_LISTEN_PORT` | `api.listen_port` | |
-| `BINDIZR_API_AUTHENTICATION_REQUIRED` | `api.authentication_required` | |
-| `BINDIZR_API_METRICS_ENABLED` | `api.metrics_enabled` | |
-| `BINDIZR_API_EXTERNAL_DNS_ENABLED` | `api.external_dns_enabled` | See [ExternalDNS](external-dns.md) |
-| `BINDIZR_API_OPENAPI_ENABLED` | `api.openapi_enabled` | Describes the whole API surface; off by default |
+| `BINDIZR_API_AUTHENTICATION_REQUIRED` | `api.authentication_required` | `true` or `false` |
+| `BINDIZR_API_METRICS_ENABLED` | `api.metrics_enabled` | `true` or `false` |
+| `BINDIZR_API_EXTERNAL_DNS_ENABLED` | `api.external_dns_enabled` | `true` or `false`; see [ExternalDNS](external-dns.md) |
+| `BINDIZR_API_OPENAPI_ENABLED` | `api.openapi_enabled` | `true` or `false`; describes the whole API surface, off by default |
 | `BINDIZR_API_TLS_CERT_FILE` | `api.tls.cert_file` | Empty clears it |
 | `BINDIZR_API_TLS_KEY_FILE` | `api.tls.key_file` | Empty clears it |
 | `BINDIZR_DATABASE_TYPE` | `database.type` | `mysql`, `postgresql`, or `sqlite` |
@@ -175,12 +175,12 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DATABASE_MYSQL_URL` | `database.mysql.url` | |
 | `BINDIZR_DATABASE_POSTGRESQL_URL` | `database.postgresql.url` | |
 | `BINDIZR_DATABASE_SQLITE_FILE_PATH` | `database.sqlite.file_path` | |
-| `BINDIZR_DATABASE_TLS_MODE` | `database.tls.mode` | Empty leaves it to the URL |
+| `BINDIZR_DATABASE_TLS_MODE` | `database.tls.mode` | `disable`, `prefer`, `require`, `verify-ca`, or `verify-full`; empty leaves it to the URL |
 | `BINDIZR_DATABASE_TLS_CA_FILE` | `database.tls.ca_file` | Empty clears it |
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
 | `BINDIZR_DNS_CATALOG_ZONE_NAME` | `dns.catalog_zone_name` | every secondary names the same zone in its own configuration |
-| `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate.tsig_required` | `false` is testing only; see [nsupdate](cli/nsupdate.md#unsigned-requests) |
+| `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate.tsig_required` | `true` or `false`; `false` is testing only; see [nsupdate](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
 | `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](configuration/advanced.md#batching-notify) |
 | `BINDIZR_DNS_NOTIFY_RETRIES` | `dns.notify.retries` | |
@@ -189,7 +189,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_TLS_CERT_FILE` | `dns.tls.cert_file` | Empty clears it |
 | `BINDIZR_DNS_TLS_KEY_FILE` | `dns.tls.key_file` | Empty clears it |
 | `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer.cache_max_records` | `0` caches nothing; see [Sizing the transfer cache](configuration/advanced.md#sizing-the-transfer-cache) |
-| `BINDIZR_DNS_TRANSFER_REQUIRE_TLS` | `dns.transfer.require_tls` | needs `[dns.tls]` |
+| `BINDIZR_DNS_TRANSFER_REQUIRE_TLS` | `dns.transfer.require_tls` | `true` or `false`; `true` needs `[dns.tls]` |
 | `BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS` | `dns.tcp_idle_timeout_secs` | 1 to 6553 |
 | `BINDIZR_DNS_TCP_MAX_CONNECTIONS` | `dns.tcp_max_connections` | |
 | `BINDIZR_DNS_IMPORT_TIMEOUT_SECS` | `dns.import.timeout_secs` | |
@@ -201,11 +201,11 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL` | `dns.zone_defaults.minimum_ttl` | |
 | `BINDIZR_HISTORY_MAX_DAYS` | `history.max_days` | `0` keeps zone versions forever |
 | `BINDIZR_AUDIT_LOG_MAX_DAYS` | `audit_log.max_days` | `0` keeps the audit log forever |
-| `BINDIZR_ACCESS_LOG_SAVE` | `access_log.save` | `all` or `denied` |
+| `BINDIZR_ACCESS_LOG_SAVE` | `access_log.save` | `all`, `denied`, or `none` |
 | `BINDIZR_ACCESS_LOG_MAX_DAYS` | `access_log.max_days` | `0` keeps the access log forever |
-| `BINDIZR_TRANSFER_LOG_SAVE` | `transfer_log.save` | `all` or `unserved` |
+| `BINDIZR_TRANSFER_LOG_SAVE` | `transfer_log.save` | `all`, `unserved`, or `none` |
 | `BINDIZR_TRANSFER_LOG_MAX_DAYS` | `transfer_log.max_days` | `0` keeps the transfer log forever |
-| `BINDIZR_LOGGING_LEVEL` | `logging.level` | |
+| `BINDIZR_LOGGING_LEVEL` | `logging.level` | `error`, `warn`, `info`, `debug`, or `trace` |
 | `BINDIZR_LOGGING_FORMAT` | `logging.format` | `text` or `json` |
 
 `BINDIZR_DATABASE_URL` is a convenience for container deployments where the URL

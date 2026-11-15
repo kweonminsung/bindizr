@@ -85,9 +85,15 @@ async fn write(cx: &Context, log: &AccessLog) {
 }
 
 /// Queue the row of an answered request. `access_log.save = "denied"`
-/// keeps denials alone; a full or closed queue drops the row and counts it.
+/// keeps denials alone and `"none"` nothing; a full or closed queue drops the
+/// row and counts it.
 pub fn save(cx: &Context, log: AccessLog) {
-    if cx.config().access_log.save == SavedRequests::Denied && log.result != AccessResult::Denied {
+    let saved = match cx.config().access_log.save {
+        SavedRequests::All => true,
+        SavedRequests::Denied => log.result == AccessResult::Denied,
+        SavedRequests::None => false,
+    };
+    if !saved {
         return;
     }
 
@@ -118,8 +124,8 @@ pub async fn list(
     ))
 }
 
-/// Parse the listing's source, result and address, fold its caller name to the
-/// lowercase every token and TSIG key stores, and bound its page.
+/// Parse the listing's source, result, address and order, fold its caller name
+/// to the lowercase every token and TSIG key stores, and bound its page.
 fn normalize_filter(
     filter: &AccessLogFilter,
 ) -> Result<bindizr_db::access_log::AccessLogFilter, ServiceError> {
@@ -166,6 +172,10 @@ fn normalize_filter(
         return Err(ServiceError::invalid_input("since must be before until"));
     }
 
+    // Newest first is the log's natural order, whatever the field.
+    let defaults = bindizr_db::access_log::AccessLogFilter::default();
+    let sort = pagination::parse_setting(filter.sort.as_deref(), defaults.sort)?;
+    let order = pagination::parse_setting(filter.order.as_deref(), defaults.order)?;
     pagination::validate_page_limit(filter.limit)?;
 
     Ok(bindizr_db::access_log::AccessLogFilter {
@@ -175,6 +185,8 @@ fn normalize_filter(
         client_addr,
         since: filter.since,
         until: filter.until,
+        sort,
+        order,
         limit: filter.limit,
         offset: filter.offset,
     })

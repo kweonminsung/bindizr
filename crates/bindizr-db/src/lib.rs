@@ -35,7 +35,10 @@ use bindizr_core::model::role::Role;
 use bindizr_core::model::role_grant::{Action, ActionSet};
 use chrono::Utc;
 use error::DatabaseError;
-pub use sql::{AuditLogSortField, ParseSortError, RecordSortField, SortOrder, ZoneSortField};
+pub use sql::{
+    AccessLogSortField, AuditLogSortField, ParseSortError, RecordSortField, SortOrder,
+    TransferLogSortField, ZoneSortField,
+};
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};

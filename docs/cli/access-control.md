@@ -266,13 +266,17 @@ bindizr log access
 bindizr log access --result denied --since 1d
 bindizr log access --caller external-dns
 bindizr log access --source nsupdate --address 192.0.2.10 -o json
+bindizr log access --sort status --order asc
 ```
 
-Over HTTP the same is `GET /logs/access`, with `source`, `result`,
-`caller_name`, and `address`. Entries are written off the request path, so
+`--sort` takes `requested_at` (the default), `source`, `target`, `status`,
+`result`, or `address`, and `--order` is `desc` (the default) or `asc`. Over
+HTTP the same is `GET /logs/access`, with `source`, `result`, `caller_name`,
+`address`, `sort`, and `order`. Entries are written off the request path, so
 a request never waits on its own; under a flood the queue drops what it
 cannot hold and counts it in `bindizr_access_log_dropped_total`.
-`access_log.save = "denied"` keeps denials alone.
+`access_log.save = "denied"` keeps denials alone, and `"none"` turns the
+access log off.
 
 ## Examples
 
