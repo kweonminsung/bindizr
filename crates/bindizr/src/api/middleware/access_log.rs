@@ -18,6 +18,10 @@ use crate::api::error::ErrorMessage;
 /// unauthenticated client chooses it.
 const MAX_TARGET_LEN: usize = 1024;
 
+/// The longest method kept, the width of the MySQL and PostgreSQL column: an
+/// extension method may be any length, and a longer one would fail the insert.
+const MAX_METHOD_LEN: usize = 16;
+
 /// Answer the request, then queue its row: the method and path, the peer, the
 /// credential the auth layer verified, and the error it was answered with.
 /// The query and body stay out, so no secret a request carries is saved.
@@ -28,9 +32,11 @@ pub(crate) async fn save_access_log(
     next: Next,
 ) -> Response {
     let requested_at = Utc::now();
-    let method = request.method().to_string();
+    // A method token and a URI path are ASCII, so any byte offset is a
+    // character boundary.
+    let method = request.method().as_str();
+    let method = method[..method.len().min(MAX_METHOD_LEN)].to_string();
     let path = request.uri().path();
-    // A URI path is ASCII, so any byte offset is a character boundary.
     let target = path[..path.len().min(MAX_TARGET_LEN)].to_string();
 
     let response = next.run(request).await;

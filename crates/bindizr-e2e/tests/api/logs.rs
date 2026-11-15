@@ -469,7 +469,18 @@ async fn access_log_records_requests_with_their_caller_and_outcome() {
 
     assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED, "{body}");
 
-    for (method, target, status) in [("GET", "/no-such-route", "404"), ("PATCH", "/zones", "405")] {
+    // An extension method may be any length; it is cut to the column's width
+    // so the insert cannot fail on MySQL or PostgreSQL.
+    let long_method = Method::from_bytes(b"LONGCUSTOMREQUEST").unwrap();
+    let (status, body) = app.send_request(long_method, "/zones", None).await;
+
+    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED, "{body}");
+
+    for (method, target, status) in [
+        ("GET", "/no-such-route", "404"),
+        ("PATCH", "/zones", "405"),
+        ("LONGCUSTOMREQUES", "/zones", "405"),
+    ] {
         let log = app
             .wait_for_access_log("result=failed&source=api", |log| {
                 log["method"] == method && log["target"] == target
