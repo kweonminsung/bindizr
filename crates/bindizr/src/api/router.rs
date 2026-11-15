@@ -24,6 +24,8 @@ use crate::api::{
 /// Build the full axum router with auth, CORS, and the optional route groups,
 /// every handler reading the daemon's state through `State`.
 pub(crate) fn routes(cx: Arc<Context>) -> Router {
+    use axum::handler::Handler as _;
+
     let config = cx.config();
     let api_config = &config.api;
 
@@ -86,9 +88,16 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
             .route("/openapi.yaml", routing::get(handle_openapi_disabled));
     }
 
+    // The fallbacks answer outside the routes' layers, so they take the access
+    // log themselves: a scan of unknown paths or methods is saved too.
     router = router
-        .fallback(handle_not_found)
-        .method_not_allowed_fallback(handle_method_not_allowed);
+        .fallback(handle_not_found.layer(middleware::from_fn_with_state(
+            cx.clone(),
+            access_log::save_access_log,
+        )))
+        .method_not_allowed_fallback(handle_method_not_allowed.layer(
+            middleware::from_fn_with_state(cx.clone(), access_log::save_access_log),
+        ));
 
     // Layered after the fallback so every route, including 404s, is measured.
     if api_config.metrics_enabled {

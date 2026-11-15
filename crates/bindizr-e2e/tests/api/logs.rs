@@ -459,6 +459,26 @@ async fn access_log_records_requests_with_their_caller_and_outcome() {
     assert!(refused["caller"].is_null(), "{refused}");
     assert_eq!(refused["error"], "invalid or expired token", "{refused}");
 
+    // Answered by the router's fallbacks, which no route's layer covers: an
+    // unknown path and a method its path does not take are saved too.
+    let (status, body) = app.send_request(Method::GET, "/no-such-route", None).await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+
+    let (status, body) = app.send_request(Method::PATCH, "/zones", None).await;
+
+    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED, "{body}");
+
+    for (method, target, status) in [("GET", "/no-such-route", "404"), ("PATCH", "/zones", "405")] {
+        let log = app
+            .wait_for_access_log("result=failed&source=api", |log| {
+                log["method"] == method && log["target"] == target
+            })
+            .await;
+
+        assert_eq!(log["status"], status, "{log}");
+    }
+
     let (status, body) = app
         .send_request(Method::GET, "/logs/access?limit=1000", None)
         .await;
