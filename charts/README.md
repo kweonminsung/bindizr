@@ -34,7 +34,7 @@ shows the tested arm64 image settings:
 
 ```sh
 helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0 \
+  --version 0.2.0-rc.1 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 

@@ -80,7 +80,7 @@ The default BIND image is amd64-only. On arm64, use the image override in the
 
 ```bash
 $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0 --set postgresql.enabled=true
+  --version 0.2.0-rc.1 --set postgresql.enabled=true
 ```
 
 ### Docker Compose
