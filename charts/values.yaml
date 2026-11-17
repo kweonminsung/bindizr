@@ -5,19 +5,23 @@ bindizr:
   image:
     repository: kweonminsung/bindizr
     tag: "0.1.0"
+    # IfNotPresent | Always | Never
     pullPolicy: IfNotPresent
   replicas: 2
 
   api:
     listenAddr: "0.0.0.0"
     port: 8000
-    # Require an API token; the first one is `bindizr token create` in the pod.
+    # true | false; true requires an API token, the first one made by
+    # `bindizr token create` in the pod.
     authenticationRequired: true
-    # Prometheus metrics at /metrics (unauthenticated).
+    # true | false; Prometheus metrics at /metrics (unauthenticated).
     metricsEnabled: true
-    # ExternalDNS provider API at /external-dns, for the adapter sidecar.
+    # true | false; ExternalDNS provider API at /external-dns, for the adapter
+    # sidecar.
     externalDnsEnabled: false
-    # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated).
+    # true | false; OpenAPI document at /openapi.json and /openapi.yaml
+    # (unauthenticated).
     openapiEnabled: false
     tls:
       # A Secret holding tls.crt and tls.key (a cert-manager Certificate makes
@@ -25,6 +29,7 @@ bindizr:
       # terminates TLS in front.
       existingSecret: ""
     service:
+      # ClusterIP | NodePort | LoadBalancer
       type: ClusterIP
       port: 8000
 
@@ -34,8 +39,8 @@ bindizr:
     # The RFC 9432 catalog zone the BIND pods follow. A secondary holds one
     # zone per name, so two releases feeding one need two names.
     catalogZoneName: "catalog.bindizr"
-    # Require a TSIG signature on RFC 2136 updates; false accepts them from
-    # anyone (testing only).
+    # true | false; true requires a TSIG signature on RFC 2136 updates, and
+    # false accepts them from anyone (testing only).
     nsupdateTsigRequired: true
     # Seconds between background passes: signing, key rollover, history
     # pruning. Every replica runs the whole pass; 0 stands one down, but at
@@ -68,8 +73,9 @@ bindizr:
       # Zone records cached per serial, so repeated transfers skip the
       # database; a larger zone is served uncached, 0 caches nothing.
       cacheMaxRecords: 500000
-      # Refuse AXFR and IXFR over plain TCP and UDP once every secondary pulls
-      # over TLS; needs dns.tls.existingSecret. SOA queries keep answering.
+      # true | false; true refuses AXFR and IXFR over plain TCP and UDP once
+      # every secondary pulls over TLS; needs dns.tls.existingSecret. SOA
+      # queries keep answering.
       requireTls: false
     import:
       # zone import --from-server: the whole pull's deadline and the most
@@ -88,24 +94,26 @@ bindizr:
   # Who changed a token, role, grant, key, secondary, or policy.
   auditLog:
     maxDays: 365
-  # The API requests and nsupdates answered: `save` is all, or denied for
-  # 401/403, TSIG rejections and REFUSED alone.
+  # The API requests and nsupdates answered.
   accessLog:
+    # all | denied | none; denied keeps 401/403, TSIG rejections and REFUSED alone.
     save: all
     maxDays: 30
-  # The zone transfers each client was answered: `save` is all, or
-  # unserved for refusals and failures alone; each client's last transfer
-  # of a zone stays past maxDays.
+  # The zone transfers each client was answered; each client's last
+  # transfer of a zone stays past maxDays.
   transferLog:
+    # all | unserved | none; unserved keeps refusals and failures alone.
     save: all
     maxDays: 90
 
   logging:
+    # error | warn | info | debug | trace
     level: info
-    # text or json (one object per line).
+    # text | json; json writes one object per line.
     format: json
 
   database:
+    # sqlite | mysql | postgresql
     type: postgresql
     existingSecret: ""
     secretKey: database-url
@@ -114,7 +122,7 @@ bindizr:
     # from that database's auth values.
     url: ""
     tls:
-      # disable, prefer, require, verify-ca, or verify-full; empty leaves it to the URL.
+      # disable | prefer | require | verify-ca | verify-full; empty leaves it to the URL.
       mode: ""
       # A Secret holding ca.crt, a private issuer to verify against.
       existingSecret: ""
@@ -188,13 +196,16 @@ bindizrUi:
     # The UI releases independently; set this to a published compatible tag
     # when enabling bindizrUi.
     tag: ""
+    # IfNotPresent | Always | Never
     pullPolicy: IfNotPresent
   replicas: 1
   env:
+    # production | development
     goEnv: production
     port: 9000
     uiPort: 9001
   service:
+    # ClusterIP | NodePort | LoadBalancer
     type: ClusterIP
     port: 9000
   resources: {}
@@ -211,11 +222,13 @@ bind9:
   image:
     repository: internetsystemsconsortium/bind9
     tag: "9.21"
+    # IfNotPresent | Always | Never
     pullPolicy: IfNotPresent
 
   # The Service clients query; NodePort where nothing provisions a load
   # balancer (kind, bare metal).
   service:
+    # ClusterIP | NodePort | LoadBalancer
     type: LoadBalancer
     dnsPort: 53
     # With NodePort, the port for TCP and UDP alike; empty lets Kubernetes pick.
@@ -261,6 +274,7 @@ mysql:
   image:
     repository: mysql
     tag: "26.10"
+    # IfNotPresent | Always | Never
     pullPolicy: IfNotPresent
   service:
     port: 3306
@@ -288,6 +302,7 @@ postgresql:
   image:
     repository: postgres
     tag: "18"
+    # IfNotPresent | Always | Never
     pullPolicy: IfNotPresent
   service:
     port: 5432

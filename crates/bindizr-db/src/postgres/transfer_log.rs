@@ -1,6 +1,6 @@
 use bindizr_core::model::transfer::{TransferLog, TransferLogWithZone, TransferResult};
 use chrono::{DateTime, Utc};
-use sqlx::{Pool, Postgres};
+use sqlx::{AssertSqlSafe, Pool, Postgres};
 
 use crate::error::DatabaseError;
 use crate::transfer_log::TransferLogFilter;
@@ -30,7 +30,7 @@ pub(crate) async fn create(pool: &Pool<Postgres>, log: TransferLog) -> Result<()
     Ok(())
 }
 
-/// List the rows `filter` selects, newest first, with zone names.
+/// List the rows `filter` selects, in its order, with zone names.
 pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<Postgres>,
     filter: &TransferLogFilter,
@@ -39,7 +39,9 @@ pub(crate) async fn list_by_filter_with_zone(
 
     let result = filter.result.map(TransferResult::as_str);
 
-    let logs = sqlx::query_as::<_, TransferLogWithZone>(
+    let order_by = filter.sort.order_by_sql(filter.order);
+
+    let logs = sqlx::query_as::<_, TransferLogWithZone>(AssertSqlSafe(format!(
         r#"
         SELECT t.client_addr, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
         FROM transfer_log t
@@ -49,10 +51,10 @@ pub(crate) async fn list_by_filter_with_zone(
           AND ($3::TEXT IS NULL OR t.result = $3)
           AND ($4::TIMESTAMPTZ IS NULL OR t.served_at >= $4)
           AND ($5::TIMESTAMPTZ IS NULL OR t.served_at < $5)
-        ORDER BY t.id DESC
+        {order_by}
         LIMIT $6 OFFSET $7
-        "#,
-    )
+        "#
+    )))
     .bind(&filter.client_addrs)
     .bind(&filter.zone_name)
     .bind(result)

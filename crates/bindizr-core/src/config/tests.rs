@@ -940,7 +940,11 @@ fn database_type_spells_itself_once() {
 /// Verify that `SavedTransfers` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
 fn saved_transfers_spells_itself_once() {
-    for value in [SavedTransfers::All, SavedTransfers::Unserved] {
+    for value in [
+        SavedTransfers::All,
+        SavedTransfers::Unserved,
+        SavedTransfers::None,
+    ] {
         assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
         assert_eq!(
             serde_json::from_value::<SavedTransfers>(json!(value.as_str())).unwrap(),
@@ -953,7 +957,11 @@ fn saved_transfers_spells_itself_once() {
 /// Verify that `SavedRequests` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
 fn saved_requests_spells_itself_once() {
-    for value in [SavedRequests::All, SavedRequests::Denied] {
+    for value in [
+        SavedRequests::All,
+        SavedRequests::Denied,
+        SavedRequests::None,
+    ] {
         assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
         assert_eq!(
             serde_json::from_value::<SavedRequests>(json!(value.as_str())).unwrap(),

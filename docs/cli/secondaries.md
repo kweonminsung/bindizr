@@ -127,7 +127,9 @@ Without `--secondary` the log covers every client, so a refusal to an address
 no secondary has — a server probing for zones — shows up too; `--address`
 selects one. `--zone` and `--result` (`ok`, `refused`, `failed`) narrow the
 list, `--since` and `--until` bound it in time (a span ago such as `7d`, a
-UTC date, or RFC 3339), and `--limit` and `--offset` page it. A transfer of
+UTC date, or RFC 3339), and `--limit` and `--offset` page it. Newest first
+by default; `--sort` takes `at`, `address`, `zone_name`, `kind`, or
+`result`, and `--order` `desc` or `asc`. A transfer of
 a zone Bindizr does not have leaves no row. The rows are in the database, so
 a restart keeps them and deleting a zone drops them. Reading the log needs
 `log:read`, like the [other logs](access-control.md#logs).
@@ -135,8 +137,8 @@ a restart keeps them and deleting a zone drops them. Reading the log needs
 The log keeps `transfer_log.max_days` of transfers (90 by default; `0`
 keeps them forever), and each client's last transfer of a zone beyond that.
 `transfer_log.save = "unserved"` logs refusals and failures alone, so the
-summary and `LAST-TRANSFER` then show no successful transfer — see
-[Configuration](../configuration.md).
+summary and `LAST-TRANSFER` then show no successful transfer, and `"none"`
+logs nothing, leaving them empty — see [Configuration](../configuration.md).
 
 Secondaries are also manageable over the HTTP API (`/secondaries`, with
 `POST /secondaries/{name}/check` for the check; the transfer log is

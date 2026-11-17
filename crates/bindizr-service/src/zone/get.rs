@@ -1,6 +1,6 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::zone::Zone;
-use bindizr_db::LockLevel;
+use bindizr_db::{LockLevel, SortOrder, ZoneSortField};
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
@@ -105,8 +105,8 @@ pub async fn list_by_filter(
         enabled: filter.enabled,
         search: filter.search.clone(),
         scope_role_id,
-        sort: pagination::parse_setting(filter.sort.as_deref())?,
-        order: pagination::parse_setting(filter.order.as_deref())?,
+        sort: pagination::parse_setting(filter.sort.as_deref(), ZoneSortField::default())?,
+        order: pagination::parse_setting(filter.order.as_deref(), SortOrder::default())?,
         limit,
         offset,
     };

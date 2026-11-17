@@ -6,7 +6,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-/// Query parameters of the access log listing: which requests, and the page.
+/// Query parameters of the access log listing: which requests, their order,
+/// and the page.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
@@ -29,6 +30,13 @@ pub struct AccessLogFilter {
     /// Only requests made before this time (RFC 3339).
     #[schema(example = "2026-11-01T00:00:00Z")]
     pub until: Option<DateTime<Utc>>,
+    /// `requested_at` (the default), `source`, `target`, `status`, `result`,
+    /// or `address`.
+    #[schema(example = "requested_at")]
+    pub sort: Option<String>,
+    /// `desc` (the default) or `asc`.
+    #[schema(example = "desc")]
+    pub order: Option<String>,
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
     #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]

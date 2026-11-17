@@ -31,7 +31,7 @@ pub(crate) async fn create(pool: &Pool<Sqlite>, log: TransferLog) -> Result<(), 
     Ok(())
 }
 
-/// List the rows `filter` selects, newest first, with zone names.
+/// List the rows `filter` selects, in its order, with zone names.
 pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<Sqlite>,
     filter: &TransferLogFilter,
@@ -50,6 +50,8 @@ pub(crate) async fn list_by_filter_with_zone(
     };
     let result = filter.result.map(TransferResult::as_str);
 
+    let order_by = filter.sort.order_by_sql(filter.order);
+
     let mut query = sqlx::query_as::<_, TransferLogWithZone>(AssertSqlSafe(format!(
         r#"
         SELECT t.client_addr, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
@@ -60,7 +62,7 @@ pub(crate) async fn list_by_filter_with_zone(
           AND (? IS NULL OR t.served_at >= ?)
           AND (? IS NULL OR t.served_at < ?)
           {client_addr_clause}
-        ORDER BY t.id DESC
+        {order_by}
         LIMIT ? OFFSET ?
         "#
     )))

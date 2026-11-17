@@ -5,10 +5,12 @@ use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
+use crate::sql::{AccessLogSortField, SortOrder};
 use crate::{Backend, Db, mysql, postgres, sqlite};
 
-/// Which access log rows a listing selects; paging rides along.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Which access log rows a listing selects and how they are ordered;
+/// paging rides along.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessLogFilter {
     pub source: Option<AccessSource>,
     pub result: Option<AccessResult>,
@@ -19,8 +21,28 @@ pub struct AccessLogFilter {
     pub since: Option<DateTime<Utc>>,
     /// Requests made before this time.
     pub until: Option<DateTime<Utc>>,
+    pub sort: AccessLogSortField,
+    pub order: SortOrder,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
+}
+
+impl Default for AccessLogFilter {
+    /// Select every row, newest first: the log's natural order.
+    fn default() -> Self {
+        Self {
+            source: None,
+            result: None,
+            caller_name: None,
+            client_addr: None,
+            since: None,
+            until: None,
+            sort: AccessLogSortField::default(),
+            order: SortOrder::Desc,
+            limit: None,
+            offset: None,
+        }
+    }
 }
 
 /// Append an access log row.
@@ -32,7 +54,7 @@ pub async fn create(db: &Db, log: &AccessLog) -> Result<(), DatabaseError> {
     }
 }
 
-/// List the rows `filter` selects, newest first.
+/// List the rows `filter` selects, in its order.
 pub async fn list_by_filter(
     db: &Db,
     filter: &AccessLogFilter,

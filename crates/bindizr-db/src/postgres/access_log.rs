@@ -1,7 +1,7 @@
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
 use chrono::{DateTime, Utc};
-use sqlx::{Pool, Postgres};
+use sqlx::{AssertSqlSafe, Pool, Postgres};
 
 use crate::access_log::AccessLogFilter;
 use crate::error::DatabaseError;
@@ -34,7 +34,7 @@ pub(crate) async fn create(pool: &Pool<Postgres>, log: &AccessLog) -> Result<(),
     Ok(())
 }
 
-/// List the rows `filter` selects, newest first.
+/// List the rows `filter` selects, in its order.
 pub(crate) async fn list_by_filter(
     pool: &Pool<Postgres>,
     filter: &AccessLogFilter,
@@ -44,7 +44,9 @@ pub(crate) async fn list_by_filter(
     let source = filter.source.map(AccessSource::as_str);
     let result = filter.result.map(AccessResult::as_str);
 
-    let logs = sqlx::query_as::<_, AccessLog>(
+    let order_by = filter.sort.order_by_sql(filter.order);
+
+    let logs = sqlx::query_as::<_, AccessLog>(AssertSqlSafe(format!(
         r#"
         SELECT source, client_addr, method, target, status, result,
                caller_kind AS changed_by_kind, caller_name AS changed_by_name, error, requested_at
@@ -55,10 +57,10 @@ pub(crate) async fn list_by_filter(
           AND ($4::TEXT IS NULL OR client_addr = $4)
           AND ($5::TIMESTAMPTZ IS NULL OR requested_at >= $5)
           AND ($6::TIMESTAMPTZ IS NULL OR requested_at < $6)
-        ORDER BY id DESC
+        {order_by}
         LIMIT $7 OFFSET $8
-        "#,
-    )
+        "#
+    )))
     .bind(source)
     .bind(result)
     .bind(&filter.caller_name)

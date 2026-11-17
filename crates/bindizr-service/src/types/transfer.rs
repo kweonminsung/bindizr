@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-/// Query parameters of the transfer log listing: which transfers, and the page.
+/// Query parameters of the transfer log listing: which transfers, their order,
+/// and the page.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
@@ -31,6 +32,12 @@ pub struct TransferLogFilter {
     /// Only transfers answered before this time (RFC 3339).
     #[schema(example = "2026-11-01T00:00:00Z")]
     pub until: Option<DateTime<Utc>>,
+    /// `at` (the default), `address`, `zone_name`, `kind`, or `result`.
+    #[schema(example = "at")]
+    pub sort: Option<String>,
+    /// `desc` (the default) or `asc`.
+    #[schema(example = "desc")]
+    pub order: Option<String>,
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
     #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]

@@ -30,7 +30,7 @@ pub async fn save_ok(
     serial: Serial,
 ) {
     // `transfer_log.save = "unserved"` keeps refusals and failures alone.
-    if cx.config().transfer_log.save == SavedTransfers::Unserved {
+    if cx.config().transfer_log.save != SavedTransfers::All {
         return;
     }
 
@@ -109,6 +109,10 @@ async fn save_unserved(
     result: TransferResult,
     error: String,
 ) {
+    if cx.config().transfer_log.save == SavedTransfers::None {
+        return;
+    }
+
     let Ok(zone_name) = ZoneName::parse(zone_name) else {
         return;
     };
@@ -164,8 +168,8 @@ pub async fn list(
     ))
 }
 
-/// Parse the listing's zone, result and address, resolve its secondary to the
-/// addresses that key its rows, and bound its page. A secondary and an address
+/// Parse the listing's zone, result, address and order, resolve its secondary
+/// to the addresses that key its rows, and bound its page. A secondary and an address
 /// together select the address only when the secondary resolves to it.
 async fn normalize_filter(
     cx: &Context,
@@ -202,6 +206,10 @@ async fn normalize_filter(
         return Err(ServiceError::invalid_input("since must be before until"));
     }
 
+    // Newest first is the log's natural order, whatever the field.
+    let defaults = bindizr_db::transfer_log::TransferLogFilter::default();
+    let sort = pagination::parse_setting(filter.sort.as_deref(), defaults.sort)?;
+    let order = pagination::parse_setting(filter.order.as_deref(), defaults.order)?;
     pagination::validate_page_limit(filter.limit)?;
 
     let secondary_ips = match filter.secondary_name.as_deref() {
@@ -229,6 +237,8 @@ async fn normalize_filter(
         result,
         since: filter.since,
         until: filter.until,
+        sort,
+        order,
         limit: filter.limit,
         offset: filter.offset,
     })
