@@ -9,7 +9,7 @@ use serde_json::json;
 use tokio::net::UdpSocket;
 use tokio::time;
 
-use crate::common::dns::notify::FakeSecondary;
+use crate::api::common::FakeSecondary;
 use crate::common::{TestApp, TestAppOptions};
 
 /// Verify that committed changes and an all-zones round send promptly while other ACKs are silent.

@@ -9,7 +9,7 @@ use domain::rdata::tsig::Tsig;
 use crate::common::dns::tsig;
 use crate::common::dns::tsig::KeyRole;
 use crate::common::{TestApp, TestAppOptions, dns};
-use crate::xfr::tls;
+use crate::xfr::common;
 
 /// Verify that an IN IXFR query cannot take its client serial from another class's SOA.
 #[tokio::test]
@@ -84,7 +84,7 @@ async fn ixfr_rejects_foreign_soa_classes() {
                     dns::exchange_tcp(app.dns_port(), message)
                 }),
                 dns::exchange_request(query.clone(), key, |message| {
-                    dns::exchange_tls(app.dns_tls_port(), message, tls::dot_client(&app))
+                    dns::exchange_tls(app.dns_tls_port(), message, common::dot_client(&app))
                 }),
             ] {
                 let response = response.unwrap();
@@ -210,7 +210,7 @@ async fn queries_reject_foreign_classes_in_every_section() {
                             dns::exchange_tcp(app.dns_port(), message)
                         }),
                         dns::exchange_request(query.clone(), key, |message| {
-                            dns::exchange_tls(app.dns_tls_port(), message, tls::dot_client(&app))
+                            dns::exchange_tls(app.dns_tls_port(), message, common::dot_client(&app))
                         }),
                     ] {
                         let response = response.unwrap();
@@ -266,7 +266,7 @@ async fn foreign_record_classes_keep_tsig_error_precedence() {
         for response in [
             dns::exchange_udp(app.dns_port(), &query).unwrap(),
             dns::exchange_tcp(app.dns_port(), &query).unwrap(),
-            dns::exchange_tls(app.dns_tls_port(), &query, tls::dot_client(&app)).unwrap(),
+            dns::exchange_tls(app.dns_tls_port(), &query, common::dot_client(&app)).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
 

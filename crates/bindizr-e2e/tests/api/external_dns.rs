@@ -6,8 +6,9 @@ use reqwest::{Client, Method, StatusCode, header};
 use serde_json::{Value, json};
 use tokio::time;
 
+use crate::api::common::RECORD_ACTIONS;
 use crate::common;
-use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
+use crate::common::{TestApp, TestAppOptions};
 
 /// The ExternalDNS webhook media type, versioned.
 const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";

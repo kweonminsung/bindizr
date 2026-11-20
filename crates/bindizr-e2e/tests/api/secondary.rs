@@ -1,9 +1,9 @@
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
+use crate::api::common::{FakeSecondary, ReceivedNotify, SERVED_SERIAL};
 use crate::common;
 use crate::common::TestApp;
-use crate::common::dns::notify::{FakeSecondary, ReceivedNotify, SERVED_SERIAL};
 use crate::common::dns::tsig;
 use crate::common::dns::tsig::KeyRole;
 

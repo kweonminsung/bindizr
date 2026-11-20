@@ -1,4 +1,3 @@
-pub(crate) mod notify;
 pub(crate) mod nsupdate;
 mod parent;
 mod transfer;

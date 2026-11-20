@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::common::dns::tsig;
 use crate::common::dns::tsig::{KeyRole, SigningKey};
 use crate::common::{TestApp, TestAppOptions, dns};
-use crate::xfr::{common, tls};
+use crate::xfr::common;
 
 /// Verify that TSIG error metrics follow the final RCODE, including overflow fallback.
 #[tokio::test]
@@ -358,7 +358,7 @@ async fn questionless_updates_use_readable_edns_for_tsig_errors() {
             for response in [
                 dns::exchange_udp(app.dns_port(), &request).unwrap(),
                 dns::exchange_tcp(app.dns_port(), &request).unwrap(),
-                dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap(),
+                dns::exchange_tls(app.dns_tls_port(), &request, common::dot_client(&app)).unwrap(),
             ] {
                 let response = Message::from_octets(response).unwrap();
 
@@ -415,7 +415,7 @@ async fn unreadable_bodies_receive_header_only_responses_on_every_transport() {
             for response in [
                 dns::exchange_udp(app.dns_port(), &request).unwrap(),
                 dns::exchange_tcp(app.dns_port(), &request).unwrap(),
-                dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap(),
+                dns::exchange_tls(app.dns_tls_port(), &request, common::dot_client(&app)).unwrap(),
             ] {
                 let response = Message::from_octets(response).unwrap();
 
@@ -492,7 +492,7 @@ async fn questionless_queries_preserve_edns_and_tsig() {
                                 dns::exchange_tls(
                                     app.dns_tls_port(),
                                     message,
-                                    tls::dot_client(&app),
+                                    common::dot_client(&app),
                                 )
                             }),
                             tls_rcode,
@@ -570,7 +570,7 @@ async fn unsupported_opcodes_return_refusals_without_questions() {
         }
 
         let response =
-            dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap();
+            dns::exchange_tls(app.dns_tls_port(), &request, common::dot_client(&app)).unwrap();
         let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::REFUSED);
@@ -652,7 +652,8 @@ async fn questionless_tsig_failures_keep_their_specific_errors() {
                 for response in [
                     dns::exchange_udp(app.dns_port(), &request).unwrap(),
                     dns::exchange_tcp(app.dns_port(), &request).unwrap(),
-                    dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap(),
+                    dns::exchange_tls(app.dns_tls_port(), &request, common::dot_client(&app))
+                        .unwrap(),
                 ] {
                     let response = Message::from_octets(response).unwrap();
 
@@ -730,7 +731,7 @@ async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
             }
 
             let response =
-                dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap();
+                dns::exchange_tls(app.dns_tls_port(), &request, common::dot_client(&app)).unwrap();
             let response = Message::from_octets(response).unwrap();
 
             assert_eq!(response.header().rcode(), Rcode::REFUSED);
@@ -790,7 +791,7 @@ async fn questionless_malformed_extensions_receive_formerr() {
         for response in [
             dns::exchange_udp(app.dns_port(), &query).unwrap(),
             dns::exchange_tcp(app.dns_port(), &query).unwrap(),
-            dns::exchange_tls(app.dns_tls_port(), &query, tls::dot_client(&app)).unwrap(),
+            dns::exchange_tls(app.dns_tls_port(), &query, common::dot_client(&app)).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
 
@@ -836,7 +837,7 @@ async fn questionless_refusals_allow_connection_reuse() {
         );
     }
 
-    let mut stream = dns::connect_tls(app.dns_tls_port(), tls::dot_client(&app)).unwrap();
+    let mut stream = dns::connect_tls(app.dns_tls_port(), common::dot_client(&app)).unwrap();
 
     for opcode in [Opcode::QUERY, Opcode::from_int(15), Opcode::QUERY] {
         let mut builder = MessageBuilder::new_vec();

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::net::TcpStream;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use base64::engine::general_purpose;
 use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
@@ -20,7 +20,7 @@ use domain::rdata::tsig::{Time48, Tsig};
 use domain::rdata::{A, Soa};
 use domain::tsig::{Algorithm, ClientSequence, ClientTransaction, Key, KeyName};
 use reqwest::{Method, StatusCode};
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio::time;
 
 use crate::common::dns::nsupdate::UpdateRecord;
@@ -157,7 +157,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                                 _ => dns::exchange_tls(
                                     app.dns_tls_port(),
                                     &query,
-                                    tls::dot_client(&app),
+                                    common::dot_client(&app),
                                 ),
                             }
                             .unwrap();
@@ -892,26 +892,6 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
     }
 }
 
-/// Poll `/logs/transfer?{query}` until it selects `expected` rows, returning the last body on
-/// timeout. Saving follows the transfer response, so an immediate read may not see the new row yet.
-async fn wait_for_transfer_log(app: &TestApp, query: &str, expected: u64) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(5);
-
-    loop {
-        let (status, body) = app
-            .send_request(Method::GET, &format!("/logs/transfer?{query}"), None)
-            .await;
-
-        assert_eq!(status, StatusCode::OK, "{body}");
-
-        if body["pagination"]["total"] == expected || Instant::now() > deadline {
-            return body;
-        }
-
-        time::sleep(Duration::from_millis(50)).await;
-    }
-}
-
 /// Verify that the transfer log lists served and refused transfers by address and by
 /// secondary, a refusal to an address no secondary had included.
 #[tokio::test]
@@ -926,7 +906,7 @@ async fn transfer_log_lists_transfers_by_address_and_secondary() {
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
-    let body = wait_for_transfer_log(&app, "address=127.0.0.1", 1).await;
+    let body = common::wait_for_transfer_log(&app, "address=127.0.0.1", 1).await;
 
     assert_eq!(body["items"][0]["zone_name"], zone_name, "{body}");
     assert_eq!(body["items"][0]["kind"], "axfr");
@@ -941,7 +921,7 @@ async fn transfer_log_lists_transfers_by_address_and_secondary() {
     assert!(outcome.records() >= 3);
 
     // Rows key by address, so the secondary registered afterwards reads both.
-    let body = wait_for_transfer_log(&app, "secondary_name=loopback", 2).await;
+    let body = common::wait_for_transfer_log(&app, "secondary_name=loopback", 2).await;
 
     assert_eq!(body["items"][0]["kind"], "axfr", "{body}");
     assert_eq!(body["items"][0]["result"], "ok");

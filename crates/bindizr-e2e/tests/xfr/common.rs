@@ -1,10 +1,16 @@
-//! Fixtures and metrics shared by TCP and TLS transfer tests.
+//! Fixtures, clients and metrics shared by TCP and TLS transfer tests.
+
+use std::time::{Duration, Instant};
 
 use domain::base::iana::{Class, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{MessageBuilder, Serial, Ttl};
 use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
+use rustls::pki_types::CertificateDer;
+use rustls::{ClientConfig, RootCertStore, SupportedProtocolVersion, version};
+use serde_json::Value;
+use tokio::time;
 
 use crate::common::{TestApp, dns};
 
@@ -115,4 +121,45 @@ pub(crate) fn build_edns_query(
     }
 
     additional
+}
+
+/// Build a TLS client with the run's certificate, versions, and ALPN.
+pub(crate) fn xot_client(
+    cert: &CertificateDer<'static>,
+    versions: &[&'static SupportedProtocolVersion],
+    alpn: &[&[u8]],
+) -> ClientConfig {
+    let mut roots = RootCertStore::empty();
+    roots.add(cert.clone()).expect("trust the test certificate");
+    let mut client = ClientConfig::builder_with_protocol_versions(versions)
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    client.alpn_protocols = alpn.iter().map(|token| token.to_vec()).collect();
+
+    client
+}
+
+/// Build a TLS 1.3 client offering "dot".
+pub(crate) fn dot_client(app: &TestApp) -> ClientConfig {
+    xot_client(app.tls_cert(), &[&version::TLS13], &[b"dot"])
+}
+
+/// Poll `/logs/transfer?{query}` until it selects `expected` rows, returning the last body on
+/// timeout. Saving follows the transfer response, so an immediate read may not see the new row yet.
+pub(crate) async fn wait_for_transfer_log(app: &TestApp, query: &str, expected: u64) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(5);
+
+    loop {
+        let (status, body) = app
+            .send_request(Method::GET, &format!("/logs/transfer?{query}"), None)
+            .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        if body["pagination"]["total"] == expected || Instant::now() > deadline {
+            return body;
+        }
+
+        time::sleep(Duration::from_millis(50)).await;
+    }
 }

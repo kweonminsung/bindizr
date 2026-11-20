@@ -22,9 +22,6 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::time;
 
-/// Every record action, the grant a test role needs to read and change a zone's records.
-pub(crate) const RECORD_ACTIONS: &str = "record:read,record:create,record:update,record:delete";
-
 /// The most a listing returns in one call; the HTTP API refuses more.
 const RECORD_PAGE_LIMIT: u32 = 1000;
 
