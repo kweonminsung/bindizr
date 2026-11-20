@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::dns::LibraryError;
 use crate::dns::name::WireName;
-use crate::dns::record::{EncodeRdataError, Rdata};
+use crate::dns::record::{DsRecordValue, EncodeRdataError, Rdata};
 use crate::model::dnssec_key::DnssecKey;
 
 /// Digest for DS/CDS generated from bindizr's keys: SHA-256, recommended by
@@ -66,14 +66,9 @@ impl DnssecKey {
     /// `DS_DIGEST_TYPES`; the zone publishes `DS_DIGEST_TYPE`.
     pub fn ds_rdata(&self, apex: &WireName, digest_type: u8) -> Result<Rdata, EncodeKeyRdataError> {
         let digest = self.ds_digest(apex, digest_type)?;
+        let ds = DsRecordValue::new(self.key_tag, self.algorithm.as_u8(), digest_type, digest);
 
-        let mut rdata = Vec::with_capacity(4 + digest.len());
-        rdata.extend_from_slice(&self.key_tag.as_u16().to_be_bytes());
-        rdata.push(self.algorithm.as_u8());
-        rdata.push(digest_type);
-        rdata.extend_from_slice(&digest);
-
-        Ok(Rdata::new(rdata)?)
+        Ok(ds.to_rdata()?)
     }
 
     /// Return the digest a DS of this key carries in `digest_type`, one of

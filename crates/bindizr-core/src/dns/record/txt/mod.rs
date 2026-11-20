@@ -3,13 +3,6 @@ use std::str;
 use crate::dns::record::value::{MAX_CHARACTER_STRING_LEN, MAX_RECORD_RDATA};
 use crate::dns::record::{ParseRecordValueError, value};
 
-/// The content of a TXT value: a single string or multiple character-strings.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TxtContent {
-    Single(String),
-    Segments(Vec<String>),
-}
-
 /// A TXT value as raw RDATA (length-prefixed character-strings); the row form
 /// is its canonical presentation rendering ([`Self::to_presentation`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,9 +112,9 @@ impl TxtRecordValue {
         Self::from_octet_segments(segments.iter().map(Vec::as_slice))
     }
 
-    /// Decode into character-strings, collapsing a single segment into
-    /// [`TxtContent::Single`]; `None` on empty RDATA or non-UTF-8.
-    pub fn to_content(&self) -> Option<TxtContent> {
+    /// Decode into its character-strings as text; `None` on empty RDATA or
+    /// non-UTF-8.
+    pub fn to_content(&self) -> Option<Vec<String>> {
         if self.0.is_empty() {
             return None;
         }
@@ -132,10 +125,7 @@ impl TxtRecordValue {
             segments.push(str::from_utf8(chunk).ok()?.to_string());
         }
 
-        match segments.as_slice() {
-            [single] => Some(TxtContent::Single(single.clone())),
-            _ => Some(TxtContent::Segments(segments)),
-        }
+        Some(segments)
     }
 
     /// Render the row form: each character-string quoted, space-separated,

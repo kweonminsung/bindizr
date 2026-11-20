@@ -18,7 +18,7 @@ use crate::dns::record::{
     ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
     DnameRecordValue, DsRecordValue, EncodeRdataError, MxRecordValue, NaptrRecordValue,
     NsRecordValue, ParseRecordValueError, PtrRecordValue, Rdata, SrvRecordValue, SshfpRecordValue,
-    TlsaRecordValue, TxtContent, TxtRecordValue, WksRecordValue,
+    TlsaRecordValue, TxtRecordValue, WksRecordValue,
 };
 use crate::dns::{Ttl, name};
 use crate::model::zone::ZoneId;
@@ -375,7 +375,9 @@ impl RecordType {
     }
 
     /// Render storage text, distinct from [`Self::canonical_value`]'s comparison form.
-    /// TXT input uses presentation form; parse other grammars through [`TxtRecordValue`].
+    /// TXT input starting with a quote is read as presentation form, anything
+    /// else as raw text; segments, or raw text that may start with a quote, go
+    /// through [`TxtRecordValue::from_segments`] or [`TxtRecordValue::from_string`].
     pub fn encoded_value(
         self,
         value: &str,
@@ -439,8 +441,7 @@ impl RecordType {
                 .ok()
                 .and_then(|rdata| rdata.to_content())
             {
-                Some(TxtContent::Single(value)) => display_text(&value),
-                Some(TxtContent::Segments(segments)) => display_text(&segments.join("")),
+                Some(segments) => display_text(&segments.concat()),
                 None => value.to_string(),
             };
         }

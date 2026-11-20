@@ -46,8 +46,6 @@ pub enum ParseRecordValueError {
     CharStringTooLong { field: &'static str },
     #[error("{field} must not contain whitespace or control characters")]
     Whitespace { field: &'static str },
-    #[error("{field} must not be the root zone")]
-    RootZone { field: &'static str },
     #[error("{field} {source}")]
     Name {
         field: &'static str,

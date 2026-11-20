@@ -43,12 +43,9 @@ pub(crate) fn display_serial_lag(
 ) -> String {
     match (status, visible_serial) {
         (SecondaryStatus::InSync, Some(_)) => "0".to_string(),
-        (SecondaryStatus::Lagging, Some(visible)) => zone_serial
-            .as_u32()
-            .wrapping_sub(visible.as_u32())
-            .to_string(),
+        (SecondaryStatus::Lagging, Some(visible)) => zone_serial.distance_from(visible).to_string(),
         (SecondaryStatus::Ahead, Some(visible)) => {
-            (-i64::from(visible.as_u32().wrapping_sub(zone_serial.as_u32()))).to_string()
+            (-i64::from(visible.distance_from(zone_serial))).to_string()
         }
         (SecondaryStatus::Reachable | SecondaryStatus::Unreachable, _) | (_, None) => {
             MISSING_CELL.to_string()

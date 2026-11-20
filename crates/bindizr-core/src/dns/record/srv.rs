@@ -38,10 +38,6 @@ impl<'a> SrvRecordValue<'a> {
 
     /// Validate the fields of this SRV value.
     pub fn validate(self) -> Result<(), ParseRecordValueError> {
-        if self.target.trim() == "." {
-            return Ok(());
-        }
-
         value::validate_domain_record_value("SRV record target", self.target)
     }
 

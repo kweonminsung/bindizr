@@ -222,8 +222,10 @@ pub(crate) fn validate_domain_record_value(
         return Err(ParseRecordValueError::Empty { field });
     }
 
-    if trimmed == "." {
-        return Err(ParseRecordValueError::RootZone { field });
+    // RFC 2181, Section 11 permits the root as a domain-name value; only the
+    // exact text, so a padded ` . ` still meets the decoder's whitespace error.
+    if value == "." {
+        return Ok(());
     }
 
     name::decode_name_labels(value)
@@ -247,6 +249,7 @@ mod tests {
             "1.0/25.2.0.192.in-addr.arpa.", // RFC 2317, Section 4 delegation
             "_dmarc.example.com.",
             "host-name.example.com",
+            ".",
         ] {
             validate_domain_record_value("CNAME record value", value)
                 .unwrap_or_else(|error| panic!("{value} was rejected: {error}"));
@@ -258,7 +261,7 @@ mod tests {
     fn record_value_rejects_names_without_reversible_presentation() {
         for value in [
             "",
-            ".",
+            " . ",
             "bad target.example.com",
             " leading.example.com",
             "trailing.example.com ",

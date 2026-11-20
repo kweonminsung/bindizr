@@ -5,7 +5,7 @@ use std::fmt;
 
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::dns::record::{ParseRecordValueError, TxtContent, TxtRecordValue};
+use bindizr_core::dns::record::{ParseRecordValueError, TxtRecordValue};
 use bindizr_core::model::dnssec_record::DnssecRecordType;
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
@@ -97,8 +97,9 @@ pub(crate) fn build_display_value(record_type: RecordType, value: &str) -> Recor
         .ok()
         .and_then(|rdata| rdata.to_content())
     {
-        Some(TxtContent::Single(value)) => RecordValue::Text(value),
-        Some(TxtContent::Segments(segments)) => RecordValue::Segments(segments),
+        // One character-string reads as plain text; several keep their boundaries.
+        Some(mut segments) if segments.len() == 1 => RecordValue::Text(segments.remove(0)),
+        Some(segments) => RecordValue::Segments(segments),
         None => RecordValue::Presentation {
             presentation: value.to_string(),
         },

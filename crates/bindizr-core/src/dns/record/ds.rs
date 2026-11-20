@@ -35,6 +35,17 @@ pub struct DsRecordValue {
 }
 
 impl DsRecordValue {
+    /// Hold a DS computed from a key: its tag, algorithm number, digest type
+    /// and the digest itself (RFC 4034, Section 5.1).
+    pub fn new(key_tag: KeyTag, algorithm: u8, digest_type: u8, digest: Vec<u8>) -> Self {
+        Self {
+            key_tag,
+            algorithm,
+            digest_type,
+            digest,
+        }
+    }
+
     /// Parse `<key tag> <algorithm> <digest type> <digest>`: the algorithm a
     /// number or mnemonic (RFC 4034, Section 5.3), the hex digest groupable as `dig` prints.
     pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {

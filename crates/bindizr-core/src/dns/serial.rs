@@ -31,10 +31,16 @@ impl Serial {
         self.0
     }
 
+    /// Return how far this serial lies past `other`, counted forward modulo
+    /// 2^32 (RFC 1982, Section 3.1).
+    pub fn distance_from(self, other: Self) -> u32 {
+        self.0.wrapping_sub(other.0)
+    }
+
     /// Return whether this serial advances `other` under RFC 1982, Section 3.2.
     /// The undefined half-range distance does not establish an advance.
     pub fn is_newer_than(self, other: Self) -> bool {
-        matches!(self.0.wrapping_sub(other.0), 1..=0x7fff_ffff)
+        matches!(self.distance_from(other), 1..=0x7fff_ffff)
     }
 
     /// Advance modulo 2^32 (RFC 1982, Section 3.1), passing over zero (RFC 2136,
@@ -179,6 +185,18 @@ mod tests {
             assert_eq!(
                 Serial::from(candidate).is_newer_than(Serial::from(current)),
                 newer
+            );
+        }
+    }
+
+    /// Verify that the forward distance counts across the wrap from the
+    /// maximum serial (RFC 1982, Section 3.1).
+    #[test]
+    fn distance_from_counts_forward_across_the_wrap() {
+        for (serial, other, distance) in [(12, 10, 2), (1, u32::MAX, 2), (10, 12, u32::MAX - 1)] {
+            assert_eq!(
+                Serial::from(serial).distance_from(Serial::from(other)),
+                distance
             );
         }
     }
