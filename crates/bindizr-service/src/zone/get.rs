@@ -19,6 +19,17 @@ pub(crate) async fn find_served_by_name_tx(
         .filter(|zone| zone.enabled))
 }
 
+/// Find the DNS plane's view of a zone outside a transaction: a disabled one
+/// is absent rather than served.
+pub(crate) async fn find_served_by_name(
+    cx: &Context,
+    zone_name: &ZoneName,
+) -> Result<Option<Zone>, ServiceError> {
+    Ok(bindizr_db::zone::get_by_name(cx.db(), zone_name)
+        .await?
+        .filter(|zone| zone.enabled))
+}
+
 /// Find a zone in the caller's transaction at `lock_level`, including disabled zones
 /// so imports can still write their records.
 pub(crate) async fn find_by_name_tx(

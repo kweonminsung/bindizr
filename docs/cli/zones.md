@@ -105,8 +105,8 @@ bindizr zone update example.com --refresh 300 --retry 60
 ```
 
 Updates change only the fields you pass. A disabled zone keeps its editable
-records but leaves the catalog and stops serving transfers, so secondaries
-remove it:
+records but leaves the catalog, stops serving transfers and sends no NOTIFY
+(`zone notify` refuses it), so secondaries remove it:
 
 ```bash
 bindizr zone update example.com --enabled false --description "paused for migration"

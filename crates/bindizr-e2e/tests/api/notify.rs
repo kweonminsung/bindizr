@@ -361,3 +361,66 @@ async fn notify_reports_completion_when_secondary_does_not_implement_notify() {
 
     server.await.unwrap();
 }
+
+/// Verify that a disabled zone, which the DNS plane answers NOTAUTH for, is
+/// not announced: a write to it sends no NOTIFY, and a manual one is refused.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn notify_skips_disabled_zones() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    app.create_secondary("watcher", &socket.local_addr().unwrap().to_string())
+        .await;
+
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(json!({ "enabled": false })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({ "zone_name": zone_name, "name": "www", "type": "A", "value": "192.0.2.51" })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // The catalog still announces the zone leaving it; the zone itself is silent.
+    let mut buffer = [0; 4096];
+    let mut announced = Vec::new();
+
+    while let Ok(received) =
+        time::timeout(Duration::from_millis(500), socket.recv_from(&mut buffer)).await
+    {
+        let (len, _) = received.unwrap();
+        let query = Message::from_octets(buffer[..len].to_vec()).unwrap();
+        announced.push(query.sole_question().unwrap().qname().to_string());
+    }
+
+    assert!(
+        !announced.iter().any(|name| name == zone_name),
+        "a disabled zone was announced: {announced:?}"
+    );
+
+    let serial = app.read_zone_serial(zone_name).await;
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/notify?bump_serial=true"),
+            None,
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+}

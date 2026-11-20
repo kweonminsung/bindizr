@@ -8,8 +8,8 @@ use tokio::task;
 
 use super::*;
 use crate::authorization::Caller;
-use crate::secondary;
-use crate::types::CreateSecondaryRequest;
+use crate::types::{CreateSecondaryRequest, CreateZoneRequest};
+use crate::{secondary, zone};
 
 /// Build real service state before pausing time; catalog deadlines need no DB reads.
 async fn context(batch_ms: u64) -> Arc<Context> {
@@ -36,6 +36,27 @@ async fn context(batch_ms: u64) -> Arc<Context> {
 #[tokio::test]
 async fn worker_sends_later_zone_before_silent_secondary_times_out() {
     let cx = context(10).await;
+    // Only a served zone is announced; created first, so no secondary hears its creation.
+    zone::create(
+        &cx,
+        &Caller::socket(),
+        &CreateZoneRequest {
+            name: "second.example".to_string(),
+            mname: "ns.example.com".to_string(),
+            rname: "hostmaster@example.com".to_string(),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: true,
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     secondary::create(
         &cx,
