@@ -41,7 +41,7 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
 
         assert_eq!(target.local_ip.to_canonical(), destinations[index]);
         assert_eq!(
-            target.client_addr.ip().to_canonical(),
+            target.client_addr.ip(),
             clients[index].local_addr().unwrap().ip()
         );
         received.push((target, buffer[..len].to_vec()));

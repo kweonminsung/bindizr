@@ -125,8 +125,6 @@ pub(crate) async fn handle_udp_ixfr(
 /// Return whether the client is `bindizr doctor` probing over the wire,
 /// reaching a concrete `listen_addr` from it.
 fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
-    // IPv4-mapped IPv6 addresses use the same self-probe identity as IPv4.
-    let client_ip = client_ip.to_canonical();
     client_ip.is_loopback() || client_ip == dns_cx.daemon().config().dns.listen_addr.to_canonical()
 }
 

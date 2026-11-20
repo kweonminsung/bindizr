@@ -54,7 +54,8 @@ pub(crate) async fn save_access_log(
         &cx,
         AccessLog {
             source: AccessSource::Api,
-            client_addr: peer.ip().to_string(),
+            // An IPv4-mapped peer of a dual-stack listener reads as IPv4.
+            client_addr: peer.ip().to_canonical().to_string(),
             method,
             target,
             status: status.as_str().to_string(),

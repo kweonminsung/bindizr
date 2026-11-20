@@ -1,6 +1,7 @@
 //! Plain DNS TCP listener and connection admission.
 
 use std::future::Future;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
@@ -62,6 +63,9 @@ pub(crate) async fn run_tcp_server(
 
         match accepted {
             Ok((stream, client_addr)) => {
+                // An IPv4-mapped peer of a dual-stack listener reads as IPv4.
+                let client_addr =
+                    SocketAddr::new(client_addr.ip().to_canonical(), client_addr.port());
                 let dns_cx = dns_cx.clone();
                 let stop = connection_shutdown.waiter();
 
