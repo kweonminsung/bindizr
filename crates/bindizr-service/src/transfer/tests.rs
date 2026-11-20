@@ -154,6 +154,34 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
     assert_eq!(found.map(|log| log.result), Some(TransferResult::Failed));
 }
 
+/// Verify that the latest transfer of a zone served to several addresses of
+/// one secondary is one row, the newest among them.
+#[tokio::test]
+async fn list_latest_by_clients_keeps_one_row_per_zone_across_addresses() {
+    let (cx, zone_ids) = context(SavedTransfers::All, &["example.test"]).await;
+    let (axfr, tcp) = (TransferKind::Axfr, TransferTransport::Tcp);
+    let other_client = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2));
+
+    save_ok(&cx, CLIENT, zone_ids[0], axfr, tcp, false, Serial::from(7)).await;
+    save_ok(
+        &cx,
+        other_client,
+        zone_ids[0],
+        axfr,
+        tcp,
+        false,
+        Serial::from(8),
+    )
+    .await;
+
+    let latest = list_latest_by_clients(&cx, &[CLIENT, other_client])
+        .await
+        .unwrap();
+
+    assert_eq!(latest.len(), 1, "{latest:?}");
+    assert_eq!(latest[0].serial, Some(Serial::from(8)));
+}
+
 /// Verify that `transfer_log.save = "unserved"` saves refusals and failures alone.
 #[tokio::test]
 async fn save_ok_leaves_no_row_when_only_unserved_transfers_are_saved() {
