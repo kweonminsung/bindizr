@@ -37,13 +37,11 @@ pub struct CatalogZone {
     pub minimum_ttl: Ttl,
 }
 
-/// Build a schema-2 member PTR owner using the same prefix startup validates.
-pub(crate) fn catalog_member_owner_name(
-    catalog_zone_name: &ZoneName,
-    zone_name: &ZoneName,
-) -> String {
+/// Build a schema-2 member PTR owner, relative to the catalog zone, using the
+/// same prefix startup validates.
+pub(crate) fn catalog_member_owner_name(zone_name: &ZoneName) -> OwnerName {
     let member_id = zone_name_to_member_id(zone_name);
-    format!("{member_id}.{MEMBER_SUBTREE}.{catalog_zone_name}.")
+    OwnerName::from_row(&format!("{member_id}.{MEMBER_SUBTREE}"))
 }
 
 /// Build a stable member label from truncated SHA-256 (RFC 9432, Section 4.1).

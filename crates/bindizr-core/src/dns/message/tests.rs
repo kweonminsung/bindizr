@@ -248,11 +248,12 @@ fn encoding_splits_overflowing_answers_into_frames() {
     for index in 0..4000 {
         let frame = builder
             .add_answer_or_overflow(|builder| {
-                builder.add_text_rdata(
-                    &format!("host-{index}.example.com."),
+                builder.add_record_parts(
+                    &OwnerName::from_row(&format!("host-{index}")),
+                    &ZoneName::parse("example.com").unwrap(),
                     RecordType::A,
                     &format!("192.0.2.{}", index % 255),
-                    3600,
+                    Ttl::from_secs(3600),
                     None,
                 )
             })
@@ -468,11 +469,12 @@ fn signed_transfer_authenticates_every_envelope() {
     for index in 0..4000 {
         let frame = builder
             .add_answer_or_overflow(|builder| {
-                builder.add_text_rdata(
-                    &format!("host-{index}.example.com."),
+                builder.add_record_parts(
+                    &OwnerName::from_row(&format!("host-{index}")),
+                    &ZoneName::parse("example.com").unwrap(),
                     RecordType::A,
                     &format!("192.0.2.{}", index % 255),
-                    3600,
+                    Ttl::from_secs(3600),
                     None,
                 )
             })
