@@ -106,7 +106,7 @@ pub async fn authorize_transfer_by_name(
 pub async fn refresh_catalog_content(
     cx: &Context,
     caller: &Caller,
-) -> Result<TransferAccess<(CatalogZone, Vec<String>)>, ServiceError> {
+) -> Result<TransferAccess<(CatalogZone, Vec<ZoneName>)>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to load catalog content").await?;
 
     let result: Result<_, ServiceError> = async {

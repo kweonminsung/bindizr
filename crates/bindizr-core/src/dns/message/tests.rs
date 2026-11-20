@@ -37,7 +37,7 @@ fn catalog_response_preserves_metadata_and_member_records() {
     builder.add_catalog_ns(&catalog_zone).unwrap();
     builder.add_catalog_schema_version(&catalog_zone).unwrap();
     builder
-        .add_catalog_ptr(&catalog_zone, "member.example")
+        .add_catalog_ptr(&catalog_zone, &ZoneName::parse("member.example").unwrap())
         .unwrap();
     builder.add_catalog_soa(&catalog_zone).unwrap();
     let response = builder.build().unwrap();

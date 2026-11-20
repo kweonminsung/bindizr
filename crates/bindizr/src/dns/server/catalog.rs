@@ -1,6 +1,7 @@
 //! Encode and stream the service's virtual catalog as AXFR or IXFR.
 
 use bindizr_core::dns::message::{DnsMessageBuilder, ParsedQuery, Rtype};
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::tsig::TransferSigner;
 use bindizr_core::dns::{CatalogZone, Serial};
 
@@ -13,7 +14,7 @@ pub(crate) async fn send_catalog_response(
     query: &ParsedQuery,
     response_qtype: Rtype,
     signer: &mut Option<TransferSigner>,
-    content: (CatalogZone, Vec<String>),
+    content: (CatalogZone, Vec<ZoneName>),
 ) -> Result<(), DnsError> {
     let (catalog_zone, member_zone_names) = content;
     log::info!(

@@ -157,10 +157,10 @@ impl DnsMessageBuilder {
     pub fn add_catalog_ptr(
         &mut self,
         catalog_zone: &CatalogZone,
-        zone_name: &str,
+        zone_name: &ZoneName,
     ) -> Result<(), EncodeMessageError> {
         let ptr_name = dns::catalog_member_owner_name(&catalog_zone.name, zone_name);
-        let ptr_target = name::to_fqdn(zone_name);
+        let ptr_target = zone_name.to_fqdn();
 
         self.add_text_rdata(
             &ptr_name,
