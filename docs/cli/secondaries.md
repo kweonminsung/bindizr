@@ -103,7 +103,8 @@ it; `-o json` carries the same fields.
 ## Transfer log
 
 Bindizr logs every transfer it answered each client address, refusals and
-failures included. `bindizr log transfer` lists them newest first;
+failures included. An IXFR answered with the current SOA alone, the secondary
+already up to date, moved nothing and leaves no entry. `bindizr log transfer` lists them newest first;
 `--secondary` narrows them to the addresses a secondary resolves to now,
 `zone status` shows each zone's last transfer in its `LAST-TRANSFER` column,
 and `secondary check` and `doctor` print a summary per secondary:

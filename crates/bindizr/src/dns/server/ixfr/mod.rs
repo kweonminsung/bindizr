@@ -72,6 +72,7 @@ pub(crate) async fn handle_ixfr(
     let current_serial = zone.serial;
 
     let (changes, versions) = match plan {
+        // The client is current, so nothing moves: no transfer, no transfer-log row.
         IxfrPlan::SoaOnly => {
             log::info!("IXFR: Answering with current SOA (serial={current_serial})");
             return send::send_soa_response(writer, query, &zone, identity.signer.take()).await;

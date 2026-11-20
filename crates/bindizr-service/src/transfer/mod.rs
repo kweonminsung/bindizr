@@ -19,7 +19,8 @@ use crate::types::{PaginatedResponse, TransferLogFilter, TransferLogResponse};
 use crate::{Context, pagination, secondary, zone};
 
 /// Save a transfer answered for `zone_id` up to `serial`. A failure to
-/// save is logged; the transfer already went out.
+/// save is logged; the transfer already went out. An IXFR answered with the
+/// SOA alone, its client already current, moved nothing and is not saved.
 pub async fn save_ok(
     cx: &Context,
     client_ip: IpAddr,
