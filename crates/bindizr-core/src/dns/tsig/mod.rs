@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use base64::DecodeError;
 use base64::engine::general_purpose;
-use domain::base::iana::{Rcode, TsigRcode};
+use domain::base::iana::{Class, Rcode, TsigRcode};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, ToName};
 use domain::rdata::tsig::{Time48, Tsig};
@@ -354,6 +354,30 @@ pub(crate) fn is_mac_size_in_bounds<N: ToName>(algorithm: &N, mac_len: usize) ->
 /// never under 10 octets (RFC 8945, Section 5.2.2.1).
 fn minimum_mac_len(algorithm: Algorithm) -> usize {
     10.max(algorithm.native_len() / 2)
+}
+
+/// Feed the TSIG variables to a MAC digest (RFC 8945, Section 4.3.3): the key
+/// name and algorithm in canonical form, class ANY, TTL zero, the time, fudge
+/// and error, and the Other Data after its length. Other Data is read from a
+/// TSIG record or is the six-octet server time, so its length fits Other Len.
+pub(crate) fn digest_tsig_variables(
+    digest: &mut hmac::Context,
+    name: &[u8],
+    algorithm: &[u8],
+    time_signed: Time48,
+    fudge: u16,
+    error: TsigRcode,
+    other: &[u8],
+) {
+    digest.update(name);
+    digest.update(&Class::ANY.to_int().to_be_bytes());
+    digest.update(&0u32.to_be_bytes());
+    digest.update(algorithm);
+    digest.update(&time_signed.into_octets());
+    digest.update(&fudge.to_be_bytes());
+    digest.update(&error.to_int().to_be_bytes());
+    digest.update(&(other.len() as u16).to_be_bytes());
+    digest.update(other);
 }
 
 /// Match a supported algorithm name through [`TsigAlgorithm`]'s parser, which

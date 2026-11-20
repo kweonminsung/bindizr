@@ -127,9 +127,7 @@ impl Caller {
             }
         };
 
-        if let Some(expires_at) = stored_token.expires_at
-            && Utc::now() >= expires_at
-        {
+        if stored_token.is_expired(Utc::now()) {
             return Err(ServiceError::invalid_token("token has expired"));
         }
 
@@ -261,11 +259,7 @@ impl Caller {
             } => {
                 let token = bindizr_db::api_token::get_tx(tx, *token_id, LockLevel::Shared)
                     .await?
-                    .filter(|token| {
-                        token
-                            .expires_at
-                            .is_none_or(|expires_at| Utc::now() < expires_at)
-                    })
+                    .filter(|token| !token.is_expired(Utc::now()))
                     .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
 
                 (token.role_id, Credential::Token(token.id))

@@ -8,7 +8,7 @@ use ring::hmac;
 
 use crate::dns::message::{Edns, ResponseLimit};
 use crate::dns::tsig::{TsigError, TsigSigningKey};
-use crate::dns::{LibraryError, message};
+use crate::dns::{LibraryError, message, tsig};
 
 /// Build the signed or unsigned validation error required by RFC 8945, Section 5.3.2.
 pub fn build_error_response(
@@ -122,15 +122,15 @@ fn build_signed_error_response(
     digest.update(&u16::try_from(data.mac().len())?.to_be_bytes());
     digest.update(data.mac());
     digest.update(additional.as_slice());
-    digest.update(name.as_slice());
-    digest.update(&Class::ANY.to_int().to_be_bytes());
-    digest.update(&0u32.to_be_bytes());
-    digest.update(algorithm.as_slice());
-    digest.update(&time_signed.into_octets());
-    digest.update(&data.fudge().to_be_bytes());
-    digest.update(&rcode.to_int().to_be_bytes());
-    digest.update(&u16::try_from(other.len())?.to_be_bytes());
-    digest.update(other);
+    tsig::digest_tsig_variables(
+        &mut digest,
+        name.as_slice(),
+        algorithm.as_slice(),
+        time_signed,
+        data.fudge(),
+        rcode,
+        other,
+    );
     let mac = digest.sign();
     additional.push((
         key.domain.name(),

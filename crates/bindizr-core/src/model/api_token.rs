@@ -24,3 +24,10 @@ pub struct ApiToken {
     /// `None` until the token is first used.
     pub last_used_at: Option<DateTime<Utc>>,
 }
+
+impl ApiToken {
+    /// Return whether the token has expired by `now`; one without an expiry never does.
+    pub fn is_expired(&self, now: DateTime<Utc>) -> bool {
+        self.expires_at.is_some_and(|expires_at| now >= expires_at)
+    }
+}

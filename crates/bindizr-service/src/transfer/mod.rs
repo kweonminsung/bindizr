@@ -218,11 +218,7 @@ fn normalize_filter(
         })
         .transpose()?;
 
-    if let (Some(since), Some(until)) = (filter.since, filter.until)
-        && since >= until
-    {
-        return Err(ServiceError::invalid_input("since must be before until"));
-    }
+    pagination::validate_time_window(filter.since, filter.until)?;
 
     // Newest first is the log's natural order, whatever the field.
     let defaults = bindizr_db::transfer_log::TransferLogFilter::default();

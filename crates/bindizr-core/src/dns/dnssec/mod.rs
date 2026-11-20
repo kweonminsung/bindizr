@@ -10,7 +10,7 @@ use domain::base::Record;
 pub use key::GenerateKeyError;
 pub use key_file::ImportKeyError;
 pub use key_tag::{ConvertKeyTagError, KeyTag};
-pub use rdata::{DS_DIGEST_TYPE, DS_DIGEST_TYPES, EncodeKeyRdataError};
+pub use rdata::{ConvertDsDigestTypeError, DS_DIGEST_TYPE, DsDigestType, EncodeKeyRdataError};
 pub use signed_view::{SignZoneError, SignedViewDiff, SignedViewParams, SigningPass};
 
 use crate::dns::name::WireName;

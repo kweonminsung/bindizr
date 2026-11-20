@@ -1,6 +1,6 @@
 use super::*;
 use crate::dns::SoaInterval;
-use crate::dns::dnssec::DS_DIGEST_TYPE;
+use crate::dns::dnssec::{DS_DIGEST_TYPE, DsDigestType};
 use crate::model::dnssec_key::DnssecKeyId;
 use crate::model::record::RecordId;
 use crate::model::zone::ZoneId;
@@ -83,22 +83,22 @@ fn ds_rdata_pairs_the_key_with_each_supported_digest() {
     .unwrap();
     let apex = zone.name.to_wire_name().unwrap();
 
-    let sha384 = key.ds_rdata(&apex, 4).unwrap();
+    let sha384 = key.ds_rdata(&apex, DsDigestType::Sha384).unwrap();
 
     // A parent registering the SHA-256 form of the same key is as valid.
-    let sha256 = key.ds_rdata(&apex, 2).unwrap();
+    let sha256 = key.ds_rdata(&apex, DsDigestType::Sha256).unwrap();
 
     assert_eq!(&sha256.as_bytes()[..3], &sha384.as_bytes()[..3]);
     assert_eq!(sha256.as_bytes()[3], 2);
     assert_eq!(sha256.as_bytes().len(), 4 + 32);
 
     // A SHA-1 DS a parent still serves must match too (RFC 8624, Section 3.3).
-    let sha1 = key.ds_rdata(&apex, 1).unwrap();
+    let sha1 = key.ds_rdata(&apex, DsDigestType::Sha1).unwrap();
 
     assert_eq!(&sha1.as_bytes()[..3], &sha384.as_bytes()[..3]);
     assert_eq!(sha1.as_bytes()[3], 1);
     assert_eq!(sha1.as_bytes().len(), 4 + 20);
-    assert!(key.ds_rdata(&apex, 3).is_err());
+    assert!(DsDigestType::try_from(3).is_err());
 }
 
 /// Verify that ed448 keys generate and sign.

@@ -76,7 +76,7 @@ fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRecord {
         key_tag: key.key_tag,
         digest_type,
         rdata: key
-            .ds_rdata(&apex, digest_type)
+            .ds_rdata(&apex, DsDigestType::try_from(digest_type).unwrap())
             .unwrap()
             .as_bytes()
             .to_vec(),

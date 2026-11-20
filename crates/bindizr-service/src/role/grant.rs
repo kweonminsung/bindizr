@@ -146,9 +146,7 @@ pub async fn list_self(
 ) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
     pagination::validate_page_limit(page.limit)?;
 
-    let role = bindizr_db::role::get(cx.db(), token.role_id)
-        .await?
-        .ok_or_else(|| ServiceError::role_not_found(token.role_id))?;
+    let role = role::lookup(cx, token.role_id).await?;
     list_by_role(cx, &role, page).await
 }
 

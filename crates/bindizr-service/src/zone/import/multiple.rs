@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 
 use bindizr_core::dns;
-use bindizr_core::dns::address;
 use bindizr_core::dns::name::ZoneName;
 
 use crate::authorization::Caller;
@@ -37,13 +36,7 @@ pub async fn import_many(
             MissingZoneAction::Reject
         },
     };
-    let address = request.from_server.trim();
-
-    if !address::is_address_target(address) {
-        return Err(ServiceError::invalid_input(
-            "from_server must name one server as host[:port]",
-        ));
-    }
+    let address = import::normalize_from_server(&request.from_server)?;
 
     // Checked once, before any transfer: every zone's `create` would fail alike.
     if request.create {

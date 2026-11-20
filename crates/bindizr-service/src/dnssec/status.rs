@@ -138,13 +138,14 @@ fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, S
     Ok(DnssecDsResponse {
         key_tag: key.key_tag,
         algorithm: key.algorithm.as_u8(),
-        digest_type: DS_DIGEST_TYPE,
+        digest_type: DS_DIGEST_TYPE.as_u8(),
         digest: digest.clone(),
         presentation: format!(
-            "{} IN DS {} {} {DS_DIGEST_TYPE} {digest}",
+            "{} IN DS {} {} {} {digest}",
             zone.name.to_fqdn(),
             key.key_tag,
-            key.algorithm.as_i32()
+            key.algorithm.as_i32(),
+            DS_DIGEST_TYPE.as_u8()
         ),
     })
 }

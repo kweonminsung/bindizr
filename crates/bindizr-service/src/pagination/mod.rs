@@ -3,6 +3,7 @@
 use std::str::FromStr;
 
 use bindizr_db::ParseSortError;
+use chrono::{DateTime, Utc};
 
 use crate::error::ServiceError;
 use crate::types::{PaginatedResponse, PaginationResponse};
@@ -18,6 +19,20 @@ pub(crate) fn validate_page_limit(limit: Option<u32>) -> Result<(), ServiceError
         return Err(ServiceError::invalid_input(format!(
             "limit must be between 1 and {MAX_PAGE_LIMIT}"
         )));
+    }
+
+    Ok(())
+}
+
+/// Validate a log listing's time window: `since` must come before `until`.
+pub(crate) fn validate_time_window(
+    since: Option<DateTime<Utc>>,
+    until: Option<DateTime<Utc>>,
+) -> Result<(), ServiceError> {
+    if let (Some(since), Some(until)) = (since, until)
+        && since >= until
+    {
+        return Err(ServiceError::invalid_input("since must be before until"));
     }
 
     Ok(())

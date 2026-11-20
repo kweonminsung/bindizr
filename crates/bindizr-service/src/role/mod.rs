@@ -239,6 +239,14 @@ pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<Role, Ser
         .ok_or_else(|| ServiceError::role_not_found(name))
 }
 
+/// Look up the role a credential names by its id, or return a not-found error
+/// naming that id.
+pub(crate) async fn lookup(cx: &Context, role_id: RoleId) -> Result<Role, ServiceError> {
+    bindizr_db::role::get(cx.db(), role_id)
+        .await?
+        .ok_or_else(|| ServiceError::RoleNotFound(format!("role with id '{role_id}' not found")))
+}
+
 /// Refuse a change to the built-in role.
 fn refuse_builtin(role: &Role) -> Result<(), ServiceError> {
     if role.is_builtin() {

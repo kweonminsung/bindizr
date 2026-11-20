@@ -152,9 +152,7 @@ pub async fn list(
 
 /// Get `token` described with its role's name; any token may read itself.
 pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<TokenResponse, ServiceError> {
-    let role = bindizr_db::role::get(cx.db(), token.role_id)
-        .await?
-        .ok_or_else(|| ServiceError::role_not_found(token.role_id))?;
+    let role = role::lookup(cx, token.role_id).await?;
     Ok(TokenResponse::from_token(token, &role.name))
 }
 

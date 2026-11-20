@@ -5,6 +5,7 @@ mod multiple;
 mod plan;
 mod single;
 
+use bindizr_core::dns::address;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::zonefile::ParsedZoneFile;
 use bindizr_core::model::role_grant::Action;
@@ -70,6 +71,19 @@ async fn import_transfer(
     let source = ImportSource::Transfer(ParsedZoneFile::from_transfer(&records, zone_name));
 
     apply::apply_import(cx, caller, zone_name, source, options).await
+}
+
+/// Trim the server an import transfers from, which must name one `host[:port]`.
+fn normalize_from_server(value: &str) -> Result<&str, ServiceError> {
+    let address = value.trim();
+
+    if !address::is_address_target(address) {
+        return Err(ServiceError::invalid_input(
+            "from_server must name one server as host[:port]",
+        ));
+    }
+
+    Ok(address)
 }
 
 /// Return the record actions an import mode performs.

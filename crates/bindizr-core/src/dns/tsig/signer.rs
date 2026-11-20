@@ -8,6 +8,7 @@ use ring::hmac;
 use thiserror::Error;
 
 use crate::dns::nsupdate::DEFAULT_FUDGE;
+use crate::dns::tsig;
 use crate::dns::tsig::TsigSigningKey;
 
 /// The response signature could not be appended to the DNS message.
@@ -68,18 +69,20 @@ impl TransferSigner {
         digest.update(&self.previous_mac);
         digest.update(additional.as_slice());
 
+        // Later messages of a chain cover the timers alone (RFC 8945, Section 5.3.1).
         if self.first {
-            digest.update(name.as_slice());
-            digest.update(&Class::ANY.to_int().to_be_bytes());
-            digest.update(&0u32.to_be_bytes());
-            digest.update(algorithm.as_slice());
-        }
-
-        digest.update(&now.into_octets());
-        digest.update(&fudge.to_be_bytes());
-
-        if self.first {
-            digest.update(&[0, 0, 0, 0]); // Error and Other Len.
+            tsig::digest_tsig_variables(
+                &mut digest,
+                name.as_slice(),
+                algorithm.as_slice(),
+                now,
+                fudge,
+                TsigRcode::NOERROR,
+                b"",
+            );
+        } else {
+            digest.update(&now.into_octets());
+            digest.update(&fudge.to_be_bytes());
         }
 
         let mac = digest.sign();
