@@ -211,7 +211,11 @@ pub async fn get(
         }
     };
 
-    if !caller.sees_record(record.zone_id, &record.name, Some(record.record_type)) {
+    if !caller.sees_record(
+        record.record.zone_id,
+        &record.record.name,
+        Some(record.record.record_type),
+    ) {
         return Err(ServiceError::record_not_found(record_id));
     }
 

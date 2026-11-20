@@ -20,7 +20,7 @@ use crate::model::zone::ZoneId;
 pub enum ParseTransferError {
     #[error("unsupported transfer kind '{value}'")]
     Kind { value: String },
-    #[error("unsupported transfer result '{value}' (supported: ok, refused, failed)")]
+    #[error("unsupported transfer result '{value}' (supported: {})", TransferResult::supported_names().join(", "))]
     Result { value: String },
     #[error("unsupported transfer transport '{value}'")]
     Transport { value: String },
@@ -101,6 +101,9 @@ pub enum TransferResult {
 }
 
 impl TransferResult {
+    /// Every TransferResult value, in declaration order.
+    pub const ALL: [Self; 3] = [Self::Ok, Self::Refused, Self::Failed];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -108,6 +111,11 @@ impl TransferResult {
             Self::Refused => "refused",
             Self::Failed => "failed",
         }
+    }
+
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 

@@ -217,6 +217,6 @@ mod tests {
                 .unwrap();
 
         assert_eq!(records.len(), 1, "{records:?}");
-        assert_eq!(records[0].record().value, "ns1.example.com.");
+        assert_eq!(records[0].record.value, "ns1.example.com.");
     }
 }

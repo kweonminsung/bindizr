@@ -31,9 +31,6 @@ pub struct ZoneChange {
     pub record_rdata: Option<Rdata>,
     pub record_ttl: Ttl,
     pub record_priority: Option<i32>,
-    /// Signer-generated DNSSEC change, served by IXFR but skipped during rewind
-    /// and diffs: rollback re-signs the restored user records.
-    pub derived: bool,
 }
 
 /// A journal operation column holding neither ADD nor DEL.
@@ -124,6 +121,13 @@ pub enum JournalRecordType {
 }
 
 impl JournalRecordType {
+    /// Return whether this is a signer-generated DNSSEC change, served by IXFR
+    /// but skipped during rewind and diffs: rollback re-signs the restored
+    /// user records.
+    pub fn is_derived(&self) -> bool {
+        matches!(self, Self::Derived(_))
+    }
+
     /// Render the stored record mnemonic.
     pub fn to_text(&self) -> String {
         match self {

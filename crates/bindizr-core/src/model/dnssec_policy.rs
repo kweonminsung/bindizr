@@ -16,7 +16,7 @@ pub const DEFAULT_DNSSEC_POLICY_NAME: &str = "default";
 
 /// A denial mode outside NSEC and NSEC3.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("unsupported denial mode '{value}' (supported: nsec, nsec3)")]
+#[error("unsupported denial mode '{value}' (supported: {})", DnssecDenial::supported_names().join(", "))]
 pub struct ParseDenialError {
     pub value: String,
 }
@@ -32,12 +32,20 @@ pub enum DnssecDenial {
 }
 
 impl DnssecDenial {
+    /// Every DnssecDenial value, in declaration order.
+    pub const ALL: [Self; 2] = [Self::Nsec, Self::Nsec3];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Nsec => "nsec",
             Self::Nsec3 => "nsec3",
         }
+    }
+
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 

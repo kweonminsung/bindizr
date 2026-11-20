@@ -33,7 +33,6 @@ pub(crate) async fn create_with_changes_tx(
             record_rdata: None,
             record_ttl: record.ttl,
             record_priority: record.priority,
-            derived: false,
         })
         .collect();
 
@@ -62,7 +61,6 @@ pub(crate) async fn update_with_changes_tx(
         record_rdata: None,
         record_ttl: record.ttl,
         record_priority: record.priority,
-        derived: false,
     };
     let changes = [
         change(ChangeOperation::Delete, existing_record),
@@ -101,7 +99,6 @@ pub(crate) async fn delete_with_changes_tx(
             record_rdata: None,
             record_ttl: record.ttl,
             record_priority: record.priority,
-            derived: false,
         })
         .collect();
 

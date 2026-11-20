@@ -87,7 +87,7 @@ impl RecordValue {
 }
 
 /// Build a stored value as the record APIs display it: TXT decoded to string/segments,
-/// other types rendered with trailing-dot FQDNs. Priority stays a separate field.
+/// other types as stored, their names already absolute. Priority stays a separate field.
 pub(crate) fn build_display_value(record_type: RecordType, value: &str) -> RecordValue {
     if record_type != RecordType::Txt {
         return RecordValue::Text(record_type.display_value(value));

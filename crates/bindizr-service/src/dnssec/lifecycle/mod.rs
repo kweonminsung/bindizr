@@ -363,7 +363,6 @@ pub async fn disable(
                 record_rdata: Some(record.rdata.clone()),
                 record_ttl: record.ttl,
                 record_priority: None,
-                derived: true,
             })
             .collect();
 

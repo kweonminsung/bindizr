@@ -261,7 +261,6 @@ async fn apply_signed_view_tx(
             record_rdata: Some(record.rdata.clone()),
             record_ttl: record.ttl,
             record_priority: None,
-            derived: true,
         });
     }
 
@@ -276,7 +275,6 @@ async fn apply_signed_view_tx(
             record_rdata: Some(record.rdata.clone()),
             record_ttl: record.ttl,
             record_priority: None,
-            derived: true,
         });
     }
 

@@ -117,16 +117,28 @@ impl Db {
     /// Return the pool's occupancy. sqlx counts held connections, not waiters,
     /// so saturation shows as `connections` reaching `max`.
     pub fn stats(&self) -> PoolStats {
-        let (connections, idle) = match &self.0 {
-            Backend::MySql(pool) => (pool.size(), pool.num_idle()),
-            Backend::Postgres(pool) => (pool.size(), pool.num_idle()),
-            Backend::Sqlite(pool) => (pool.size(), pool.num_idle()),
+        let (connections, idle, max) = match &self.0 {
+            Backend::MySql(pool) => (
+                pool.size(),
+                pool.num_idle(),
+                pool.options().get_max_connections(),
+            ),
+            Backend::Postgres(pool) => (
+                pool.size(),
+                pool.num_idle(),
+                pool.options().get_max_connections(),
+            ),
+            Backend::Sqlite(pool) => (
+                pool.size(),
+                pool.num_idle(),
+                pool.options().get_max_connections(),
+            ),
         };
 
         PoolStats {
             connections,
             idle: idle as u32,
-            max: pool_max_connections(),
+            max,
         }
     }
 

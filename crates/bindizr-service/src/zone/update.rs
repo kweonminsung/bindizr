@@ -40,7 +40,6 @@ pub(crate) fn soa_replacement_changes(
             record_rdata: None,
             record_ttl: zone.default_ttl,
             record_priority: None,
-            derived: false,
         })
     };
 

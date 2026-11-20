@@ -111,7 +111,7 @@ impl SignedViewParams<'_> {
         // Add user records to the same input used for denial proofs and signatures.
         for record in self.records {
             let rdata = Rdata::from_columns(record.record_type, &record.value, record.priority)?;
-            let rtype = Rtype::from_int(record.record_type.wire_type());
+            let rtype = Rtype::from(record.record_type);
 
             // UnknownRecordData cannot canonicalize embedded names for signing.
             let rdata = rdata

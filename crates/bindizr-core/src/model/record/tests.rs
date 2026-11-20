@@ -191,31 +191,6 @@ fn encoded_value_round_trips_txt_presentation_form() {
     );
 }
 
-/// Verify that `display_value` adds trailing dot for name like values.
-#[test]
-fn display_value_adds_trailing_dot_for_name_like_values() {
-    assert_eq!(
-        RecordType::Ns.display_value("ns.test.example.com"),
-        "ns.test.example.com."
-    );
-    assert_eq!(
-        RecordType::Cname.display_value("Target.Example.Net"),
-        "Target.Example.Net."
-    );
-    assert_eq!(
-        RecordType::Mx.display_value("mail.example.com"),
-        "mail.example.com."
-    );
-    assert_eq!(
-        RecordType::Srv.display_value("5 5060 sip.example.com"),
-        "5 5060 sip.example.com."
-    );
-    assert_eq!(
-        RecordType::Ptr.display_value("host.example.com"),
-        "host.example.com."
-    );
-}
-
 /// Verify that `display_value` keeps non name values unchanged.
 #[test]
 fn display_value_keeps_non_name_values_unchanged() {
@@ -225,28 +200,6 @@ fn display_value_keeps_non_name_values_unchanged() {
         RecordType::Txt.display_value("v=spf1 include:example.net"),
         "v=spf1 include:example.net"
     );
-}
-
-/// Verify that `display_value` leaves wrong field count unchanged.
-#[test]
-fn display_value_leaves_wrong_field_count_unchanged() {
-    // Values whose field count cannot match any valid MX/SRV form must not be
-    // rewritten into a fake hostname (e.g. a trailing numeric field gaining a dot).
-    for value in ["", "10 mail.example.com", "10 mail.example.com extra"] {
-        assert_eq!(
-            RecordType::Mx.display_value(value),
-            value,
-            "malformed MX value {value:?} should be returned unchanged"
-        );
-    }
-
-    for value in ["", "10 5", "10 5 5060 sip.example.com"] {
-        assert_eq!(
-            RecordType::Srv.display_value(value),
-            value,
-            "malformed SRV value {value:?} should be returned unchanged"
-        );
-    }
 }
 
 /// Verify that malformed targets are rejected while each type's root policy is preserved.

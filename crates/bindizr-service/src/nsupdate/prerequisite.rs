@@ -171,11 +171,7 @@ fn zone_record_sets(
         let rdata = record.to_rdata().map_err(|error| {
             ServiceError::internal_with_source("failed to encode a zone record", error)
         })?;
-        insert(
-            record.name.clone(),
-            Rtype::from_int(record.record_type.wire_type()),
-            rdata,
-        )?;
+        insert(record.name.clone(), Rtype::from(record.record_type), rdata)?;
     }
 
     for record in derived {

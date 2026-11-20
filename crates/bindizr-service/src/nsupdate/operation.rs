@@ -121,9 +121,7 @@ pub(crate) async fn apply_record_operation_tx(
             // CNAME or DNAME replaces the first; WKS replaces its address/protocol match.
             let replaced: Vec<Record> = records_at_name
                 .iter()
-                .filter(|record| {
-                    record.record_type == *record_type && record.is_replaced_by(&value, *priority)
-                })
+                .filter(|record| record.is_replaced_by(*record_type, &value, *priority))
                 .cloned()
                 .collect();
             let mut changed = false;

@@ -114,9 +114,15 @@ impl Record {
             .values_equal(&self.value, self.priority, value, priority)
     }
 
-    /// Return whether an UPDATE replaces this record by singleton type or WKS address/protocol.
-    pub fn is_replaced_by(&self, value: &str, priority: Option<i32>) -> bool {
-        if self.has_rdata(value, priority) {
+    /// Return whether an UPDATE adding a `record_type` value replaces this
+    /// record by singleton type or WKS address/protocol.
+    pub fn is_replaced_by(
+        &self,
+        record_type: RecordType,
+        value: &str,
+        priority: Option<i32>,
+    ) -> bool {
+        if self.record_type != record_type || self.has_rdata(value, priority) {
             return false;
         }
 
@@ -181,32 +187,9 @@ impl From<Record> for RecordData {
 /// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct RecordWithZone {
-    pub id: RecordId,
-    pub name: OwnerName,
-    #[sqlx(try_from = "String")]
-    pub record_type: RecordType,
-    pub value: String,
-    pub ttl: Ttl,
-    pub priority: Option<i32>,
-    pub created_at: DateTime<Utc>,
-    pub zone_id: ZoneId,
+    #[sqlx(flatten)]
+    pub record: Record,
     pub zone_name: ZoneName,
-}
-
-impl RecordWithZone {
-    /// Return the underlying [`Record`], dropping the zone name.
-    pub fn record(&self) -> Record {
-        Record {
-            id: self.id,
-            name: self.name.clone(),
-            record_type: self.record_type,
-            value: self.value.clone(),
-            ttl: self.ttl,
-            priority: self.priority,
-            created_at: self.created_at,
-            zone_id: self.zone_id,
-        }
-    }
 }
 
 /// A record type outside the user records bindizr stores, by mnemonic or by
@@ -283,23 +266,7 @@ impl RecordType {
 
     /// Return the record TYPE number this type's records carry on the wire.
     pub fn wire_type(self) -> u16 {
-        match self {
-            Self::A => 1,
-            Self::Ns => 2,
-            Self::Cname => 5,
-            Self::Dname => 39,
-            Self::Ds => 43,
-            Self::Ptr => 12,
-            Self::Mx => 15,
-            Self::Naptr => 35,
-            Self::Txt => 16,
-            Self::Aaaa => 28,
-            Self::Srv => 33,
-            Self::Sshfp => 44,
-            Self::Tlsa => 52,
-            Self::Caa => 257,
-            Self::Wks => 11,
-        }
+        Rtype::from(self).to_int()
     }
 
     /// Validate a stored value (and its priority column) for this record type.
@@ -369,7 +336,7 @@ impl RecordType {
         self.encoded_value(value, fallback_priority)
             .ok()
             .and_then(|value| Rdata::from_columns(self, &value, fallback_priority).ok())
-            .and_then(|rdata| rdata.to_canonical(Rtype::from_int(self.wire_type())).ok())
+            .and_then(|rdata| rdata.to_canonical(Rtype::from(self)).ok())
             .map(|rdata| Cow::Owned(hex::encode(rdata.as_bytes())))
             .unwrap_or(Cow::Borrowed(value))
     }
@@ -434,7 +401,8 @@ impl RecordType {
         }
     }
 
-    /// Format a stored value of this record type for display.
+    /// Format a stored value of this record type for display: TXT decoded to
+    /// its text, every other type as stored, its names already absolute.
     pub fn display_value(self, value: &str) -> String {
         if self == Self::Txt {
             return match TxtRecordValue::from_presentation(value)
@@ -446,32 +414,20 @@ impl RecordType {
             };
         }
 
-        match self {
-            Self::Mx => display_last_name_field(value, 1),
-            Self::Srv => display_last_name_field(value, 3),
-            _ if self.is_name_like() => name::to_fqdn(value),
-            _ => value.to_string(),
-        }
+        value.to_string()
     }
 
-    /// Return whether this type's display form is a domain name.
-    fn is_name_like(self) -> bool {
-        NAME_LIKE_RECORD_TYPES.contains(&self)
-    }
-
-    /// Render zone-file RDATA, adding MX/SRV priority (default 10).
-    /// TXT retains its stored presentation; other types use their display form.
+    /// Render zone-file RDATA: the stored value, MX/SRV priority (default 10)
+    /// first.
     pub fn presentation_rdata(self, value: &str, priority: Option<i32>) -> String {
         match self {
-            Self::Txt => value.to_string(),
             Self::Mx | Self::Srv => {
                 format!(
-                    "{} {}",
-                    priority.unwrap_or(i32::from(DEFAULT_PRIORITY)),
-                    self.display_value(value)
+                    "{} {value}",
+                    priority.unwrap_or(i32::from(DEFAULT_PRIORITY))
                 )
             }
-            _ => self.display_value(value),
+            _ => value.to_string(),
         }
     }
 }
@@ -586,6 +542,29 @@ impl TryFrom<Rtype> for RecordType {
     }
 }
 
+impl From<RecordType> for Rtype {
+    /// Convert a stored record type to the wire type its records carry.
+    fn from(record_type: RecordType) -> Self {
+        match record_type {
+            RecordType::A => Self::A,
+            RecordType::Ns => Self::NS,
+            RecordType::Cname => Self::CNAME,
+            RecordType::Dname => Self::DNAME,
+            RecordType::Ptr => Self::PTR,
+            RecordType::Caa => Self::CAA,
+            RecordType::Ds => Self::DS,
+            RecordType::Sshfp => Self::SSHFP,
+            RecordType::Tlsa => Self::TLSA,
+            RecordType::Mx => Self::MX,
+            RecordType::Naptr => Self::NAPTR,
+            RecordType::Txt => Self::TXT,
+            RecordType::Aaaa => Self::AAAA,
+            RecordType::Srv => Self::SRV,
+            RecordType::Wks => Self::WKS,
+        }
+    }
+}
+
 impl Ord for RecordType {
     /// Preserve mnemonic ordering in record lists and diffs.
     fn cmp(&self, other: &Self) -> Ordering {
@@ -631,23 +610,6 @@ fn display_text(text: &str) -> String {
     }
 
     display
-}
-
-/// Render the stored trailing domain name; MX priority is stored separately,
-/// and SRV retains only weight, port, and target in its value.
-fn display_last_name_field(value: &str, field_count: usize) -> String {
-    let mut fields: Vec<String> = value.split_whitespace().map(str::to_string).collect();
-
-    if fields.len() != field_count {
-        return value.to_string();
-    }
-
-    let Some(last) = fields.pop() else {
-        return value.to_string();
-    };
-    fields.push(name::to_fqdn(&last));
-
-    fields.join(" ")
 }
 
 #[cfg(test)]

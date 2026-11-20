@@ -18,7 +18,7 @@ pub enum ParseDnssecKeyError {
     Algorithm { value: String },
     #[error("unsupported DNSSEC algorithm number {value}")]
     AlgorithmNumber { value: i32 },
-    #[error("unsupported DNSSEC key role '{value}' (supported: csk, ksk, zsk)")]
+    #[error("unsupported DNSSEC key role '{value}' (supported: {})", DnssecKeyRole::supported_names().join(", "))]
     Role { value: String },
     #[error("unsupported DNSSEC key state '{value}' (supported: published, active, retired)")]
     State { value: String },
@@ -61,6 +61,16 @@ impl DnssecAlgorithm {
         i32::from(self.as_u8())
     }
 
+    /// Every DnssecAlgorithm value, in declaration order.
+    pub const ALL: [Self; 6] = [
+        Self::RsaSha256,
+        Self::RsaSha512,
+        Self::EcdsaP256Sha256,
+        Self::EcdsaP384Sha384,
+        Self::Ed25519,
+        Self::Ed448,
+    ];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -73,16 +83,9 @@ impl DnssecAlgorithm {
         }
     }
 
-    /// List all supported algorithm names, for error messages.
-    fn supported_names() -> &'static [&'static str] {
-        &[
-            "rsasha256",
-            "rsasha512",
-            "ecdsap256sha256",
-            "ecdsap384sha384",
-            "ed25519",
-            "ed448",
-        ]
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 
@@ -141,6 +144,9 @@ pub enum DnssecKeyRole {
 }
 
 impl DnssecKeyRole {
+    /// Every DnssecKeyRole value, in declaration order.
+    pub const ALL: [Self; 3] = [Self::Csk, Self::Ksk, Self::Zsk];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -163,6 +169,11 @@ impl DnssecKeyRole {
         } else {
             256
         }
+    }
+
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 
