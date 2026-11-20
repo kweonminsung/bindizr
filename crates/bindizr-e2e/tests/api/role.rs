@@ -1143,6 +1143,37 @@ async fn record_bulk_rejects_ungranted_request_before_name_validation() {
     assert_eq!(body["code"], "ZONE_NOT_FOUND", "{body}");
 }
 
+/// Verify that a delete filter's unparsable name answers the same for an
+/// ungranted zone as for a missing one, so the error cannot probe existence.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_delete_rejects_bad_name_alike_for_ungranted_and_missing_zones() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+
+    let zone_name = app.zone_name("example.com");
+    let missing_zone_name = app.zone_name("missing.example");
+
+    app.create_named_zone(&zone_name).await;
+
+    let (_, scoped_token) = app.create_scoped_api_token().await;
+    app.set_auth_token(scoped_token);
+
+    let mut answers = Vec::new();
+    for name in [&zone_name, &missing_zone_name] {
+        let path = format!("/records?zone_name={name}&name=www.other.org.");
+        let (status, body) = app.send_request(Method::DELETE, &path, None).await;
+        answers.push((status, body["code"].clone()));
+    }
+
+    assert_eq!(answers[0], answers[1], "{answers:?}");
+}
+
 /// Verify that a `record:read` grant reads the zone but cannot change it.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

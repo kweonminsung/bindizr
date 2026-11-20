@@ -12,7 +12,7 @@ use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::error::ErrorCode;
-use crate::external_dns::change_set::{ZoneChangeSet, ZoneOperations};
+use crate::external_dns::change_set::{RecordSetOperation, ZoneChangeSet, ZoneOperations};
 use crate::types::{
     ApplyExternalDnsChangesRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest,
     CreateZoneRequest, ExternalDnsRecordUpdate, RoleGrantResponse,
@@ -197,6 +197,36 @@ async fn apply_changes_rejects_hidden_subzones_and_rolls_back_all_zones() {
     );
 }
 
+/// Verify that a hidden zone is refused exactly as a missing one, ahead of a
+/// denial in a visible zone that sorts before it.
+#[tokio::test]
+async fn apply_changes_refuses_hidden_zones_as_missing_ones() {
+    let cx = context().await;
+    create_zone(&cx, "a-visible.test").await;
+    create_zone(&cx, "z-hidden.test").await;
+    let secret = credential(&cx).await;
+    grant(&cx, "a-visible.test", &["record:read"]).await;
+    let caller = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
+
+    let mut errors = Vec::new();
+    for zone_name in ["z-hidden.test", "z-missing.test"] {
+        let request = ApplyExternalDnsChangesRequest {
+            creates: vec![
+                record_set("app.a-visible.test", "A", None, &["192.0.2.1"]),
+                record_set(&format!("app.{zone_name}"), "A", None, &["192.0.2.2"]),
+            ],
+            updates: Vec::new(),
+            deletes: Vec::new(),
+        };
+        let error = apply_changes(&cx, &caller, &request).await.unwrap_err();
+        errors.push((error.code(), error.to_string().replace(zone_name, "<zone>")));
+    }
+
+    // A denial in the visible zone answering first would tell the two apart.
+    assert_eq!(errors[0], errors[1], "{errors:?}");
+    assert_eq!(errors[0].0, ErrorCode::ZoneNotFound);
+}
+
 /// Build a zone fixture for the test.
 fn test_zone(id: i32, zone_name: &str) -> Zone {
     Zone {
@@ -256,8 +286,9 @@ fn authoritative_zone_picks_most_specific_match() {
     ];
 
     assert_eq!(
-        policy::authoritative_zone(&zones, "api.internal.example.com").map(|(zone, _)| zone.id),
-        Some(ZoneId::from(2))
+        policy::authoritative_zone(&zones, "api.internal.example.com")
+            .map(|(zone, owner)| (zone.id, owner)),
+        Some((ZoneId::from(2), OwnerName::from_row("api")))
     );
     assert_eq!(
         policy::authoritative_zone(&zones, "www.example.com").map(|(zone, _)| zone.id),
@@ -478,61 +509,19 @@ fn adjust_record_set_rejects_unsupported_shapes() {
     );
 }
 
-/// Verify that group operations resolves subzone without parent fallback.
-#[test]
-fn group_operations_by_zone_resolves_subzone_without_parent_fallback() {
-    let zones = vec![
-        test_zone(1, "example.com"),
-        test_zone(2, "internal.example.com"),
-    ];
-    let request = ApplyExternalDnsChangesRequest {
-        creates: vec![record_set(
-            "api.internal.example.com",
-            "A",
-            None,
-            &["192.0.2.1"],
-        )],
-        updates: Vec::new(),
-        deletes: Vec::new(),
-    };
-    let operations = change_set::parse_changes_request(&request).unwrap();
-
-    let grouped = change_set::group_operations_by_zone(&zones, operations).unwrap();
-
-    assert_eq!(grouped.len(), 1);
-    assert_eq!(
-        grouped[&ZoneName::parse("internal.example.com").unwrap()].request_name,
-        "api.internal.example.com"
-    );
-    assert!(grouped.contains_key(&ZoneName::parse("internal.example.com").unwrap()));
-    assert_eq!(
-        grouped[&ZoneName::parse("internal.example.com").unwrap()].adds[0].name,
-        OwnerName::from_row("api")
-    );
-}
-
-/// Verify that group operations rejects names without authoritative zone.
-#[test]
-fn group_operations_by_zone_rejects_names_without_authoritative_zone() {
-    let zones = vec![test_zone(1, "example.com")];
-    let request = ApplyExternalDnsChangesRequest {
-        creates: vec![record_set("app.other.org", "A", None, &["192.0.2.1"])],
-        updates: Vec::new(),
-        deletes: Vec::new(),
-    };
-    let operations = change_set::parse_changes_request(&request).unwrap();
-
-    let error = change_set::group_operations_by_zone(&zones, operations).unwrap_err();
-
-    assert_eq!(error.code(), ErrorCode::ZoneNotFound);
-}
-
 /// Resolve an external-dns change request into operations for the test zone.
 fn zone_operations(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> ZoneOperations {
-    let operations = change_set::parse_changes_request(request).unwrap();
-    let grouped = change_set::group_operations_by_zone(slice::from_ref(zone), operations).unwrap();
+    let mut zone_operations = ZoneOperations::default();
 
-    grouped.into_values().next().unwrap_or_default()
+    for operation in change_set::parse_changes_request(request).unwrap() {
+        let (RecordSetOperation::Add(record_set) | RecordSetOperation::Delete(record_set)) =
+            &operation;
+        let (_, owner) =
+            policy::authoritative_zone(slice::from_ref(zone), &record_set.name).unwrap();
+        zone_operations.push(owner, operation);
+    }
+
+    zone_operations
 }
 
 /// Verify that change set creates new records with zone default TTL.
