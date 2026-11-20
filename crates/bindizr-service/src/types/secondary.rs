@@ -62,7 +62,7 @@ pub struct SecondaryResponse {
 impl SecondaryResponse {
     /// Build the API representation from a stored secondary and its NOTIFY
     /// key's name.
-    pub fn from_secondary(secondary: &Secondary, notify_key_name: Option<&str>) -> Self {
+    pub(crate) fn from_secondary(secondary: &Secondary, notify_key_name: Option<&str>) -> Self {
         Self {
             id: secondary.id,
             name: secondary.name.clone(),
