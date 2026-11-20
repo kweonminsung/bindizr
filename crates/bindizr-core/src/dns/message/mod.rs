@@ -23,12 +23,12 @@ pub use query::{
 pub use query_metadata::{QueryMetadata, has_readable_sections};
 use thiserror::Error;
 
+use crate::dns::LibraryError;
 use crate::dns::dnssec::EncodeWireNameError;
 use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 use crate::dns::name::EncodeNameError;
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::tsig::TransferSigner;
-use crate::dns::{ConvertSerialError, LibraryError};
 
 /// Fixed DNS message header length (RFC 1035, Section 4.1.1).
 pub(crate) const DNS_HEADER_LEN: usize = 12;
@@ -56,8 +56,6 @@ pub enum EncodeMessageError {
     Name(#[from] EncodeNameError),
     #[error(transparent)]
     Rdata(#[from] EncodeRdataError),
-    #[error(transparent)]
-    Serial(#[from] ConvertSerialError),
     #[error("derived change carries no wire rdata")]
     MissingRdata,
     #[error("user change carries no record value")]

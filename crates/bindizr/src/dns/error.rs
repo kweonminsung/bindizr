@@ -1,9 +1,9 @@
 use std::io;
 
+use bindizr_core::dns::Serial;
 use bindizr_core::dns::message::EncodeMessageError;
 use bindizr_core::dns::nsupdate::BuildResponseError;
 use bindizr_core::dns::tsig::TsigError;
-use bindizr_core::dns::{ConvertSerialError, Serial};
 use bindizr_service::error::ServiceError;
 use thiserror::Error;
 use tokio::sync::AcquireError;
@@ -25,8 +25,6 @@ pub(crate) enum DnsError {
     Protocol(#[from] EncodeMessageError),
     #[error("TSIG error: {0}")]
     Tsig(#[from] TsigError),
-    #[error("DNS protocol error: {0}")]
-    Serial(#[from] ConvertSerialError),
     /// The connection closed before a message began.
     #[error("connection closed")]
     PeerClosed,
