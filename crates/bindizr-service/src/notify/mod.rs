@@ -93,7 +93,7 @@ pub(crate) async fn send_notify(
 /// Send NOTIFY after commit, queued when batching is enabled and inline otherwise.
 /// Log failures without failing the committed write.
 pub(crate) async fn notify_after_update(cx: &Context, zone_name: &ZoneName) {
-    if cx.config().dns.notify.batch_ms > 0 && cx.enqueue_notify(NotifyTarget::Zone(zone_name)) {
+    if cx.config().dns.notify.batch_ms > 0 && cx.enqueue_notify(zone_name) {
         return;
     }
 

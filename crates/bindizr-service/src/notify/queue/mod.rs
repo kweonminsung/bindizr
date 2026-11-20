@@ -12,31 +12,21 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time;
 use tokio::time::Instant;
 
-use crate::notify::NotifyTarget;
-use crate::{Context, notify, zone};
+use crate::notify::send;
+use crate::{Context, zone};
 
-/// A queued propagation job: send NOTIFY for one zone, or for all zones.
+/// A queued propagation job: send NOTIFY for one zone a committed write changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotifyJob {
-    target: NotifyJobTarget,
+    zone_name: ZoneName,
     enqueued_at: Instant,
 }
 
-/// An owned propagation target retained by a queued job.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum NotifyJobTarget {
-    All,
-    Zone(ZoneName),
-}
-
 impl NotifyJob {
-    /// Create a job for the zones `target` names.
-    pub(crate) fn new(target: NotifyTarget<'_>) -> Self {
+    /// Create a job for `zone_name`, stamped now.
+    pub(crate) fn new(zone_name: &ZoneName) -> Self {
         Self {
-            target: match target {
-                NotifyTarget::Zone(zone_name) => NotifyJobTarget::Zone(zone_name.clone()),
-                NotifyTarget::All => NotifyJobTarget::All,
-            },
+            zone_name: zone_name.clone(),
             enqueued_at: Instant::now(),
         }
     }
@@ -102,10 +92,10 @@ pub fn spawn(cx: Arc<Context>, mut jobs: UnboundedReceiver<NotifyJob>) -> Notify
         jobs.close();
 
         // Flush acknowledged writes so secondaries need not wait for their refresh timer.
-        let mut last = NotifyBatch::default();
+        let mut last = HashSet::new();
 
         while let Some(job) = jobs.recv().await {
-            last.add(job);
+            last.insert(job.zone_name);
         }
 
         start_batch(&cx, last, &mut tasks).await;
@@ -123,25 +113,6 @@ pub fn spawn(cx: Arc<Context>, mut jobs: UnboundedReceiver<NotifyJob>) -> Notify
     }
 }
 
-/// Pending zones; an all-zones job expands into the same deduplicated set.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-struct NotifyBatch {
-    all_zones: bool,
-    zones: HashSet<ZoneName>,
-}
-
-impl NotifyBatch {
-    /// Add a zone to the pending NOTIFY batch.
-    fn add(&mut self, job: NotifyJob) {
-        match job.target {
-            NotifyJobTarget::Zone(zone_name) => {
-                self.zones.insert(zone_name);
-            }
-            NotifyJobTarget::All => self.all_zones = true,
-        }
-    }
-}
-
 /// Look up the batch deadline: intentional delay is bounded by SOA REFRESH,
 /// measured from enqueue time (RFC 1996, Section 4.3). Failed lookups send immediately.
 async fn lookup_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
@@ -152,20 +123,12 @@ async fn lookup_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
         return job.enqueued_at;
     }
 
-    let refresh = match &job.target {
-        NotifyJobTarget::Zone(zone_name) if zone_name == &config.dns.catalog_zone_name => {
-            Ok(CATALOG_SOA_REFRESH)
-        }
-        NotifyJobTarget::Zone(zone_name) => zone::lookup_by_name(cx, zone_name)
+    let refresh = if job.zone_name == config.dns.catalog_zone_name {
+        Ok(CATALOG_SOA_REFRESH)
+    } else {
+        zone::lookup_by_name(cx, &job.zone_name)
             .await
-            .map(|zone| zone.refresh),
-        NotifyJobTarget::All => zone::list(cx).await.map(|zones| {
-            zones
-                .into_iter()
-                .map(|zone| zone.refresh)
-                .min()
-                .unwrap_or(CATALOG_SOA_REFRESH)
-        }),
+            .map(|zone| zone.refresh)
     };
     let delay = match refresh {
         Ok(refresh) => window.min(Duration::from_secs(u64::from(refresh.as_secs()))),
@@ -184,12 +147,12 @@ async fn collect_batch(
     jobs: &mut UnboundedReceiver<NotifyJob>,
     stop: &mut watch::Receiver<bool>,
     first: NotifyJob,
-) -> NotifyBatch {
-    let mut batch = NotifyBatch::default();
+) -> HashSet<ZoneName> {
+    let mut batch = HashSet::new();
 
     let mut deadline = lookup_batch_deadline(cx, &first).await;
 
-    batch.add(first);
+    batch.insert(first.zone_name);
 
     loop {
         if *stop.borrow() {
@@ -206,7 +169,7 @@ async fn collect_batch(
                 Some(job) => {
                     // Later writes may shorten the window, never extend it.
                     deadline = deadline.min(lookup_batch_deadline(cx, &job).await);
-                    batch.add(job);
+                    batch.insert(job.zone_name);
                 }
                 None => break,
             },
@@ -216,7 +179,7 @@ async fn collect_batch(
     // Drain a fixed backlog so producers cannot postpone a ready batch.
     for _ in 0..jobs.len() {
         if let Ok(job) = jobs.try_recv() {
-            batch.add(job);
+            batch.insert(job.zone_name);
         }
     }
 
@@ -224,18 +187,11 @@ async fn collect_batch(
 }
 
 /// Start a batch without holding collection behind an earlier ACK/retry wait.
-async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, tasks: &mut JoinSet<()>) {
-    if batch.all_zones {
-        match zone::list(cx).await {
-            Ok(zones) => batch.zones.extend(zones.into_iter().map(|zone| zone.name)),
-            Err(error) => log::warn!("queued notify: failed to list zones: {error}"),
-        }
-    }
-
-    for zone_name in batch.zones {
+async fn start_batch(cx: &Arc<Context>, batch: HashSet<ZoneName>, tasks: &mut JoinSet<()>) {
+    for zone_name in batch {
         let cx = cx.clone();
         tasks.spawn(async move {
-            if let Err(error) = notify::send_notify(&cx, NotifyTarget::Zone(&zone_name)).await {
+            if let Err(error) = send::send_zone_notify(&cx, &zone_name).await {
                 log::warn!("queued notify: NOTIFY failed for zone {zone_name}: {error}");
             }
         });
