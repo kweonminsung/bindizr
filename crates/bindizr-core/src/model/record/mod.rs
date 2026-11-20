@@ -16,9 +16,9 @@ use utoipa::openapi::schema::{ObjectBuilder, Schema, Type};
 use crate::dns::name::{OwnerName, ZoneName};
 use crate::dns::record::{
     ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
-    DnameRecordValue, DsRecordValue, EncodeRdataError, EncodedRdata, MxRecordValue,
-    NaptrRecordValue, NsRecordValue, ParseRecordValueError, PtrRecordValue, Rdata, SrvRecordValue,
-    SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue, WksRecordValue,
+    DnameRecordValue, DsRecordValue, EncodeRdataError, MxRecordValue, NaptrRecordValue,
+    NsRecordValue, ParseRecordValueError, PtrRecordValue, Rdata, SrvRecordValue, SshfpRecordValue,
+    TlsaRecordValue, TxtContent, TxtRecordValue, WksRecordValue,
 };
 use crate::dns::{Ttl, name};
 use crate::model::zone::ZoneId;
@@ -81,7 +81,7 @@ impl RecordKey {
 impl Record {
     /// Encode RDATA using the transfer and signer encoder.
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
-        Ok(EncodedRdata::from_columns(self.record_type, &self.value, self.priority)?.rdata)
+        Rdata::from_columns(self.record_type, &self.value, self.priority)
     }
 
     /// Return whether an RFC 2136, Section 2.5.2 delete by type, canonical value, and
@@ -349,13 +349,8 @@ impl RecordType {
     ) -> Cow<'a, str> {
         self.encoded_value(value, fallback_priority)
             .ok()
-            .and_then(|value| EncodedRdata::from_columns(self, &value, fallback_priority).ok())
-            .and_then(|encoded| {
-                encoded
-                    .rdata
-                    .to_canonical(Rtype::from_int(self.wire_type()))
-                    .ok()
-            })
+            .and_then(|value| Rdata::from_columns(self, &value, fallback_priority).ok())
+            .and_then(|rdata| rdata.to_canonical(Rtype::from_int(self.wire_type())).ok())
             .map(|rdata| Cow::Owned(hex::encode(rdata.as_bytes())))
             .unwrap_or(Cow::Borrowed(value))
     }

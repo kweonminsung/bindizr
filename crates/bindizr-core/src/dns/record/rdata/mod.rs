@@ -1,4 +1,4 @@
-//! [`EncodedRdata::from_columns`] maps stored columns to wire RDATA for both
+//! [`Rdata::from_columns`] maps stored columns to wire RDATA for both
 //! XFR and DNSSEC, keeping transferred bytes identical to signed bytes.
 
 mod canonical;
@@ -134,14 +134,7 @@ where
     }
 }
 
-/// A stored record's wire record type number and RDATA bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EncodedRdata {
-    pub(crate) record_type: u16,
-    pub(crate) rdata: Rdata,
-}
-
-impl EncodedRdata {
+impl Rdata {
     /// Encode record or journal columns as wire RDATA.
     /// TXT remains opaque bytes for canonical record-set ordering.
     pub(crate) fn from_columns(
@@ -153,26 +146,26 @@ impl EncodedRdata {
             record_type,
             value: value.to_string(),
         };
-        let rdata = match record_type {
+        Ok(match record_type {
             RecordType::Wks => WksRecordValue::parse(value)?.to_rdata()?,
             RecordType::A => {
                 let ip = value.parse::<Ipv4Addr>().map_err(|_| stored_address())?;
-                Rdata::new(ip.octets().to_vec())?
+                Self::new(ip.octets().to_vec())?
             }
             RecordType::Aaaa => {
                 let ip = value.parse::<Ipv6Addr>().map_err(|_| stored_address())?;
-                Rdata::new(ip.octets().to_vec())?
+                Self::new(ip.octets().to_vec())?
             }
             RecordType::Caa => CaaRecordValue::parse(value)?.to_rdata()?,
             RecordType::Cname | RecordType::Dname | RecordType::Ns | RecordType::Ptr => {
-                Rdata::new(name::encode_name(value)?)?
+                Self::new(name::encode_name(value)?)?
             }
             RecordType::Ds => DsRecordValue::parse(value)?.to_rdata()?,
             RecordType::Mx => MxRecordValue::parse(value, priority)?.to_rdata()?,
             RecordType::Naptr => NaptrRecordValue::parse(value)?.to_rdata()?,
             // Stored TXT is always the presentation form; every entry path
             // writes it, so anything else here is corruption, not a plain string.
-            RecordType::Txt => Rdata::new(
+            RecordType::Txt => Self::new(
                 TxtRecordValue::from_presentation(value)
                     .map_err(|source| ParseRecordValueError::StoredTxtNotPresentation {
                         value: value.to_string(),
@@ -183,11 +176,6 @@ impl EncodedRdata {
             RecordType::Srv => SrvRecordValue::parse(value, priority)?.to_rdata()?,
             RecordType::Sshfp => SshfpRecordValue::parse(value)?.to_rdata()?,
             RecordType::Tlsa => TlsaRecordValue::parse(value)?.to_rdata()?,
-        };
-
-        Ok(Self {
-            record_type: record_type.wire_type(),
-            rdata,
         })
     }
 }

@@ -5,7 +5,7 @@ use domain::base::iana::Rtype;
 use crate::dns;
 use crate::dns::message::{DnsMessageBuilder, EncodeMessageError};
 use crate::dns::name::{OwnerName, ZoneName};
-use crate::dns::record::{EncodedRdata, SoaRecordValue, TxtRecordValue};
+use crate::dns::record::{Rdata, SoaRecordValue, TxtRecordValue};
 use crate::dns::{CatalogZone, Serial, Ttl};
 use crate::model::dnssec_record::DnssecRecord;
 use crate::model::record::{Record, RecordType};
@@ -179,10 +179,8 @@ impl DnsMessageBuilder {
         ttl: Ttl,
         priority: Option<i32>,
     ) -> Result<(), EncodeMessageError> {
-        let EncodedRdata {
-            record_type: rtype,
-            rdata,
-        } = EncodedRdata::from_columns(record_type, value, priority)?;
+        let rdata = Rdata::from_columns(record_type, value, priority)?;
+        let rtype = record_type.wire_type();
         self.add_raw_rdata(owner.to_wire_name(zone_name)?, rtype, ttl.as_secs(), rdata)
     }
 

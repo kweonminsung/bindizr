@@ -32,7 +32,6 @@ pub use mx::MxRecordValue;
 pub use naptr::{NaptrRecordValue, ValidateNaptrRegexpError};
 pub use ns::NsRecordValue;
 pub use ptr::PtrRecordValue;
-pub(crate) use rdata::EncodedRdata;
 pub use rdata::{EncodeRdataError, ParseRdataError, Rdata};
 pub use soa::{ParseMailboxError, SoaMailbox, SoaRecordValue};
 pub use srv::SrvRecordValue;
