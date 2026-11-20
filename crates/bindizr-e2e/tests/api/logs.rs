@@ -293,6 +293,32 @@ async fn audit_log_records_management_changes_with_their_actor() {
     assert_eq!(logs.len(), 1);
 }
 
+/// Verify that a change to a zone's DNSSEC settings, which no version holds,
+/// leaves an audit row saying what moved, even when no zone data changed.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn audit_log_records_dnssec_settings_changes() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": ["192.0.2.53"] })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (logs, total) = list_audit_log(&app, &format!("entity=zone&entity_name={zone_name}")).await;
+
+    assert_eq!(total, 1, "{logs:?}");
+    assert_eq!(logs[0]["operation"], "update");
+    assert_eq!(logs[0]["detail"], "parent_ns_addrs none -> 192.0.2.53");
+}
+
 /// Verify that reading the log needs `log:read`, which only an all-zones grant carries.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

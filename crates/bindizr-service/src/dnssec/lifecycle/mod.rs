@@ -3,6 +3,7 @@
 
 use bindizr_core::dns::dnssec::SigningPass;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
 use bindizr_core::model::dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecPolicy};
 use bindizr_core::model::role_grant::Action;
@@ -17,7 +18,7 @@ use crate::error::ServiceError;
 use crate::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest,
 };
-use crate::{Context, dnssec, dnssec_policy, notify, serial, transaction, zone};
+use crate::{Context, audit, dnssec, dnssec_policy, notify, serial, transaction, zone};
 
 /// Validate a policy move: layout changes require disabling DNSSEC first; algorithms use rollover.
 /// Denial changes are atomic because all supported algorithms sign NSEC3 (RFC 5702, Section 2; RFC 6605, Section 2; RFC 8080, Section 2).
@@ -199,7 +200,7 @@ pub async fn update_settings(
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
 
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
-        let policy = match &policy_name {
+        let (policy, policy_change) = match &policy_name {
             Some(policy_name) => {
                 if keys.is_empty() {
                     return Err(ServiceError::dnssec_not_enabled(&zone.name));
@@ -214,11 +215,19 @@ pub async fn update_settings(
                 .await?
                 .ok_or_else(|| ServiceError::dnssec_policy_not_found(policy_name))?;
                 validate_policy_move(&zone, &current, &target)?;
+                let policy_change = audit::changed("policy", &current.name, &target.name);
 
-                Some(target)
+                (Some(target), policy_change)
             }
-            None => dnssec::find_zone_policy_tx(&mut tx, &zone).await?,
+            None => (dnssec::find_zone_policy_tx(&mut tx, &zone).await?, None),
         };
+        let parent_ns_addrs_change = parent_ns_addrs.as_deref().and_then(|next| {
+            audit::changed(
+                "parent_ns_addrs",
+                zone.parent_ns_addrs.as_deref().unwrap_or("none"),
+                next,
+            )
+        });
         let policy_changed = policy.as_ref().map(|policy| policy.id) != zone.dnssec_policy_id;
         let candidate = Zone {
             parent_ns_addrs: parent_ns_addrs.clone().or(zone.parent_ns_addrs),
@@ -266,6 +275,17 @@ pub async fn update_settings(
             )
             .await?;
         }
+
+        // A version holds records, never these settings, so the audit log keeps them.
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::Zone,
+            candidate.name.as_str(),
+            AuditOperation::Update,
+            audit::join_changes([policy_change, parent_ns_addrs_change]),
+            caller.change_origin(),
+        )
+        .await?;
 
         let response =
             status::lookup_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial)

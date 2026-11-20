@@ -220,14 +220,15 @@ and the scheduler pass prunes what is older — see
 ### Audit log
 
 Every change to a token, role, grant, TSIG key, secondary, or DNSSEC policy,
-and every zone deletion, leaves an entry naming the entity, the operation,
+every zone deletion, and every change to a zone's DNSSEC settings (`dnssec
+set`: its policy and parent nameservers) leaves an entry naming the entity, the operation,
 the request path (`api` or `socket`), the token that made it (a CLI command
 names none), when, and a detail: what a creation set, in the request's own
 field names (`role_name admin, expires_at never`), what an update moved
 (`enabled true -> false`), or what a deletion took with it (`records_deleted
 3, versions_deleted 2`); a secret never appears. A grant's entry carries
 its role's name. Changes to
-a zone's records and settings are in its [versions](zones.md#zone-history)
+a zone's records and its other settings are in its [versions](zones.md#zone-history)
 instead, so the two together answer who changed what, and when. A request
 that was refused or failed leaves nothing here; the access log has it.
 

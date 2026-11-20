@@ -349,8 +349,10 @@ Decode them into `Option<ChangeActor>` at the row boundary. The API's object sha
 does not dictate a JSON database column.
 
 A management change — a token, role, grant, TSIG key, secondary or DNSSEC
-policy created, updated or deleted, and a zone deleted, whose versions go
-with it — is the one write no zone version records, so it saves an
+policy created, updated or deleted, a zone deleted, whose versions go
+with it, and a zone's DNSSEC settings changed (`dnssec set`: its policy and
+parent nameservers, which a version never holds, even when the re-signing
+they cause saves one) — is the one write no zone version records, so it saves an
 `AuditLog` (`audit::save_tx`) in its own transaction, after its row write
 and before commit: a change that rolled back leaves no row and a committed
 one always has one. The entry names the entity kind and name (a grant's is

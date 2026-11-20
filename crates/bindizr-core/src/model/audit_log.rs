@@ -36,8 +36,9 @@ pub enum AuditEntity {
     TsigKey,
     Secondary,
     DnssecPolicy,
-    /// A zone's deletion, since its versions go with it; its other changes
-    /// are versioned.
+    /// A zone's deletion, since its versions go with it, and a change to its
+    /// DNSSEC settings, which no version holds; its other changes are
+    /// versioned.
     Zone,
 }
 
