@@ -4,7 +4,6 @@ mod api;
 mod cli;
 mod daemon;
 mod dns;
-mod params;
 mod shutdown;
 mod socket;
 mod tls;

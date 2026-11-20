@@ -5,15 +5,14 @@ use bindizr_core::model::record::RecordId;
 use bindizr_core::model::role_grant::RoleGrantId;
 use bindizr_core::model::zone_version::VersionFilter;
 use bindizr_service::types::{
-    AccessLogFilter, AuditLogFilter, CheckNotifyResponse, CreateBulkRecordsRequest,
+    AccessLogFilter, AuditLogFilter, CheckSecondariesResponse, CreateBulkRecordsRequest,
     CreateDnssecPolicyRequest, CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest,
     CreateSecondaryRequest, CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest,
     DeleteRecordsRequest, DsCheck, EnableDnssecRequest, Holddown, ImportDnssecKeysRequest,
     ImportZoneRequest, ImportZonesRequest, NotifySerial, PageRequest, RecordFilter, Run,
-    SecondaryStatusResponse, SecondaryTransferSummaryResponse, StartDnssecRolloverRequest,
-    TokenFilter, TransferLogFilter, TsigKeyFilter, UpdateDnssecPolicyRequest,
-    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
-    ZoneFilter, ZoneView,
+    StartDnssecRolloverRequest, TokenFilter, TransferLogFilter, TsigKeyFilter,
+    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
+    UpdateSecondaryRequest, UpdateZoneRequest, ZoneFilter, ZoneView,
 };
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -256,10 +255,9 @@ pub(crate) struct DaemonDoctorResponse {
     pub(crate) catalog_zone_name: String,
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
     pub(crate) catalog_serial: Option<Serial>,
-    pub(crate) secondaries: Vec<SecondaryStatusResponse>,
-    pub(crate) notifies: Vec<CheckNotifyResponse>,
-    /// How Bindizr served each enabled secondary.
-    pub(crate) transfers: Vec<SecondaryTransferSummaryResponse>,
+    /// The service's report on the enabled secondaries, flat in the payload.
+    #[serde(flatten)]
+    pub(crate) diagnostics: CheckSecondariesResponse,
 }
 
 /// One check's outcome.

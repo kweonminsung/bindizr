@@ -145,6 +145,7 @@ pub(crate) fn reload_config(
     cx.set_scheduler_period(config.dns.scheduler_interval_secs);
 
     changed.extend(certificates);
+    log::info!("event=config_reload changed={}", changed.join(","));
 
     Ok(changed)
 }
@@ -264,10 +265,9 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
             }
 
             _ = hangup.recv() => {
-                match reload_config(&cx, &tls) {
-                    Ok(changed) if changed.is_empty() => log::info!("SIGHUP received, nothing changed."),
-                    Ok(changed) => log::info!("SIGHUP received, reloaded: {}", changed.join(", ")),
-                    Err(error) => log::error!("SIGHUP received, nothing reloaded: {error}"),
+                // A reload logs what it changed; a signal has no one to answer.
+                if let Err(error) = reload_config(&cx, &tls) {
+                    log::error!("SIGHUP received, nothing reloaded: {error}");
                 }
 
                 continue;

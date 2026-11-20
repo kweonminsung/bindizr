@@ -33,11 +33,10 @@ impl CachedTransferContent {
     }
 }
 
-/// One zone's transfer as cached: the version it was built at, its content,
-/// and what the budget and the LRU order read.
+/// One zone's transfer as cached: its content, which names the version it
+/// was built at, and what the budget and the LRU order read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CachedTransfer {
-    version_id: ZoneVersionId,
     content: CachedTransferContent,
     records: usize,
     /// Logical clock value at last hit; drives LRU eviction.
@@ -98,7 +97,7 @@ impl Entries {
         let entry = self
             .zones
             .get_mut(&zone_id)
-            .filter(|entry| entry.version_id == version_id)?;
+            .filter(|entry| entry.content.version_id == version_id)?;
         entry.last_used = now;
 
         Some(entry.content.clone())
@@ -108,7 +107,6 @@ impl Entries {
     fn store(
         &mut self,
         zone_id: ZoneId,
-        version_id: ZoneVersionId,
         content: CachedTransferContent,
         max_records: usize,
     ) -> usize {
@@ -128,7 +126,6 @@ impl Entries {
         self.zones.insert(
             zone_id,
             CachedTransfer {
-                version_id,
                 content,
                 records,
                 last_used,
@@ -193,11 +190,10 @@ impl TransferCache {
         metrics: &Metrics,
         max_records: usize,
         zone_id: ZoneId,
-        version_id: ZoneVersionId,
         content: CachedTransferContent,
     ) {
         let mut entries = self.locked();
-        let evicted = entries.store(zone_id, version_id, content, max_records);
+        let evicted = entries.store(zone_id, content, max_records);
         metrics.track_zone_cache_store(entries.records, evicted);
     }
 }
@@ -236,13 +232,9 @@ pub(crate) async fn authorize_transfer_content_by_name(
     let loaded = fetch_transfer_content(cx, caller, zone_name).await?;
 
     if let TransferAccess::Granted((zone, content)) = &loaded {
-        dns_cx.transfer_cache.store_content(
-            cx.metrics(),
-            max_records,
-            zone.id,
-            content.version_id,
-            content.clone(),
-        );
+        dns_cx
+            .transfer_cache
+            .store_content(cx.metrics(), max_records, zone.id, content.clone());
     }
 
     Ok(loaded)

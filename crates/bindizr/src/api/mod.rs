@@ -11,6 +11,7 @@ mod metrics;
 mod middleware;
 mod notify;
 mod openapi;
+mod params;
 mod permission;
 mod query;
 mod record;

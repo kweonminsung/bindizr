@@ -13,7 +13,7 @@ use utoipa::IntoParams;
 use crate::api::RequestCaller;
 use crate::api::error::ApiError;
 use crate::api::extract::{Path, Query};
-use crate::params::NameParams;
+use crate::api::params::NameParams;
 
 /// Build the notify API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

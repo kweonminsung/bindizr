@@ -12,7 +12,7 @@ use bindizr_service::{Context, zone};
 use crate::api::RequestCaller;
 use crate::api::error::ApiError;
 use crate::api::extract::Path;
-use crate::params::NameParams;
+use crate::api::params::NameParams;
 
 /// Report the sync state of every enabled secondary for a zone.
 #[utoipa::path(

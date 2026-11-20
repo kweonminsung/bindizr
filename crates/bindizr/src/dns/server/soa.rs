@@ -3,9 +3,7 @@
 
 use std::net::{IpAddr, SocketAddr};
 
-use bindizr_core::dns::message::{
-    DnsMessageBuilder, ExtendedErrorCode, OptRcode, ParsedQuery, QueryMetadata, Rtype,
-};
+use bindizr_core::dns::message::{DnsMessageBuilder, OptRcode, ParsedQuery, QueryMetadata, Rtype};
 use bindizr_core::dns::tsig;
 use bindizr_core::dns::tsig::{RequestSignature, TransferSigner};
 use bindizr_core::metrics::{SoaResult, XfrResult};
@@ -224,14 +222,12 @@ async fn handle_soa_request(
         let (catalog_zone, _) = match access {
             TransferAccess::Granted(content) => content,
             TransferAccess::NotAuth => {
-                return Ok((
-                    query.build_signed_error_response(
-                        OptRcode::NOTAUTH,
-                        Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-                        identity.signer.as_mut(),
-                    )?,
-                    SoaResult::NotAuth,
-                ));
+                return TransferRefusal::not_auth(
+                    format!("not authoritative for zone: {zone_name_str}"),
+                    identity.signer,
+                )
+                .into_response(&QueryMetadata::from(query), query_data)
+                .map(|response| (response, SoaResult::NotAuth));
             }
             TransferAccess::Refused(reason) => {
                 log::warn!(
@@ -282,14 +278,12 @@ async fn handle_soa_request(
     let (zone, signatures) = match access {
         TransferAccess::Granted(content) => content,
         TransferAccess::NotAuth => {
-            return Ok((
-                query.build_signed_error_response(
-                    OptRcode::NOTAUTH,
-                    Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-                    identity.signer.as_mut(),
-                )?,
-                SoaResult::NotAuth,
-            ));
+            return TransferRefusal::not_auth(
+                format!("not authoritative for zone: {zone_name_str}"),
+                identity.signer,
+            )
+            .into_response(&QueryMetadata::from(query), query_data)
+            .map(|response| (response, SoaResult::NotAuth));
         }
         TransferAccess::Refused(reason) => {
             log::warn!(

@@ -118,9 +118,7 @@ pub(crate) async fn check_installation(
         dns_tls_server,
         catalog_zone_name: config.dns.catalog_zone_name.to_string(),
         catalog_serial,
-        secondaries: diagnostics.secondaries,
-        notifies: diagnostics.notifies,
-        transfers: diagnostics.transfers,
+        diagnostics,
     };
 
     Ok(DaemonResponse {

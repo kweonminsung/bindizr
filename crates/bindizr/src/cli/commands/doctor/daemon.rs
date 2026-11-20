@@ -172,7 +172,7 @@ pub(crate) async fn check_services(report: &mut Report) {
         report.skip("Secondary checks skipped: the database did not answer");
         return;
     }
-    if doctor.secondaries.is_empty() {
+    if doctor.diagnostics.secondaries.is_empty() {
         report.skip("No enabled secondaries");
         return;
     }
@@ -180,7 +180,7 @@ pub(crate) async fn check_services(report: &mut Report) {
     // These serials are the catalog zone's, unlike `zone status`, so say so.
     let catalog_zone_name = &doctor.catalog_zone_name;
 
-    for secondary in &doctor.secondaries {
+    for secondary in &doctor.diagnostics.secondaries {
         let serial = secondary.visible_serial.map_or(0, Serial::as_u32);
 
         let line = match secondary.status {
@@ -215,7 +215,7 @@ pub(crate) async fn check_services(report: &mut Report) {
         }
     }
 
-    for notify in &doctor.notifies {
+    for notify in &doctor.diagnostics.notifies {
         match &notify.error {
             Some(error) => report.fail(format!("NOTIFY rejected: {} ({error})", notify.address)),
             None => report.ok(format!("NOTIFY accepted: {}", notify.address)),
@@ -223,7 +223,7 @@ pub(crate) async fn check_services(report: &mut Report) {
     }
 
     // What Bindizr served each secondary is information, not a verdict.
-    for transfer in &doctor.transfers {
+    for transfer in &doctor.diagnostics.transfers {
         let line = format!(
             "Transfers to {}: {}",
             transfer.address,

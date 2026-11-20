@@ -15,8 +15,8 @@ use bindizr_service::{Context, role};
 use crate::api::RequestCaller;
 use crate::api::error::ApiError;
 use crate::api::extract::{JsonBody, Path, Query};
+use crate::api::params::{NameIdParams, NameParams};
 use crate::api::query::DEFAULT_PAGE_LIMIT;
-use crate::params::{NameIdParams, NameParams};
 
 /// Build the role API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

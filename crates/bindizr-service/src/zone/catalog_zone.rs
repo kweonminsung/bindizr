@@ -8,7 +8,7 @@ use ring::digest;
 use ring::digest::SHA256;
 
 use crate::error::ServiceError;
-use crate::{Context, Transaction, transaction};
+use crate::{Context, Transaction};
 
 /// TTL used by the generated catalog's records.
 const DEFAULT_TTL: Ttl = Ttl::from_secs(3600);
@@ -40,15 +40,6 @@ pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError
     }
 
     Ok(())
-}
-
-/// Refresh the catalog at startup from every enabled managed zone.
-pub async fn refresh_catalog(cx: &Context) -> Result<(CatalogZone, Vec<ZoneName>), ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "failed to update catalog state").await?;
-
-    let refresh_result = refresh_catalog_tx(&mut tx, cx).await;
-
-    transaction::finish_tx(tx, refresh_result, "failed to update catalog state").await
 }
 
 /// Build the catalog from the enabled zones and advance its persisted serial

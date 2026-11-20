@@ -1,5 +1,5 @@
 //! Authenticate transfers by TSIG or address ACL; TLS requires both (RFC 9103, Section 7.5).
-//! The service gates stored zones; this module gates the virtual catalog.
+//! The service decides zone and catalog grants when it loads what a transfer serves.
 
 use std::net::IpAddr;
 

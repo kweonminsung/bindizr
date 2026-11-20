@@ -1,5 +1,5 @@
 //! Inbound DNS serving: AXFR/IXFR dispatch with TSIG or ACL gating, SOA
-//! responses, catalog-zone generation, and RFC 2136 nsupdate handling.
+//! responses, streaming the service's catalog zone, and RFC 2136 nsupdate handling.
 
 pub(crate) mod acl;
 pub(crate) mod auth;
@@ -201,14 +201,14 @@ pub(crate) async fn handle_tcp_xfr(
             );
             Ok(())
         }
-        Err(DnsError::NotAuth { zone_name }) => {
+        Err(error @ DnsError::NotAuth { .. }) => {
             refuse_tcp_xfr(
                 dns_cx,
                 writer,
                 client_ip,
                 query,
                 query_data,
-                TransferRefusal::not_auth(zone_name, identity.signer.take()),
+                TransferRefusal::not_auth(error.to_string(), identity.signer.take()),
             )
             .await
         }
