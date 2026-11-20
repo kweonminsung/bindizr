@@ -1,13 +1,13 @@
 //! Virtual catalog membership and its persisted serial.
 
-use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::{CATALOG_SOA_REFRESH, CatalogZone, Serial, SoaInterval, Ttl};
 use bindizr_core::model::zone::Zone;
+use bindizr_db::LockLevel;
 use ring::digest;
 use ring::digest::SHA256;
 
 use crate::error::ServiceError;
-use crate::{Context, transaction, zone};
+use crate::{Context, Transaction, transaction};
 
 /// TTL used by the generated catalog's records.
 const DEFAULT_TTL: Ttl = Ttl::from_secs(3600);
@@ -38,36 +38,36 @@ pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError
     Ok(())
 }
 
-/// Advance the catalog zone serial when its content `digest` has changed;
-/// a no-op otherwise.
-async fn advance_catalog_serial(
-    cx: &Context,
-    zone_name: &ZoneName,
-    digest: &str,
-    base_serial: Serial,
-) -> Result<Serial, ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "failed to update catalog state").await?;
-
-    let apply_result = bindizr_db::catalog_zone::upsert_tx(&mut tx, zone_name, digest, base_serial)
-        .await
-        .map_err(ServiceError::from);
-
-    transaction::finish_tx(tx, apply_result, "failed to update catalog state").await
-}
-
 /// Refresh the catalog at startup from every enabled managed zone.
 pub async fn refresh_catalog(cx: &Context) -> Result<(CatalogZone, Vec<String>), ServiceError> {
-    refresh_catalog_from_zones(cx, zone::list(cx).await?).await
+    let mut tx = transaction::begin_tx(cx, "failed to update catalog state").await?;
+
+    let refresh_result = refresh_catalog_tx(&mut tx, cx).await;
+
+    transaction::finish_tx(tx, refresh_result, "failed to update catalog state").await
 }
 
-/// Refresh the virtual catalog from supplied zones and persist its membership serial.
-pub(crate) async fn refresh_catalog_from_zones(
+/// Build the catalog from the enabled zones and advance its persisted serial
+/// when their membership changed.
+///
+/// The catalog row is locked before the members are read, so overlapping
+/// refreshes advance the serial in the order they saw membership.
+pub(crate) async fn refresh_catalog_tx(
+    tx: &mut Transaction<'_>,
     cx: &Context,
-    zones: Vec<Zone>,
 ) -> Result<(CatalogZone, Vec<String>), ServiceError> {
     let config = cx.config();
     let catalog_zone_name = &config.dns.catalog_zone_name;
     log::info!("Generating catalog zone: {catalog_zone_name}");
+
+    // Read only for its row lock; the serial served comes from the upsert below.
+    bindizr_db::catalog_zone::find_serial_tx(tx, catalog_zone_name, LockLevel::Exclusive).await?;
+
+    let zones: Vec<Zone> = bindizr_db::zone::list_all_tx(tx, LockLevel::Unlocked)
+        .await?
+        .into_iter()
+        .filter(|zone| zone.enabled)
+        .collect();
 
     // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = zones
@@ -87,7 +87,8 @@ pub(crate) async fn refresh_catalog_from_zones(
         .max()
         .unwrap_or(Serial::from(1));
 
-    let serial = advance_catalog_serial(cx, catalog_zone_name, &digest, base_serial).await?;
+    let serial =
+        bindizr_db::catalog_zone::upsert_tx(tx, catalog_zone_name, &digest, base_serial).await?;
 
     let catalog_zone = CatalogZone {
         name: catalog_zone_name.clone(),

@@ -1,8 +1,26 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
-use sqlx::{MySql, Transaction};
+use sqlx::{AssertSqlSafe, MySql, Transaction};
 
+use crate::LockLevel;
 use crate::error::DatabaseError;
+
+/// Find the catalog's stored serial, locking its row at `lock_level`.
+pub(crate) async fn find_serial_tx(
+    tx: &mut Transaction<'_, MySql>,
+    catalog_zone_name: &ZoneName,
+    lock_level: LockLevel,
+) -> Result<Option<Serial>, DatabaseError> {
+    let serial = sqlx::query_scalar::<_, Serial>(AssertSqlSafe(format!(
+        "SELECT serial FROM catalog_zones WHERE name = ?{}",
+        lock_level.clause(),
+    )))
+    .bind(catalog_zone_name)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(serial)
+}
 
 /// Upsert the catalog digest, advancing the serial only when `digest` changed;
 /// return the serial in effect after the upsert.

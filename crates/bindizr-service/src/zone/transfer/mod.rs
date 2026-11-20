@@ -101,13 +101,13 @@ pub async fn authorize_transfer_by_name(
     transaction::finish_tx(tx, result, "failed to authorize the transfer").await
 }
 
-/// Refresh catalog content from one member snapshot after authorizing
-/// `zone:transfer` in all zones, including its persisted serial.
+/// Refresh the catalog a transfer serves after authorizing `zone:transfer` in
+/// all zones, reading its members and persisted serial in that transaction.
 pub async fn refresh_catalog_content(
     cx: &Context,
     caller: &Caller,
 ) -> Result<TransferAccess<(CatalogZone, Vec<String>)>, ServiceError> {
-    let mut tx = transaction::begin_read_tx(cx, "failed to load catalog content").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to load catalog content").await?;
 
     let result: Result<_, ServiceError> = async {
         let caller = match reauthenticate_transfer_tx(&mut tx, caller).await? {
@@ -120,21 +120,13 @@ pub async fn refresh_catalog_content(
             return Ok(TransferAccess::Refused(error.to_string()));
         }
 
-        let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
-
         Ok(TransferAccess::Granted(
-            zones.into_iter().filter(|zone| zone.enabled).collect(),
+            zone::refresh_catalog_tx(&mut tx, cx).await?,
         ))
     }
     .await;
 
-    match transaction::finish_tx(tx, result, "failed to load catalog content").await? {
-        TransferAccess::Granted(zones) => Ok(TransferAccess::Granted(
-            zone::refresh_catalog_from_zones(cx, zones).await?,
-        )),
-        TransferAccess::NotAuth => Ok(TransferAccess::NotAuth),
-        TransferAccess::Refused(reason) => Ok(TransferAccess::Refused(reason)),
-    }
+    transaction::finish_tx(tx, result, "failed to load catalog content").await
 }
 
 /// Authorize the caller and read both record planes in one shared-lock snapshot.
