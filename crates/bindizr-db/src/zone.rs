@@ -14,7 +14,7 @@ use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 /// sort and paging.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ZoneFilter {
-    pub name: Option<String>,
+    pub name: Option<ZoneName>,
     pub id: Option<ZoneId>,
     pub mname: Option<String>,
     pub rname: Option<String>,

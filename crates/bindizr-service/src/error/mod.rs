@@ -469,10 +469,11 @@ impl ServiceError {
         ))
     }
 
-    /// Build an error for confirming a rollover that has not started.
+    /// Build an error for confirming a rollover while no published key awaits
+    /// promotion; a predecessor still retiring does not count.
     pub fn dnssec_no_rollover_in_progress(zone_name: impl fmt::Display) -> Self {
         Self::DnssecNoRolloverInProgress(format!(
-            "no key rollover is in progress for zone '{zone_name}'"
+            "no published key awaits promotion in zone '{zone_name}'"
         ))
     }
 

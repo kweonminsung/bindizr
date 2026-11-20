@@ -228,8 +228,9 @@ pub(crate) struct DaemonStatusResponse {
     pub(crate) pid: Option<u32>,
     pub(crate) version: String,
     /// Restart detection marker: exec keeps the PID, so a new start time is
-    /// the only signal that the daemon was replaced.
-    pub(crate) started_at_ms: u64,
+    /// the only signal that the daemon was replaced. `None` while the front
+    /// ends are still starting.
+    pub(crate) started_at_ms: Option<u64>,
     pub(crate) api_url: String,
     pub(crate) api_authentication: bool,
     pub(crate) dns_addr: String,

@@ -3,8 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::Ttl;
-use bindizr_core::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordType};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -13,23 +11,12 @@ use thiserror::Error;
 pub(crate) const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
 /// Why an endpoint is not one this provider can write; the message becomes a
-/// permanent (4xx) error body.
+/// permanent (4xx) error body. Record rules are the server's, whose 400 the
+/// adapter passes through; only what the webhook shape alone shows is here.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub(crate) enum ValidateEndpointError {
-    #[error("dnsName must not be empty")]
-    EmptyDnsName,
-    #[error("record type '{record_type}' is not supported (supported: {})", EXTERNAL_DNS_RECORD_TYPES.iter().copied().map(RecordType::as_str).collect::<Vec<_>>().join(", "))]
-    UnsupportedRecordType { record_type: String },
-    #[error("endpoint '{dns_name}' has no targets")]
-    NoTargets { dns_name: String },
-    #[error("endpoint '{dns_name}' has an empty target")]
-    EmptyTarget { dns_name: String },
-    #[error("CNAME endpoint '{dns_name}' must have exactly one target")]
-    CnameTargets { dns_name: String },
     #[error("setIdentifier is not supported by this provider")]
     SetIdentifier,
-    #[error("recordTTL {ttl} is out of range")]
-    TtlOutOfRange { ttl: i64 },
 }
 
 /// Why a plan could not become a bindizr change set.
@@ -63,63 +50,23 @@ pub(crate) struct Endpoint {
 }
 
 impl Endpoint {
-    /// Validate adapter input and return its parsed record type.
-    /// Mirror server validation so invalid plans fail locally with permanent 4xx errors.
-    pub(crate) fn validate(&self) -> Result<RecordType, ValidateEndpointError> {
-        if self.dns_name.trim().is_empty() {
-            return Err(ValidateEndpointError::EmptyDnsName);
-        }
-
-        let Some(record_type) = RecordType::parse_external_dns_supported(&self.record_type) else {
-            return Err(ValidateEndpointError::UnsupportedRecordType {
-                record_type: self.record_type.clone(),
-            });
-        };
-
-        if self.targets.is_empty() {
-            return Err(ValidateEndpointError::NoTargets {
-                dns_name: self.dns_name.clone(),
-            });
-        }
-
-        // Whitespace-only TXT content is valid; for other types it is garbage.
-        let is_txt = record_type == RecordType::Txt;
-
-        if self.targets.iter().any(|target| {
-            if is_txt {
-                target.is_empty()
-            } else {
-                target.trim().is_empty()
-            }
-        }) {
-            return Err(ValidateEndpointError::EmptyTarget {
-                dns_name: self.dns_name.clone(),
-            });
-        }
-        if record_type == RecordType::Cname && self.targets.len() > 1 {
-            return Err(ValidateEndpointError::CnameTargets {
-                dns_name: self.dns_name.clone(),
-            });
-        }
+    /// Refuse what the bindizr API cannot carry: a `setIdentifier`, which no
+    /// bindizr record has. Every record rule is left to the server.
+    pub(crate) fn validate(&self) -> Result<(), ValidateEndpointError> {
         if !self.set_identifier.is_empty() {
             return Err(ValidateEndpointError::SetIdentifier);
         }
-        if self.record_ttl < 0 || self.record_ttl > i64::from(Ttl::MAX) {
-            return Err(ValidateEndpointError::TtlOutOfRange {
-                ttl: self.record_ttl,
-            });
-        }
 
-        Ok(record_type)
+        Ok(())
     }
 
-    /// Convert validated input to a bindizr record, preserving TXT presentation
-    /// for the server to parse and store.
-    pub(crate) fn to_bindizr_record(&self, record_type: RecordType) -> BindizrRecord {
+    /// Convert the endpoint to a bindizr record as sent, for the server to
+    /// validate, parse and store; TTL 0 is ExternalDNS's unset.
+    pub(crate) fn to_bindizr_record(&self) -> BindizrRecord {
         BindizrRecord {
             name: self.dns_name.clone(),
-            record_type: record_type.as_str().to_string(),
-            ttl: (self.record_ttl > 0).then_some(self.record_ttl),
+            record_type: self.record_type.clone(),
+            ttl: (self.record_ttl != 0).then_some(self.record_ttl),
             values: self.targets.clone(),
         }
     }
@@ -222,9 +169,11 @@ impl TryFrom<&Changes> for ApplyExternalDnsChangesRequest {
                 .zip(&changes.update_new)
                 .map(
                     |(old, new)| -> Result<BindizrRecordUpdate, ConvertChangesError> {
+                        old.validate()?;
+                        new.validate()?;
                         Ok(BindizrRecordUpdate {
-                            old: old.to_bindizr_record(old.validate()?),
-                            new: new.to_bindizr_record(new.validate()?),
+                            old: old.to_bindizr_record(),
+                            new: new.to_bindizr_record(),
                         })
                     },
                 )
@@ -241,7 +190,8 @@ pub(crate) fn to_bindizr_records(
     endpoints
         .iter()
         .map(|endpoint| -> Result<BindizrRecord, ConvertChangesError> {
-            Ok(endpoint.to_bindizr_record(endpoint.validate()?))
+            endpoint.validate()?;
+            Ok(endpoint.to_bindizr_record())
         })
         .collect()
 }

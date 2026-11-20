@@ -262,10 +262,7 @@ pub(crate) async fn validate_add_tx(
     let records_at_name =
         bindizr_db::record::list_by_name_tx(tx, zone.id, owner, LockLevel::Exclusive)
             .await
-            .map_err(|error| {
-                log::error!("Failed to load records: {error}");
-                ServiceError::internal_with_source("failed to load records", error)
-            })?;
+            .map_err(|error| ServiceError::internal_with_source("failed to load records", error))?;
 
     if has_matching_rdata(records_at_name.iter(), record_type, value, priority) {
         return Ok(AddResult::Duplicate);

@@ -1,6 +1,8 @@
 //! The transfer log: each transfer, refusal, or failure a client was answered,
 //! kept across restarts and instances; reads require `log:read`.
 
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::net::IpAddr;
 
 use bindizr_core::config::SavedTransfers;
@@ -19,7 +21,8 @@ use crate::types::{PaginatedResponse, TransferLogFilter, TransferLogResponse};
 use crate::{Context, pagination, secondary, zone};
 
 /// Save a transfer answered for `zone_id` up to `serial`. A failure to
-/// save is logged; the transfer already went out.
+/// save is logged; the transfer already went out. An IXFR answered with the
+/// SOA alone, its client already current, moved nothing and is not saved.
 pub async fn save_ok(
     cx: &Context,
     client_ip: IpAddr,
@@ -244,24 +247,36 @@ async fn normalize_filter(
     })
 }
 
-/// List the latest transfer of each zone answered to each of `client_ips`.
+/// List the latest transfer of each zone answered to any of `client_ips`,
+/// one row per zone, as `find_by_clients_and_zone_name` finds one zone's.
 pub(crate) async fn list_latest_by_clients(
     cx: &Context,
     client_ips: &[IpAddr],
 ) -> Result<Vec<TransferLogWithZone>, ServiceError> {
-    let mut logs = Vec::new();
+    let mut latest: HashMap<ZoneName, TransferLogWithZone> = HashMap::new();
 
     for client_ip in client_ips {
-        logs.extend(
-            bindizr_db::transfer_log::list_by_client_addr_with_zone_latest_per_zone(
-                cx.db(),
-                &client_ip.to_string(),
-            )
-            .await?,
-        );
+        let logs = bindizr_db::transfer_log::list_by_client_addr_with_zone_latest_per_zone(
+            cx.db(),
+            &client_ip.to_string(),
+        )
+        .await?;
+
+        // Each address has its own latest row; the newest across them wins.
+        for log in logs {
+            match latest.entry(log.zone_name.clone()) {
+                Entry::Occupied(mut entry) if log.served_at > entry.get().served_at => {
+                    entry.insert(log);
+                }
+                Entry::Occupied(_) => {}
+                Entry::Vacant(entry) => {
+                    entry.insert(log);
+                }
+            }
+        }
     }
 
-    Ok(logs)
+    Ok(latest.into_values().collect())
 }
 
 /// Find the latest transfer of `zone_name` answered to any of `client_ips`.

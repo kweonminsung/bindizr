@@ -34,14 +34,6 @@ pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
     RecordType::Srv,
 ];
 
-/// Record types shared by the API server and ExternalDNS adapter.
-pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
-    RecordType::A,
-    RecordType::Aaaa,
-    RecordType::Cname,
-    RecordType::Txt,
-];
-
 id_newtype!(
     /// The id of a record row.
     RecordId
@@ -464,19 +456,6 @@ impl RecordType {
             }
             _ => self.display_value(value),
         }
-    }
-
-    /// Return whether the ExternalDNS provider manages records of this type
-    /// ([`EXTERNAL_DNS_RECORD_TYPES`]).
-    pub fn is_external_dns_supported(self) -> bool {
-        EXTERNAL_DNS_RECORD_TYPES.contains(&self)
-    }
-
-    /// Parse a type name the ExternalDNS provider manages; `None` for an
-    /// unknown or unsupported one.
-    pub fn parse_external_dns_supported(value: &str) -> Option<Self> {
-        let parsed = value.parse::<Self>().ok()?;
-        parsed.is_external_dns_supported().then_some(parsed)
     }
 }
 

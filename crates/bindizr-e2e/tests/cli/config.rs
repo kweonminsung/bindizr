@@ -170,6 +170,8 @@ async fn config_list_and_get_show_loaded_config() {
     assert!(listed.contains("[dns.notify]"));
     assert!(listed.contains("[dns.nsupdate]"));
     assert!(listed.contains("[dns.tls]"));
+    // Every key `config get` reads is listed, a newly added one included.
+    assert!(listed.contains("catalog_zone_name"), "{listed}");
 
     let value = app
         .run_cli_success(&["config", "get", "api.authentication_required"], None)

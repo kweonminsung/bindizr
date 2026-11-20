@@ -356,7 +356,7 @@ async fn nsupdate_rejects_managed_dnssec_changes_without_mutating_zone() {
                 rtype: record.rtype(),
             },
             UpdateRecord::DeleteRecord {
-                name: owner.clone(),
+                name: owner,
                 rtype: record.rtype(),
                 rdata,
             },

@@ -1,7 +1,7 @@
 //! The daemon's Prometheus registry, held by its `Context` and shared by the
 //! HTTP API and DNS layers.
 
-use domain::base::iana::{Rcode, Rtype};
+use domain::base::iana::{OptRcode, Rtype};
 use prometheus::core::Collector;
 use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
@@ -409,25 +409,26 @@ pub enum NsupdateResult {
     /// A TSIG failure answers with its own NOTAUTH, so it is kept apart from
     /// the NOTAUTH an update refused on its merits gets.
     TsigFailed,
-    /// Every other outcome is named by the response code, a bounded set,
-    /// never the free-form message.
-    Rcode(Rcode),
+    /// Every other outcome is named by the response code, extended ones such
+    /// as BADVERS included: a bounded set, never the free-form message.
+    Rcode(OptRcode),
 }
 
 impl NsupdateResult {
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::TsigFailed,
-        Self::Rcode(Rcode::NOERROR),
-        Self::Rcode(Rcode::FORMERR),
-        Self::Rcode(Rcode::REFUSED),
-        Self::Rcode(Rcode::YXDOMAIN),
-        Self::Rcode(Rcode::YXRRSET),
-        Self::Rcode(Rcode::NXDOMAIN),
-        Self::Rcode(Rcode::NXRRSET),
-        Self::Rcode(Rcode::NOTAUTH),
-        Self::Rcode(Rcode::NOTZONE),
-        Self::Rcode(Rcode::SERVFAIL),
-        Self::Rcode(Rcode::NOTIMP),
+        Self::Rcode(OptRcode::NOERROR),
+        Self::Rcode(OptRcode::FORMERR),
+        Self::Rcode(OptRcode::REFUSED),
+        Self::Rcode(OptRcode::YXDOMAIN),
+        Self::Rcode(OptRcode::YXRRSET),
+        Self::Rcode(OptRcode::NXDOMAIN),
+        Self::Rcode(OptRcode::NXRRSET),
+        Self::Rcode(OptRcode::NOTAUTH),
+        Self::Rcode(OptRcode::NOTZONE),
+        Self::Rcode(OptRcode::SERVFAIL),
+        Self::Rcode(OptRcode::NOTIMP),
+        Self::Rcode(OptRcode::BADVERS),
     ];
 
     /// Return the metric label value of this nsupdate result.
@@ -437,16 +438,17 @@ impl NsupdateResult {
         };
 
         match rcode {
-            Rcode::NOERROR => "noerror",
-            Rcode::FORMERR => "formerr",
-            Rcode::REFUSED => "refused",
-            Rcode::YXDOMAIN => "yxdomain",
-            Rcode::YXRRSET => "yxrrset",
-            Rcode::NXDOMAIN => "nxdomain",
-            Rcode::NXRRSET => "nxrrset",
-            Rcode::NOTAUTH => "notauth",
-            Rcode::NOTZONE => "notzone",
-            Rcode::SERVFAIL => "servfail",
+            OptRcode::NOERROR => "noerror",
+            OptRcode::FORMERR => "formerr",
+            OptRcode::REFUSED => "refused",
+            OptRcode::YXDOMAIN => "yxdomain",
+            OptRcode::YXRRSET => "yxrrset",
+            OptRcode::NXDOMAIN => "nxdomain",
+            OptRcode::NXRRSET => "nxrrset",
+            OptRcode::NOTAUTH => "notauth",
+            OptRcode::NOTZONE => "notzone",
+            OptRcode::SERVFAIL => "servfail",
+            OptRcode::BADVERS => "badvers",
             _ => "other",
         }
     }

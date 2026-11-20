@@ -166,7 +166,6 @@ pub async fn update(
         if candidate.name != existing_zone.name {
             match bindizr_db::zone::get_by_name(cx.db(), &candidate.name).await {
                 Ok(Some(zone)) if zone.id != zone_id => {
-                    log::error!("Zone with name {} already exists", candidate.name);
                     return Err(ServiceError::zone_conflict(format!(
                         "zone with name '{}' already exists",
                         candidate.name
@@ -174,7 +173,6 @@ pub async fn update(
                 }
                 Ok(_) => {}
                 Err(error) => {
-                    log::error!("Failed to check existing zone: {error}");
                     return Err(ServiceError::internal_with_source(
                         "failed to update zone",
                         error,
@@ -207,7 +205,6 @@ pub async fn update(
                         "zone with name '{new_zone_name}' already exists"
                     ))
                 } else {
-                    log::error!("Failed to update zone: {error}");
                     ServiceError::internal_with_source("failed to update zone", error)
                 }
             })?;
@@ -219,7 +216,6 @@ pub async fn update(
         bindizr_db::zone_change::create_many_tx(&mut tx, &changes)
             .await
             .map_err(|error| {
-                log::error!("Failed to create zone changes: {error}");
                 ServiceError::internal_with_source("failed to create zone change", error)
             })?;
 

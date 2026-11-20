@@ -4,7 +4,7 @@
 use std::net::IpAddr;
 
 use bindizr_core::dns::message::{ExtendedErrorCode, Opcode, OptRcode, QueryMetadata};
-use bindizr_core::dns::tsig::{RequestSignature, TransferSigner, TsigError};
+use bindizr_core::dns::tsig::{RequestSignature, RequestTsig, TransferSigner, TsigError};
 use bindizr_core::dns::{message, tsig};
 use bindizr_core::model::transfer::TransferTransport;
 use bindizr_service::authorization::Caller;
@@ -106,11 +106,20 @@ impl TransferRefusal {
                 mut signer,
                 ..
             } => Ok(metadata.build_signed_error_response(rcode, ede, signer.as_deref_mut())?),
-            Self::Failed { mut signer, .. } => Ok(metadata.build_signed_error_response(
-                OptRcode::SERVFAIL,
-                None,
-                signer.as_deref_mut(),
-            )?),
+            Self::Failed {
+                context,
+                source,
+                mut signer,
+            } => {
+                // A backend failure leaves the process here as SERVFAIL, so its cause is logged.
+                log::error!("DNS request failed with a server fault: {context}: {source:?}");
+
+                Ok(metadata.build_signed_error_response(
+                    OptRcode::SERVFAIL,
+                    None,
+                    signer.as_deref_mut(),
+                )?)
+            }
             Self::Tsig(TsigError::Rejected { rcode, key, time }) => Ok(tsig::build_error_response(
                 query_data,
                 key.as_deref(),
@@ -160,7 +169,7 @@ pub(crate) async fn authenticate_tsig_key(
     query_data: &[u8],
 ) -> Result<Option<TransferIdentity>, TransferRefusal> {
     let key_name = match tsig::request_signature(query_data) {
-        RequestSignature::Key { name, .. } => name,
+        RequestSignature::Key(RequestTsig { name, .. }) => name,
         RequestSignature::Absent => return Ok(None),
         // The address would have allowed this one; a TSIG that does not parse
         // must not be answered as though none had been sent.
@@ -286,13 +295,17 @@ pub(crate) async fn refuse_query(
             let mut signer = identity.and_then(|identity| identity.signer);
             Ok(metadata.build_signed_error_response(rcode, ede, signer.as_mut())?)
         }
-        Err(refusal) => match refusal.into_response(metadata, query_data) {
-            Err(DnsError::Tsig(error)) => {
-                log::warn!("Failed to encode TSIG refusal: {error}");
-                Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
+        Err(refusal) => {
+            log::warn!("Failed to authenticate the TSIG of a refused request: {refusal}");
+
+            match refusal.into_response(metadata, query_data) {
+                Err(DnsError::Tsig(error)) => {
+                    log::warn!("Failed to encode TSIG refusal: {error}");
+                    Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
+                }
+                response => response,
             }
-            response => response,
-        },
+        }
     }
 }
 

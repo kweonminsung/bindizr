@@ -125,8 +125,6 @@ pub(crate) async fn handle_udp_ixfr(
 /// Return whether the client is `bindizr doctor` probing over the wire,
 /// reaching a concrete `listen_addr` from it.
 fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
-    // IPv4-mapped IPv6 addresses use the same self-probe identity as IPv4.
-    let client_ip = client_ip.to_canonical();
     client_ip.is_loopback() || client_ip == dns_cx.daemon().config().dns.listen_addr.to_canonical()
 }
 
@@ -203,13 +201,18 @@ async fn handle_soa_request(
         let access = match zone::refresh_catalog_content(cx, &identity.caller).await {
             Ok(access) => access,
             Err(error) => {
-                return TransferRefusal::failed(
-                    "failed to load catalog content",
-                    error,
-                    identity.signer,
-                )
-                .into_response(&QueryMetadata::from(query), query_data)
-                .map(|response| (response, SoaResult::Failed));
+                log::error!(
+                    "Failed to load catalog content for {} query for {zone_name_str:?} from {client_ip}: {error:?}",
+                    query.qtype
+                );
+                return Ok((
+                    query.build_signed_error_response(
+                        OptRcode::SERVFAIL,
+                        None,
+                        identity.signer.as_mut(),
+                    )?,
+                    SoaResult::Failed,
+                ));
             }
         };
         let (catalog_zone, _) = match access {
@@ -254,13 +257,18 @@ async fn handle_soa_request(
         {
             Ok(access) => access,
             Err(error) => {
-                return TransferRefusal::failed(
-                    "failed to load SOA content",
-                    error,
-                    identity.signer,
-                )
-                .into_response(&QueryMetadata::from(query), query_data)
-                .map(|response| (response, SoaResult::Failed));
+                log::error!(
+                    "Failed to load SOA content for {} query for {zone_name_str:?} from {client_ip}: {error:?}",
+                    query.qtype
+                );
+                return Ok((
+                    query.build_signed_error_response(
+                        OptRcode::SERVFAIL,
+                        None,
+                        identity.signer.as_mut(),
+                    )?,
+                    SoaResult::Failed,
+                ));
             }
         },
         Err(_) => TransferAccess::NotAuth,
@@ -293,13 +301,8 @@ async fn handle_soa_request(
     let mut builder = build(identity.signer);
     builder.add_soa(&zone, zone.serial)?;
 
-    for signature in signatures {
-        builder.add_raw_rdata(
-            query.qname.clone(),
-            signature.record_type.wire_type(),
-            signature.ttl.as_secs(),
-            signature.rdata,
-        )?;
+    for signature in &signatures {
+        builder.add_dnssec_record(signature, &zone.name)?;
     }
 
     Ok((builder.build()?, SoaResult::Ok))

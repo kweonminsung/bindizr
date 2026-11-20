@@ -12,12 +12,12 @@ use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::nsupdate::DEFAULT_FUDGE;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
 use bindizr_core::dns::nsupdate::parser::UpdateRequest;
-use bindizr_core::dns::tsig::{RequestSignature, TsigError};
+use bindizr_core::dns::tsig::{RequestSignature, RequestTsig, TsigError};
 use bindizr_core::dns::{nsupdate, tsig};
 use bindizr_core::metrics::NsupdateResult;
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
-use bindizr_core::model::transfer::TransferTransport;
+use bindizr_service::nsupdate::NsupdateError;
 use bindizr_service::{Context, access};
 use chrono::Utc;
 
@@ -36,14 +36,8 @@ pub(crate) async fn handle_tcp_nsupdate(
 ) -> Result<(), DnsError> {
     log::info!("NSUPDATE {} request from {client_addr}", writer.transport());
 
-    let response = handle_nsupdate_request(
-        dns_cx,
-        client_addr,
-        query_data,
-        writer.transport(),
-        ResponseLimit::STREAM,
-    )
-    .await?;
+    let response =
+        handle_nsupdate_request(dns_cx, client_addr, query_data, ResponseLimit::STREAM).await?;
 
     writer.write_message(&response).await
 }
@@ -61,14 +55,7 @@ pub(crate) async fn handle_udp_nsupdate(
     let limit = QueryMetadata::parse(query_data, Keepalive::None)
         .map_or(ResponseLimit::UDP, |metadata| metadata.response_limit());
 
-    let response = handle_nsupdate_request(
-        dns_cx,
-        client_addr,
-        query_data,
-        TransferTransport::Udp,
-        limit,
-    )
-    .await?;
+    let response = handle_nsupdate_request(dns_cx, client_addr, query_data, limit).await?;
 
     socket.send_to(&response, target, limit).await?;
 
@@ -81,7 +68,6 @@ async fn handle_nsupdate_request(
     dns_cx: &DnsContext,
     client_addr: SocketAddr,
     query_data: &[u8],
-    transport: TransferTransport,
     limit: ResponseLimit,
 ) -> Result<Vec<u8>, DnsError> {
     let cx = dns_cx.daemon();
@@ -109,7 +95,7 @@ async fn handle_nsupdate_request(
             // RFC 8945, Section 5.2: a request whose key verifies is answered
             // under it, a FORMERR included; a bad key or MAC is its own error.
             let (signer, fudge) = match tsig::request_signature(query_data) {
-                RequestSignature::Key { name, fudge } => {
+                RequestSignature::Key(RequestTsig { name, fudge }) => {
                     match update::authenticate_tsig_key(dns_cx, query_data, &name).await {
                         Ok((tsig_key, signer)) => {
                             access_log.caller = tsig_key.map(|tsig_key| ChangeActor::TsigKey {
@@ -145,7 +131,13 @@ async fn handle_nsupdate_request(
                             }
                         }
                         Err(error) => {
-                            log::warn!("NSUPDATE key check failed from {client_addr}: {error}");
+                            if matches!(&error, UpdateError::LoadTsigKey(_)) {
+                                log::error!(
+                                    "NSUPDATE from {client_addr} failed with a server fault: {error:?}"
+                                );
+                            } else {
+                                log::warn!("NSUPDATE key check failed from {client_addr}: {error}");
+                            }
 
                             if matches!(&error, UpdateError::LoadTsigKey(_))
                                 || matches!(
@@ -166,7 +158,7 @@ async fn handle_nsupdate_request(
             };
 
             cx.metrics()
-                .track_nsupdate(NsupdateResult::Rcode(response_rcode.rcode()));
+                .track_nsupdate(NsupdateResult::Rcode(response_rcode));
 
             let response =
                 nsupdate::build_response(query_data, response_rcode, None, signer, fudge, limit);
@@ -189,8 +181,7 @@ async fn handle_nsupdate_request(
         .as_ref()
         .map_or(DEFAULT_FUDGE, |tsig| tsig.fudge);
 
-    let (result, signer, tsig_key) =
-        update::apply_update(dns_cx, request, query_data, transport).await;
+    let (result, signer, tsig_key) = update::apply_update(dns_cx, request, query_data).await;
     access_log.caller = tsig_key.map(|tsig_key| ChangeActor::TsigKey {
         name: tsig_key.name,
     });
@@ -227,11 +218,6 @@ async fn handle_nsupdate_request(
             access_log.error = Some(format!("unacceptable EDNS: {rcode}"));
             (rcode, None)
         }
-        Err(UpdateError::NotSupported { reason }) => {
-            log::info!("NSUPDATE refused from {client_addr}: {reason}");
-            access_log.error = Some(reason);
-            (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
-        }
         Err(error @ UpdateError::Tsig(TsigError::Malformed(_))) => {
             log::warn!("NSUPDATE refused from {client_addr}: {error}");
             access_log.error = Some(error.to_string());
@@ -252,20 +238,27 @@ async fn handle_nsupdate_request(
                 Rcode::NOTAUTH => Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                 _ => None,
             };
-            log::warn!("NSUPDATE {rcode} from {client_addr}: {error}");
+            if let NsupdateError::Service(service_error) = &error
+                && service_error.code().is_internal()
+            {
+                log::error!(
+                    "NSUPDATE from {client_addr} failed with a server fault: {service_error:?}"
+                );
+            } else {
+                log::warn!("NSUPDATE {rcode} from {client_addr}: {error}");
+            }
             access_log.error = Some(error.to_string());
 
             (rcode.into(), ede)
         }
         Err(error @ (UpdateError::LoadTsigKey(_) | UpdateError::Tsig(_))) => {
-            log::warn!("NSUPDATE internal error from {client_addr}: {error}");
+            log::error!("NSUPDATE from {client_addr} failed with a server fault: {error:?}");
             access_log.error = Some(error.to_string());
             (OptRcode::SERVFAIL, None)
         }
     };
 
-    cx.metrics()
-        .track_nsupdate(NsupdateResult::Rcode(rcode.rcode()));
+    cx.metrics().track_nsupdate(NsupdateResult::Rcode(rcode));
 
     let response = nsupdate::build_response(query_data, rcode, ede, signer, fudge, limit);
     save_answered(cx, access_log, rcode, response.is_ok());

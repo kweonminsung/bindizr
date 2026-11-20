@@ -9,10 +9,10 @@ pub(crate) async fn begin_tx(
     cx: &Context,
     message: &'static str,
 ) -> Result<Transaction<'static>, ServiceError> {
-    cx.db().begin().await.map_err(|error| {
-        log::error!("Failed to begin transaction: {error}");
-        ServiceError::internal_with_source(message, error)
-    })
+    cx.db()
+        .begin()
+        .await
+        .map_err(|error| ServiceError::internal_with_source(message, error))
 }
 
 /// Begin a transaction for a caller that only reads; see [`bindizr_db::Db::begin_read`].
@@ -20,10 +20,10 @@ pub(crate) async fn begin_read_tx(
     cx: &Context,
     message: &'static str,
 ) -> Result<Transaction<'static>, ServiceError> {
-    cx.db().begin_read().await.map_err(|error| {
-        log::error!("Failed to begin transaction: {error}");
-        ServiceError::internal_with_source(message, error)
-    })
+    cx.db()
+        .begin_read()
+        .await
+        .map_err(|error| ServiceError::internal_with_source(message, error))
 }
 
 /// Commit on success or roll back on failure, preserving the caller's error type.
@@ -34,10 +34,9 @@ pub(crate) async fn finish_tx<T, E: From<ServiceError>>(
 ) -> Result<T, E> {
     match apply_result {
         Ok(value) => {
-            tx.commit().await.map_err(|error| {
-                log::error!("Failed to commit transaction: {error}");
-                E::from(ServiceError::internal_with_source(message, error))
-            })?;
+            tx.commit()
+                .await
+                .map_err(|error| E::from(ServiceError::internal_with_source(message, error)))?;
             Ok(value)
         }
         Err(error) => {

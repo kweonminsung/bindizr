@@ -154,17 +154,6 @@ async fn handle_tcp_query(
         return;
     }
 
-    // nsupdate parses its own message and TSIG; other queries share this parse.
-    if nsupdate::is_nsupdate(query_data) {
-        if let Err(error) =
-            nsupdate::handle_tcp_nsupdate(dns_cx, writer, client_addr, query_data).await
-        {
-            log::error!("NSUPDATE {transport} handler failed for {client_addr}: {error}");
-        }
-
-        return;
-    }
-
     let keepalive = Keepalive::IdleTimeout(idle_timeout);
 
     match server::refuse_unsupported_opcode(dns_cx, query_data, keepalive, transport).await {
@@ -180,6 +169,17 @@ async fn handle_tcp_query(
             log::error!("Failed to refuse DNS {transport} opcode from {client_addr}: {error}");
             return;
         }
+    }
+
+    // nsupdate parses its own message and TSIG; other queries share this parse.
+    if nsupdate::is_nsupdate(query_data) {
+        if let Err(error) =
+            nsupdate::handle_tcp_nsupdate(dns_cx, writer, client_addr, query_data).await
+        {
+            log::error!("NSUPDATE {transport} handler failed for {client_addr}: {error}");
+        }
+
+        return;
     }
 
     let query = match ParsedQuery::parse(query_data, keepalive) {

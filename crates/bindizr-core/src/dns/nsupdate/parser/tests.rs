@@ -216,7 +216,7 @@ fn parse_update_request_accepts_opt_before_tsig() {
     let request = UpdateRequest::parse(&query_data).unwrap();
     let tsig = request.tsig.unwrap();
 
-    assert_eq!(tsig.name, "key.");
+    assert_eq!(tsig.name, "key");
     assert_eq!(tsig.fudge, 300);
 }
 
@@ -235,7 +235,7 @@ fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
 
     let request = UpdateRequest::parse(&query_data).unwrap();
 
-    assert_eq!(request.tsig.unwrap().name, r"Key\046With\046Dot.");
+    assert_eq!(request.tsig.unwrap().name, r"Key\.With\.Dot");
 }
 
 /// Verify that a zone label holding a dot is rendered escaped; unescaped it would

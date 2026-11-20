@@ -134,7 +134,7 @@ pub(crate) async fn list_by_filter(
         r#"
         SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at
         FROM zones
-        WHERE (? IS NULL OR LOWER(name) = LOWER(?))
+        WHERE (? IS NULL OR name = ?)
           AND (? IS NULL OR id = ?)
           AND (? IS NULL OR LOWER(mname) = LOWER(?))
           AND (? IS NULL OR LOWER(rname) = LOWER(?))
@@ -234,7 +234,7 @@ pub(crate) async fn count_by_filter(
         r#"
         SELECT COUNT(*)
         FROM zones
-        WHERE (? IS NULL OR LOWER(name) = LOWER(?))
+        WHERE (? IS NULL OR name = ?)
           AND (? IS NULL OR id = ?)
           AND (? IS NULL OR LOWER(mname) = LOWER(?))
           AND (? IS NULL OR LOWER(rname) = LOWER(?))

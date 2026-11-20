@@ -11,7 +11,8 @@ use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::authorization::Caller;
-use crate::types::CreateSecondaryRequest;
+use crate::types::{CreateSecondaryRequest, CreateZoneRequest};
+use crate::zone;
 
 /// Verify that a failed ACK remains typed for propagation while reports render the same
 /// error text.
@@ -32,6 +33,27 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
         mpsc::channel(1).0,
         watch::channel(0).0,
     );
+    // Only a served zone is announced; created first, so no secondary hears its creation.
+    zone::create(
+        &cx,
+        &Caller::socket(),
+        &CreateZoneRequest {
+            name: "example.com".to_string(),
+            mname: "ns.example.com".to_string(),
+            rname: "hostmaster@example.com".to_string(),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: true,
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
     let mut servers = Vec::new();
     let mut failed_address = String::new();
 

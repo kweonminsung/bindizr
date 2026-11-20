@@ -90,8 +90,10 @@ Transfers: 12 zones: 11 IXFR delta, 0 IXFR full, 1 AXFR, 0 refused, 0 failed
 ```
 
 The catalog status compares the two serials: `in sync`, `lagging`, `ahead`,
-or `unreachable`. If Bindizr's listener cannot be queried, a responding
-secondary is reported only as `reachable`. The check sends a real catalog
+or `unreachable`. A secondary that answers with a serial Bindizr cannot compare
+it with, because Bindizr's listener did not answer or the two lie exactly half
+the serial space apart (RFC 1982, Section 3.2), is reported as `reachable`.
+Only `in sync` passes, here and in `bindizr doctor`. The check sends a real catalog
 NOTIFY, signed when a key is configured. Transfer counts summarize
 [what it pulled](#transfer-log); they do not determine the check result.
 
@@ -101,7 +103,8 @@ it; `-o json` carries the same fields.
 ## Transfer log
 
 Bindizr logs every transfer it answered each client address, refusals and
-failures included. `bindizr log transfer` lists them newest first;
+failures included. An IXFR answered with the current SOA alone, the secondary
+already up to date, moved nothing and leaves no entry. `bindizr log transfer` lists them newest first;
 `--secondary` narrows them to the addresses a secondary resolves to now,
 `zone status` shows each zone's last transfer in its `LAST-TRANSFER` column,
 and `secondary check` and `doctor` print a summary per secondary:

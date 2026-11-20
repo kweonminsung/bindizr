@@ -723,7 +723,7 @@ fn verify_tsig_accepts_mixed_case_algorithm_names() {
 
         assert!(matches!(
             request_signature(&query_data),
-            RequestSignature::Key { .. }
+            RequestSignature::Key(_)
         ));
         let key = test_key(algorithm).to_signing_key().unwrap();
         verify_tsig(&query_data, Some(key)).unwrap();
@@ -1165,7 +1165,7 @@ fn tsig_parser_rejects_unparseable_signature() {
 
     assert!(matches!(
         request_signature(&signed),
-        RequestSignature::Key { name, fudge: 300 } if name == "update-key"
+        RequestSignature::Key(RequestTsig { name, fudge: 300 }) if name == "update-key"
     ));
 
     // Malformed TSIG must not fall through to address-based authorization.

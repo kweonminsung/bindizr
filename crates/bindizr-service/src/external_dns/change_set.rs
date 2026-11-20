@@ -1,11 +1,12 @@
 //! Turning an ExternalDNS change set into per-zone record operations: parsing
-//! the request, grouping it by zone, and computing what each zone must change.
+//! the request, collecting each zone's operations, and computing what each
+//! zone must change.
 
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use bindizr_core::dns::Ttl;
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::record::{Record, RecordId, RecordKey, RecordType};
 use bindizr_core::model::zone::Zone;
 use chrono::Utc;
@@ -13,7 +14,7 @@ use chrono::Utc;
 use crate::error::ServiceError;
 use crate::external_dns::policy;
 use crate::types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord};
-use crate::{record, ttl};
+use crate::{external_dns, record, ttl};
 
 /// Desired records with row-encoded values and an absolute owner before zone resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,10 +45,24 @@ pub(crate) struct ZoneRecordSet {
 /// Adds and deletes of one request that resolved to the same zone.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ZoneOperations {
-    /// The first requested absolute name, for refusals that must not name a hidden zone.
-    pub(crate) request_name: String,
     pub(crate) adds: Vec<ZoneRecordSet>,
     pub(crate) deletes: Vec<ZoneRecordSet>,
+}
+
+impl ZoneOperations {
+    /// Add one operation whose name resolved to this zone as `owner`.
+    pub(crate) fn push(&mut self, owner: OwnerName, operation: RecordSetOperation) {
+        let (destination, record_set) = match operation {
+            RecordSetOperation::Delete(record_set) => (&mut self.deletes, record_set),
+            RecordSetOperation::Add(record_set) => (&mut self.adds, record_set),
+        };
+        destination.push(ZoneRecordSet {
+            name: owner,
+            record_type: record_set.record_type,
+            ttl: record_set.ttl,
+            values: record_set.values,
+        });
+    }
 }
 
 /// The record rows one zone's operations resolve to.
@@ -174,11 +189,15 @@ impl ZoneChangeSet {
 
 /// Parse a record type the ExternalDNS API manages.
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {
-    RecordType::parse_external_dns_supported(record_type).ok_or_else(|| {
-        ServiceError::invalid_input(format!(
-            "record type '{record_type}' is not supported by the ExternalDNS API"
-        ))
-    })
+    record_type
+        .parse::<RecordType>()
+        .ok()
+        .filter(|parsed| external_dns::RECORD_TYPES.contains(parsed))
+        .ok_or_else(|| {
+            ServiceError::invalid_input(format!(
+                "record type '{record_type}' is not supported by the ExternalDNS API"
+            ))
+        })
 }
 
 /// Normalize an omitted TTL: ExternalDNS sends TTL 0 for "not configured";
@@ -290,45 +309,4 @@ pub(crate) fn parse_changes_request(
     }
 
     Ok(operations)
-}
-
-/// Group operations by their most-specific authoritative zone, independently of grants.
-pub(crate) fn group_operations_by_zone(
-    zones: &[Zone],
-    operations: Vec<RecordSetOperation>,
-) -> Result<BTreeMap<ZoneName, ZoneOperations>, ServiceError> {
-    let mut grouped: BTreeMap<ZoneName, ZoneOperations> = BTreeMap::new();
-
-    for pending in operations {
-        let (RecordSetOperation::Add(record_set) | RecordSetOperation::Delete(record_set)) =
-            &pending;
-        // From all zones, so a hidden subzone still shadows a granted parent.
-        let (zone, owner) =
-            policy::authoritative_zone(zones, &record_set.name).ok_or_else(|| {
-                ServiceError::ZoneNotFound(format!(
-                    "no zone is authoritative for '{}'",
-                    record_set.name
-                ))
-            })?;
-
-        let entry = grouped
-            .entry(zone.name.clone())
-            .or_insert_with(|| ZoneOperations {
-                request_name: record_set.name.clone(),
-                ..Default::default()
-            });
-
-        let (destination, record_set) = match pending {
-            RecordSetOperation::Delete(record_set) => (&mut entry.deletes, record_set),
-            RecordSetOperation::Add(record_set) => (&mut entry.adds, record_set),
-        };
-        destination.push(ZoneRecordSet {
-            name: owner,
-            record_type: record_set.record_type,
-            ttl: record_set.ttl,
-            values: record_set.values,
-        });
-    }
-
-    Ok(grouped)
 }

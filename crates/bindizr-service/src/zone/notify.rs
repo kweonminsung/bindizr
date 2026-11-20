@@ -30,6 +30,11 @@ pub async fn notify(
         NotifyTarget::Zone(zone_name) => {
             let zone = zone::lookup_by_name(cx, zone_name).await?;
             caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
+            if !zone.enabled {
+                return Err(ServiceError::invalid_input(format!(
+                    "zone '{zone_name}' is disabled, so the DNS plane does not serve it; enable it to send NOTIFY"
+                )));
+            }
             if serial == NotifySerial::Bump {
                 zone::force_increment_serial(cx, caller, zone_name).await?;
                 serial_bumped = true;

@@ -32,6 +32,12 @@ pub(crate) fn normalize_identifier(
             "{field} may contain only letters, digits, '.', '_', and '-'"
         )));
     }
+    // URL normalization removes dot segments, so neither names a path segment.
+    if name == "." || name == ".." {
+        return Err(ServiceError::invalid_input(format!(
+            "{field} must not be '{name}'"
+        )));
+    }
 
     Ok(name)
 }
@@ -74,10 +80,11 @@ mod tests {
         );
     }
 
-    /// Verify that an empty, over-long, or oddly spelled identifier is refused.
+    /// Verify that an empty, over-long, or oddly spelled identifier, or a dot
+    /// segment, is refused.
     #[test]
     fn normalize_identifier_rejects_empty_long_and_invalid_names() {
-        for value in ["", "  ", "a b", "a/b", &"n".repeat(65)] {
+        for value in ["", "  ", "a b", "a/b", ".", "..", &"n".repeat(65)] {
             let error = normalize_identifier(value, "name", 64).unwrap_err();
             assert_eq!(error.code(), ErrorCode::InvalidInput, "{value:?}");
         }

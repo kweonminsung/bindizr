@@ -207,7 +207,6 @@ pub async fn get(
         Ok(Some(record)) => record,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(error) => {
-            log::error!("Failed to fetch record: {error}");
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
                 error,

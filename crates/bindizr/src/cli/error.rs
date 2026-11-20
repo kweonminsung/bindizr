@@ -198,9 +198,9 @@ impl CliError {
             ErrorCode::DnssecRolloverInProgress => Some(
                 "Run 'bindizr dnssec status <NAME>' to see which key is rolling and what it waits on.",
             ),
-            ErrorCode::DnssecNoRolloverInProgress => {
-                Some("Start one with 'bindizr dnssec rollover start <NAME>'.")
-            }
+            ErrorCode::DnssecNoRolloverInProgress => Some(
+                "Run 'bindizr dnssec status <NAME>' to see the keys; 'bindizr dnssec rollover start <NAME>' begins a rollover once none is retiring.",
+            ),
             ErrorCode::DnssecSigningFailed => Some(
                 "Check the daemon logs; 'bindizr dnssec status <NAME>' shows whether the zone is still signed.",
             ),

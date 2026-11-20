@@ -185,23 +185,35 @@ pub(crate) async fn check_services(report: &mut Report) {
     for secondary in &doctor.secondaries {
         let serial = secondary.visible_serial.map_or(0, Serial::as_u32);
 
-        match secondary.status {
-            SecondaryStatus::InSync | SecondaryStatus::Reachable => report.ok(format!(
+        let line = match secondary.status {
+            SecondaryStatus::InSync => format!(
                 "Secondary {}: {} (catalog zone {catalog_zone_name} at serial {serial})",
                 secondary.status, secondary.address
-            )),
-            SecondaryStatus::Unreachable => report.fail(format!(
+            ),
+            // Answered, but its serial could not be compared with Bindizr's.
+            SecondaryStatus::Reachable => format!(
+                "Secondary {}: {} (catalog zone {catalog_zone_name} at serial {serial}; not compared with bindizr's)",
+                secondary.status, secondary.address
+            ),
+            SecondaryStatus::Unreachable => format!(
                 "Secondary {}: {} ({})",
                 secondary.status,
                 secondary.address,
                 secondary.error.as_deref().unwrap_or("unknown error")
-            )),
-            SecondaryStatus::Lagging | SecondaryStatus::Ahead => report.fail(format!(
+            ),
+            SecondaryStatus::Lagging | SecondaryStatus::Ahead => format!(
                 "Secondary {}: {} (catalog zone {catalog_zone_name} at serial {serial}; bindizr serves {})",
                 secondary.status,
                 secondary.address,
                 doctor.catalog_serial.map_or(0, Serial::as_u32)
-            )),
+            ),
+        };
+
+        // The same verdict `secondary check` reaches: only a compared, equal serial passes.
+        if secondary.is_in_sync() {
+            report.ok(line);
+        } else {
+            report.fail(line);
         }
     }
 

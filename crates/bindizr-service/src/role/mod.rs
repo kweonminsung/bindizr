@@ -254,14 +254,5 @@ fn refuse_builtin(role: &Role) -> Result<(), ServiceError> {
 /// Normalize a role name: lowercased so one name means one role on every
 /// backend, and kept to one URL path segment for `/roles/{name}`.
 fn normalize_name(value: &str) -> Result<String, ServiceError> {
-    let name = text::normalize_identifier(value, "role name", MAX_COLUMN_TEXT_LEN)?;
-
-    // Dot segments get normalized away.
-    if name == "." || name == ".." {
-        return Err(ServiceError::invalid_input(format!(
-            "role name must not be '{name}'"
-        )));
-    }
-
-    Ok(name)
+    text::normalize_identifier(value, "role name", MAX_COLUMN_TEXT_LEN)
 }

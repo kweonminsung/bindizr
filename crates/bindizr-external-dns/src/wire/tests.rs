@@ -61,55 +61,25 @@ fn endpoint_serializes_with_omitempty_semantics() {
     assert!(serialized.get("recordTTL").is_none());
 }
 
-/// Verify that endpoint validate rejects unsupported shapes.
+/// Verify that endpoint validation refuses only a `setIdentifier`, leaving
+/// every record rule to the server.
 #[test]
-fn endpoint_validation_rejects_unsupported_shapes() {
-    assert!(endpoint("", "A", 0, &["192.0.2.1"]).validate().is_err());
-    assert!(
-        endpoint("a.example.com", "NS", 0, &["x"])
-            .validate()
-            .is_err()
-    );
-    assert!(
-        endpoint("a.example.com", "MX", 0, &["x"])
-            .validate()
-            .is_err()
-    );
-    assert!(endpoint("a.example.com", "A", 0, &[]).validate().is_err());
-    assert!(endpoint("a.example.com", "A", 0, &[""]).validate().is_err());
-    assert!(
-        endpoint("a.example.com", "CNAME", 0, &["a.", "b."])
-            .validate()
-            .is_err()
-    );
-    assert!(
-        endpoint("a.example.com", "A", -1, &["192.0.2.1"])
-            .validate()
-            .is_err()
-    );
-
+fn endpoint_validation_refuses_only_a_set_identifier() {
     let mut with_set_id = endpoint("a.example.com", "A", 0, &["192.0.2.1"]);
     with_set_id.set_identifier = "weighted".to_string();
 
     assert!(with_set_id.validate().is_err());
 
-    assert!(
-        endpoint("a.example.com", "a", 300, &["192.0.2.1"])
-            .validate()
-            .is_ok()
-    );
-
-    // Whitespace-only content is valid TXT rdata but garbage for other types.
-    assert!(
-        endpoint("a.example.com", "A", 0, &["   "])
-            .validate()
-            .is_err()
-    );
-    assert!(
-        endpoint("t.example.com", "TXT", 0, &["   "])
-            .validate()
-            .is_ok()
-    );
+    // The server answers these with a 400 the adapter passes through.
+    for forwarded in [
+        endpoint("", "A", 0, &["192.0.2.1"]),
+        endpoint("a.example.com", "SRV", 0, &["x"]),
+        endpoint("a.example.com", "A", 0, &[]),
+        endpoint("a.example.com", "CNAME", 0, &["a.", "b."]),
+        endpoint("a.example.com", "A", -1, &["192.0.2.1"]),
+    ] {
+        assert!(forwarded.validate().is_ok(), "{forwarded:?}");
+    }
 }
 
 /// Verify that changes to bindizr pairs updates and maps TTL.
@@ -146,20 +116,13 @@ fn changes_to_bindizr_rejects_mismatched_update_pairs() {
     assert!(ApplyExternalDnsChangesRequest::try_from(&changes).is_err());
 }
 
-/// Verify that ExternalDNS keeps zero as unspecified while preserving the unsigned TTL range.
+/// Verify that ExternalDNS's zero TTL is sent as unset and every other value
+/// as given, for the server to range-check.
 #[test]
-fn endpoint_ttl_preserves_unsigned_boundaries() {
-    for ttl in [0i64, 2_147_483_647, 2_147_483_648, i64::from(u32::MAX)] {
+fn endpoint_ttl_sends_zero_as_unset_and_the_rest_as_given() {
+    for ttl in [0i64, -1, 2_147_483_648, i64::from(u32::MAX) + 1] {
         let changes: Changes = serde_json::from_value(json!({ "create": [{ "dnsName": "ttl.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": ttl }] })).unwrap();
         let request = ApplyExternalDnsChangesRequest::try_from(&changes).unwrap();
-        assert_eq!(request.creates[0].ttl, (ttl > 0).then_some(ttl));
-    }
-
-    for ttl in [-1i64, i64::from(u32::MAX) + 1] {
-        assert!(
-            endpoint("ttl.example.com", "A", ttl, &["192.0.2.1"])
-                .validate()
-                .is_err()
-        );
+        assert_eq!(request.creates[0].ttl, (ttl != 0).then_some(ttl));
     }
 }

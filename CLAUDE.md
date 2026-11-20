@@ -349,8 +349,10 @@ Decode them into `Option<ChangeActor>` at the row boundary. The API's object sha
 does not dictate a JSON database column.
 
 A management change — a token, role, grant, TSIG key, secondary or DNSSEC
-policy created, updated or deleted, and a zone deleted, whose versions go
-with it — is the one write no zone version records, so it saves an
+policy created, updated or deleted, a zone deleted, whose versions go
+with it, and a zone's DNSSEC settings changed (`dnssec set`: its policy and
+parent nameservers, which a version never holds, even when the re-signing
+they cause saves one) — is the one write no zone version records, so it saves an
 `AuditLog` (`audit::save_tx`) in its own transaction, after its row write
 and before commit: a change that rolled back leaves no row and a committed
 one always has one. The entry names the entity kind and name (a grant's is
@@ -369,7 +371,8 @@ type and db module carry that name (`audit_log`, `AuditLog`;
 `access`, `transfer`). The audit log holds management changes; the access log
 every management API request and nsupdate answered, by the front end, client
 address and verified credential; the transfer log every transfer Bindizr
-answered, refused, or failed, by client address and zone. `zone_journal` and
+answered, refused, or failed, by client address and zone (an IXFR answered
+with the current SOA alone moved nothing and is none). `zone_journal` and
 `zone_versions` are not logs: IXFR, diff, and rollback are served from them.
 
 Every log is read the same way: `GET /logs/<subject>`, `bindizr log
@@ -1029,6 +1032,14 @@ variant, not `io::Error::new`.
   codes to HTTP status, CLI exit
   code, or DNS RCODE. The service knows no HTTP. Other layers use their own errors
   (`DaemonError`, `DnsError`, `CliError`) with `From` conversions.
+- A server fault (`ErrorCode::is_internal`: `Internal`,
+  `DnssecSigningFailed`) is logged once, with its source chain, where it
+  leaves the process: the HTTP response conversion, the daemon socket's
+  encoder, and the DNS answers it turns into SERVFAIL (a transfer refusal's
+  encoder, a failed transfer, an UPDATE). The service returns it without
+  logging it first, so a `?` path is logged as surely as a `map_err` one. A client's mistake is not logged at
+  error level. Work that ends without returning its error (a spawned task, a
+  scheduler pass, a post-commit NOTIFY) logs it where it ends.
 - Box `domain` errors in `dns::LibraryError`; their types vary and callers do
   not match them. Only foreign failures without `Error` (`SigningError`, `TxtError`)
   keep text in a `reason` field instead of a source.

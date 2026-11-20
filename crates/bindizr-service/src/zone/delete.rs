@@ -52,10 +52,7 @@ pub async fn delete(
 
         bindizr_db::zone::delete_tx(&mut tx, zone.id)
             .await
-            .map_err(|error| {
-                log::error!("Failed to delete zone: {error}");
-                ServiceError::internal_with_source("failed to delete zone", error)
-            })?;
+            .map_err(|error| ServiceError::internal_with_source("failed to delete zone", error))?;
 
         // The zone's versions went with it, so the deletion is the audit log's.
         audit::save_tx(

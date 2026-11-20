@@ -163,12 +163,12 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
             )
             .unwrap();
         let response = builder.build().unwrap();
-        let message = Message::from_octets(response.clone()).unwrap();
+        let mut message = Message::from_octets(response.clone()).unwrap();
 
         assert!(message.header().tc());
         assert_eq!(message.header_counts().ancount(), 0);
         assert!(response.len() <= query.response_limit().max_len());
-        client.answer(&mut message.clone(), Time48::now()).unwrap();
+        client.answer(&mut message, Time48::now()).unwrap();
         tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
     }
 }

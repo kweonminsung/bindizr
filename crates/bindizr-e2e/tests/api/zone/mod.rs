@@ -530,6 +530,23 @@ async fn zone_listing_filters_and_paginates() {
     let (status, _) = app.send_request(Method::GET, "/zones?limit=-1", None).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // The name filter is a zone name: any spelling of it finds the zone, as
+    // the record listing's does, and one no zone can carry is refused.
+    let spelling = format!("{}.", filtered_zone_name.to_uppercase());
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/zones?name={spelling}"), None)
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["items"][0]["name"], filtered_zone_name, "{body}");
+
+    let (status, body) = app
+        .send_request(Method::GET, "/zones?name=*.example.com", None)
+        .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "INVALID_ZONE_FIELD", "{body}");
 }
 
 /// Verify that zone listing sorts and filters on more than the name.

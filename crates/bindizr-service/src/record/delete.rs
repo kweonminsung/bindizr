@@ -27,7 +27,6 @@ pub async fn delete(
         Ok(Some(record)) => record.zone_id,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(error) => {
-            log::error!("Failed to fetch record: {error}");
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
                 error,
@@ -46,7 +45,6 @@ pub async fn delete(
                 )));
             }
             Err(error) => {
-                log::error!("Failed to fetch zone: {error}");
                 return Err(ServiceError::internal_with_source(
                     "failed to fetch zone",
                     error,
@@ -61,7 +59,6 @@ pub async fn delete(
                 Ok(Some(record)) if record.zone_id == zone.id => record,
                 Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
                 Err(error) => {
-                    log::error!("Failed to fetch record: {error}");
                     return Err(ServiceError::internal_with_source(
                         "failed to fetch record",
                         error,
@@ -181,6 +178,7 @@ pub async fn delete_matching(
     request: &DeleteRecordsRequest,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
     let zone_name = zone::normalize_name(&request.zone_name)?;
+    let owner = validation::normalize_record_owner_name(&request.name, &zone_name)?;
     let record_type = request
         .record_type
         .as_deref()
@@ -209,8 +207,6 @@ pub async fn delete_matching(
         // Resolve matches and authorization under the zone lock, including previews.
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
-
-        let owner = validation::normalize_record_owner_name(&request.name, &zone.name)?;
 
         // Authorize the request, not the rows it matches: an answer that
         // depended on the match would reveal what lies outside the grant.
@@ -276,7 +272,7 @@ pub async fn delete_matching(
         };
 
         if !response.applied || matched.is_empty() {
-            return Ok((response, owner));
+            return Ok(response);
         }
 
         // Apply the complete deletion and refresh signatures in the same transaction.
@@ -286,12 +282,11 @@ pub async fn delete_matching(
         // Once for the whole set, so IXFR consumers see one step.
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok((response, owner))
+        Ok(response)
     }
     .await;
 
-    let (response, owner) =
-        transaction::finish_tx(tx, apply_result, "failed to delete records").await?;
+    let response = transaction::finish_tx(tx, apply_result, "failed to delete records").await?;
 
     log::info!(
         "event=record_delete_matching zone={zone_name} name={owner} type={record_type:?} deleted={} applied={}",

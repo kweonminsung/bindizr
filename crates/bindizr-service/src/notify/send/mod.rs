@@ -9,7 +9,7 @@ use tokio::task::JoinSet;
 use crate::dns_client::ResolveAddressError;
 use crate::error::ServiceError;
 use crate::types::CheckNotifyResponse;
-use crate::{Context, dns_client, secondary};
+use crate::{Context, dns_client, secondary, zone};
 
 /// Why a NOTIFY target could not be reached or acknowledged.
 #[derive(Debug, Error)]
@@ -35,11 +35,20 @@ pub enum NotifyZoneError {
     },
 }
 
-/// Notify every enabled secondary for one zone.
+/// Notify every enabled secondary for one zone the DNS plane serves; a zone
+/// it does not serve, disabled or gone, is skipped, since its SOA answers NOTAUTH.
 pub(crate) async fn send_zone_notify(
     cx: &Context,
     zone_name: &ZoneName,
 ) -> Result<(), NotifyZoneError> {
+    // The catalog is virtual: served whenever the DNS plane is.
+    if zone_name != &cx.config().dns.catalog_zone_name
+        && zone::find_served_by_name(cx, zone_name).await?.is_none()
+    {
+        log::info!("Skipping NOTIFY for zone {zone_name}: not served");
+        return Ok(());
+    }
+
     log::info!("Sending NOTIFY for zone: {zone_name}");
 
     let secondaries = secondary::list_enabled(cx).await?;

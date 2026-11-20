@@ -4,12 +4,12 @@ use domain::base::Message;
 use domain::base::iana::{Class, Opcode, Rtype};
 use domain::base::name::ParsedName;
 use domain::dep::octseq::parse::Parser;
-use domain::rdata::tsig::Tsig;
 pub use record::{UpdateRecord, ValidateUpdateShapeError};
 use thiserror::Error;
 
 use crate::dns::message::{DNS_HEADER_LEN, Edns};
 use crate::dns::record::{ParseRdataError, ParseRecordValueError};
+use crate::dns::tsig::{RequestSignature, RequestTsig};
 use crate::dns::{name, tsig};
 use crate::model::record::ParseRecordTypeError;
 
@@ -61,16 +61,8 @@ pub struct UpdateRequest {
     pub zone_class: Class,
     pub prerequisites: Vec<UpdateRecord>,
     pub updates: Vec<UpdateRecord>,
-    pub tsig: Option<TsigRecord>,
+    pub tsig: Option<RequestTsig>,
     pub edns: Edns,
-}
-
-/// TSIG key name for lookup and fudge for the response; `domain::tsig` verifies the full record.
-/// Parsing rejects malformed TSIG records with FORMERR (RFC 8945, Section 5.2).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TsigRecord {
-    pub name: String,
-    pub fudge: u16,
 }
 
 impl UpdateRequest {
@@ -123,11 +115,19 @@ impl UpdateRequest {
             updates.push(parse_record(&mut parser, query_data)?);
         }
 
-        let tsig = parse_additional_section(&mut parser, usize::from(counts.arcount()))?;
+        skip_additional_section(&mut parser, usize::from(counts.arcount()))?;
 
         if parser.remaining() != 0 {
             return Err(ParseUpdateError::InvalidHeader);
         }
+
+        // RFC 8945, Section 5.2: a misplaced or malformed TSIG is FORMERR,
+        // never an unsigned request; the tsig module reads its placement.
+        let tsig = match tsig::request_signature(query_data) {
+            RequestSignature::Absent => None,
+            RequestSignature::Malformed => return Err(ParseUpdateError::InvalidTsig),
+            RequestSignature::Key(tsig) => Some(tsig),
+        };
 
         Ok(Self {
             zone_name,
@@ -153,11 +153,6 @@ fn parse_record(
             .parse_u16_be()
             .map_err(|_| ParseUpdateError::InvalidRecord)?,
     );
-
-    // RFC 8945, Section 5.2 confines TSIG to the Additional section.
-    if rtype == Rtype::TSIG {
-        return Err(ParseUpdateError::InvalidTsig);
-    }
 
     let class = Class::from_int(
         parser
@@ -188,82 +183,28 @@ fn parse_record(
     })
 }
 
-/// Validate additional records and locate the request's TSIG.
-fn parse_additional_section(
+/// Step over the Additional records; OPT and TSIG are read by their own decoders.
+fn skip_additional_section(
     parser: &mut Parser<'_, [u8]>,
     count: usize,
-) -> Result<Option<TsigRecord>, ParseUpdateError> {
-    let mut tsig = None;
-
-    for index in 0..count {
-        let owner = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
-        let rtype = Rtype::from_int(
+) -> Result<(), ParseUpdateError> {
+    for _ in 0..count {
+        ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
+        // TYPE, CLASS and TTL are opaque here.
+        parser
+            .advance(8)
+            .map_err(|_| ParseUpdateError::InvalidRecord)?;
+        let rdlen = usize::from(
             parser
                 .parse_u16_be()
                 .map_err(|_| ParseUpdateError::InvalidRecord)?,
         );
-
-        if rtype == Rtype::TSIG {
-            if tsig.is_some() || index + 1 != count {
-                return Err(ParseUpdateError::InvalidTsig);
-            }
-
-            tsig = Some(parse_tsig_record(parser, &owner)?);
-        } else {
-            // CLASS and TTL are opaque here; EDNS metadata uses the shared decoder.
-            parser
-                .advance(6)
-                .map_err(|_| ParseUpdateError::InvalidRecord)?;
-            let rdlen = usize::from(
-                parser
-                    .parse_u16_be()
-                    .map_err(|_| ParseUpdateError::InvalidRecord)?,
-            );
-            parser
-                .advance(rdlen)
-                .map_err(|_| ParseUpdateError::InvalidRecord)?;
-        }
-    }
-
-    Ok(tsig)
-}
-
-/// Parse a TSIG record from its CLASS field on (owner and TYPE already consumed).
-fn parse_tsig_record(
-    parser: &mut Parser<'_, [u8]>,
-    owner: &ParsedName<&[u8]>,
-) -> Result<TsigRecord, ParseUpdateError> {
-    let class = Class::from_int(
         parser
-            .parse_u16_be()
-            .map_err(|_| ParseUpdateError::InvalidTsig)?,
-    );
-    let ttl = parser
-        .parse_u32_be()
-        .map_err(|_| ParseUpdateError::InvalidTsig)?;
-    let rdlen = usize::from(
-        parser
-            .parse_u16_be()
-            .map_err(|_| ParseUpdateError::InvalidTsig)?,
-    );
-
-    if class != Class::ANY || ttl != 0 {
-        return Err(ParseUpdateError::InvalidTsig);
+            .advance(rdlen)
+            .map_err(|_| ParseUpdateError::InvalidRecord)?;
     }
 
-    let mut rdata = parser
-        .parse_parser(rdlen)
-        .map_err(|_| ParseUpdateError::InvalidTsig)?;
-    let tsig = Tsig::parse(&mut rdata).map_err(|_| ParseUpdateError::InvalidTsig)?;
-
-    if rdata.remaining() != 0 || !tsig::is_request_tsig_valid(&tsig) {
-        return Err(ParseUpdateError::InvalidTsig);
-    }
-
-    Ok(TsigRecord {
-        name: to_presentation_name(owner)?,
-        fudge: tsig.fudge(),
-    })
+    Ok(())
 }
 
 /// Render a parsed name in presentation form, escaping a `.` or `\` inside a

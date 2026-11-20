@@ -1,6 +1,5 @@
 //! Summarize the transfer log rows matching a secondary's current addresses.
 
-use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::model::secondary::Secondary;
@@ -19,17 +18,8 @@ pub(crate) async fn summarize_transfers(
     Ok(build_transfer_summary(&latest))
 }
 
-/// Count each zone by its latest transfer among `logs`.
-fn build_transfer_summary(logs: &[TransferLogWithZone]) -> TransferSummaryResponse {
-    let mut latest: HashMap<&str, &TransferLogWithZone> = HashMap::new();
-
-    for log in logs {
-        let entry = latest.entry(log.zone_name.as_str()).or_insert(log);
-        if log.served_at > entry.served_at {
-            *entry = log;
-        }
-    }
-
+/// Count each zone by its latest transfer, one row per zone in `latest`.
+fn build_transfer_summary(latest: &[TransferLogWithZone]) -> TransferSummaryResponse {
     let mut summary = TransferSummaryResponse {
         zones: latest.len() as u64,
         axfr: 0,
@@ -39,7 +29,7 @@ fn build_transfer_summary(logs: &[TransferLogWithZone]) -> TransferSummaryRespon
         failed: 0,
     };
 
-    for log in latest.values() {
+    for log in latest {
         match (log.result, log.kind, log.incremental) {
             (TransferResult::Refused, _, _) => summary.refused += 1,
             (TransferResult::Failed, _, _) => summary.failed += 1,

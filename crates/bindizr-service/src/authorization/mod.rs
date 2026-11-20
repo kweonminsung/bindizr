@@ -120,7 +120,6 @@ impl Caller {
             Ok(Some(token)) => token,
             Ok(None) => return Err(ServiceError::invalid_token("invalid or expired token")),
             Err(error) => {
-                log::error!("Failed to validate token: {error}");
                 return Err(ServiceError::internal_with_source(
                     "failed to validate token",
                     error,
@@ -146,7 +145,6 @@ impl Caller {
             bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
                 .await
                 .map_err(|error| {
-                    log::error!("Failed to update last_used_at: {error}");
                     ServiceError::internal_with_source("failed to update last_used_at", error)
                 })?;
 

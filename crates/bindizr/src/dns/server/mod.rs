@@ -70,7 +70,10 @@ pub(crate) async fn refuse_unsupported_opcode(
         return Ok(None);
     };
 
-    if opcode == Opcode::QUERY || opcode == Opcode::UPDATE {
+    // RFC 9103, Section 7.8: the TLS listener serves transfers alone, so an
+    // UPDATE is refused there instead of reaching nsupdate.
+    if opcode == Opcode::QUERY || (opcode == Opcode::UPDATE && transport != TransferTransport::Tls)
+    {
         return Ok(None);
     }
 
@@ -79,6 +82,10 @@ pub(crate) async fn refuse_unsupported_opcode(
     };
     let (rcode, ede) = if let Some(rcode) = metadata.format_error() {
         (rcode, None)
+    } else if opcode == Opcode::UPDATE && !message::has_readable_sections(query_data) {
+        // An UPDATE has DNS sections, unlike an opaque body: one whose framing
+        // does not read gets the header-only FORMERR any unreadable message does.
+        (OptRcode::FORMERR, None)
     } else if transport == TransferTransport::Tls {
         (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
     } else {
@@ -216,6 +223,15 @@ pub(crate) async fn handle_tcp_xfr(
             .await
         }
         Err(error) => {
+            if let DnsError::Service(service_error) = &error
+                && service_error.code().is_internal()
+            {
+                log::error!(
+                    "{} from {client_ip} failed with a server fault: {service_error:?}",
+                    query.qtype
+                );
+            }
+
             cx.metrics()
                 .track_xfr(query.qtype, transport, XfrResult::Failed);
 

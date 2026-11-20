@@ -1,7 +1,15 @@
 use serde_json::json;
 
 use super::*;
-use crate::model::record::EXTERNAL_DNS_RECORD_TYPES;
+use crate::model::record::RecordType;
+
+/// The record types an ExternalDNS sync writes, as the service lists them.
+const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
+    RecordType::A,
+    RecordType::Aaaa,
+    RecordType::Cname,
+    RecordType::Txt,
+];
 
 /// Verify that `Action` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]

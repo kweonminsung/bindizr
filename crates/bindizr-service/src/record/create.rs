@@ -56,7 +56,6 @@ pub async fn create(
             bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
                 .await
                 .map_err(|error| {
-                    log::error!("Failed to check existing records: {error}");
                     ServiceError::internal_with_source("failed to create record", error)
                 })?;
 
@@ -112,10 +111,7 @@ pub async fn create(
         )
         .await?
         .pop()
-        .ok_or_else(|| {
-            log::error!("Record insert returned no row");
-            ServiceError::internal("record insert returned no row")
-        })?;
+        .ok_or_else(|| ServiceError::internal("record insert returned no row"))?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 

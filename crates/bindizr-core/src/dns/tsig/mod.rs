@@ -302,8 +302,14 @@ pub enum RequestSignature {
     /// Duplicate, misplaced, undecodable or impossible-length TSIG: answer FORMERR,
     /// never treat as unsigned (RFC 8945, Section 5.2).
     Malformed,
-    /// The key name the record carries, and the fudge its answer echoes.
-    Key { name: String, fudge: u16 },
+    Key(RequestTsig),
+}
+
+/// The key name a request's TSIG carries, and the fudge its answer echoes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestTsig {
+    pub name: String,
+    pub fudge: u16,
 }
 
 /// Read how the message is signed. Presence is decided on the record's type
@@ -315,10 +321,12 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
 
     match ParsedTsig::parse(&message) {
         Ok(None) => RequestSignature::Absent,
-        Ok(Some(tsig)) if is_request_tsig_valid(tsig.record.data()) => RequestSignature::Key {
-            name: tsig.record.owner().to_string(),
-            fudge: tsig.record.data().fudge(),
-        },
+        Ok(Some(tsig)) if is_request_tsig_valid(tsig.record.data()) => {
+            RequestSignature::Key(RequestTsig {
+                name: tsig.record.owner().to_string(),
+                fudge: tsig.record.data().fudge(),
+            })
+        }
         _ => RequestSignature::Malformed,
     }
 }

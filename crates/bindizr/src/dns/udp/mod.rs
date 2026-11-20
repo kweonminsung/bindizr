@@ -29,7 +29,11 @@ const MAX_UDP_IN_FLIGHT: usize = 256;
 /// A received peer and the local destination to use for its response.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ReplyTarget {
+    /// The sender as every check and log reads it: an IPv4-mapped peer of a
+    /// dual-stack listener reads as its IPv4 address.
     pub(crate) client_addr: SocketAddr,
+    /// The sender's socket address as received, which the reply goes to.
+    peer: SocketAddr,
     local_ip: IpAddr,
     interface_index: u32,
 }
@@ -66,7 +70,7 @@ impl UdpSocket {
 
     /// Receive a complete datagram together with its peer and local destination.
     async fn recv_from(&self, buffer: &mut [u8]) -> Result<(usize, ReplyTarget), UdpError> {
-        let (len, flags, peer, destination) = self
+        let (len, flags, sockaddr, destination) = self
             .socket
             .async_io(Interest::READABLE, || {
                 let mut iov = [io::IoSliceMut::new(buffer)];
@@ -110,11 +114,16 @@ impl UdpSocket {
             return Err(UdpError::Truncated);
         }
 
-        let client_addr = peer
-            .and_then(|peer| {
-                peer.as_sockaddr_in()
+        let peer = sockaddr
+            .and_then(|sockaddr| {
+                sockaddr
+                    .as_sockaddr_in()
                     .map(|addr| SocketAddr::from(*addr))
-                    .or_else(|| peer.as_sockaddr_in6().map(|addr| SocketAddr::from(*addr)))
+                    .or_else(|| {
+                        sockaddr
+                            .as_sockaddr_in6()
+                            .map(|addr| SocketAddr::from(*addr))
+                    })
             })
             .ok_or(UdpError::MissingPeer)?;
         let (local_ip, interface_index) = destination.ok_or(UdpError::MissingDestination)?;
@@ -122,7 +131,8 @@ impl UdpSocket {
         Ok((
             len,
             ReplyTarget {
-                client_addr,
+                client_addr: SocketAddr::new(peer.ip().to_canonical(), peer.port()),
+                peer,
                 local_ip,
                 interface_index,
             },
@@ -137,7 +147,7 @@ impl UdpSocket {
         limit: ResponseLimit,
     ) -> Result<usize, DnsError> {
         limit.validate_len(response.len())?;
-        let peer = SockaddrStorage::from(target.client_addr);
+        let peer = SockaddrStorage::from(target.peer);
 
         Ok(self
             .socket
