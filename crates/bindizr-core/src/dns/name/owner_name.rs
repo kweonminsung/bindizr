@@ -71,13 +71,8 @@ impl OwnerName {
         value: &str,
         zone_name: &ZoneName,
     ) -> Result<Self, ParseNameError> {
-        let trimmed = name::trim_presentation_name(value);
-
-        if trimmed == Self::APEX {
-            return Ok(Self::apex());
-        }
-
-        let (labels, _) = decode_name_labels(trimmed)?;
+        // `@` is client shorthand, not a name: here it is one label like any other.
+        let (labels, _) = decode_name_labels(name::trim_presentation_name(value))?;
 
         relative_labels(&labels, &zone_name.labels())
             .map(Self)
