@@ -4989,7 +4989,7 @@ components:
         digest_type:
           type: integer
           format: int32
-          description: 'DS digest type: 4 (SHA-384) for P-384 keys, otherwise 2 (SHA-256).'
+          description: 'DS digest type: always 2 (SHA-256), whatever the key algorithm.'
           example: 2
           minimum: 0
         key_tag:

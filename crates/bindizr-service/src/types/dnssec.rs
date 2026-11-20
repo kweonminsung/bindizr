@@ -199,7 +199,7 @@ pub struct DnssecDsResponse {
     pub key_tag: KeyTag,
     #[schema(example = 13)]
     pub algorithm: u8,
-    /// DS digest type: 4 (SHA-384) for P-384 keys, otherwise 2 (SHA-256).
+    /// DS digest type: always 2 (SHA-256), whatever the key algorithm.
     #[schema(example = 2)]
     pub digest_type: u8,
     #[schema(example = "4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383")]
