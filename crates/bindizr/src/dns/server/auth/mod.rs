@@ -4,7 +4,7 @@
 use std::net::IpAddr;
 
 use bindizr_core::dns::message::{ExtendedErrorCode, Opcode, OptRcode, QueryMetadata};
-use bindizr_core::dns::tsig::{RequestSignature, TransferSigner, TsigError};
+use bindizr_core::dns::tsig::{RequestSignature, RequestTsig, TransferSigner, TsigError};
 use bindizr_core::dns::{message, tsig};
 use bindizr_core::model::transfer::TransferTransport;
 use bindizr_service::authorization::Caller;
@@ -160,7 +160,7 @@ pub(crate) async fn authenticate_tsig_key(
     query_data: &[u8],
 ) -> Result<Option<TransferIdentity>, TransferRefusal> {
     let key_name = match tsig::request_signature(query_data) {
-        RequestSignature::Key { name, .. } => name,
+        RequestSignature::Key(RequestTsig { name, .. }) => name,
         RequestSignature::Absent => return Ok(None),
         // The address would have allowed this one; a TSIG that does not parse
         // must not be answered as though none had been sent.

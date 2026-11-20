@@ -12,7 +12,7 @@ use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::nsupdate::DEFAULT_FUDGE;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
 use bindizr_core::dns::nsupdate::parser::UpdateRequest;
-use bindizr_core::dns::tsig::{RequestSignature, TsigError};
+use bindizr_core::dns::tsig::{RequestSignature, RequestTsig, TsigError};
 use bindizr_core::dns::{nsupdate, tsig};
 use bindizr_core::metrics::NsupdateResult;
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
@@ -94,7 +94,7 @@ async fn handle_nsupdate_request(
             // RFC 8945, Section 5.2: a request whose key verifies is answered
             // under it, a FORMERR included; a bad key or MAC is its own error.
             let (signer, fudge) = match tsig::request_signature(query_data) {
-                RequestSignature::Key { name, fudge } => {
+                RequestSignature::Key(RequestTsig { name, fudge }) => {
                     match update::authenticate_tsig_key(dns_cx, query_data, &name).await {
                         Ok((tsig_key, signer)) => {
                             access_log.caller = tsig_key.map(|tsig_key| ChangeActor::TsigKey {
