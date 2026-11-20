@@ -1210,6 +1210,49 @@ async fn queries_without_a_readable_question_receive_formerr() {
     }
 }
 
+/// Verify that a signed SOA answer names its signatures under the same owner
+/// as the SOA, whatever case the question spelled the zone in.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn soa_signatures_share_the_soa_owner() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let query = common::build_edns_query(&zone_name.to_uppercase(), Rtype::SOA, &[(0, true)]);
+    let response = dns::exchange_request(query, None, |message| {
+        dns::exchange_tcp(app.dns_port(), message)
+    })
+    .unwrap();
+    let owners: Vec<(Rtype, String)> = response
+        .answer()
+        .unwrap()
+        .map(|record| {
+            let record = record.unwrap();
+            (record.rtype(), record.owner().to_string())
+        })
+        .collect();
+
+    assert!(
+        owners.iter().any(|(rtype, _)| *rtype == Rtype::RRSIG),
+        "{owners:?}"
+    );
+    assert!(
+        owners.iter().all(|(_, owner)| owner == zone_name),
+        "{owners:?}"
+    );
+}
+
 /// Verify that DO is echoed in ordinary, truncated, refused and BADVERS responses.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

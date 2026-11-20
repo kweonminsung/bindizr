@@ -301,13 +301,8 @@ async fn handle_soa_request(
     let mut builder = build(identity.signer);
     builder.add_soa(&zone, zone.serial)?;
 
-    for signature in signatures {
-        builder.add_raw_rdata(
-            query.qname.clone(),
-            signature.record_type.wire_type(),
-            signature.ttl.as_secs(),
-            signature.rdata,
-        )?;
+    for signature in &signatures {
+        builder.add_dnssec_record(signature, &zone.name)?;
     }
 
     Ok((builder.build()?, SoaResult::Ok))
