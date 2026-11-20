@@ -1036,6 +1036,47 @@ async fn tls_update_returns_not_supported() {
     }
 }
 
+/// Verify that TLS UPDATE is refused from its header, before a body that no
+/// UPDATE parse accepts is read (RFC 9103, Section 7.8).
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn tls_update_returns_not_supported_when_body_is_malformed() {
+    let app = xot_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // A zone section naming type A, which RFC 2136, Section 2.3 rules out.
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(96);
+    builder.header_mut().set_opcode(Opcode::UPDATE);
+    let mut zone_section = builder.question();
+    zone_section
+        .push((&dns::parse_name(zone_name).unwrap(), Rtype::A, Class::IN))
+        .unwrap();
+    let mut request = zone_section.additional();
+    request
+        .opt(|opt| {
+            opt.set_udp_payload_size(1232);
+            Ok(())
+        })
+        .unwrap();
+
+    let response =
+        dns::exchange_tls(app.dns_tls_port(), &request.finish(), dot_client(&app)).unwrap();
+
+    assert_eq!(
+        Message::from_octets(response.as_slice())
+            .unwrap()
+            .header()
+            .rcode(),
+        Rcode::REFUSED
+    );
+    assert_eq!(
+        extended_error_code(&response),
+        ExtendedErrorCode::NOT_SUPPORTED
+    );
+}
+
 /// Read the extended error code a refusal names in its OPT.
 fn extended_error_code(response: &[u8]) -> ExtendedErrorCode {
     Message::from_octets(response)

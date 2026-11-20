@@ -1,12 +1,11 @@
 //! Authenticate an UPDATE request and hand its complete sections to the
-//! service. Transport policy and response signing stay at this boundary.
+//! service. Response signing stays at this boundary.
 
 use bindizr_core::dns::message::OptRcode;
 use bindizr_core::dns::name::{ParseNameError, ZoneName};
 use bindizr_core::dns::nsupdate::parser::UpdateRequest;
 use bindizr_core::dns::tsig;
 use bindizr_core::dns::tsig::{ResponseSigner, TsigError};
-use bindizr_core::model::transfer::TransferTransport;
 use bindizr_core::model::tsig_key::TsigKey;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
@@ -22,8 +21,6 @@ pub(crate) enum UpdateError {
     /// Malformed OPT or unsupported EDNS version (RFC 6891, Section 6.1).
     #[error("unacceptable EDNS: {rcode}")]
     Edns { rcode: OptRcode },
-    #[error("{reason}")]
-    NotSupported { reason: String },
     #[error("{reason}")]
     NotAuth { reason: String },
     #[error("'{name}' is not a zone name: {source}")]
@@ -46,7 +43,6 @@ pub(crate) async fn apply_update(
     dns_cx: &DnsContext,
     request: UpdateRequest,
     query_data: &[u8],
-    transport: TransferTransport,
 ) -> (
     Result<bool, UpdateError>,
     Option<ResponseSigner>,
@@ -69,13 +65,6 @@ pub(crate) async fn apply_update(
         // RFC 6891, Section 6.1.3: BADVERS precedes every policy refusal.
         if let Some(rcode) = request.edns.format_error() {
             return Err(UpdateError::Edns { rcode });
-        }
-
-        // RFC 9103, Section 7.8: the TLS listener serves transfers alone.
-        if transport == TransferTransport::Tls {
-            return Err(UpdateError::NotSupported {
-                reason: "UPDATE is not served over TLS".to_string(),
-            });
         }
 
         // Unsigned UPDATE admits every reachable client; the service refuses it

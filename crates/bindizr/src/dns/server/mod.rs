@@ -70,7 +70,10 @@ pub(crate) async fn refuse_unsupported_opcode(
         return Ok(None);
     };
 
-    if opcode == Opcode::QUERY || opcode == Opcode::UPDATE {
+    // RFC 9103, Section 7.8: the TLS listener serves transfers alone, so an
+    // UPDATE is refused there before its body is read.
+    if opcode == Opcode::QUERY || (opcode == Opcode::UPDATE && transport != TransferTransport::Tls)
+    {
         return Ok(None);
     }
 

@@ -17,7 +17,6 @@ use bindizr_core::dns::{nsupdate, tsig};
 use bindizr_core::metrics::NsupdateResult;
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
-use bindizr_core::model::transfer::TransferTransport;
 use bindizr_service::{Context, access};
 use chrono::Utc;
 
@@ -36,14 +35,8 @@ pub(crate) async fn handle_tcp_nsupdate(
 ) -> Result<(), DnsError> {
     log::info!("NSUPDATE {} request from {client_addr}", writer.transport());
 
-    let response = handle_nsupdate_request(
-        dns_cx,
-        client_addr,
-        query_data,
-        writer.transport(),
-        ResponseLimit::STREAM,
-    )
-    .await?;
+    let response =
+        handle_nsupdate_request(dns_cx, client_addr, query_data, ResponseLimit::STREAM).await?;
 
     writer.write_message(&response).await
 }
@@ -61,14 +54,7 @@ pub(crate) async fn handle_udp_nsupdate(
     let limit = QueryMetadata::parse(query_data, Keepalive::None)
         .map_or(ResponseLimit::UDP, |metadata| metadata.response_limit());
 
-    let response = handle_nsupdate_request(
-        dns_cx,
-        client_addr,
-        query_data,
-        TransferTransport::Udp,
-        limit,
-    )
-    .await?;
+    let response = handle_nsupdate_request(dns_cx, client_addr, query_data, limit).await?;
 
     socket.send_to(&response, target, limit).await?;
 
@@ -81,7 +67,6 @@ async fn handle_nsupdate_request(
     dns_cx: &DnsContext,
     client_addr: SocketAddr,
     query_data: &[u8],
-    transport: TransferTransport,
     limit: ResponseLimit,
 ) -> Result<Vec<u8>, DnsError> {
     let cx = dns_cx.daemon();
@@ -189,8 +174,7 @@ async fn handle_nsupdate_request(
         .as_ref()
         .map_or(DEFAULT_FUDGE, |tsig| tsig.fudge);
 
-    let (result, signer, tsig_key) =
-        update::apply_update(dns_cx, request, query_data, transport).await;
+    let (result, signer, tsig_key) = update::apply_update(dns_cx, request, query_data).await;
     access_log.caller = tsig_key.map(|tsig_key| ChangeActor::TsigKey {
         name: tsig_key.name,
     });
@@ -226,11 +210,6 @@ async fn handle_nsupdate_request(
             log::info!("Refusing the EDNS of an NSUPDATE from {client_addr}");
             access_log.error = Some(format!("unacceptable EDNS: {rcode}"));
             (rcode, None)
-        }
-        Err(UpdateError::NotSupported { reason }) => {
-            log::info!("NSUPDATE refused from {client_addr}: {reason}");
-            access_log.error = Some(reason);
-            (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
         }
         Err(error @ UpdateError::Tsig(TsigError::Malformed(_))) => {
             log::warn!("NSUPDATE refused from {client_addr}: {error}");

@@ -70,15 +70,9 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
     let dns_cx = DnsContext::new(cx.clone());
     let client_addr = "127.0.0.1:2136".parse::<SocketAddr>().unwrap();
 
-    let response = handle_nsupdate_request(
-        &dns_cx,
-        client_addr,
-        &query_data,
-        TransferTransport::Udp,
-        ResponseLimit::UDP,
-    )
-    .await
-    .unwrap();
+    let response = handle_nsupdate_request(&dns_cx, client_addr, &query_data, ResponseLimit::UDP)
+        .await
+        .unwrap();
 
     assert_eq!(response[3] & 15, Rcode::FORMERR.to_int());
     tsig::verify_response(&verifier, &response).unwrap();
@@ -101,15 +95,10 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
             UpdateError::Tsig(TsigError::EmptySecret) | UpdateError::LoadTsigKey(_)
         ));
 
-        let response = handle_nsupdate_request(
-            &dns_cx,
-            client_addr,
-            &query_data,
-            TransferTransport::Udp,
-            ResponseLimit::UDP,
-        )
-        .await
-        .unwrap();
+        let response =
+            handle_nsupdate_request(&dns_cx, client_addr, &query_data, ResponseLimit::UDP)
+                .await
+                .unwrap();
 
         assert_eq!(response[3] & 15, Rcode::SERVFAIL.to_int());
     }
