@@ -8,7 +8,6 @@ use std::net::SocketAddr;
 use bindizr_core::dns::message::{
     ExtendedErrorCode, Keepalive, OptRcode, QueryMetadata, Rcode, ResponseLimit,
 };
-use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::nsupdate::DEFAULT_FUDGE;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
 use bindizr_core::dns::nsupdate::parser::UpdateRequest;
@@ -18,7 +17,7 @@ use bindizr_core::metrics::NsupdateResult;
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
 use bindizr_service::nsupdate::NsupdateError;
-use bindizr_service::{Context, access};
+use bindizr_service::{Context, access, zone};
 use chrono::Utc;
 
 use crate::dns::error::DnsError;
@@ -168,11 +167,14 @@ async fn handle_nsupdate_request(
         }
     };
 
+    // Parsed once where the text arrives; a refusal waits in the Result until
+    // apply_update reports it, after the checks RFC 2136, Section 3 puts first.
+    let zone_name = zone::normalize_name(&request.zone_name);
+
     // The zone as Bindizr spells it; text no zone name can carry stays as sent.
-    access_log.target = ZoneName::parse(&request.zone_name).map_or_else(
-        |_| request.zone_name.clone(),
-        |zone_name| zone_name.to_string(),
-    );
+    access_log.target = zone_name
+        .as_ref()
+        .map_or_else(|_| request.zone_name.clone(), ToString::to_string);
     let key_name = request.tsig.as_ref().map(|tsig| tsig.name.clone());
 
     // The response TSIG echoes the request's fudge.
@@ -181,7 +183,8 @@ async fn handle_nsupdate_request(
         .as_ref()
         .map_or(DEFAULT_FUDGE, |tsig| tsig.fudge);
 
-    let (result, signer, tsig_key) = update::apply_update(dns_cx, request, query_data).await;
+    let (result, signer, tsig_key) =
+        update::apply_update(dns_cx, request, zone_name, query_data).await;
     access_log.caller = tsig_key.map(|tsig_key| ChangeActor::TsigKey {
         name: tsig_key.name,
     });
@@ -223,7 +226,7 @@ async fn handle_nsupdate_request(
             access_log.error = Some(error.to_string());
             (OptRcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
         }
-        Err(error @ (UpdateError::NotAuth { .. } | UpdateError::ZoneName { .. })) => {
+        Err(error @ UpdateError::NotAuth { .. }) => {
             log::warn!("NSUPDATE notauth from {client_addr}: {error}");
             access_log.error = Some(error.to_string());
             (

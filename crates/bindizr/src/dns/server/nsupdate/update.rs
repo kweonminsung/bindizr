@@ -2,7 +2,7 @@
 //! service. Response signing stays at this boundary.
 
 use bindizr_core::dns::message::OptRcode;
-use bindizr_core::dns::name::{ParseNameError, ZoneName};
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::nsupdate::parser::UpdateRequest;
 use bindizr_core::dns::tsig;
 use bindizr_core::dns::tsig::{ResponseSigner, TsigError};
@@ -23,12 +23,6 @@ pub(crate) enum UpdateError {
     Edns { rcode: OptRcode },
     #[error("{reason}")]
     NotAuth { reason: String },
-    #[error("'{name}' is not a zone name: {source}")]
-    ZoneName {
-        name: String,
-        #[source]
-        source: ParseNameError,
-    },
     #[error("{0}")]
     Tsig(#[from] TsigError),
     #[error("{0}")]
@@ -42,6 +36,7 @@ pub(crate) enum UpdateError {
 pub(crate) async fn apply_update(
     dns_cx: &DnsContext,
     request: UpdateRequest,
+    zone_name: Result<ZoneName, ServiceError>,
     query_data: &[u8],
 ) -> (
     Result<bool, UpdateError>,
@@ -76,18 +71,10 @@ pub(crate) async fn apply_update(
             None => Caller::unsigned_dns(),
         };
 
-        // Parse absolute labels; unrepresentable zone names are not served (RFC 2136, Section 3.1.2).
-        if request.zone_name == "." {
-            return Err(UpdateError::NotAuth {
-                reason: "the root zone is not served here".to_string(),
-            });
-        }
-
-        let zone_name =
-            ZoneName::parse(&request.zone_name).map_err(|source| UpdateError::ZoneName {
-                name: request.zone_name.clone(),
-                source,
-            })?;
+        // A name no zone can carry is not served (RFC 2136, Section 3.1.2).
+        let zone_name = zone_name.map_err(|error| UpdateError::NotAuth {
+            reason: error.to_string(),
+        })?;
 
         let update = Update {
             zone_name,
