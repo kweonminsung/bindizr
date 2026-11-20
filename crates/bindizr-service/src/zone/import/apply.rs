@@ -164,10 +164,11 @@ pub(crate) async fn apply_import(
                     continue;
                 }
             };
-            let owner = match record::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
+            // The parser hands owners over absolute, from text and wire alike.
+            let owner = match OwnerName::parse_absolute_in_zone(&record.owner_fqdn, &zone.name) {
                 Ok(owner) => owner,
                 Err(error) => {
-                    errors.push(format!("{}: {error}", record.owner_fqdn));
+                    errors.push(format!("{}: record name {error}", record.owner_fqdn));
                     continue;
                 }
             };
