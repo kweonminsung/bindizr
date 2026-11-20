@@ -211,8 +211,8 @@ async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceErr
 pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
     let name = text::normalize_identifier(value, "token name", MAX_COLUMN_TEXT_LEN)?;
 
-    // Dot segments get normalized away; `self` is the lookup route.
-    if name == "." || name == ".." || name == "self" {
+    // `self` is the lookup route.
+    if name == "self" {
         return Err(ServiceError::invalid_input(format!(
             "token name must not be '{name}'"
         )));
