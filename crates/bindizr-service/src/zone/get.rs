@@ -85,8 +85,17 @@ pub async fn list_by_filter(
             .map(zone::normalize_name)
             .transpose()?,
         id: filter.id,
-        mname: filter.mname.clone(),
-        rname: filter.rname.clone(),
+        // The stored spelling is the normalizers', so the filter binds it.
+        mname: filter
+            .mname
+            .as_deref()
+            .map(zone::normalize_mname)
+            .transpose()?,
+        rname: filter
+            .rname
+            .as_deref()
+            .map(zone::normalize_rname)
+            .transpose()?,
         default_ttl,
         min_default_ttl,
         max_default_ttl,

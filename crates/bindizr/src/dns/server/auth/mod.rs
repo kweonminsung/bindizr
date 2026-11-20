@@ -57,7 +57,7 @@ impl TransferRefusal {
         match self {
             Self::Dns { rcode, .. } => *rcode == OptRcode::SERVFAIL,
             Self::Failed { .. } => true,
-            Self::Tsig(TsigError::Rejected { .. } | TsigError::Malformed(_)) => false,
+            Self::Tsig(TsigError::Rejected { .. }) => false,
             Self::Tsig(_) => true,
         }
     }
@@ -127,9 +127,6 @@ impl TransferRefusal {
                 time,
                 metadata.response_limit(),
             )?),
-            Self::Tsig(TsigError::Malformed(_)) => {
-                Ok(metadata.build_signed_error_response(OptRcode::FORMERR, None, None)?)
-            }
             Self::Tsig(_) => {
                 Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
             }

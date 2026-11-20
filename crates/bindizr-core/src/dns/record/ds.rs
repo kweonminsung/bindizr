@@ -108,6 +108,11 @@ impl DsRecordValue {
         Ok(())
     }
 
+    /// Return the digest octets.
+    pub fn digest(&self) -> &[u8] {
+        &self.digest
+    }
+
     /// Render the DS value in canonical text form.
     pub fn canonical(&self) -> String {
         format!(

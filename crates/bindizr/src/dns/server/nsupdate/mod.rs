@@ -139,16 +139,8 @@ async fn handle_nsupdate_request(
                                 log::warn!("NSUPDATE key check failed from {client_addr}: {error}");
                             }
 
-                            if matches!(&error, UpdateError::LoadTsigKey(_))
-                                || matches!(
-                                    &error,
-                                    UpdateError::Tsig(error)
-                                        if !matches!(error, TsigError::Malformed(_))
-                                )
-                            {
-                                response_rcode = OptRcode::SERVFAIL;
-                                access_log.error = Some(error.to_string());
-                            }
+                            response_rcode = OptRcode::SERVFAIL;
+                            access_log.error = Some(error.to_string());
 
                             (None, DEFAULT_FUDGE)
                         }
@@ -221,11 +213,6 @@ async fn handle_nsupdate_request(
             log::info!("Refusing the EDNS of an NSUPDATE from {client_addr}");
             access_log.error = Some(format!("unacceptable EDNS: {rcode}"));
             (rcode, None)
-        }
-        Err(error @ UpdateError::Tsig(TsigError::Malformed(_))) => {
-            log::warn!("NSUPDATE refused from {client_addr}: {error}");
-            access_log.error = Some(error.to_string());
-            (OptRcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
         }
         Err(error @ UpdateError::NotAuth { .. }) => {
             log::warn!("NSUPDATE notauth from {client_addr}: {error}");

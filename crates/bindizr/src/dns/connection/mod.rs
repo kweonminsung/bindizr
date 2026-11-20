@@ -222,13 +222,17 @@ async fn handle_tcp_query(
     }
     .await;
 
-    if let Err(error) = result {
-        log::error!(
+    // A handler logs a server fault with its cause where it answers; this adds
+    // where the query came from, as the UDP dispatcher does. A peer that went
+    // away is not a failure of the query.
+    match result {
+        Ok(()) | Err(DnsError::PeerClosed) => {}
+        Err(error) => log::warn!(
             "DNS {transport} query from {client_addr} failed (opcode={:?} qtype={:?} qclass={}): {error}",
             query.opcode,
             query.qtype,
             query.qclass
-        );
+        ),
     }
 }
 

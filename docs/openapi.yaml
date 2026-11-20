@@ -4584,7 +4584,7 @@ components:
           - 'null'
           description: |-
             Name of an existing zone; omit to cover all zones, including later ones.
-            `zone:create`, `secondary:*` and `access:manage` need all zones.
+            Actions marked "all zones only" in `Action` need it omitted.
           example: example.com
       additionalProperties: false
     CreateRoleRequest:
@@ -5202,8 +5202,10 @@ components:
           - type: 'null'
         serial:
           type: integer
-          format: int32
-          example: 7
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
         signatures:
           type: integer

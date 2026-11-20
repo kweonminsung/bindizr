@@ -262,7 +262,7 @@ pub struct DnssecStatusResponse {
     pub expired_signatures: u64,
     /// When the re-signer next has work; absent for an unsigned zone.
     pub next_resign_at: Option<DateTime<Utc>>,
-    #[schema(example = 7, value_type = u32)]
+    #[schema(inline)]
     pub serial: Serial,
 }
 

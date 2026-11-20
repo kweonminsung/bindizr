@@ -187,8 +187,8 @@ async fn send_notify(
                 cx.metrics().track_notify(NotifyResult::Ok);
                 Ok(())
             }
+            // Returned, not logged: the caller that ends the failure reports it.
             Err(error) => {
-                log::error!("Failed to send NOTIFY to {addr}: {error}");
                 cx.metrics().track_notify(NotifyResult::Failed);
                 Err(SendNotifyError::Send(error))
             }
