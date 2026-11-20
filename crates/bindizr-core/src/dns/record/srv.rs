@@ -50,17 +50,6 @@ impl<'a> SrvRecordValue<'a> {
         self.target
     }
 
-    /// Render the SRV value in canonical text form.
-    pub fn canonical(self) -> String {
-        format!(
-            "{} {} {} {}",
-            self.priority,
-            self.weight,
-            self.port,
-            name::to_fqdn(self.target)
-        )
-    }
-
     /// Encode the stored value as wire RDATA (RFC 2782).
     pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(6);

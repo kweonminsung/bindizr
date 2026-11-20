@@ -49,11 +49,6 @@ impl<'a> MxRecordValue<'a> {
         self.priority == 0 && self.target.trim() == "."
     }
 
-    /// Render the MX value in canonical text form.
-    pub fn canonical(self) -> String {
-        format!("{} {}", self.priority, name::to_fqdn_lowercase(self.target))
-    }
-
     /// Encode the stored value as wire RDATA (RFC 1035, Section 3.3.9).
     pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = self.priority.to_be_bytes().to_vec();
