@@ -69,7 +69,7 @@ pub(crate) fn display_option_time(value: &Option<DateTime<Utc>>) -> String {
 /// Render a record value as one listing cell, cut at `MAX_CELL_CHARS` and marked
 /// when it was; counted in characters, so a multi-byte value is not split.
 pub(crate) fn display_record_value(value: &RecordValue) -> String {
-    let text = value.to_text();
+    let text = value.to_string();
     let mut chars = text.chars();
     let head: String = chars.by_ref().take(MAX_CELL_CHARS).collect();
 

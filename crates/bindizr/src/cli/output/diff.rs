@@ -26,12 +26,8 @@ fn display_rdata(diff_value: &RecordDiffValueResponse, record_type: &str) -> Str
                 .collect::<Vec<_>>()
                 .join(" ")
         }
-        "MX" | "SRV" => format!(
-            "{} {}",
-            diff_value.priority.unwrap_or(10),
-            diff_value.value.to_text()
-        ),
-        _ => diff_value.value.to_text(),
+        "MX" | "SRV" => format!("{} {}", diff_value.priority.unwrap_or(10), diff_value.value),
+        _ => diff_value.value.to_string(),
     }
 }
 

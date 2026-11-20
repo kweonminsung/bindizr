@@ -99,7 +99,7 @@ impl RecordRow {
             id: record.id,
             name: record.name.clone(),
             record_type: record.record_type.to_string(),
-            value: record.value.to_text(),
+            value: record.value.to_string(),
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,

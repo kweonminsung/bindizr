@@ -40,17 +40,25 @@ pub enum RecordValue {
     Presentation { presentation: String },
 }
 
-impl RecordValue {
-    /// Return the value as one string; TXT segments concatenate into the text they
-    /// encode.
-    pub fn to_text(&self) -> String {
+/// A value as a person reads it on one line; TXT segments concatenate into the
+/// text they encode.
+impl fmt::Display for RecordValue {
+    /// Write the value's one-line form.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Text(value) => value.clone(),
-            Self::Segments(segments) => segments.concat(),
-            Self::Presentation { presentation } => presentation.clone(),
+            Self::Text(value) => f.write_str(value),
+            Self::Segments(segments) => {
+                for segment in segments {
+                    f.write_str(segment)?;
+                }
+                Ok(())
+            }
+            Self::Presentation { presentation } => f.write_str(presentation),
         }
     }
+}
 
+impl RecordValue {
     /// Encode the request value into its record-row form. A TXT string is raw
     /// content (never presentation form), so quotes carry no special meaning.
     pub(crate) fn to_encoded_value(
