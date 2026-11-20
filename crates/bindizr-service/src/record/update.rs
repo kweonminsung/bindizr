@@ -87,15 +87,13 @@ fn resolve_update(
         ));
     }
 
-    // Reject explicit priority outside MX/SRV; changing away from them clears it.
+    // MX/SRV keep a stored priority the request omits; changing away from them
+    // clears it. A priority given to any other type is left for
+    // `validate_record_constraints` to refuse, as a create's is.
     let priority = if matches!(record_type, RecordType::Mx | RecordType::Srv) {
         record_type.stored_priority(request.priority.or(existing_record.priority))
-    } else if request.priority.is_some() {
-        return Err(ServiceError::invalid_record_value(format!(
-            "{record_type} records do not take a priority"
-        )));
     } else {
-        None
+        request.priority
     };
     let encoded_value = match &request.value {
         Some(value) => {
