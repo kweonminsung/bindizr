@@ -6,9 +6,9 @@ use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
 use domain::rdata::tsig::{Time48, Tsig};
 use ring::hmac;
 
-use crate::dns::message;
 use crate::dns::message::{Edns, ResponseLimit};
 use crate::dns::tsig::{TsigError, TsigSigningKey};
+use crate::dns::{LibraryError, message};
 
 /// Build the signed or unsigned validation error required by RFC 8945, Section 5.3.2.
 pub fn build_error_response(
@@ -21,13 +21,7 @@ pub fn build_error_response(
     let message =
         Message::from_octets(query_data).map_err(|error| TsigError::Malformed(Box::new(error)))?;
 
-    for include_question in [true, false] {
-        // Keep stream questions (RFC 5936, Section 2.2.2); only oversized UDP errors omit them.
-        // Re-sign without changing BADTIME's error or client time (RFC 8945, Section 5.2.3).
-        if !include_question && !limit.is_udp() {
-            break;
-        }
-
+    let build = |include_question| -> Result<Vec<u8>, LibraryError> {
         let response = match (rcode, key) {
             (TsigRcode::BADTIME, Some(key)) => build_signed_error_response(
                 &message,
@@ -35,41 +29,42 @@ pub fn build_error_response(
                 AuthenticatedError::BadTime,
                 now,
                 include_question,
-            ),
+            )?,
             (TsigRcode::BADTRUNC, Some(key)) => build_signed_error_response(
                 &message,
                 key,
                 AuthenticatedError::BadTrunc,
                 now,
                 include_question,
-            ),
-            _ => build_unsigned_error_response(&message, rcode, include_question),
+            )?,
+            _ => build_unsigned_error_response(&message, rcode, include_question)?,
         };
+        limit.validate_len(response.len())?;
+        Ok(response)
+    };
 
-        if let Some(response) = response
-            && limit.validate_len(response.len()).is_ok()
-        {
-            return Ok(response);
-        }
-    }
-
-    Err(TsigError::BuildResponse { rcode })
+    // Keep stream questions (RFC 5936, Section 2.2.2); only oversized UDP errors omit them.
+    // Re-sign without changing BADTIME's error or client time (RFC 8945, Section 5.2.3).
+    build(true)
+        .or_else(|error| {
+            if limit.is_udp() {
+                build(false)
+            } else {
+                Err(error)
+            }
+        })
+        .map_err(|source| TsigError::BuildResponse { rcode, source })
 }
 
 /// Echo the question when it fits; a compact UDP error retains the request header.
 fn build_error_header(
     message: &Message<&[u8]>,
     include_question: bool,
-) -> Option<AdditionalBuilder<TreeCompressor<Vec<u8>>>> {
+) -> Result<AdditionalBuilder<TreeCompressor<Vec<u8>>>, LibraryError> {
     let mut builder = message::build_response();
 
     if include_question {
-        return Some(
-            builder
-                .start_answer(message, Rcode::NOTAUTH)
-                .ok()?
-                .additional(),
-        );
+        return Ok(builder.start_answer(message, Rcode::NOTAUTH)?.additional());
     }
 
     let header = builder.header_mut();
@@ -79,7 +74,7 @@ fn build_error_header(
     header.set_qr(true);
     header.set_rcode(Rcode::NOTAUTH);
 
-    Some(builder.additional())
+    Ok(builder.additional())
 }
 
 /// TSIG failures that follow successful MAC validation.
@@ -96,15 +91,14 @@ fn build_signed_error_response(
     error: AuthenticatedError,
     now: Time48,
     include_question: bool,
-) -> Option<Vec<u8>> {
+) -> Result<Vec<u8>, LibraryError> {
     use domain::base::ToName;
 
     let request_tsig = message
-        .additional()
-        .ok()?
+        .additional()?
         .limit_to::<Tsig<_, _>>()
-        .last()?
-        .ok()?;
+        .last()
+        .ok_or(TsigError::RecordMissing)??;
     let data = request_tsig.data();
     let mut additional = build_error_header(message, include_question)?;
     Edns::from_message(message).push_response_opt(&mut additional, OptRcode::NOTAUTH, None, None);
@@ -125,7 +119,7 @@ fn build_signed_error_response(
 
     // The request MAC binds this signed error to the request that caused it.
     let mut digest = hmac::Context::with_key(&key.hmac);
-    digest.update(&u16::try_from(data.mac().len()).ok()?.to_be_bytes());
+    digest.update(&u16::try_from(data.mac().len())?.to_be_bytes());
     digest.update(data.mac());
     digest.update(additional.as_slice());
     digest.update(name.as_slice());
@@ -135,28 +129,25 @@ fn build_signed_error_response(
     digest.update(&time_signed.into_octets());
     digest.update(&data.fudge().to_be_bytes());
     digest.update(&rcode.to_int().to_be_bytes());
-    digest.update(&u16::try_from(other.len()).ok()?.to_be_bytes());
+    digest.update(&u16::try_from(other.len())?.to_be_bytes());
     digest.update(other);
     let mac = digest.sign();
-    additional
-        .push((
-            key.domain.name(),
-            Class::ANY,
-            0,
-            Tsig::new(
-                algorithm,
-                time_signed,
-                data.fudge(),
-                mac.as_ref(),
-                message.header().id(),
-                rcode,
-                other,
-            )
-            .ok()?,
-        ))
-        .ok()?;
+    additional.push((
+        key.domain.name(),
+        Class::ANY,
+        0,
+        Tsig::new(
+            algorithm,
+            time_signed,
+            data.fudge(),
+            mac.as_ref(),
+            message.header().id(),
+            rcode,
+            other,
+        )?,
+    ))?;
 
-    Some(additional.finish().into_target())
+    Ok(additional.finish().into_target())
 }
 
 /// Build NOTAUTH with an echoed, unsigned TSIG and empty MAC (RFC 8945, Section 5.3.2).
@@ -164,33 +155,29 @@ fn build_unsigned_error_response(
     message: &Message<&[u8]>,
     rcode: TsigRcode,
     include_question: bool,
-) -> Option<Vec<u8>> {
+) -> Result<Vec<u8>, LibraryError> {
     let request_tsig = message
-        .additional()
-        .ok()?
+        .additional()?
         .limit_to::<Tsig<_, _>>()
-        .last()?
-        .ok()?;
+        .last()
+        .ok_or(TsigError::RecordMissing)??;
 
     let mut additional = build_error_header(message, include_question)?;
     Edns::from_message(message).push_response_opt(&mut additional, OptRcode::NOTAUTH, None, None);
-    additional
-        .push((
-            request_tsig.owner(),
-            request_tsig.class(),
-            request_tsig.ttl(),
-            Tsig::new(
-                request_tsig.data().algorithm(),
-                request_tsig.data().time_signed(),
-                request_tsig.data().fudge(),
-                b"",
-                message.header().id(),
-                rcode,
-                b"",
-            )
-            .ok()?,
-        ))
-        .ok()?;
+    additional.push((
+        request_tsig.owner(),
+        request_tsig.class(),
+        request_tsig.ttl(),
+        Tsig::new(
+            request_tsig.data().algorithm(),
+            request_tsig.data().time_signed(),
+            request_tsig.data().fudge(),
+            b"",
+            message.header().id(),
+            rcode,
+            b"",
+        )?,
+    ))?;
 
-    Some(additional.finish().into_target())
+    Ok(additional.finish().into_target())
 }

@@ -54,8 +54,12 @@ pub enum TsigError {
     /// The caller checked for a TSIG record, so `domain` must find one too.
     #[error("TSIG record not found during validation")]
     RecordMissing,
-    #[error("failed to build TSIG error response ({rcode})")]
-    BuildResponse { rcode: TsigRcode },
+    #[error("failed to build TSIG error response ({rcode}): {source}")]
+    BuildResponse {
+        rcode: TsigRcode,
+        #[source]
+        source: LibraryError,
+    },
     /// Validation failed; authenticated errors retain the key and server time for the encoder.
     #[error("TSIG validation failed: {rcode}")]
     Rejected {

@@ -1281,3 +1281,36 @@ fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
         assert_eq!(request_signature(&malformed), RequestSignature::Malformed);
     }
 }
+
+/// Verify that an error response that cannot be built keeps why, rather than
+/// only naming the RCODE it was for.
+#[test]
+fn build_error_response_keeps_the_cause_of_a_failure() {
+    use std::error::Error;
+
+    let builder = MessageBuilder::new_vec();
+    let mut question = builder.question();
+    question
+        .push((
+            Name::<Vec<u8>>::from_str("example.com.").unwrap(),
+            Rtype::SOA,
+        ))
+        .unwrap();
+    let query_data = question.finish();
+
+    // No TSIG to echo, so the error cannot be composed.
+    let error = build_error_response(
+        &query_data,
+        None,
+        TsigRcode::BADKEY,
+        Time48::now(),
+        ResponseLimit::STREAM,
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(error, TsigError::BuildResponse { .. }),
+        "{error:?}"
+    );
+    assert!(error.source().is_some(), "{error:?}");
+}
