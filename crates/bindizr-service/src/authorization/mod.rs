@@ -496,8 +496,10 @@ impl<T> ReadableRecords<T> {
 }
 
 /// Proof that the caller may read a zone's records whole, from
-/// [`Caller::authorize_whole_zone_read`].
+/// [`Caller::authorize_whole_zone_read`]; the rows it covers reach a response
+/// through it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
 pub(crate) struct WholeZoneRead {
     _proof: (),
 }
