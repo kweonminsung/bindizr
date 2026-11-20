@@ -6,7 +6,7 @@ use bindizr_core::config::{Config, ConfigError};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::metrics::Metrics;
 use bindizr_core::model::access_log::AccessLog;
-use bindizr_db::{Db, PoolStats};
+use bindizr_db::Db;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 use tokio::sync::mpsc::{Sender, UnboundedSender};
@@ -92,11 +92,6 @@ impl Context {
             .clone()
     }
 
-    /// Return the file the configuration came from.
-    pub fn config_path(&self) -> &str {
-        &self.config_path
-    }
-
     /// Read the configuration file again, refusing one whose fixed settings
     /// differ from the running one; nothing changes until `set_config`.
     pub fn load_config(&self) -> Result<Config, ReloadConfigError> {
@@ -138,11 +133,6 @@ impl Context {
     /// Return the daemon's metrics registry.
     pub fn metrics(&self) -> &Metrics {
         &self.metrics
-    }
-
-    /// Return the pool's occupancy, for the metrics scrape.
-    pub fn db_stats(&self) -> PoolStats {
-        self.db.stats()
     }
 
     /// Return the moment the daemon began serving, absent while it is still starting.

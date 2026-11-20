@@ -42,7 +42,7 @@ pub async fn refresh_db_gauges(cx: &Context) -> Result<(), ServiceError> {
     metrics.dnssec_rrsigs_expiring_total.set(expiring as i64);
     metrics.dnssec_rrsigs_expired_total.set(expired as i64);
 
-    let pool = cx.db_stats();
+    let pool = cx.db().stats();
     metrics.set_db_pool_gauges(pool.connections, pool.idle, pool.max);
 
     Ok(())
