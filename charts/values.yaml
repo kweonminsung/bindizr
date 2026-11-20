@@ -301,7 +301,7 @@ postgresql:
   enabled: false
   image:
     repository: postgres
-    tag: "18"
+    tag: "19"
     # IfNotPresent | Always | Never
     pullPolicy: IfNotPresent
   service:
