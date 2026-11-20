@@ -124,7 +124,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:18
+    image: postgres:19
     environment:
       POSTGRES_DB: bindizr
       POSTGRES_USER: bindizr
