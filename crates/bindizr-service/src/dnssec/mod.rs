@@ -28,8 +28,10 @@ pub use keys::{export_keys, import_keys};
 pub use lifecycle::{disable, enable, sign, update_settings};
 pub use rollover::{advance_rollover, start_rollover};
 pub(crate) use rollover::{
-    promote_published_keys_tx, publish_replacement_key_tx, start_algorithm_rollover_tx,
+    promotable_sep_key_ids, promote_published_keys_tx, publish_replacement_key_tx,
+    start_algorithm_rollover_tx,
 };
+pub(crate) use status::lookup_status_tx;
 pub use status::{
     count_keys_by_state, count_rrsigs_expired, count_rrsigs_expiring_within_refresh,
     count_signed_zones, get_status,

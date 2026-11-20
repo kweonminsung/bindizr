@@ -6,6 +6,7 @@ mod send;
 use std::sync::Arc;
 
 use bindizr_core::dns::name::ZoneName;
+pub(crate) use send::send_zone_notify;
 pub use send::{
     NotifyZoneError, SendNotifyError, send_notify_to_secondaries, send_notify_to_secondary,
 };

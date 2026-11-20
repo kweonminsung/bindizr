@@ -13,7 +13,7 @@ use thiserror::Error;
 use crate::authorization::Caller;
 use crate::dns_client::ds;
 use crate::dns_client::ds::ParentDs;
-use crate::dnssec::{SignedZone, status};
+use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState,
@@ -45,7 +45,7 @@ pub async fn check_ds(
             LockLevel::Shared,
         )
         .await?;
-        let status = status::lookup_status_tx(
+        let status = dnssec::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),

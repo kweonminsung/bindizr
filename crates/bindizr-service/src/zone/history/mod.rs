@@ -23,7 +23,7 @@ use crate::types::{
     DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse,
     RollbackZoneSummaryResponse, Run, VersionRecordResponse, ZoneVersionResponse,
 };
-use crate::zone::{diff, update};
+use crate::zone::diff;
 use crate::{Context, Transaction, dnssec, notify, pagination, record, serial, transaction, zone};
 
 /// Validate that a serial is diffable: only if it is the current serial or has a version.
@@ -341,7 +341,7 @@ pub async fn rollback(
         bindizr_db::zone::update_tx(&mut tx, restored_zone.clone()).await?;
 
         if soa_changed {
-            let changes = update::soa_replacement_changes(&zone, &restored_zone, new_serial)?;
+            let changes = zone::soa_replacement_changes(&zone, &restored_zone, new_serial)?;
             bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
         }
 

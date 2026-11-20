@@ -11,7 +11,7 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use crate::authorization::Caller;
-use crate::dnssec::{SignedZone, status};
+use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecKeyMaterialResponse, DnssecStatusResponse, ExportDnssecKeysResponse,
@@ -182,7 +182,7 @@ pub async fn import_keys(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::lookup_status_tx(
+        let response = dnssec::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),

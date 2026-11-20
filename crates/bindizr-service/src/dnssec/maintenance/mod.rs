@@ -10,7 +10,6 @@ use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
 use crate::change::ChangeOrigin;
-use crate::dnssec::rollover;
 use crate::error::ServiceError;
 use crate::types::Holddown;
 use crate::{Context, dnssec, transaction};
@@ -188,7 +187,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         };
 
         // The same rule `ds-seen` applies, minus the errors it reports.
-        let Ok(awaiting) = rollover::promotable_sep_key_ids(&signed, Holddown::Wait) else {
+        let Ok(awaiting) = dnssec::promotable_sep_key_ids(&signed, Holddown::Wait) else {
             return Ok(None);
         };
 

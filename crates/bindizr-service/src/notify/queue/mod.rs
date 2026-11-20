@@ -12,8 +12,7 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time;
 use tokio::time::Instant;
 
-use crate::notify::send;
-use crate::{Context, zone};
+use crate::{Context, notify, zone};
 
 /// A queued propagation job: send NOTIFY for one zone a committed write changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,7 +190,7 @@ async fn start_batch(cx: &Arc<Context>, batch: HashSet<ZoneName>, tasks: &mut Jo
     for zone_name in batch {
         let cx = cx.clone();
         tasks.spawn(async move {
-            if let Err(error) = send::send_zone_notify(&cx, &zone_name).await {
+            if let Err(error) = notify::send_zone_notify(&cx, &zone_name).await {
                 log::warn!("queued notify: NOTIFY failed for zone {zone_name}: {error}");
             }
         });
