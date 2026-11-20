@@ -25,7 +25,7 @@ pub use export::export;
 pub(crate) use force::force_increment_serial;
 pub use get::{count, count_all, get_by_name, list, list_by_filter, probe_table};
 pub(crate) use get::{
-    find_by_name_tx, find_served_by_name, find_served_by_name_tx, lookup_by_name, lookup_by_name_tx,
+    find_served_by_name, find_served_by_name_tx, lookup_by_name, lookup_by_name_tx,
 };
 pub use history::{diff_versions, get_version, list_versions, rollback};
 pub use import::{import, import_many};

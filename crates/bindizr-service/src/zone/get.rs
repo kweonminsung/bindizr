@@ -30,16 +30,6 @@ pub(crate) async fn find_served_by_name(
         .filter(|zone| zone.enabled))
 }
 
-/// Find a zone in the caller's transaction at `lock_level`, including disabled zones
-/// so imports can still write their records.
-pub(crate) async fn find_by_name_tx(
-    tx: &mut Transaction<'_>,
-    zone_name: &ZoneName,
-    lock_level: LockLevel,
-) -> Result<Option<Zone>, ServiceError> {
-    Ok(bindizr_db::zone::get_by_name_tx(tx, zone_name, lock_level).await?)
-}
-
 /// Probe the database with a cheap round-trip (limit-1 zones probe), for
 /// health checks.
 pub async fn probe_table(cx: &Context) -> Result<(), ServiceError> {

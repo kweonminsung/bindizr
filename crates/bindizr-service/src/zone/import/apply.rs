@@ -102,7 +102,9 @@ pub(crate) async fn apply_import(
     let apply_result: Result<_, ServiceError> = async {
         let started = Instant::now();
 
-        let existing_zone = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        // Disabled zones included, so an import still writes their records.
+        let existing_zone =
+            bindizr_db::zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
         let zone_missing = existing_zone.is_none();
