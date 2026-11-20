@@ -12,7 +12,8 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use crate::api::RequestCaller;
-use crate::api::error::{ApiError, Path, Query};
+use crate::api::error::ApiError;
+use crate::api::extract::{Path, Query};
 use crate::params::NameParams;
 
 /// The view switch of a zone export.

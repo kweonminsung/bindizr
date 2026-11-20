@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
-use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json, Router, middleware, routing};
 use bindizr_service::Context;
@@ -10,15 +9,13 @@ use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::MessageResponse;
 use tower_http::cors::{AllowHeaders, Any, CorsLayer};
-use utoipa::OpenApi;
 
 use crate::api::error::ApiError;
-use crate::api::middleware::body_parser::DEFAULT_BODY_BYTES;
+use crate::api::extract::DEFAULT_BODY_BYTES;
 use crate::api::middleware::{access_log, auth};
-use crate::api::openapi::ApiDoc;
 use crate::api::{
-    dnssec, dnssec_policy, external_dns, health, logs, metrics, notify, permission, record, role,
-    secondary, token, tsig_key, zone,
+    dnssec, dnssec_policy, external_dns, health, logs, metrics, notify, openapi, permission,
+    record, role, secondary, token, tsig_key, zone,
 };
 
 /// Build the full axum router with auth, CORS, and the optional route groups,
@@ -79,13 +76,19 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
     // Also outside auth: the document is the API's own description.
     if api_config.openapi_enabled {
         router = router
-            .route("/openapi.json", routing::get(handle_openapi_json))
-            .route("/openapi.yaml", routing::get(handle_openapi_yaml));
+            .route("/openapi.json", routing::get(openapi::handle_openapi_json))
+            .route("/openapi.yaml", routing::get(openapi::handle_openapi_yaml));
     } else {
         // A bare 404 reads as "no such endpoint" for a path the docs name.
         router = router
-            .route("/openapi.json", routing::get(handle_openapi_disabled))
-            .route("/openapi.yaml", routing::get(handle_openapi_disabled));
+            .route(
+                "/openapi.json",
+                routing::get(openapi::handle_openapi_disabled),
+            )
+            .route(
+                "/openapi.yaml",
+                routing::get(openapi::handle_openapi_disabled),
+            );
     }
 
     // The fallbacks answer outside the routes' layers, so they take the access
@@ -134,41 +137,10 @@ async fn handle_home() -> Response {
         .into_response()
 }
 
-/// Return the OpenAPI document as JSON.
-async fn handle_openapi_json() -> Response {
-    (StatusCode::OK, Json(ApiDoc::openapi())).into_response()
-}
-
-/// Return the OpenAPI document as YAML.
-async fn handle_openapi_yaml() -> Response {
-    match serde_norway::to_string(&ApiDoc::openapi()) {
-        Ok(openapi_yaml) => (
-            StatusCode::OK,
-            [(CONTENT_TYPE, "application/yaml; charset=utf-8")],
-            openapi_yaml,
-        )
-            .into_response(),
-        Err(error) => ApiError(ServiceError::internal_with_source(
-            "failed to generate OpenAPI YAML",
-            error,
-        ))
-        .into_response(),
-    }
-}
-
 /// Return the API error for an unsupported HTTP method.
 async fn handle_method_not_allowed() -> Response {
     ApiError(ServiceError::MethodNotAllowed(
         "this path does not take that method".to_string(),
-    ))
-    .into_response()
-}
-
-/// Return the API error for the OpenAPI document while it is not served.
-async fn handle_openapi_disabled() -> Response {
-    ApiError(ServiceError::EndpointNotFound(
-        "the OpenAPI document is not served; set api.openapi_enabled = true to serve it"
-            .to_string(),
     ))
     .into_response()
 }

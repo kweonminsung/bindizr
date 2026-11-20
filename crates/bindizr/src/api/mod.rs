@@ -4,6 +4,7 @@ mod dnssec;
 mod dnssec_policy;
 mod error;
 mod external_dns;
+mod extract;
 mod health;
 mod logs;
 mod metrics;

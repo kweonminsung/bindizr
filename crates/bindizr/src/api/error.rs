@@ -1,16 +1,13 @@
 use axum::Json;
-use axum::extract::FromRequestParts;
 use axum::extract::rejection::JsonRejection;
 use axum::http::header::WWW_AUTHENTICATE;
-use axum::http::request::Parts;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use bindizr_service::error::{ErrorCode, ServiceError};
 use bindizr_service::types::ErrorResponse;
-use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-use crate::api::middleware::body_parser::{DEFAULT_BODY_BYTES, MAX_UPLOAD_BODY_BYTES};
+use crate::api::extract::{DEFAULT_BODY_BYTES, MAX_UPLOAD_BODY_BYTES};
 
 /// Return the HTTP status each error code answers with. Every code is spelled out,
 /// so a new one has to choose its status here.
@@ -126,8 +123,9 @@ impl From<JsonRejection> for ApiError {
             JsonRejection::BytesRejection(_)
                 if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE =>
             {
+                // The routing table alone says which routes take the upload cap.
                 ServiceError::PayloadTooLarge(format!(
-                    "request body exceeds the {} MiB limit ({} MiB for zone imports, bulk record writes and ExternalDNS changes)",
+                    "request body exceeds the route's limit ({} MiB, or {} MiB for upload routes)",
                     DEFAULT_BODY_BYTES / (1024 * 1024),
                     MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
                 ))
@@ -139,94 +137,14 @@ impl From<JsonRejection> for ApiError {
     }
 }
 
-/// `axum::extract::Query` whose rejection renders as [`ErrorResponse`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Query<T>(pub(crate) T);
-
-impl<T, S> FromRequestParts<S> for Query<T>
-where
-    T: DeserializeOwned,
-    S: Send + Sync,
-{
-    type Rejection = ApiError;
-
-    /// Parse URL query parameters and translate validation errors.
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
-        axum::extract::Query::from_request_parts(parts, state)
-            .await
-            .map(|axum::extract::Query(value)| Self(value))
-            .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
-    }
-}
-
-/// `axum::extract::Path` with the same treatment as [`Query`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Path<T>(pub(crate) T);
-
-impl<T, S> FromRequestParts<S> for Path<T>
-where
-    T: DeserializeOwned + Send,
-    S: Send + Sync,
-{
-    type Rejection = ApiError;
-
-    /// Parse route parameters and translate validation errors.
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
-        axum::extract::Path::from_request_parts(parts, state)
-            .await
-            .map(|axum::extract::Path(value)| Self(value))
-            .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
     use axum::extract::FromRequest;
     use axum::http::Request;
-    use bindizr_service::types::{CreateRecordRequest, DeleteRecordsRequest};
+    use bindizr_service::types::CreateRecordRequest;
 
     use super::*;
-
-    /// Verify that a misspelled query key is rejected, naming the key.
-    #[tokio::test]
-    async fn query_rejects_unknown_key_by_name() {
-        // Dropping a key the filter does not declare would widen this delete
-        // to every type at the name.
-        let (mut parts, _) = Request::builder()
-            .uri("/records?zone_name=example.com&name=www&record_type=A")
-            .body(Body::empty())
-            .unwrap()
-            .into_parts();
-
-        let error = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &())
-            .await
-            .unwrap_err();
-
-        assert_eq!(error.0.code(), ErrorCode::InvalidInput);
-        assert!(
-            error.0.to_string().contains("unknown field `record_type`"),
-            "{}",
-            error.0
-        );
-    }
-
-    /// Verify that the spelled-out filter still parses, keys and all.
-    #[tokio::test]
-    async fn query_accepts_known_keys() {
-        let (mut parts, _) = Request::builder()
-            .uri("/records?zone_name=example.com&name=www&type=A&dry_run=true")
-            .body(Body::empty())
-            .unwrap()
-            .into_parts();
-
-        let Query(request) = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &())
-            .await
-            .unwrap();
-
-        assert_eq!(request.record_type.as_deref(), Some("A"));
-        assert!(request.dry_run);
-    }
 
     /// Verify that an unknown body field is rejected, naming the field.
     #[tokio::test]

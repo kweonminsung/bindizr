@@ -1,33 +1,12 @@
-use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
-use bindizr_service::types::{
-    AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse,
-    ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse, AuditLogResponse,
-    BulkRecordItem, CheckNotifyResponse, CheckSecondaryResponse, CreateBulkRecordsRequest,
-    CreateBulkRecordsResponse, CreateDnssecPolicyRequest, CreateRecordRequest,
-    CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest, CreateTokenRequest,
-    CreateTokenResponse, CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsResponse,
-    DeleteZoneResponse, DiffZoneVersionsResponse, DnssecDelegationKeyResponse,
-    DnssecDelegationResponse, DnssecDsResponse, DnssecKeyResponse, DnssecPolicyResponse,
-    DnssecStatusResponse, EnableDnssecRequest, ErrorResponse, ExternalDnsRecord,
-    ExternalDnsRecordUpdate, GetZoneVersionResponse, HealthResponse, HealthStatus, ImportResult,
-    ImportZoneRequest, ImportZoneResponse, ImportZoneSummaryResponse, ImportZonesItemResponse,
-    ImportZonesRequest, ImportZonesResponse, ImportZonesSummaryResponse,
-    ListExternalDnsDomainsResponse, ListExternalDnsRecordsResponse, MessageResponse,
-    PaginatedResponse, PaginationResponse, PermissionsResponse, PermittedActionsResponse,
-    RecordDiffEntryResponse, RecordDiffResponse, RecordDiffSummaryResponse,
-    RecordDiffValueResponse, RecordResponse, RecordValue, RoleGrantResponse, RoleResponse,
-    RollbackZoneResponse, RollbackZoneSummaryResponse, SecondaryResponse, SecondaryStatusResponse,
-    SingleDnssecPolicyResponse, SingleRecordResponse, SingleRoleGrantResponse, SingleRoleResponse,
-    SingleSecondaryResponse, SingleTokenResponse, SingleTsigKeyResponse, SingleZoneResponse,
-    StartDnssecRolloverRequest, TokenResponse, TransferLogResponse, TransferSummaryResponse,
-    TsigKeyResponse, UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
-    UpdateSecondaryRequest, UpdateZoneRequest, VersionRecordResponse, WriteRecordResponse,
-    WriteZoneResponse, ZonePermissionsResponse, ZoneResponse, ZoneStatusResponse,
-    ZoneVersionResponse,
-};
+use axum::Json;
+use axum::http::StatusCode;
+use axum::http::header::CONTENT_TYPE;
+use axum::response::{IntoResponse, Response};
+use bindizr_service::error::ServiceError;
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
+
+use crate::api::error::ApiError;
 
 /// OpenAPI document for the HTTP API, served when `api.openapi_enabled` is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, OpenApi)]
@@ -102,107 +81,6 @@ use utoipa::{Modify, OpenApi};
         crate::api::external_dns::apply_external_dns_changes,
         crate::api::external_dns::adjust_external_dns_records
     ),
-    components(schemas(
-        CreateBulkRecordsResponse,
-        PermissionsResponse,
-        PermittedActionsResponse,
-        ZonePermissionsResponse,
-        DeleteRecordsResponse,
-        CreateBulkRecordsRequest,
-        CreateDnssecPolicyRequest,
-        CreateRecordRequest,
-        CreateSecondaryRequest,
-        CreateTsigKeyRequest,
-        CreateZoneRequest,
-        CreateRoleGrantRequest,
-        CreateRoleRequest,
-        CreateTokenRequest,
-        CreateTokenResponse,
-        DnssecDelegationResponse,
-        DnssecDelegationKeyResponse,
-        DnssecDsResponse,
-        DnssecKeyResponse,
-        SingleDnssecPolicyResponse,
-        DnssecStatusResponse,
-        EnableDnssecRequest,
-        ErrorResponse,
-        AdjustExternalDnsRecordsRequest,
-        AdjustExternalDnsRecordsResponse,
-        ApplyExternalDnsChangesRequest,
-        ApplyExternalDnsChangesResponse,
-        ExternalDnsRecord,
-        ExternalDnsRecordUpdate,
-        ListExternalDnsRecordsResponse,
-        ListExternalDnsDomainsResponse,
-        DnssecPolicyResponse,
-        RecordResponse,
-        SecondaryResponse,
-        TsigKeyResponse,
-        ZoneResponse,
-        RoleGrantResponse,
-        RoleResponse,
-        TokenResponse,
-        HealthResponse,
-        HealthStatus,
-        ImportZoneSummaryResponse,
-        ImportZoneRequest,
-        DeleteZoneResponse,
-        ImportZoneResponse,
-        ImportResult,
-        ImportZonesRequest,
-        ImportZonesResponse,
-        ImportZonesItemResponse,
-        ImportZonesSummaryResponse,
-        MessageResponse,
-        PaginatedResponse<RecordResponse>,
-        PaginatedResponse<DnssecPolicyResponse>,
-        PaginatedResponse<SecondaryResponse>,
-        PaginatedResponse<RoleGrantResponse>,
-        PaginatedResponse<RoleResponse>,
-        PaginatedResponse<TokenResponse>,
-        PaginatedResponse<TsigKeyResponse>,
-        PaginatedResponse<ZoneResponse>,
-        PaginatedResponse<ZoneVersionResponse>,
-        PaginationResponse,
-        RecordDiffResponse,
-        RecordDiffEntryResponse,
-        RecordDiffSummaryResponse,
-        RecordDiffValueResponse,
-        BulkRecordItem,
-        SingleRecordResponse,
-        WriteRecordResponse,
-        RecordValue,
-        RollbackZoneSummaryResponse,
-        RollbackZoneResponse,
-        StartDnssecRolloverRequest,
-        CheckNotifyResponse,
-        TransferKind,
-        TransferResult,
-        TransferTransport,
-        TransferLogResponse,
-        TransferSummaryResponse,
-        CheckSecondaryResponse,
-        SingleSecondaryResponse,
-        SecondaryStatusResponse,
-        UpdateDnssecPolicyRequest,
-        UpdateDnssecSettingsRequest,
-        UpdateRecordRequest,
-        UpdateSecondaryRequest,
-        UpdateZoneRequest,
-        GetZoneVersionResponse,
-        DiffZoneVersionsResponse,
-        VersionRecordResponse,
-        SingleTsigKeyResponse,
-        SingleZoneResponse,
-        WriteZoneResponse,
-        ZoneVersionResponse,
-        ZoneStatusResponse,
-        Action,
-        AuditLogResponse,
-        SingleRoleGrantResponse,
-        SingleRoleResponse,
-        SingleTokenResponse
-    )),
     // Global requirement; /health opts out with an empty per-path security.
     security(
         ("bearer_auth" = [])
@@ -229,7 +107,7 @@ use utoipa::{Modify, OpenApi};
         license(name = "Apache 2.0", url = "http://www.apache.org/licenses/LICENSE-2.0.html")
     )
 )]
-pub(crate) struct ApiDoc;
+struct ApiDoc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SecurityAddon;
@@ -244,4 +122,35 @@ impl Modify for SecurityAddon {
             );
         }
     }
+}
+
+/// Return the OpenAPI document as JSON.
+pub(crate) async fn handle_openapi_json() -> Response {
+    (StatusCode::OK, Json(ApiDoc::openapi())).into_response()
+}
+
+/// Return the OpenAPI document as YAML.
+pub(crate) async fn handle_openapi_yaml() -> Response {
+    match serde_norway::to_string(&ApiDoc::openapi()) {
+        Ok(openapi_yaml) => (
+            StatusCode::OK,
+            [(CONTENT_TYPE, "application/yaml; charset=utf-8")],
+            openapi_yaml,
+        )
+            .into_response(),
+        Err(error) => ApiError(ServiceError::internal_with_source(
+            "failed to generate OpenAPI YAML",
+            error,
+        ))
+        .into_response(),
+    }
+}
+
+/// Return the API error for the OpenAPI document while it is not served.
+pub(crate) async fn handle_openapi_disabled() -> Response {
+    ApiError(ServiceError::EndpointNotFound(
+        "the OpenAPI document is not served; set api.openapi_enabled = true to serve it"
+            .to_string(),
+    ))
+    .into_response()
 }

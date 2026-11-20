@@ -11,8 +11,8 @@ use bindizr_service::types::{
 };
 use bindizr_service::{Context, token};
 
-use crate::api::error::{ApiError, Path, Query};
-use crate::api::middleware::body_parser::JsonBody;
+use crate::api::error::ApiError;
+use crate::api::extract::{JsonBody, Path, Query};
 use crate::api::query::DEFAULT_PAGE_LIMIT;
 use crate::api::{AuthenticatedToken, RequestCaller};
 use crate::params::NameParams;

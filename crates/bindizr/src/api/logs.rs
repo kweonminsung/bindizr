@@ -14,7 +14,8 @@ use bindizr_service::types::{
 use bindizr_service::{Context, access, audit, transfer};
 
 use crate::api::RequestCaller;
-use crate::api::error::{ApiError, Query};
+use crate::api::error::ApiError;
+use crate::api::extract::Query;
 use crate::api::query::DEFAULT_PAGE_LIMIT;
 
 /// Build the log routes.

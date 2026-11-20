@@ -12,8 +12,8 @@ use bindizr_service::types::{
 use bindizr_service::{Context, record};
 
 use crate::api::RequestCaller;
-use crate::api::error::{ApiError, Path, Query};
-use crate::api::middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES};
+use crate::api::error::ApiError;
+use crate::api::extract::{JsonBody, MAX_UPLOAD_BODY_BYTES, Path, Query};
 use crate::api::query::{DEFAULT_PAGE_LIMIT, DryRunQuery};
 use crate::params::IdParams;
 

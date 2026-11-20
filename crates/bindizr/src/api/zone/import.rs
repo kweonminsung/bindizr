@@ -12,8 +12,8 @@ use bindizr_service::types::{
 use bindizr_service::{Context, zone};
 
 use crate::api::RequestCaller;
-use crate::api::error::{ApiError, Path};
-use crate::api::middleware::body_parser::JsonBody;
+use crate::api::error::ApiError;
+use crate::api::extract::{JsonBody, Path};
 use crate::params::NameParams;
 
 /// Import records into a zone, reconciling them in one transaction.
