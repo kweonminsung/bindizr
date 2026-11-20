@@ -111,25 +111,7 @@ pub(crate) async fn lookup_status_tx(
         zone_name: zone.name.to_string(),
         enabled: !keys.is_empty(),
         policy: policy.map(DnssecPolicyResponse::from),
-        keys: keys
-            .iter()
-            .map(|key| DnssecKeyResponse {
-                id: key.id,
-                role: key.role,
-                state: key.state,
-                state_changed_at: key.state_changed_at,
-                eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
-                algorithm: key.algorithm,
-                key_tag: key.key_tag,
-                dnskey: format!(
-                    "{} 3 {} {}",
-                    key.role.flags(),
-                    key.algorithm.as_i32(),
-                    key.public_key
-                ),
-                created_at: key.created_at,
-            })
-            .collect(),
+        keys: keys.iter().map(DnssecKeyResponse::from).collect(),
         ds_records,
         earliest_signature_expires_at,
         signatures,
@@ -142,15 +124,15 @@ pub(crate) async fn lookup_status_tx(
     })
 }
 
-/// Build the key's DS form, decoded from the same RDATA the CDS records carry.
+/// Build the key's DS form from the same digest the CDS records carry.
 fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, ServiceError> {
     let apex = zone.name.to_wire_name().map_err(|error| {
         ServiceError::internal_with_source(format!("invalid zone apex: {error}"), error)
     })?;
-    let rdata = key
-        .ds_rdata(&apex, DS_DIGEST_TYPE)
-        .map_err(ServiceError::dnssec_signing_failed)?;
-    let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
+    let digest = hex::encode_upper(
+        key.ds_digest(&apex, DS_DIGEST_TYPE)
+            .map_err(ServiceError::dnssec_signing_failed)?,
+    );
 
     Ok(DnssecDsResponse {
         key_tag: key.key_tag,

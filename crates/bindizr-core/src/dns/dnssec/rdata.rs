@@ -16,6 +16,9 @@ use crate::model::dnssec_key::DnssecKey;
 /// Section 5); new DS/CDS use `DS_DIGEST_TYPE`, SHA-256 (RFC 9904, Section 4).
 pub const DS_DIGEST_TYPES: [u8; 3] = [1, 2, 4];
 
+/// The DNSKEY protocol field, which must be 3 (RFC 4034, Section 2.1.2).
+const DNSKEY_PROTOCOL: u8 = 3;
+
 /// A stored key whose RDATA could not be rebuilt.
 #[derive(Debug, Error)]
 pub enum EncodeKeyRdataError {
@@ -37,16 +40,45 @@ impl DnssecKey {
             .map_err(EncodeKeyRdataError::PublicKeyNotBase64)?;
         Dnskey::new(
             self.role.flags(),
-            3,
+            DNSKEY_PROTOCOL,
             SecurityAlgorithm::from_int(self.algorithm.as_i32() as u8),
             public_key,
         )
         .map_err(|error| EncodeKeyRdataError::InvalidPublicKey(Box::new(error)))
     }
 
+    /// Render the key's DNSKEY RDATA in presentation form: flags, protocol,
+    /// algorithm and the base64 public key (RFC 4034, Section 2.2).
+    pub fn to_dnskey_presentation(&self) -> String {
+        format!(
+            "{} {DNSKEY_PROTOCOL} {} {}",
+            self.role.flags(),
+            self.algorithm.as_i32(),
+            self.public_key
+        )
+    }
+
     /// Build the key's DS RDATA (RFC 4034, Section 5.1.4) in `digest_type`, one of
     /// `DS_DIGEST_TYPES`; the zone publishes `DS_DIGEST_TYPE`.
     pub fn ds_rdata(&self, apex: &WireName, digest_type: u8) -> Result<Rdata, EncodeKeyRdataError> {
+        let digest = self.ds_digest(apex, digest_type)?;
+
+        let mut rdata = Vec::with_capacity(4 + digest.len());
+        rdata.extend_from_slice(&self.key_tag.as_u16().to_be_bytes());
+        rdata.push(self.algorithm.as_i32() as u8);
+        rdata.push(digest_type);
+        rdata.extend_from_slice(&digest);
+
+        Ok(Rdata::new(rdata)?)
+    }
+
+    /// Return the digest a DS of this key carries in `digest_type`, one of
+    /// `DS_DIGEST_TYPES` (RFC 4034, Section 5.1.4).
+    pub fn ds_digest(
+        &self,
+        apex: &WireName,
+        digest_type: u8,
+    ) -> Result<Vec<u8>, EncodeKeyRdataError> {
         use domain::base::rdata::ComposeRecordData;
 
         let dnskey = self.to_dnskey()?;
@@ -62,14 +94,7 @@ impl DnssecKey {
         let mut hasher = Context::new(algorithm);
         hasher.update(apex.as_slice());
         hasher.update(&dnskey_rdata);
-        let digest = hasher.finish();
 
-        let mut rdata = Vec::with_capacity(4 + digest.as_ref().len());
-        rdata.extend_from_slice(&self.key_tag.as_u16().to_be_bytes());
-        rdata.push(self.algorithm.as_i32() as u8);
-        rdata.push(digest_type);
-        rdata.extend_from_slice(digest.as_ref());
-
-        Ok(Rdata::new(rdata)?)
+        Ok(hasher.finish().as_ref().to_vec())
     }
 }

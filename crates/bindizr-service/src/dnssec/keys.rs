@@ -48,11 +48,9 @@ pub async fn export_keys(
                     algorithm: key.algorithm.as_i32(),
                     key_tag: key.key_tag,
                     dnskey_record: format!(
-                        "{}. IN DNSKEY {} 3 {} {}",
+                        "{}. IN DNSKEY {}",
                         zone.name,
-                        key.role.flags(),
-                        key.algorithm.as_i32(),
-                        key.public_key
+                        key.to_dnskey_presentation()
                     ),
                     private_key: key.to_bind_private_file(),
                 })
