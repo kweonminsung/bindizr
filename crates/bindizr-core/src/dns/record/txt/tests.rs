@@ -13,7 +13,7 @@ fn txt_rdata_round_trips_stored_form() {
     assert_eq!(stored, r#""ab" "c""#);
     assert_eq!(
         TxtRecordValue::from_presentation(&stored).map(TxtRecordValue::into_rdata),
-        Some(rdata.to_vec())
+        Ok(rdata.to_vec())
     );
 }
 
@@ -89,8 +89,8 @@ fn txt_string_splits_on_utf8_boundaries() {
 /// Verify that `from_presentation` rejects unquoted values.
 #[test]
 fn from_presentation_rejects_unquoted_values() {
-    assert!(TxtRecordValue::from_presentation("v=spf1 -all").is_none());
-    assert!(TxtRecordValue::from_presentation("bindizr:txt-rdata:v1:A2Fi").is_none());
+    assert!(TxtRecordValue::from_presentation("v=spf1 -all").is_err());
+    assert!(TxtRecordValue::from_presentation("bindizr:txt-rdata:v1:A2Fi").is_err());
 }
 
 /// Verify that `parse` reads quoted segments.

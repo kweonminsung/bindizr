@@ -305,8 +305,9 @@ impl RecordType {
             Self::Naptr => NaptrRecordValue::parse(value)?.validate(),
             // Stored TXT is always the presentation form.
             Self::Txt => TxtRecordValue::from_presentation(value)
-                .ok_or_else(|| ParseRecordValueError::StoredTxtNotPresentation {
+                .map_err(|source| ParseRecordValueError::StoredTxtNotPresentation {
                     value: value.to_string(),
+                    source: Box::new(source),
                 })?
                 .validate(),
             Self::Ns => NsRecordValue::parse(value).map(|_| ()),
@@ -421,6 +422,7 @@ impl RecordType {
     pub fn display_value(self, value: &str) -> String {
         if self == Self::Txt {
             return match TxtRecordValue::from_presentation(value)
+                .ok()
                 .and_then(|rdata| rdata.to_content())
             {
                 Some(TxtContent::Single(value)) => display_text(&value),

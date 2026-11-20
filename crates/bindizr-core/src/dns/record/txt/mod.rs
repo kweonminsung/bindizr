@@ -26,9 +26,7 @@ impl TxtRecordValue {
             return Ok(Self::from_string(value));
         }
 
-        let segments = parse_quoted_segments(value.trim())?;
-
-        Self::from_octet_segments(segments.iter().map(Vec::as_slice))
+        Self::from_presentation(value)
     }
 
     /// Wrap raw RDATA bytes, validating the character-string chain.
@@ -115,10 +113,10 @@ impl TxtRecordValue {
     }
 
     /// Parse the row form strictly: space-separated quoted character-strings
-    /// only; `None` if the value is not in that form.
-    pub fn from_presentation(value: &str) -> Option<Self> {
-        let segments = parse_quoted_segments(value.trim()).ok()?;
-        Self::from_octet_segments(segments.iter().map(Vec::as_slice)).ok()
+    /// only, refusing anything else with the reason it is not that form.
+    pub fn from_presentation(value: &str) -> Result<Self, ParseRecordValueError> {
+        let segments = parse_quoted_segments(value.trim())?;
+        Self::from_octet_segments(segments.iter().map(Vec::as_slice))
     }
 
     /// Decode into character-strings, collapsing a single segment into

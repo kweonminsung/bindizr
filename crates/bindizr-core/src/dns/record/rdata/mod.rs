@@ -174,8 +174,9 @@ impl EncodedRdata {
             // writes it, so anything else here is corruption, not a plain string.
             RecordType::Txt => Rdata::new(
                 TxtRecordValue::from_presentation(value)
-                    .ok_or_else(|| ParseRecordValueError::StoredTxtNotPresentation {
+                    .map_err(|source| ParseRecordValueError::StoredTxtNotPresentation {
                         value: value.to_string(),
+                        source: Box::new(source),
                     })?
                     .into_rdata(),
             )?,

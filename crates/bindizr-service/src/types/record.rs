@@ -67,8 +67,7 @@ impl RecordValue {
             )
             .map(|parsed| parsed.to_presentation())?),
             (RecordType::Txt, Self::Presentation { presentation }) => {
-                let parsed = TxtRecordValue::from_presentation(presentation)
-                    .ok_or(ParseRecordValueError::TxtRdata)?;
+                let parsed = TxtRecordValue::from_presentation(presentation)?;
                 parsed.validate()?;
                 Ok(parsed.to_presentation())
             }
@@ -86,7 +85,10 @@ pub(crate) fn build_display_value(record_type: RecordType, value: &str) -> Recor
         return RecordValue::Text(record_type.display_value(value));
     }
 
-    match TxtRecordValue::from_presentation(value).and_then(|rdata| rdata.to_content()) {
+    match TxtRecordValue::from_presentation(value)
+        .ok()
+        .and_then(|rdata| rdata.to_content())
+    {
         Some(TxtContent::Single(value)) => RecordValue::Text(value),
         Some(TxtContent::Segments(segments)) => RecordValue::Segments(segments),
         None => RecordValue::Presentation {
@@ -454,5 +456,23 @@ mod tests {
         for invalid in ["SOA", "ANY", "AAAAA"] {
             assert!(serde_json::from_value::<ServedRecordType>(json!(invalid)).is_err());
         }
+    }
+    /// Verify that a malformed TXT presentation is refused with its own cause,
+    /// not a generic RDATA error.
+    #[test]
+    fn to_encoded_value_keeps_the_cause_of_a_malformed_txt_presentation() {
+        let value = RecordValue::Presentation {
+            presentation: r#""unterminated"#.to_string(),
+        };
+
+        let error = value.to_encoded_value(RecordType::Txt, None).unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                EncodeRecordValueError::Value(ParseRecordValueError::TxtUnterminatedQuote)
+            ),
+            "{error:?}"
+        );
     }
 }

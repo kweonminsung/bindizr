@@ -135,5 +135,9 @@ pub enum ParseRecordValueError {
     #[error("{record_type} records do not take a priority")]
     PriorityNotTaken { record_type: RecordType },
     #[error("stored TXT value is not in presentation form: {value}")]
-    StoredTxtNotPresentation { value: String },
+    StoredTxtNotPresentation {
+        value: String,
+        #[source]
+        source: Box<Self>,
+    },
 }
