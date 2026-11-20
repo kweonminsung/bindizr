@@ -27,13 +27,16 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
         outln!("{}", response.message);
     }
 
-    // exec keeps the PID, so a changed start time is the restart signal.
+    // exec keeps the PID, so a changed start time is the restart signal; a
+    // daemon still starting has none yet and is not replaced until it does.
     let replaced = commands::poll_with_deadline(RESTART_DEADLINE, async || {
         client::send_control_command::<DaemonStatusResponse>(DaemonCommand::Status)
             .await
             .ok()
             .map(|response| response.data)
-            .filter(|status| status.started_at_ms != before.started_at_ms)
+            .filter(|status| {
+                status.started_at_ms.is_some() && status.started_at_ms != before.started_at_ms
+            })
     })
     .await;
 

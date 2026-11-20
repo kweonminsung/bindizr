@@ -82,10 +82,10 @@ pub(crate) fn display_record_value(value: &RecordValue) -> String {
 
 /// Render uptime as days, hours, minutes, and seconds; an unset start
 /// time means the front ends are still starting.
-pub(crate) fn display_uptime(started_at_ms: u64) -> String {
-    if started_at_ms == 0 {
+pub(crate) fn display_uptime(started_at_ms: Option<u64>) -> String {
+    let Some(started_at_ms) = started_at_ms else {
         return "starting".to_string();
-    }
+    };
 
     let now_ms = u64::try_from(Utc::now().timestamp_millis()).unwrap_or(0);
     let secs = now_ms.saturating_sub(started_at_ms) / 1000;
