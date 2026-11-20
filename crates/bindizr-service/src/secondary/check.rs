@@ -48,11 +48,14 @@ pub async fn check(
         };
     let catalog =
         probe::probe_secondary(cx, &catalog_zone_name, &secondary, catalog_serial).await?;
-    let notifies = notify::send_notify_to_secondary(cx, &catalog_zone_name, &secondary).await?;
     let transfers = secondary::summarize_transfers(cx, &secondary).await?;
+    let secondary_response = secondary::lookup_response(cx, &secondary).await?;
+
+    // Last, once every read has succeeded: a failed report must not follow a NOTIFY it hides.
+    let notifies = notify::send_notify_to_secondary(cx, &catalog_zone_name, &secondary).await?;
 
     Ok(CheckSecondaryResponse {
-        secondary: secondary::lookup_response(cx, &secondary).await?,
+        secondary: secondary_response,
         addresses,
         resolve_error,
         catalog_zone_name: catalog_zone_name.to_string(),
@@ -65,7 +68,7 @@ pub async fn check(
 }
 
 /// Diagnose enabled secondaries against the listener's observed catalog serial.
-/// Capture SOA status before NOTIFY can trigger a catalog transfer.
+/// Capture SOA status and transfer summaries before NOTIFY can trigger a catalog transfer.
 pub async fn check_enabled(
     cx: &Context,
     caller: &Caller,
@@ -75,7 +78,6 @@ pub async fn check_enabled(
     caller.authorize_action(Action::SecondaryManage)?;
 
     let secondaries = probe::probe_secondaries(cx, catalog_zone_name, catalog_serial).await?;
-    let notifies = notify::send_notify_to_secondaries(cx, catalog_zone_name).await?;
     let mut transfers = Vec::new();
 
     for secondary in secondary::list_enabled(cx).await? {
@@ -85,6 +87,9 @@ pub async fn check_enabled(
             address: secondary.address.to_string(),
         });
     }
+
+    // Last, once every read has succeeded: a failed report must not follow a NOTIFY it hides.
+    let notifies = notify::send_notify_to_secondaries(cx, catalog_zone_name).await?;
 
     Ok(CheckSecondariesResponse {
         secondaries,

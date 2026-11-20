@@ -94,7 +94,7 @@ pub async fn probe_secondaries(
         let status = match result {
             Ok((_, Ok(probe))) => {
                 let status = build_secondary_status(probe.address, expected_serial, probe.serial);
-                attach_last_transfer(cx, zone_name, status, &probe.clients).await
+                attach_last_transfer(cx, zone_name, status, &probe.clients).await?
             }
             Ok((_, Err(error))) => return Err(error.into()),
             Err(error) => SecondaryStatusResponse {
@@ -122,7 +122,7 @@ pub async fn probe_secondary(
     let timeout = cx.config().dns.notify.timeout();
     let probe = dns_client::probe::probe_addresses(zone_name, &secondary.address, timeout).await?;
     let status = build_secondary_status(probe.address, expected_serial, probe.serial);
-    Ok(attach_last_transfer(cx, zone_name, status, &probe.clients).await)
+    attach_last_transfer(cx, zone_name, status, &probe.clients).await
 }
 
 /// Attach the latest zone transfer matching the probe's resolved IPs.
@@ -131,21 +131,17 @@ async fn attach_last_transfer(
     zone_name: &ZoneName,
     mut status: SecondaryStatusResponse,
     clients: &[IpAddr],
-) -> SecondaryStatusResponse {
+) -> Result<SecondaryStatusResponse, ServiceError> {
     if clients.is_empty() {
-        return status;
+        return Ok(status);
     }
 
-    status.last_transfer =
-        match transfer::find_by_clients_and_zone_name(cx, clients, zone_name).await {
-            Ok(transfer_log) => transfer_log.as_ref().map(TransferLogResponse::from),
-            Err(error) => {
-                log::warn!("Failed to read the transfers of {zone_name}: {error}");
-                None
-            }
-        };
+    status.last_transfer = transfer::find_by_clients_and_zone_name(cx, clients, zone_name)
+        .await?
+        .as_ref()
+        .map(TransferLogResponse::from);
 
-    status
+    Ok(status)
 }
 
 #[cfg(test)]
