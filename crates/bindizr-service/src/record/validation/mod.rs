@@ -1,5 +1,7 @@
-//! DNS record constraint validation: CNAME/NS/MX/SOA rules, duplicate
-//! detection, and owner-name normalization.
+//! Record request validation: parsing the request's record fields, owner
+//! normalization, owner-local constraints (CNAME, DNAME, NS, MX, WKS, DS, one
+//! TTL per name and type), the duplicate and add-outcome check, and the
+//! stored-name wire fit check.
 
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};

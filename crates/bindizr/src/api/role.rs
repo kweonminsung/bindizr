@@ -6,8 +6,8 @@ use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing};
 use bindizr_service::role::grant;
 use bindizr_service::types::{
-    CreateRoleGrantRequest, CreateRoleRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, MessageResponse,
-    PageRequest, PaginatedResponse, RoleGrantResponse, RoleResponse, SingleRoleGrantResponse,
+    CreateRoleGrantRequest, CreateRoleRequest, ErrorResponse, MessageResponse, PageRequest,
+    PaginatedResponse, RoleGrantResponse, RoleResponse, SingleRoleGrantResponse,
     SingleRoleResponse,
 };
 use bindizr_service::{Context, role};
@@ -15,6 +15,7 @@ use bindizr_service::{Context, role};
 use crate::api::RequestCaller;
 use crate::api::error::{ApiError, Path, Query};
 use crate::api::middleware::body_parser::JsonBody;
+use crate::api::query::DEFAULT_PAGE_LIMIT;
 use crate::params::{NameIdParams, NameParams};
 
 /// Build the role API routes.

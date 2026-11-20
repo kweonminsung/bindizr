@@ -44,24 +44,13 @@ pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
     Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
 }
 
-/// Count all zones, for the unauthenticated metrics endpoint.
+/// Count all zones, for reports that expose no zone data: metrics, daemon
+/// status, doctor.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(
         bindizr_db::zone::count_by_filter(cx.db(), &bindizr_db::zone::ZoneFilter::default())
             .await?,
     )
-}
-
-/// Count the zones visible to `caller`.
-pub async fn count(cx: &Context, caller: &Caller) -> Result<u64, ServiceError> {
-    Ok(bindizr_db::zone::count_by_filter(
-        cx.db(),
-        &bindizr_db::zone::ZoneFilter {
-            scope_role_id: caller.scope_role_id(),
-            ..Default::default()
-        },
-    )
-    .await?)
 }
 
 /// List the zones matching `filter` that the caller may see, restricted in

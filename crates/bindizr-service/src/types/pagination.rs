@@ -3,10 +3,6 @@
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-/// What an HTTP listing pages at when the request names no limit. The daemon
-/// socket applies none: the CLI reads whole tables.
-pub const DEFAULT_PAGE_LIMIT: u32 = 50;
-
 /// Requested pagination window for a listing with no row predicates.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams,

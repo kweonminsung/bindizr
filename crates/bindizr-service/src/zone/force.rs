@@ -1,6 +1,5 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
@@ -22,36 +21,24 @@ pub(crate) async fn force_increment_serial(
 
         let new_serial = serial::generate_serial(Some(zone.serial));
 
-        let updated_zone = bindizr_db::zone::update_tx(
-            &mut tx,
-            Zone {
-                serial: new_serial,
-                ..zone
-            },
-        )
-        .await
-        .map_err(|error| {
-            ServiceError::internal_with_source("failed to force increment zone serial", error)
-        })?;
-
         // The SOA rdata carries the serial, so its signature must follow
         // every bump — forced ones included.
-        dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        zone::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
+        dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok(updated_zone)
+        Ok((zone, new_serial))
     }
     .await;
 
-    let updated_zone =
+    let (zone, new_serial) =
         transaction::finish_tx(tx, apply_result, "failed to force increment zone serial").await?;
 
     cx.metrics().track_serial_bumps(1);
     log::info!(
         "event=zone_force_serial zone={} new_serial={} zone_id={}",
-        updated_zone.name,
-        updated_zone.serial,
-        updated_zone.id
+        zone.name,
+        new_serial,
+        zone.id
     );
 
     Ok(())

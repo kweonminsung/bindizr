@@ -8,13 +8,14 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing};
 use bindizr_service::types::{
-    AccessLogFilter, AccessLogResponse, AuditLogFilter, AuditLogResponse, DEFAULT_PAGE_LIMIT,
-    ErrorResponse, PaginatedResponse, TransferLogFilter, TransferLogResponse,
+    AccessLogFilter, AccessLogResponse, AuditLogFilter, AuditLogResponse, ErrorResponse,
+    PaginatedResponse, TransferLogFilter, TransferLogResponse,
 };
 use bindizr_service::{Context, access, audit, transfer};
 
 use crate::api::RequestCaller;
 use crate::api::error::{ApiError, Query};
+use crate::api::query::DEFAULT_PAGE_LIMIT;
 
 /// Build the log routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

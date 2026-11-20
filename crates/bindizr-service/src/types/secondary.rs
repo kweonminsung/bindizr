@@ -142,18 +142,17 @@ pub struct TransferSummaryResponse {
     pub failed: u64,
 }
 
-/// One secondary's transfer summary, as `doctor` reports it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+/// One secondary's transfer summary, as `doctor` reports it over the daemon socket.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecondaryTransferSummaryResponse {
-    #[schema(example = "ns2")]
     pub secondary_name: String,
-    #[schema(example = "ns2.example.net:53")]
     pub address: String,
     pub summary: TransferSummaryResponse,
 }
 
-/// Catalog diagnostics for the enabled secondaries, before and after NOTIFY.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
+/// Catalog diagnostics for the enabled secondaries, before and after NOTIFY,
+/// as `doctor` reports them over the daemon socket.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct CheckSecondariesResponse {
     pub secondaries: Vec<SecondaryStatusResponse>,
     pub notifies: Vec<CheckNotifyResponse>,

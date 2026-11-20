@@ -10,12 +10,6 @@ use bindizr_db::LockLevel;
 use crate::error::ServiceError;
 use crate::{Context, Transaction};
 
-/// Longest SOA mailbox address accepted, in bytes.
-const MAX_EMAIL_LEN: usize = 254;
-
-/// Longest SOA mailbox local part accepted, in bytes.
-const MAX_EMAIL_LOCAL_LEN: usize = 64;
-
 /// Refuse storing a zone at the virtual catalog name, which shadows SOA and transfer queries
 /// and is excluded from catalog membership. Lookups remain allowed.
 pub(crate) fn reject_catalog_zone_name(
@@ -110,12 +104,6 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
 
     let normalized = format!("{local}@{domain}");
 
-    if normalized.len() > MAX_EMAIL_LEN {
-        return Err(ServiceError::invalid_zone_field(
-            "rname must be 254 bytes or fewer",
-        ));
-    }
-
     SoaMailbox::from_email(&normalized)
         .map_err(|error| ServiceError::invalid_zone_field(format!("rname {error}")))?;
 
@@ -127,12 +115,6 @@ fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     if local.is_empty() {
         return Err(ServiceError::invalid_zone_field(
             "rname local part must not be empty",
-        ));
-    }
-
-    if local.len() > MAX_EMAIL_LOCAL_LEN {
-        return Err(ServiceError::invalid_zone_field(
-            "rname local part must be 64 bytes or fewer",
         ));
     }
 

@@ -42,7 +42,7 @@ pub use import::{
     ImportZonesItemResponse, ImportZonesRequest, ImportZonesResponse, ImportZonesSummaryResponse,
     ParseImportModeError,
 };
-pub use pagination::{DEFAULT_PAGE_LIMIT, PageRequest, PaginatedResponse, PaginationResponse};
+pub use pagination::{PageRequest, PaginatedResponse, PaginationResponse};
 pub use permission::{PermissionsResponse, PermittedActionsResponse, ZonePermissionsResponse};
 pub(crate) use record::build_display_value;
 pub use record::{

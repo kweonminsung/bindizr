@@ -3,6 +3,10 @@
 use serde::Deserialize;
 use utoipa::IntoParams;
 
+/// What an HTTP listing pages at when the request names no limit. The daemon
+/// socket applies none: the CLI reads whole tables.
+pub(crate) const DEFAULT_PAGE_LIMIT: u32 = 50;
+
 /// The preview switch every endpoint that offers one reads, so they all spell
 /// it the same way and an absent one is the same as `false`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, IntoParams)]

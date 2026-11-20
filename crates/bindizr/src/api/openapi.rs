@@ -18,13 +18,13 @@ use bindizr_service::types::{
     RecordDiffEntryResponse, RecordDiffResponse, RecordDiffSummaryResponse,
     RecordDiffValueResponse, RecordResponse, RecordValue, RoleGrantResponse, RoleResponse,
     RollbackZoneResponse, RollbackZoneSummaryResponse, SecondaryResponse, SecondaryStatusResponse,
-    SecondaryTransferSummaryResponse, SingleDnssecPolicyResponse, SingleRecordResponse,
-    SingleRoleGrantResponse, SingleRoleResponse, SingleSecondaryResponse, SingleTokenResponse,
-    SingleTsigKeyResponse, SingleZoneResponse, StartDnssecRolloverRequest, TokenResponse,
-    TransferLogResponse, TransferSummaryResponse, TsigKeyResponse, UpdateDnssecPolicyRequest,
-    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
-    VersionRecordResponse, WriteRecordResponse, WriteZoneResponse, ZonePermissionsResponse,
-    ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
+    SingleDnssecPolicyResponse, SingleRecordResponse, SingleRoleGrantResponse, SingleRoleResponse,
+    SingleSecondaryResponse, SingleTokenResponse, SingleTsigKeyResponse, SingleZoneResponse,
+    StartDnssecRolloverRequest, TokenResponse, TransferLogResponse, TransferSummaryResponse,
+    TsigKeyResponse, UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
+    UpdateSecondaryRequest, UpdateZoneRequest, VersionRecordResponse, WriteRecordResponse,
+    WriteZoneResponse, ZonePermissionsResponse, ZoneResponse, ZoneStatusResponse,
+    ZoneVersionResponse,
 };
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -181,7 +181,6 @@ use utoipa::{Modify, OpenApi};
         TransferTransport,
         TransferLogResponse,
         TransferSummaryResponse,
-        SecondaryTransferSummaryResponse,
         CheckSecondaryResponse,
         SingleSecondaryResponse,
         SecondaryStatusResponse,

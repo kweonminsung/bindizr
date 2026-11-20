@@ -5,14 +5,15 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing};
 use bindizr_service::types::{
-    CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, MessageResponse, PaginatedResponse,
-    SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse,
+    CreateTsigKeyRequest, ErrorResponse, MessageResponse, PaginatedResponse, SingleTsigKeyResponse,
+    TsigKeyFilter, TsigKeyResponse,
 };
 use bindizr_service::{Context, tsig_key};
 
 use crate::api::RequestCaller;
 use crate::api::error::{ApiError, Path, Query};
 use crate::api::middleware::body_parser::JsonBody;
+use crate::api::query::DEFAULT_PAGE_LIMIT;
 use crate::params::NameParams;
 
 /// Build the TSIG key API routes.

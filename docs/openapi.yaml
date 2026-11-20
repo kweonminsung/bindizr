@@ -4739,14 +4739,14 @@ components:
           format: int32
           example: 604800
         minimum_ttl:
-          type:
-          - integer
-          - 'null'
-          format: int64
-          examples:
-          - 3600
-          maximum: 4294967295
-          minimum: 0
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
         mname:
           type: string
           example: ns1.example.com
@@ -6819,22 +6819,6 @@ components:
             maximum: 4294967295
             minimum: 0
           - type: 'null'
-    SecondaryTransferSummaryResponse:
-      type: object
-      description: One secondary's transfer summary, as `doctor` reports it.
-      required:
-      - secondary_name
-      - address
-      - summary
-      properties:
-        address:
-          type: string
-          example: ns2.example.net:53
-        secondary_name:
-          type: string
-          example: ns2
-        summary:
-          $ref: '#/components/schemas/TransferSummaryResponse'
     ServedRecordType:
       oneOf:
       - $ref: '#/components/schemas/RecordType'
@@ -7272,14 +7256,14 @@ components:
           format: int32
           example: 604800
         minimum_ttl:
-          type:
-          - integer
-          - 'null'
-          format: int64
-          examples:
-          - 3600
-          maximum: 4294967295
-          minimum: 0
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
         mname:
           type:
           - string

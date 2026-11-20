@@ -17,7 +17,14 @@ async fn minimum_ttl_schema_matches_zone_write_boundaries() {
     assert_eq!(status, StatusCode::OK, "{body}");
 
     for schema in ["CreateZoneRequest", "UpdateZoneRequest"] {
-        let minimum = &body["components"]["schemas"][schema]["properties"]["minimum_ttl"];
+        let alternatives =
+            body["components"]["schemas"][schema]["properties"]["minimum_ttl"]["oneOf"]
+                .as_array()
+                .unwrap();
+        let minimum = alternatives
+            .iter()
+            .find(|alternative| alternative["type"] == "integer")
+            .unwrap();
         assert_eq!(minimum["minimum"], 0, "{schema}");
         assert_eq!(minimum["maximum"], u32::MAX, "{schema}");
     }
@@ -178,8 +185,19 @@ async fn openapi_serves_documents_without_token_when_enabled() {
         assert_eq!(integer["format"], "int64", "{name}");
     }
 
+    // The SOA minimum is a nullable TTL like the record TTLs above.
     for name in ["CreateZoneRequest", "UpdateZoneRequest"] {
-        let minimum = &body["components"]["schemas"][name]["properties"]["minimum_ttl"];
+        let alternatives =
+            body["components"]["schemas"][name]["properties"]["minimum_ttl"]["oneOf"]
+                .as_array()
+                .unwrap();
+
+        assert!(alternatives.iter().any(|schema| schema["type"] == "null"));
+        let minimum = alternatives
+            .iter()
+            .find(|schema| schema["type"] == "integer")
+            .unwrap();
+
         assert_eq!(minimum["minimum"], 0, "{name}");
         assert_eq!(minimum["maximum"], u32::MAX, "{name}");
     }
