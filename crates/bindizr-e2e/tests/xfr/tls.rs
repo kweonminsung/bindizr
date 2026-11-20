@@ -738,7 +738,10 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
     let response = Message::from_octets(response).unwrap();
 
     assert_eq!(response.header().rcode(), Rcode::REFUSED);
-    assert!(dns::probe_zone_soa(app.dns_port(), zone_name));
+    assert_eq!(
+        dns::probe_zone_soa(app.dns_port(), zone_name),
+        Ok(Rcode::NOERROR)
+    );
 
     let body =
         common::wait_for_transfer_log(&app, "secondary_name=loopback&result=refused", 1).await;

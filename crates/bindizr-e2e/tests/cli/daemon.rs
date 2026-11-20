@@ -22,11 +22,7 @@ async fn status_reports_running_daemon() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn restart_reexecs_daemon_in_place() {
-    let app = TestApp::start().await;
-
-    if app.has_dns_secondaries() {
-        return;
-    }
+    let app = TestApp::start_local().await;
 
     let restarted = app.run_cli_success(&["restart"], None).await;
 
@@ -41,11 +37,7 @@ async fn restart_reexecs_daemon_in_place() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn stop_shuts_down_daemon() {
-    let app = TestApp::start().await;
-
-    if app.has_dns_secondaries() {
-        return;
-    }
+    let app = TestApp::start_local().await;
 
     let stopped = app.run_cli_success(&["stop"], None).await;
 

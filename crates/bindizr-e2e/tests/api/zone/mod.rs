@@ -4,6 +4,7 @@ mod mailbox;
 mod primary_name;
 mod status;
 
+use domain::base::iana::Rcode;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
@@ -965,8 +966,9 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
     let zone_name = zone["name"].as_str().unwrap();
     let address = format!("127.0.0.1:{}", app.dns_port());
 
-    assert!(
+    assert_eq!(
         dns::probe_zone_soa(app.dns_port(), zone_name),
+        Ok(Rcode::NOERROR),
         "a served zone answers its SOA"
     );
 
@@ -987,8 +989,9 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
 
     // Unknown to the DNS plane, so a secondary drops the zone instead of
     // serving a copy nothing refreshes.
-    assert!(
-        !dns::probe_zone_soa(app.dns_port(), zone_name),
+    assert_eq!(
+        dns::probe_zone_soa(app.dns_port(), zone_name),
+        Ok(Rcode::NOTAUTH),
         "a disabled zone must not answer its SOA"
     );
 
@@ -1049,8 +1052,9 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body["zone"]["description"].is_null(), "{body}");
-    assert!(
+    assert_eq!(
         dns::probe_zone_soa(app.dns_port(), zone_name),
+        Ok(Rcode::NOERROR),
         "re-enabling serves the zone again"
     );
 }
@@ -1157,7 +1161,10 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
 
     let base_serial = app.read_zone_serial(&zone_name).await;
 
-    assert!(!dns::probe_zone_soa(app.dns_port(), &zone_name));
+    assert_eq!(
+        dns::probe_zone_soa(app.dns_port(), &zone_name),
+        Ok(Rcode::NOTAUTH)
+    );
     let path = format!("/zones/{zone_name}");
 
     let (status, body) = app
@@ -1182,7 +1189,10 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(dns::probe_zone_soa(app.dns_port(), &zone_name));
+    assert_eq!(
+        dns::probe_zone_soa(app.dns_port(), &zone_name),
+        Ok(Rcode::NOERROR)
+    );
 
     // Rolling back to the initial empty version cannot remove the active zone's NS.
     for suffix in ["?dry_run=true", ""] {

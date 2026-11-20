@@ -421,7 +421,7 @@ impl TestApp {
 
         // Remember deleted names before the API can no longer return their identity.
         let previous_record_key = match args {
-            ["record", "delete", record_id, ..] if record_id.parse::<i32>().is_ok() => {
+            ["record", "delete", "--id", record_id, ..] => {
                 self.read_previous_record_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }
@@ -463,9 +463,9 @@ impl TestApp {
                 args,
                 [
                     "zone" | "record",
-                    "create" | "bulk-create" | "delete" | "import" | "notify" | "rollback",
+                    "create" | "bulk-create" | "update" | "delete" | "import" | "notify",
                     ..
-                ]
+                ] | ["zone", "version", "rollback", ..]
             )
         {
             self.assert_dns_matches_api(previous_record_key).await;

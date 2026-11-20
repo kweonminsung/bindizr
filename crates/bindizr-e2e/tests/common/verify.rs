@@ -12,9 +12,9 @@ use crate::common::{RECORD_PAGE_LIMIT, TestApp, dns};
 /// sits in, which decides whether DNS can be asked about it at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PreviousRecordKey {
-    pub(crate) zone_name: String,
-    pub(crate) name: String,
-    pub(crate) record_type: u16,
+    zone_name: String,
+    name: String,
+    record_type: u16,
 }
 
 impl TestApp {
