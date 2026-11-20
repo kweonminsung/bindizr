@@ -227,8 +227,13 @@ fn print_check(check: &CheckSecondaryResponse) {
     let catalog = &check.catalog;
 
     match (catalog.visible_serial, catalog.status) {
-        (Some(serial), SecondaryStatus::InSync | SecondaryStatus::Reachable) => outln!(
+        (Some(serial), SecondaryStatus::InSync) => outln!(
             "Catalog zone {}: {} at serial {serial}",
+            check.catalog_zone_name,
+            catalog.status
+        ),
+        (Some(serial), SecondaryStatus::Reachable) => outln!(
+            "Catalog zone {}: {} at serial {serial}, not compared with bindizr's",
             check.catalog_zone_name,
             catalog.status
         ),
