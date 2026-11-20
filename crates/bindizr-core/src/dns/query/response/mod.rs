@@ -51,11 +51,6 @@ pub enum ParseResponseError {
     ForeignClass { class: Class, owner: String },
     #[error(transparent)]
     Rdata(#[from] EncodeRdataError),
-    /// The NOTIFY acknowledgement did not read as one; the source says why.
-    #[error("NOTIFY {0}")]
-    Notify(#[source] Box<Self>),
-    #[error("NOTIFY response returned RCODE {}", .rcode.to_int())]
-    NotifyRcode { rcode: OptRcode },
     #[error("no SOA record in answer")]
     NoSoa,
     #[error("malformed authority section: {0}")]

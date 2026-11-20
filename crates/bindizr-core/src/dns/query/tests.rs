@@ -574,11 +574,9 @@ fn responses_reject_extended_rcodes() {
         let mut notify = additional.finish();
         notify[2] |= 0x80;
         append_opt(&mut notify, rcode, 0);
-        let error = validate_notify_response(query_id, &child, &notify).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            format!("NOTIFY response returned RCODE {code}")
+        assert!(
+            matches!(validate_notify_response(query_id, &child, &notify), Err(ParseResponseError::Rcode { rcode: got }) if got == rcode),
+            "NOTIFY did not preserve {code}"
         );
     }
 }

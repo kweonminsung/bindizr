@@ -364,7 +364,7 @@ async fn serve(
                 let result = verified.map_err(SendNotifyError::Verify).and_then(|_| {
                     match query::validate_notify_response(id, &request.qname, response) {
                         // RFC 1996, Section 3.12: a validated NOTIMP completes the transaction.
-                        Err(ParseResponseError::NotifyRcode {
+                        Err(ParseResponseError::Rcode {
                             rcode: OptRcode::NOTIMP,
                         }) => {
                             log::warn!(

@@ -12,19 +12,17 @@ pub fn validate_notify_response(
     qname: &Name<Vec<u8>>,
     response: &[u8],
 ) -> Result<(), ParseResponseError> {
-    let message = response::parse_response(query_id, Opcode::NOTIFY, response)
-        .map_err(|error| ParseResponseError::Notify(Box::new(error)))?;
+    let message = response::parse_response(query_id, Opcode::NOTIFY, response)?;
 
     // Read RCODE first: refusals may omit the question (NSD 4.6 NOTAUTH).
     let rcode = response::response_rcode(&message)?;
 
     if rcode != OptRcode::NOERROR {
-        return Err(ParseResponseError::NotifyRcode { rcode });
+        return Err(ParseResponseError::Rcode { rcode });
     }
 
     // The acknowledgement copies the request's question (RFC 1996, Section 3.7).
-    response::validate_question(&message, qname, Rtype::SOA)
-        .map_err(|error| ParseResponseError::Notify(Box::new(error)))?;
+    response::validate_question(&message, qname, Rtype::SOA)?;
 
     Ok(())
 }
