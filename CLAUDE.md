@@ -973,7 +973,9 @@ Prefixes express cost (`C-CONV`): `as_` returns a borrowed view or allocation-fr
   the socket carries it typed. The service reads body flags. A request field
   spelling an enum remains a `String`, parsed by the service through `FromStr`
   with `INVALID_INPUT` listing supported values. Responses use the enum. A policy
-  name stays a string because it names a row.
+  name stays a string because it names a row. The exception is a CLI flag whose
+  values `--help` and the shell completions should list (`zone import --mode`):
+  it keeps a clap `ValueEnum` mirroring the service enum, converted by `From`.
 - Domain numbers are newtypes (`Serial`, `Ttl`, `SoaInterval`, `KeyTag`, `Days`)
   with `From` / `TryFrom` row/payload conversions and sqlx encoding (`C-NEWTYPE`).
   Entity IDs live beside their rows, one `id_newtype!` per kind. Raw request

@@ -315,6 +315,8 @@ Examples:
 }
 
 /// CLI import mode, matching the service's `ImportMode` and lowercase wire names.
+/// Kept as its own `ValueEnum`, unlike other enum-valued body fields, because
+/// deriving it is what lists the modes in `--help` and the shell completions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ImportMode {
     /// Add parsed records; records already present are left untouched
