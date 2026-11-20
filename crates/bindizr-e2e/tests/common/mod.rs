@@ -15,14 +15,12 @@ use std::{env, process};
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 use compose::ComposeStack;
-use domain::base::iana::Rtype;
 use reqwest::{Client, Method, StatusCode};
 use rustls::crypto::ring;
 use rustls::pki_types::CertificateDer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::time;
-use verify::PreviousRecordKey;
 
 /// Every record action, the grant a test role needs to read and change a zone's records.
 pub(crate) const RECORD_ACTIONS: &str = "record:read,record:create,record:update,record:delete";
@@ -260,20 +258,9 @@ impl TestApp {
     ) -> (StatusCode, Value) {
         let should_verify_dns = method != Method::GET;
 
-        let mut previous_record_key = self.read_previous_record_key(&method, path).await;
-
-        let updated_zone_name = (method == Method::PUT)
-            .then(|| path.strip_prefix("/zones/"))
-            .flatten();
+        let previous_record_key = self.read_previous_record_key(&method, path).await;
 
         let (status, body) = self.send_http(method, path, request).await;
-
-        if let Some(previous_zone_name) = updated_zone_name
-            && status.is_success()
-            && body["zone"]["name"].as_str() == Some(previous_zone_name)
-        {
-            previous_record_key = None;
-        }
 
         if should_verify_dns && status.is_success() {
             self.assert_dns_matches_api(previous_record_key).await;
@@ -441,11 +428,6 @@ impl TestApp {
                 self.read_previous_record_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }
-            ["zone", "delete", zone_name, ..] => Some(PreviousRecordKey {
-                zone_name: verify::to_fqdn(zone_name),
-                name: verify::to_fqdn(zone_name),
-                record_type: Rtype::SOA.to_int(),
-            }),
             _ => None,
         };
 

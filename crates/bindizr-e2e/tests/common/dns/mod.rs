@@ -100,10 +100,6 @@ pub(crate) async fn wait_for_dns_records(
                 eprintln!("{name} type {record_type} propagated through 127.0.0.1:{port}.");
                 return;
             }
-            Err(error) if is_deleted_zone_absence(record_type, expected, &error) => {
-                eprintln!("{name} type {record_type} is absent from 127.0.0.1:{port} ({error}).");
-                return;
-            }
             _ => {}
         }
 
@@ -119,11 +115,6 @@ pub(crate) async fn wait_for_dns_records(
     panic!(
         "{expected_count} type {record_type} record(s) for {name} did not propagate to 127.0.0.1:{port}"
     );
-}
-
-/// Return whether a DNS failure represents an expected deleted zone.
-fn is_deleted_zone_absence(record_type: u16, expected: &[Value], error: &str) -> bool {
-    record_type == Rtype::SOA.to_int() && expected.is_empty() && error.contains("REFUSED RCODE")
 }
 
 /// A response record, including referrals, in the harness comparison form.

@@ -3,17 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use domain::base::iana::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::Value;
 
 use crate::common::{RECORD_PAGE_LIMIT, TestApp, dns};
-
-/// Render a name with the trailing dot record payloads carry, so a zone taken
-/// from a request path compares against the one a record names.
-pub(crate) fn to_fqdn(name: &str) -> String {
-    format!("{}.", name.trim_end_matches('.'))
-}
 
 /// The record a mutation is about to replace or remove, kept with the zone it
 /// sits in, which decides whether DNS can be asked about it at all.
@@ -31,37 +24,25 @@ impl TestApp {
         method: &Method,
         path: &str,
     ) -> Option<PreviousRecordKey> {
-        if !matches!(*method, Method::PUT | Method::DELETE) {
+        if !matches!(*method, Method::PUT | Method::DELETE) || !path.starts_with("/records/") {
             return None;
         }
 
-        if path.starts_with("/records/") {
-            let (status, body) = self.send_http(Method::GET, path, None).await;
+        let (status, body) = self.send_http(Method::GET, path, None).await;
 
-            return status.is_success().then(|| {
-                let record = &body["record"];
-                let (name, record_type) = dns::extract_record_key(record);
+        status.is_success().then(|| {
+            let record = &body["record"];
+            let (name, record_type) = dns::extract_record_key(record);
 
-                PreviousRecordKey {
-                    zone_name: record["zone_name"]
-                        .as_str()
-                        .expect("record did not contain a zone name")
-                        .to_string(),
-                    name,
-                    record_type,
-                }
-            });
-        }
-
-        if let Some(zone_name) = path.strip_prefix("/zones/") {
-            return Some(PreviousRecordKey {
-                zone_name: to_fqdn(zone_name),
-                name: to_fqdn(zone_name),
-                record_type: Rtype::SOA.to_int(),
-            });
-        }
-
-        None
+            PreviousRecordKey {
+                zone_name: record["zone_name"]
+                    .as_str()
+                    .expect("record did not contain a zone name")
+                    .to_string(),
+                name,
+                record_type,
+            }
+        })
     }
 
     /// Wait until secondary DNS answers match the API's records.
