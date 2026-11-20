@@ -128,7 +128,7 @@ pub async fn list_by_filter_with_zone(
         zone_name,
         name,
         record_type: match type_filter {
-            TypeFilter::Derived(record_type) => Some(i32::from(record_type.wire_type())),
+            TypeFilter::Derived(record_type) => Some(record_type),
             _ => None,
         },
         ttl: filter.ttl,

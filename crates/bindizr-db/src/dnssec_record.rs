@@ -1,5 +1,7 @@
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::dnssec_record::{DnssecRecord, DnssecRecordId, DnssecRecordWithZone};
+use bindizr_core::model::dnssec_record::{
+    DnssecRecord, DnssecRecordId, DnssecRecordType, DnssecRecordWithZone,
+};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
@@ -15,8 +17,7 @@ pub struct DnssecRecordFilter {
     /// Matched as in `RecordFilter`.
     pub zone_name: Option<ZoneName>,
     pub name: Option<String>,
-    /// The wire record type number, the column form.
-    pub record_type: Option<i32>,
+    pub record_type: Option<DnssecRecordType>,
     pub ttl: Option<i64>,
     pub min_ttl: Option<i64>,
     pub max_ttl: Option<i64>,
