@@ -17,6 +17,7 @@ use bindizr_core::dns::{nsupdate, tsig};
 use bindizr_core::metrics::NsupdateResult;
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
+use bindizr_service::nsupdate::NsupdateError;
 use bindizr_service::{Context, access};
 use chrono::Utc;
 
@@ -130,7 +131,13 @@ async fn handle_nsupdate_request(
                             }
                         }
                         Err(error) => {
-                            log::warn!("NSUPDATE key check failed from {client_addr}: {error}");
+                            if matches!(&error, UpdateError::LoadTsigKey(_)) {
+                                log::error!(
+                                    "NSUPDATE from {client_addr} failed with a server fault: {error:?}"
+                                );
+                            } else {
+                                log::warn!("NSUPDATE key check failed from {client_addr}: {error}");
+                            }
 
                             if matches!(&error, UpdateError::LoadTsigKey(_))
                                 || matches!(
@@ -231,13 +238,21 @@ async fn handle_nsupdate_request(
                 Rcode::NOTAUTH => Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                 _ => None,
             };
-            log::warn!("NSUPDATE {rcode} from {client_addr}: {error}");
+            if let NsupdateError::Service(service_error) = &error
+                && service_error.code().is_internal()
+            {
+                log::error!(
+                    "NSUPDATE from {client_addr} failed with a server fault: {service_error:?}"
+                );
+            } else {
+                log::warn!("NSUPDATE {rcode} from {client_addr}: {error}");
+            }
             access_log.error = Some(error.to_string());
 
             (rcode.into(), ede)
         }
         Err(error @ (UpdateError::LoadTsigKey(_) | UpdateError::Tsig(_))) => {
-            log::warn!("NSUPDATE internal error from {client_addr}: {error}");
+            log::error!("NSUPDATE from {client_addr} failed with a server fault: {error:?}");
             access_log.error = Some(error.to_string());
             (OptRcode::SERVFAIL, None)
         }

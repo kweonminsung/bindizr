@@ -78,6 +78,11 @@ impl From<ServiceError> for ApiError {
 impl IntoResponse for ApiError {
     /// Convert a service error into its HTTP status and JSON error body.
     fn into_response(self) -> Response {
+        // The one place a server fault leaves over HTTP, so its cause is logged here.
+        if self.0.code().is_internal() {
+            log::error!("HTTP request failed with a server fault: {:?}", self.0);
+        }
+
         let status = http_status(self.0.code());
         let code = self.0.code();
         let body = ErrorResponse::from(&self.0);
@@ -105,8 +110,6 @@ impl IntoResponse for ApiError {
 impl From<JsonRejection> for ApiError {
     /// Translate a JSON extraction failure into an API error.
     fn from(rejection: JsonRejection) -> Self {
-        log::error!("JSON Rejection: {rejection:?}");
-
         let error = match rejection {
             JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
                 ServiceError::InvalidJsonBody(format!(

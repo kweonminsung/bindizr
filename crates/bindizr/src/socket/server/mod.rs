@@ -548,8 +548,13 @@ fn encode_response<T: Serialize>(result: Result<DaemonResponse<T>, ServiceError>
     }
 }
 
-/// Encode a service error as one JSON line.
+/// Encode a service error as one JSON line, logging the cause of a server
+/// fault, which leaves the daemon here.
 fn encode_error(error: &ServiceError) -> String {
+    if error.code().is_internal() {
+        log::error!("Socket command failed with a server fault: {error:?}");
+    }
+
     serde_json::to_string(&ErrorResponse::from(error)).unwrap_or_else(|_| {
         r#"{"error":"failed to serialize error response","code":"INTERNAL"}"#.to_string()
     })

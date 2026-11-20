@@ -201,8 +201,8 @@ async fn handle_soa_request(
         let access = match zone::refresh_catalog_content(cx, &identity.caller).await {
             Ok(access) => access,
             Err(error) => {
-                log::warn!(
-                    "Failed to load catalog content for {} query for {zone_name_str:?} from {client_ip}: {error}",
+                log::error!(
+                    "Failed to load catalog content for {} query for {zone_name_str:?} from {client_ip}: {error:?}",
                     query.qtype
                 );
                 return Ok((
@@ -257,8 +257,8 @@ async fn handle_soa_request(
         {
             Ok(access) => access,
             Err(error) => {
-                log::warn!(
-                    "Failed to load SOA content for {} query for {zone_name_str:?} from {client_ip}: {error}",
+                log::error!(
+                    "Failed to load SOA content for {} query for {zone_name_str:?} from {client_ip}: {error:?}",
                     query.qtype
                 );
                 return Ok((

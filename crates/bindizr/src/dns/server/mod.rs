@@ -223,6 +223,15 @@ pub(crate) async fn handle_tcp_xfr(
             .await
         }
         Err(error) => {
+            if let DnsError::Service(service_error) = &error
+                && service_error.code().is_internal()
+            {
+                log::error!(
+                    "{} from {client_ip} failed with a server fault: {service_error:?}",
+                    query.qtype
+                );
+            }
+
             cx.metrics()
                 .track_xfr(query.qtype, transport, XfrResult::Failed);
 

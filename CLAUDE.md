@@ -1031,6 +1031,14 @@ variant, not `io::Error::new`.
   codes to HTTP status, CLI exit
   code, or DNS RCODE. The service knows no HTTP. Other layers use their own errors
   (`DaemonError`, `DnsError`, `CliError`) with `From` conversions.
+- A server fault (`ErrorCode::is_internal`: `Internal`,
+  `DnssecSigningFailed`) is logged once, with its source chain, where it
+  leaves the process: the HTTP response conversion, the daemon socket's
+  encoder, and the DNS answers it turns into SERVFAIL (a transfer refusal's
+  encoder, a failed transfer, an UPDATE). The service returns it without
+  logging it first, so a `?` path is logged as surely as a `map_err` one. A client's mistake is not logged at
+  error level. Work that ends without returning its error (a spawned task, a
+  scheduler pass, a post-commit NOTIFY) logs it where it ends.
 - Box `domain` errors in `dns::LibraryError`; their types vary and callers do
   not match them. Only foreign failures without `Error` (`SigningError`, `TxtError`)
   keep text in a `reason` field instead of a source.
