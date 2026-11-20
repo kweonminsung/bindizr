@@ -196,8 +196,11 @@ pub(crate) async fn handle_tcp_xfr(
     // key that asked; other transfer failures propagate to the listener.
     match result {
         Ok(()) => {
-            cx.metrics()
-                .track_xfr(query.qtype, transport, XfrResult::Ok);
+            cx.metrics().track_xfr(
+                TransferKind::from_qtype(query.qtype),
+                transport,
+                XfrResult::Ok,
+            );
             Ok(())
         }
         Err(DnsError::NotAuth { zone_name }) => {
@@ -232,8 +235,11 @@ pub(crate) async fn handle_tcp_xfr(
                 );
             }
 
-            cx.metrics()
-                .track_xfr(query.qtype, transport, XfrResult::Failed);
+            cx.metrics().track_xfr(
+                TransferKind::from_qtype(query.qtype),
+                transport,
+                XfrResult::Failed,
+            );
 
             transfer::save_failed(
                 cx,
@@ -309,7 +315,8 @@ async fn refuse_tcp_xfr(
         reason = error.to_string();
     }
 
-    cx.metrics().track_xfr(query.qtype, transport, outcome);
+    cx.metrics()
+        .track_xfr(TransferKind::from_qtype(query.qtype), transport, outcome);
     log::warn!("Refused XFR {transport} query from {client_ip}: {reason}");
 
     match outcome {
@@ -401,7 +408,7 @@ pub(crate) async fn handle_udp_xfr(
 
     // The transfer itself follows over TCP; count this response only after sending it.
     cx.metrics().track_xfr(
-        query.qtype,
+        TransferKind::from_qtype(query.qtype),
         TransferTransport::Udp,
         if sent.is_err() {
             XfrResult::Failed

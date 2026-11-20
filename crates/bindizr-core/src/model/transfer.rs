@@ -35,6 +35,9 @@ pub enum TransferKind {
 }
 
 impl TransferKind {
+    /// Every kind, as the metrics pre-register them.
+    pub const ALL: [Self; 2] = [Self::Axfr, Self::Ixfr];
+
     /// Return the transfer a query type asks for; the caller checked it is one.
     pub fn from_qtype(qtype: Rtype) -> Self {
         if qtype == Rtype::IXFR {

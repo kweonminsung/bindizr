@@ -1,7 +1,7 @@
 //! The daemon's Prometheus registry, held by its `Context` and shared by the
 //! HTTP API and DNS layers.
 
-use domain::base::iana::{OptRcode, Rtype};
+use domain::base::iana::OptRcode;
 use prometheus::core::Collector;
 use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
@@ -9,7 +9,7 @@ use prometheus::{
 };
 use thiserror::Error;
 
-use crate::model::transfer::TransferTransport;
+use crate::model::transfer::{TransferKind, TransferTransport};
 
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
@@ -280,9 +280,13 @@ impl Metrics {
         // Initialize every known label set so zero counters appear in metrics
         // instead of reading as missing data until the first event.
         for result in XfrResult::ALL {
-            for xfr_type in ["axfr", "ixfr"] {
+            for kind in TransferKind::ALL {
                 for transport in TransferTransport::ALL {
-                    xfr_total.with_label_values(&[xfr_type, result.label(), transport.as_str()]);
+                    xfr_total.with_label_values(&[
+                        kind.as_str(),
+                        result.label(),
+                        transport.as_str(),
+                    ]);
                 }
             }
         }
@@ -500,16 +504,10 @@ impl SchedulerResult {
 }
 
 impl Metrics {
-    /// Count a zone transfer's outcome by query type and transport; a non-transfer
-    /// type is not counted, so the caller passes what it was asked for.
-    pub fn track_xfr(&self, qtype: Rtype, transport: TransferTransport, result: XfrResult) {
-        let xfr_type = match qtype {
-            Rtype::AXFR => "axfr",
-            Rtype::IXFR => "ixfr",
-            _ => return,
-        };
+    /// Count a zone transfer's outcome by its kind and transport.
+    pub fn track_xfr(&self, kind: TransferKind, transport: TransferTransport, result: XfrResult) {
         self.xfr_total
-            .with_label_values(&[xfr_type, result.label(), transport.as_str()])
+            .with_label_values(&[kind.as_str(), result.label(), transport.as_str()])
             .inc();
     }
 
