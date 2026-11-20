@@ -286,13 +286,17 @@ pub(crate) async fn refuse_query(
             let mut signer = identity.and_then(|identity| identity.signer);
             Ok(metadata.build_signed_error_response(rcode, ede, signer.as_mut())?)
         }
-        Err(refusal) => match refusal.into_response(metadata, query_data) {
-            Err(DnsError::Tsig(error)) => {
-                log::warn!("Failed to encode TSIG refusal: {error}");
-                Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
+        Err(refusal) => {
+            log::warn!("Failed to authenticate the TSIG of a refused request: {refusal}");
+
+            match refusal.into_response(metadata, query_data) {
+                Err(DnsError::Tsig(error)) => {
+                    log::warn!("Failed to encode TSIG refusal: {error}");
+                    Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
+                }
+                response => response,
             }
-            response => response,
-        },
+        }
     }
 }
 

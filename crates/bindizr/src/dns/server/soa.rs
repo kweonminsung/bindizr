@@ -201,13 +201,18 @@ async fn handle_soa_request(
         let access = match zone::refresh_catalog_content(cx, &identity.caller).await {
             Ok(access) => access,
             Err(error) => {
-                return TransferRefusal::failed(
-                    "failed to load catalog content",
-                    error,
-                    identity.signer,
-                )
-                .into_response(&QueryMetadata::from(query), query_data)
-                .map(|response| (response, SoaResult::Failed));
+                log::warn!(
+                    "Failed to load catalog content for {} query for {zone_name_str:?} from {client_ip}: {error}",
+                    query.qtype
+                );
+                return Ok((
+                    query.build_signed_error_response(
+                        OptRcode::SERVFAIL,
+                        None,
+                        identity.signer.as_mut(),
+                    )?,
+                    SoaResult::Failed,
+                ));
             }
         };
         let (catalog_zone, _) = match access {
@@ -252,13 +257,18 @@ async fn handle_soa_request(
         {
             Ok(access) => access,
             Err(error) => {
-                return TransferRefusal::failed(
-                    "failed to load SOA content",
-                    error,
-                    identity.signer,
-                )
-                .into_response(&QueryMetadata::from(query), query_data)
-                .map(|response| (response, SoaResult::Failed));
+                log::warn!(
+                    "Failed to load SOA content for {} query for {zone_name_str:?} from {client_ip}: {error}",
+                    query.qtype
+                );
+                return Ok((
+                    query.build_signed_error_response(
+                        OptRcode::SERVFAIL,
+                        None,
+                        identity.signer.as_mut(),
+                    )?,
+                    SoaResult::Failed,
+                ));
             }
         },
         Err(_) => TransferAccess::NotAuth,
