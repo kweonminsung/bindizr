@@ -9,7 +9,6 @@ use chrono::Utc;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::record::validation;
 use crate::types::{
     CreateBulkRecordsRequest, CreateBulkRecordsResponse, RecordDiffResponse, RecordResponse,
 };
@@ -50,7 +49,7 @@ pub async fn create_bulk(
     let prepared = records
         .iter()
         .map(|record| {
-            validation::parse_record_fields(
+            record::parse_record_fields(
                 &record.record_type,
                 &record.value,
                 record.ttl,
@@ -60,7 +59,7 @@ pub async fn create_bulk(
         .collect::<Result<Vec<_>, _>>()?;
     let owners: Vec<_> = records
         .iter()
-        .map(|record| validation::normalize_record_owner_name(&record.name, &zone_name))
+        .map(|record| record::normalize_record_owner_name(&record.name, &zone_name))
         .collect();
     let prepare_ms = time::elapsed_ms(started);
 
@@ -148,7 +147,7 @@ pub async fn create_bulk(
             // Fixed at write time: a later zone TTL change will not move it.
             let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
-            validation::validate_record_constraints(
+            record::validate_record_constraints(
                 records_at_name,
                 &owner,
                 prepared_record.record_type,

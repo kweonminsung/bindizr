@@ -7,7 +7,6 @@ use bindizr_db::LockLevel;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::record::validation;
 use crate::types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, record, serial, transaction, zone};
@@ -178,11 +177,11 @@ pub async fn delete_matching(
     request: &DeleteRecordsRequest,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
     let zone_name = zone::normalize_name(&request.zone_name)?;
-    let owner = validation::normalize_record_owner_name(&request.name, &zone_name)?;
+    let owner = record::normalize_record_owner_name(&request.name, &zone_name)?;
     let record_type = request
         .record_type
         .as_deref()
-        .map(validation::parse_record_type)
+        .map(record::parse_record_type)
         .transpose()?;
 
     if request.value.is_some() && record_type.is_none() {

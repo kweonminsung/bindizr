@@ -8,7 +8,6 @@ use bindizr_db::LockLevel;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::record::validation;
 use crate::types::{RecordResponse, UpdateRecordRequest, WriteRecordResponse};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, record, serial, transaction, ttl, zone};
@@ -39,7 +38,7 @@ fn resolve_update(
     let record_type = request
         .record_type
         .as_deref()
-        .map(validation::parse_record_type)
+        .map(record::parse_record_type)
         .transpose();
 
     // Omitted fields would read stored values the caller may not be allowed to see.
@@ -100,7 +99,7 @@ fn resolve_update(
             let encoded = value
                 .to_encoded_value(record_type, priority)
                 .map_err(ServiceError::invalid_record_value)?;
-            validation::validate_management_value(record_type, &encoded)?;
+            record::validate_management_value(record_type, &encoded)?;
             encoded
         }
         None => existing_record.value.clone(),
@@ -113,7 +112,7 @@ fn resolve_update(
 
     // An omitted name keeps the stored owner, which needs no reparse.
     let owner = match &request.name {
-        Some(name) => validation::normalize_record_owner_name(name, &zone.name)?,
+        Some(name) => record::normalize_record_owner_name(name, &zone.name)?,
         None => existing_record.name.clone(),
     };
 
@@ -229,7 +228,7 @@ async fn update_locked(
                     zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
                 let caller = caller.reauthenticate_tx(&mut tx).await?;
                 caller.authorize_zone_visible(&zone)?;
-                let owner = validation::normalize_record_owner_name(name, &zone.name)?;
+                let owner = record::normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller may read or update.
                 let mut matched: Vec<Record> = bindizr_db::record::list_by_name_tx(
@@ -301,7 +300,7 @@ async fn update_locked(
         .await
         .map_err(|error| ServiceError::internal_with_source("failed to update record", error))?;
 
-        validation::validate_record_constraints(
+        record::validate_record_constraints(
             &records_at_name,
             &candidate.name,
             candidate.record_type,

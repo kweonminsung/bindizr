@@ -7,7 +7,6 @@ use chrono::Utc;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse};
-use crate::zone::validation;
 use crate::{Context, Transaction, notify, serial, text, transaction, ttl, zone};
 
 /// Create a zone and NOTIFY the catalog; add an ordinary apex NS naming MNAME
@@ -115,10 +114,10 @@ pub async fn create(
 
 /// Resolve creation defaults once, before opening the transaction.
 fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
-    let zone_name = validation::normalize_name(&request.name)?;
-    validation::reject_catalog_zone_name(cx, &zone_name)?;
+    let zone_name = zone::normalize_name(&request.name)?;
+    zone::reject_catalog_zone_name(cx, &zone_name)?;
     let defaults = &cx.config().dns.zone_defaults;
-    let soa = validation::normalize_soa(
+    let soa = zone::normalize_soa(
         &request.mname,
         &request.rname,
         request.default_ttl.unwrap_or(i64::from(defaults.ttl)),

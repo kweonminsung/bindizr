@@ -8,8 +8,7 @@ use bindizr_core::model::zone::Zone;
 use crate::error::ServiceError;
 use crate::nsupdate::NsupdateError;
 use crate::nsupdate::operation::RecordOperation;
-use crate::zone::validation;
-use crate::{serial, ttl};
+use crate::{serial, ttl, zone};
 
 /// A wire update targets either ordinary records or the zone's SOA metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,7 +82,7 @@ fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Z
     let rname = SoaMailbox::from_encoded(value.rname)
         .to_email()
         .map_err(ServiceError::invalid_zone_field)?;
-    let normalized = validation::normalize_soa(&value.mname, &rname, i64::from(ttl))?;
+    let normalized = zone::normalize_soa(&value.mname, &rname, i64::from(ttl))?;
 
     Ok(Zone {
         serial,

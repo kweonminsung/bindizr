@@ -14,7 +14,6 @@ use chrono::Utc;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::record::validation;
 use crate::types::{
     ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,
 };
@@ -30,13 +29,13 @@ fn prepare_zone(
     soa: &ZoneFileSoa,
     default_ttl: Ttl,
 ) -> Result<Zone, ServiceError> {
-    zone::validation::reject_catalog_zone_name(cx, zone_name)?;
+    zone::reject_catalog_zone_name(cx, zone_name)?;
     let rname = SoaMailbox::from_encoded(&soa.rname)
         .to_email()
         .map_err(|error| {
             ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {error}"))
         })?;
-    let normalized = zone::validation::normalize_soa(&soa.mname, &rname, i64::from(default_ttl))?;
+    let normalized = zone::normalize_soa(&soa.mname, &rname, i64::from(default_ttl))?;
 
     Ok(Zone {
         id: ZoneId::UNWRITTEN,
@@ -163,14 +162,13 @@ pub(crate) async fn apply_import(
                     continue;
                 }
             };
-            let owner =
-                match validation::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
-                    Ok(owner) => owner,
-                    Err(error) => {
-                        errors.push(format!("{}: {error}", record.owner_fqdn));
-                        continue;
-                    }
-                };
+            let owner = match record::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
+                Ok(owner) => owner,
+                Err(error) => {
+                    errors.push(format!("{}: {error}", record.owner_fqdn));
+                    continue;
+                }
+            };
 
             let data = RecordData {
                 name: owner,
@@ -283,7 +281,7 @@ pub(crate) async fn apply_import(
                 .entry(desired_record.data.name.clone())
                 .or_default();
 
-            match validation::validate_record_constraints(
+            match record::validate_record_constraints(
                 records_at_name,
                 &desired_record.data.name,
                 desired_record.data.record_type,
