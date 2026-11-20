@@ -27,7 +27,6 @@ pub async fn delete(
         Ok(Some(record)) => record.zone_id,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(error) => {
-            log::error!("Failed to fetch record: {error}");
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
                 error,
@@ -46,7 +45,6 @@ pub async fn delete(
                 )));
             }
             Err(error) => {
-                log::error!("Failed to fetch zone: {error}");
                 return Err(ServiceError::internal_with_source(
                     "failed to fetch zone",
                     error,
@@ -61,7 +59,6 @@ pub async fn delete(
                 Ok(Some(record)) if record.zone_id == zone.id => record,
                 Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
                 Err(error) => {
-                    log::error!("Failed to fetch record: {error}");
                     return Err(ServiceError::internal_with_source(
                         "failed to fetch record",
                         error,

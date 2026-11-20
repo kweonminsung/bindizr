@@ -109,10 +109,7 @@ pub async fn create_bulk(
             LockLevel::Exclusive,
         )
         .await
-        .map_err(|error| {
-            log::error!("Failed to load zone records: {error}");
-            ServiceError::internal_with_source("failed to create records", error)
-        })?;
+        .map_err(|error| ServiceError::internal_with_source("failed to create records", error))?;
 
         timings.load_existing_ms = time::elapsed_ms(started);
 

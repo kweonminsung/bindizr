@@ -48,10 +48,9 @@ pub async fn probe_table(cx: &Context) -> Result<(), ServiceError> {
 
 /// List the zones the DNS plane serves, as the NOTIFY fan-out reads them.
 pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
-    let zones = bindizr_db::zone::list_all(cx.db()).await.map_err(|error| {
-        log::error!("Failed to fetch zones: {error}");
-        ServiceError::internal_with_source("failed to fetch zones", error)
-    })?;
+    let zones = bindizr_db::zone::list_all(cx.db())
+        .await
+        .map_err(|error| ServiceError::internal_with_source("failed to fetch zones", error))?;
     Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
 }
 
