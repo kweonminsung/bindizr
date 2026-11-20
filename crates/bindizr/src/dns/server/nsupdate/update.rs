@@ -115,6 +115,7 @@ mod tests {
 
     use bindizr_core::dns::message::Rcode;
     use bindizr_core::dns::nsupdate::parser::ValidateUpdateShapeError;
+    use bindizr_service::error::ErrorCode;
 
     use super::*;
 
@@ -131,7 +132,7 @@ mod tests {
             .downcast_ref::<NsupdateError>()
             .unwrap();
 
-        assert_eq!(nsupdate.rcode(), Rcode::FORMERR);
+        assert_eq!(nsupdate.rcode().ok(), Some(Rcode::FORMERR));
         assert_eq!(
             nsupdate
                 .source()
@@ -150,7 +151,10 @@ mod tests {
             .downcast_ref::<NsupdateError>()
             .unwrap();
 
-        assert_eq!(nsupdate.rcode(), Rcode::SERVFAIL);
+        assert_eq!(
+            nsupdate.rcode().map_err(ServiceError::code),
+            Err(ErrorCode::Internal)
+        );
         let service = nsupdate
             .source()
             .unwrap()

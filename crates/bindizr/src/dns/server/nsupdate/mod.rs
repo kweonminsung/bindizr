@@ -16,6 +16,7 @@ use bindizr_core::dns::{nsupdate, tsig};
 use bindizr_core::metrics::NsupdateResult;
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
+use bindizr_service::error::ErrorCode;
 use bindizr_service::nsupdate::NsupdateError;
 use bindizr_service::{Context, access, zone};
 use chrono::Utc;
@@ -235,7 +236,9 @@ async fn handle_nsupdate_request(
             )
         }
         Err(UpdateError::Nsupdate(error)) => {
-            let rcode = error.rcode();
+            let rcode = error
+                .rcode()
+                .unwrap_or_else(|service_error| update_rcode(service_error.code()));
             let ede = match rcode {
                 Rcode::REFUSED => Some(ExtendedErrorCode::PROHIBITED),
                 Rcode::NOTAUTH => Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
@@ -267,6 +270,55 @@ async fn handle_nsupdate_request(
     save_answered(cx, access_log, rcode, response.is_ok());
 
     Ok(response?)
+}
+
+/// Return the RCODE an UPDATE answers a service failure with. Every code is
+/// spelled out, so a new one has to choose its RCODE here.
+fn update_rcode(code: ErrorCode) -> Rcode {
+    match code {
+        // A server fault, which the requester may retry.
+        ErrorCode::Internal | ErrorCode::DnssecSigningFailed => Rcode::SERVFAIL,
+        // A refusal by policy: grants, zone rules, or a stored conflict
+        // (RFC 2136, Section 3.3; zone-policy failures are REFUSED, not malformed RDATA).
+        ErrorCode::InvalidInput
+        | ErrorCode::InvalidZoneField
+        | ErrorCode::InvalidRecordName
+        | ErrorCode::InvalidRecordValue
+        | ErrorCode::InvalidJsonBody
+        | ErrorCode::ZoneConflict
+        | ErrorCode::RecordConflict
+        | ErrorCode::TokenConflict
+        | ErrorCode::EndpointNotFound
+        | ErrorCode::MethodNotAllowed
+        | ErrorCode::ZoneNotFound
+        | ErrorCode::RecordNotFound
+        | ErrorCode::TokenNotFound
+        | ErrorCode::VersionNotFound
+        | ErrorCode::SecondaryNotFound
+        | ErrorCode::SecondaryConflict
+        | ErrorCode::TsigKeyNotFound
+        | ErrorCode::TsigKeyConflict
+        | ErrorCode::TsigKeyInUse
+        | ErrorCode::RoleNotFound
+        | ErrorCode::RoleConflict
+        | ErrorCode::RoleInUse
+        | ErrorCode::RoleGrantNotFound
+        | ErrorCode::DnssecAlreadyEnabled
+        | ErrorCode::DnssecNotEnabled
+        | ErrorCode::DnssecRolloverInProgress
+        | ErrorCode::DnssecNoRolloverInProgress
+        | ErrorCode::DnssecDsPublished
+        | ErrorCode::DnssecDsNotPublished
+        | ErrorCode::DnssecDsUnverified
+        | ErrorCode::DnssecPolicyNotFound
+        | ErrorCode::DnssecPolicyConflict
+        | ErrorCode::DnssecPolicyInUse
+        | ErrorCode::Unauthorized
+        | ErrorCode::InvalidToken
+        | ErrorCode::Forbidden
+        | ErrorCode::PayloadTooLarge
+        | ErrorCode::UnsupportedMediaType => Rcode::REFUSED,
+    }
 }
 
 /// Save an UPDATE whose TSIG was rejected with `rcode`: denied, under the key

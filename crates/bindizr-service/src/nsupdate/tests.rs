@@ -43,7 +43,7 @@ fn parse_update_owner_rejects_owners_outside_the_zone() {
     ] {
         let error =
             parse_update_owner(owner, &ZoneName::parse("example.com").unwrap()).unwrap_err();
-        assert_eq!(error.rcode(), Rcode::NOTZONE, "{owner:?}");
+        assert_eq!(error.rcode().ok(), Some(Rcode::NOTZONE), "{owner:?}");
     }
 }
 
@@ -53,7 +53,7 @@ fn parser_errors_retain_their_sources() {
     let shape = ValidateUpdateShapeError::NonzeroTtl;
     let error = NsupdateError::from(shape);
 
-    assert_eq!(error.rcode(), Rcode::FORMERR);
+    assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR));
     assert_eq!(
         error
             .source()
@@ -65,32 +65,26 @@ fn parser_errors_retain_their_sources() {
     let parse = ParseUpdateError::Rdata { record_type: "A" };
     let error = NsupdateError::from(parse.clone());
 
-    assert_eq!(error.rcode(), Rcode::FORMERR);
+    assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR));
     assert_eq!(
         error.source().unwrap().downcast_ref::<ParseUpdateError>(),
         Some(&parse)
     );
 }
 
-/// Verify that caller and backend failures stay typed, with their original DNS classifications.
+/// Verify that caller and backend failures stay typed and reach the transport
+/// unclassified, for it to map their codes.
 #[test]
-fn service_errors_retain_their_sources_and_classification() {
-    for (source, rcode) in [
-        (ServiceError::forbidden("denied"), Rcode::REFUSED),
-        (ServiceError::invalid_input("invalid"), Rcode::REFUSED),
-        (
-            ServiceError::internal_with_source("storage failed", io::Error::other("storage")),
-            Rcode::SERVFAIL,
-        ),
-        (
-            ServiceError::dnssec_signing_failed(io::Error::other("signer")),
-            Rcode::SERVFAIL,
-        ),
+fn service_errors_retain_their_sources_and_codes() {
+    for source in [
+        ServiceError::forbidden("denied"),
+        ServiceError::internal_with_source("storage failed", io::Error::other("storage")),
     ] {
+        let code = source.code();
         let message = source.to_string();
         let error = NsupdateError::from(source);
 
-        assert_eq!(error.rcode(), rcode);
+        assert_eq!(error.rcode().map_err(ServiceError::code), Err(code));
         assert_eq!(error.to_string(), message);
         let service = error
             .source()
@@ -98,7 +92,7 @@ fn service_errors_retain_their_sources_and_classification() {
             .downcast_ref::<ServiceError>()
             .unwrap();
 
-        if rcode == Rcode::SERVFAIL {
+        if code.is_internal() {
             assert!(service.source().unwrap().is::<io::Error>());
         }
     }
@@ -123,7 +117,7 @@ fn owner_errors_retain_their_sources_and_classification() {
         ),
     ] {
         let error = parse_update_owner(name, &zone_name).unwrap_err();
-        assert_eq!(error.rcode(), rcode);
+        assert_eq!(error.rcode().ok(), Some(rcode));
         assert_eq!(
             error.source().unwrap().downcast_ref::<ParseNameError>(),
             Some(&source)

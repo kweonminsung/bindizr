@@ -31,13 +31,13 @@ fn nsupdate_decode_rejects_managed_dnssec_changes_after_validating_wire_data() {
             decode_updates(&[record(class, Rtype::DNSKEY, 0, data)], &zone_name, data).unwrap_err();
 
         assert!(matches!(error, NsupdateError::ManagedType(Rtype::DNSKEY)));
-        assert_eq!(error.rcode(), Rcode::REFUSED);
+        assert_eq!(error.rcode().ok(), Some(Rcode::REFUSED));
     }
 
     for class in [Class::IN, Class::NONE] {
         let error =
             decode_updates(&[record(class, Rtype::DNSKEY, 0, &[1])], &zone_name, &[1]).unwrap_err();
-        assert_eq!(error.rcode(), Rcode::FORMERR);
+        assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR));
     }
 
     let value = [1, 1, 3, 13, 1];
@@ -75,7 +75,7 @@ fn nsupdate_decode_returns_formerr_for_malformed_sections() {
         record(Class::CH, Rtype::ANY, 0, &[]),
     ] {
         let error = decode_prerequisite(&prerequisite, &zone_name, &[]).unwrap_err();
-        assert_eq!(error.rcode(), Rcode::FORMERR, "{error}");
+        assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR), "{error}");
     }
 
     for update in [
@@ -85,7 +85,7 @@ fn nsupdate_decode_returns_formerr_for_malformed_sections() {
         record(Class::CH, Rtype::A, 0, &[1, 2, 3, 4]),
     ] {
         let error = decode_updates(&[update], &zone_name, &[]).unwrap_err();
-        assert_eq!(error.rcode(), Rcode::FORMERR, "{error}");
+        assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR), "{error}");
     }
 }
 
@@ -113,21 +113,21 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
                 assert!(result.unwrap().is_empty());
             } else {
                 // RFC 2136, Section 3.4.1.2: an unrecognized type fails the prescan.
-                assert_eq!(result.unwrap_err().rcode(), Rcode::FORMERR);
+                assert_eq!(result.unwrap_err().rcode().ok(), Some(Rcode::FORMERR));
             }
 
             for name in ["elsewhere.example.net.", r"outside\.example.com.", "."] {
                 let mut outside = valid.clone();
                 outside.name = name.to_string();
                 let error = decode_updates(&[outside], &zone_name, data).unwrap_err();
-                assert_eq!(error.rcode(), Rcode::NOTZONE, "{error}");
+                assert_eq!(error.rcode().ok(), Some(Rcode::NOTZONE), "{error}");
             }
 
             let mut malformed = valid;
             malformed.ttl = 1;
             let error = decode_updates(&[malformed], &zone_name, data).unwrap_err();
 
-            assert_eq!(error.rcode(), Rcode::FORMERR, "{error}");
+            assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR), "{error}");
         }
     }
 }
@@ -141,7 +141,7 @@ fn nsupdate_decode_prescans_all_records_before_decoding_operations() {
     let mut outside = record(Class::ANY, Rtype::SOA, 0, &[]);
     outside.name = "outside.example.net.".to_string();
     let error = decode_updates(&[malformed_add, outside], &zone_name, &[]).unwrap_err();
-    assert_eq!(error.rcode(), Rcode::NOTZONE, "{error}");
+    assert_eq!(error.rcode().ok(), Some(Rcode::NOTZONE), "{error}");
 }
 
 /// Verify that execution receives the checked owner, and an add with a

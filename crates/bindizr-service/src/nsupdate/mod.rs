@@ -72,9 +72,10 @@ pub enum NsupdateError {
 }
 
 impl NsupdateError {
-    /// Classify an UPDATE failure without consuming its original cause.
-    pub fn rcode(&self) -> Rcode {
-        match self {
+    /// Return the RCODE RFC 2136 gives this outcome, or the wrapped
+    /// `ServiceError` whose code the transport maps to its own RCODE.
+    pub fn rcode(&self) -> Result<Rcode, &ServiceError> {
+        let rcode = match self {
             // RFC 2136, Section 3.4.1.2: an unrecognized type is a prescan failure.
             Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) | Self::UnsupportedType(_) => {
                 Rcode::FORMERR
@@ -92,15 +93,16 @@ impl NsupdateError {
             Self::NxRrset(_) => Rcode::NXRRSET,
             Self::NotAuth(_) => Rcode::NOTAUTH,
             Self::Refused(_) => Rcode::REFUSED,
-            Self::Service(error) if error.code().is_internal() => Rcode::SERVFAIL,
-            Self::Service(_) => Rcode::REFUSED,
-        }
+            Self::Service(error) => return Err(error),
+        };
+
+        Ok(rcode)
     }
 }
 
-/// A database failure is a backend fault, classified through the service error.
+/// A database failure is a backend fault, carried as the service error.
 impl From<DatabaseError> for NsupdateError {
-    /// Map a database failure to SERVFAIL.
+    /// Wrap a database failure in its service error.
     fn from(error: DatabaseError) -> Self {
         Self::from(ServiceError::from(error))
     }
