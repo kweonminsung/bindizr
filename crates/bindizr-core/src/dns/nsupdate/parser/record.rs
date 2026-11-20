@@ -85,8 +85,8 @@ impl UpdateRecord {
     pub fn to_soa_value(&self, message: &[u8]) -> Result<SoaRecordValue<String>, ParseUpdateError> {
         let data = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
         Ok(SoaRecordValue {
-            mname: parser::to_presentation_name(data.mname())?,
-            rname: parser::to_presentation_name(data.rname())?,
+            mname: parser::to_presentation_name(data.mname()),
+            rname: parser::to_presentation_name(data.rname()),
             serial: data.serial().into_int(),
             refresh: data.refresh().as_secs(),
             retry: data.retry().as_secs(),
@@ -147,12 +147,7 @@ impl UpdateRecord {
                 let name = self.parse_rdata(message, record_type.as_str(), |parser| {
                     ParsedName::parse(parser).ok()
                 })?;
-                let value = parser::to_presentation_name(&name).map_err(|error| {
-                    ParseUpdateError::RdataName {
-                        record_type: record_type.as_str(),
-                        source: Box::new(error),
-                    }
-                })?;
+                let value = parser::to_presentation_name(&name);
 
                 Ok((record_type, value, None))
             }
@@ -173,13 +168,7 @@ impl UpdateRecord {
             RecordType::Naptr => {
                 let data =
                     self.parse_rdata(message, "NAPTR", |parser| Naptr::parse(parser).ok())?;
-                let replacement =
-                    parser::to_presentation_name(data.replacement()).map_err(|error| {
-                        ParseUpdateError::RdataName {
-                            record_type: "NAPTR",
-                            source: Box::new(error),
-                        }
-                    })?;
+                let replacement = parser::to_presentation_name(data.replacement());
                 let value = NaptrRecordValue::from_wire(
                     data.order(),
                     data.preference(),
@@ -203,23 +192,13 @@ impl UpdateRecord {
             }
             RecordType::Mx => {
                 let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
-                let host = parser::to_presentation_name(data.exchange()).map_err(|error| {
-                    ParseUpdateError::RdataName {
-                        record_type: "MX",
-                        source: Box::new(error),
-                    }
-                })?;
+                let host = parser::to_presentation_name(data.exchange());
 
                 Ok((RecordType::Mx, host, Some(i32::from(data.preference()))))
             }
             RecordType::Srv => {
                 let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
-                let target = parser::to_presentation_name(data.target()).map_err(|error| {
-                    ParseUpdateError::RdataName {
-                        record_type: "SRV",
-                        source: Box::new(error),
-                    }
-                })?;
+                let target = parser::to_presentation_name(data.target());
 
                 // Priority lives in its own column, so the value holds the rest.
                 Ok((
