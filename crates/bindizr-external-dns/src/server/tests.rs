@@ -363,12 +363,12 @@ async fn apply_changes_rejects_invalid_input_without_calling_bindizr() {
 
     let (status, body) = post(
         &format!("{base}/records"),
-        json!({ "create": [{ "dnsName": "a.example.com", "targets": ["x"], "recordType": "SRV" }] }),
+        json!({ "create": [{ "dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "setIdentifier": "weighted" }] }),
     )
     .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body.contains("not supported"));
+    assert!(body.contains("setIdentifier"));
 
     let (status, _) = post(&format!("{base}/records"), json!({ "create": "nope" })).await;
 
@@ -506,8 +506,9 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     assert_eq!(recorded[0].0, "/external-dns/adjust");
     assert_eq!(
         serde_json::from_str::<Value>(&recorded[0].2).unwrap(),
+        // Sent as the caller spelled it: the server canonicalizes the type.
         json!({ "records": [
-            { "name": "a.example.com", "type": "AAAA", "ttl": 300, "values": ["2001:0DB8::1"] },
+            { "name": "a.example.com", "type": "aaaa", "ttl": 300, "values": ["2001:0DB8::1"] },
             { "name": "b.example.com", "type": "TXT", "values": ["v=spf1 -all"] }
         ] })
     );

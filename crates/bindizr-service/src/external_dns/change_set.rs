@@ -14,7 +14,7 @@ use chrono::Utc;
 use crate::error::ServiceError;
 use crate::external_dns::policy;
 use crate::types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord};
-use crate::{record, ttl};
+use crate::{external_dns, record, ttl};
 
 /// Desired records with row-encoded values and an absolute owner before zone resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,11 +189,15 @@ impl ZoneChangeSet {
 
 /// Parse a record type the ExternalDNS API manages.
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {
-    RecordType::parse_external_dns_supported(record_type).ok_or_else(|| {
-        ServiceError::invalid_input(format!(
-            "record type '{record_type}' is not supported by the ExternalDNS API"
-        ))
-    })
+    record_type
+        .parse::<RecordType>()
+        .ok()
+        .filter(|parsed| external_dns::RECORD_TYPES.contains(parsed))
+        .ok_or_else(|| {
+            ServiceError::invalid_input(format!(
+                "record type '{record_type}' is not supported by the ExternalDNS API"
+            ))
+        })
 }
 
 /// Normalize an omitted TTL: ExternalDNS sends TTL 0 for "not configured";

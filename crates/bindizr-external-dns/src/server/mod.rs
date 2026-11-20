@@ -240,8 +240,8 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
     }
 }
 
-/// `POST /adjustendpoints` — validate locally, canonicalize on the bindizr
-/// server so this answer cannot drift from the stored form.
+/// `POST /adjustendpoints` — refuse a `setIdentifier` locally, canonicalize on
+/// the bindizr server so this answer cannot drift from the stored form.
 async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> Response {
     let endpoints: Vec<Endpoint> = match serde_json::from_str(&body) {
         Ok(endpoints) => endpoints,

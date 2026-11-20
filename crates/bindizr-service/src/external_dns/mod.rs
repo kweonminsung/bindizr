@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub use apply::apply_changes;
 use bindizr_core::dns::Ttl;
-use bindizr_core::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey};
+use bindizr_core::model::record::{RecordSetKey, RecordType};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::record::RecordFilter;
 use bindizr_db::zone::ZoneFilter;
@@ -20,6 +20,14 @@ use crate::types::{
     AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse, ExternalDnsRecord,
 };
 use crate::{Context, grant_pattern};
+
+/// The record types the ExternalDNS API manages.
+pub(crate) const RECORD_TYPES: &[RecordType] = &[
+    RecordType::A,
+    RecordType::Aaaa,
+    RecordType::Cname,
+    RecordType::Txt,
+];
 
 /// DB read page size; the protocol still returns all endpoints in one response.
 const RECORD_READ_PAGE: u32 = 5000;
@@ -70,7 +78,7 @@ pub async fn list_managed_domains(
     let mut domains = BTreeSet::new();
 
     for zone in &zones {
-        for pattern in grants.patterns_holding(zone.id, &SYNC_ACTIONS, EXTERNAL_DNS_RECORD_TYPES) {
+        for pattern in grants.patterns_holding(zone.id, &SYNC_ACTIONS, RECORD_TYPES) {
             domains.insert(policy::normalize_lookup_name(
                 &grant_pattern::pattern_domain(pattern, &zone.name),
             )?);
@@ -109,7 +117,7 @@ pub async fn list_records(
         for record_with_zone in records_with_zones {
             let record = record_with_zone.record();
 
-            if !record.record_type.is_external_dns_supported() {
+            if !RECORD_TYPES.contains(&record.record_type) {
                 continue;
             }
 
