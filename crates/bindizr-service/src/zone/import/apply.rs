@@ -136,7 +136,8 @@ pub(crate) async fn apply_import(
             }
         };
         timings.parse_ms = time::elapsed_ms(started);
-        let mut errors = parsed.errors;
+        // The parser keeps its causes typed; the response is where they become text.
+        let mut errors: Vec<String> = parsed.errors.iter().map(ToString::to_string).collect();
         let mut skipped = 0usize;
 
         // Normalize parsed records and drop duplicates within the file by identity.

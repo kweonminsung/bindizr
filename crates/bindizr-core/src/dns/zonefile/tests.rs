@@ -49,7 +49,7 @@ fn parse_reads_generic_rdata_of_known_types() {
         parsed
             .errors
             .iter()
-            .any(|error| error.contains("does not encode a A record")),
+            .any(|error| error.to_string().contains("does not encode a A record")),
         "{:?}",
         parsed.errors
     );
@@ -67,7 +67,10 @@ fn parse_error_names_the_line_of_the_submitted_text() {
     );
 
     assert!(
-        parsed.errors.iter().any(|error| error.contains(": 2:")),
+        parsed
+            .errors
+            .iter()
+            .any(|error| error.to_string().contains(": 2:")),
         "expected the error to name line 2, got: {:?}",
         parsed.errors
     );
@@ -114,7 +117,9 @@ fn zonefile_rejects_ttl_units() {
     assert_eq!(parsed.records.len(), 1);
     assert_eq!(parsed.errors.len(), 1, "{:?}", parsed.errors);
     assert!(
-        parsed.errors[0].starts_with("failed to parse zone file: 2:"),
+        parsed.errors[0]
+            .to_string()
+            .starts_with("failed to parse zone file: 2:"),
         "{}",
         parsed.errors[0]
     );
@@ -168,7 +173,7 @@ fn zonefile_rejects_non_apex_soa() {
         parsed
             .errors
             .iter()
-            .any(|error| error.contains("does not belong to zone")),
+            .any(|error| error.to_string().contains("does not belong to zone")),
         "{:?}",
         parsed.errors
     );
@@ -195,7 +200,7 @@ fn zonefile_rejects_non_apex_soa() {
         parsed
             .errors
             .iter()
-            .any(|error| error.contains("more than one SOA")),
+            .any(|error| error.to_string().contains("more than one SOA")),
         "{:?}",
         parsed.errors
     );
@@ -283,7 +288,12 @@ fn transfer_rejects_unsupported_ordinary_types() {
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
 
     assert_eq!(parsed.records.len(), 1);
-    assert!(parsed.errors.iter().any(|error| error.contains("HINFO")));
+    assert!(
+        parsed
+            .errors
+            .iter()
+            .any(|error| error.to_string().contains("HINFO"))
+    );
 }
 
 /// Verify that wire conversion preserves label boundaries.
