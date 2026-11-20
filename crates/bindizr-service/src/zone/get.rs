@@ -30,16 +30,6 @@ pub(crate) async fn find_served_by_name(
         .filter(|zone| zone.enabled))
 }
 
-/// Find a zone in the caller's transaction at `lock_level`, including disabled zones
-/// so imports can still write their records.
-pub(crate) async fn find_by_name_tx(
-    tx: &mut Transaction<'_>,
-    zone_name: &ZoneName,
-    lock_level: LockLevel,
-) -> Result<Option<Zone>, ServiceError> {
-    Ok(bindizr_db::zone::get_by_name_tx(tx, zone_name, lock_level).await?)
-}
-
 /// Probe the database with a cheap round-trip (limit-1 zones probe), for
 /// health checks.
 pub async fn probe_table(cx: &Context) -> Result<(), ServiceError> {
@@ -54,24 +44,13 @@ pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
     Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
 }
 
-/// Count all zones, for the unauthenticated metrics endpoint.
+/// Count all zones, for reports that expose no zone data: metrics, daemon
+/// status, doctor.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(
         bindizr_db::zone::count_by_filter(cx.db(), &bindizr_db::zone::ZoneFilter::default())
             .await?,
     )
-}
-
-/// Count the zones visible to `caller`.
-pub async fn count(cx: &Context, caller: &Caller) -> Result<u64, ServiceError> {
-    Ok(bindizr_db::zone::count_by_filter(
-        cx.db(),
-        &bindizr_db::zone::ZoneFilter {
-            scope_role_id: caller.scope_role_id(),
-            ..Default::default()
-        },
-    )
-    .await?)
 }
 
 /// List the zones matching `filter` that the caller may see, restricted in
@@ -81,16 +60,18 @@ pub async fn list_by_filter(
     caller: &Caller,
     filter: &ZoneFilter,
 ) -> Result<PaginatedResponse<ZoneResponse>, ServiceError> {
-    for ttl in [
-        filter.default_ttl,
-        filter.min_default_ttl,
-        filter.max_default_ttl,
-    ]
-    .into_iter()
-    .flatten()
-    {
-        ttl::validate_record_ttl(ttl)?;
-    }
+    let default_ttl = filter
+        .default_ttl
+        .map(ttl::validate_record_ttl)
+        .transpose()?;
+    let min_default_ttl = filter
+        .min_default_ttl
+        .map(ttl::validate_record_ttl)
+        .transpose()?;
+    let max_default_ttl = filter
+        .max_default_ttl
+        .map(ttl::validate_record_ttl)
+        .transpose()?;
 
     let scope_role_id = caller.scope_role_id();
     pagination::validate_page_limit(filter.limit)?;
@@ -106,9 +87,9 @@ pub async fn list_by_filter(
         id: filter.id,
         mname: filter.mname.clone(),
         rname: filter.rname.clone(),
-        default_ttl: filter.default_ttl,
-        min_default_ttl: filter.min_default_ttl,
-        max_default_ttl: filter.max_default_ttl,
+        default_ttl,
+        min_default_ttl,
+        max_default_ttl,
         serial: filter.serial,
         min_serial: filter.min_serial,
         max_serial: filter.max_serial,

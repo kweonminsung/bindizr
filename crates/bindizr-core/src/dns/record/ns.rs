@@ -9,10 +9,7 @@ pub struct NsRecordValue<'a> {
 impl<'a> NsRecordValue<'a> {
     /// Parse and validate a NS record value.
     pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
-        // RFC 2181, Section 11 permits the root as a domain-name value.
-        if value != "." {
-            value::validate_domain_record_value("NS record value", value)?;
-        }
+        value::validate_domain_record_value("NS record value", value)?;
 
         Ok(Self { target: value })
     }

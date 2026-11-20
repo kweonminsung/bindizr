@@ -24,9 +24,6 @@ pub(crate) enum UpstreamError {
     /// bindizr answered something that was not the payload asked for.
     #[error("invalid response from bindizr: {0}")]
     InvalidResponse(#[source] reqwest::Error),
-    /// bindizr answered, but the token reaches no zone this adapter could manage.
-    #[error("no manageable names")]
-    NoManageableNames,
 }
 
 /// Why the client to bindizr could not be built.
@@ -162,15 +159,6 @@ impl UpstreamClient {
             .map_err(UpstreamError::InvalidResponse)?;
 
         Ok(body.records)
-    }
-
-    /// Check token access to at least one manageable name; unauthenticated `/health` cannot prove it.
-    pub(crate) async fn probe_health(&self) -> Result<(), UpstreamError> {
-        if self.list_domains().await?.is_empty() {
-            Err(UpstreamError::NoManageableNames)
-        } else {
-            Ok(())
-        }
     }
 
     /// Fetch and deserialize a JSON response from a bindizr API path.

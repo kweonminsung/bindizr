@@ -6,9 +6,8 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use bindizr_core::config::ImportConfig;
-use bindizr_core::dns::dnssec::EncodeWireNameError;
 use bindizr_core::dns::message::{EncodeMessageError, Name, Rtype};
-use bindizr_core::dns::name::{ParseNameError, ZoneName};
+use bindizr_core::dns::name::{EncodeWireNameError, ParseNameError, ZoneName};
 use bindizr_core::dns::query::{ParseResponseError, TransferMessagePosition, TransferRecord};
 use bindizr_core::dns::record::ParseRdataError;
 use bindizr_core::dns::{message, name, query};
@@ -19,7 +18,7 @@ use tokio::time;
 use tokio::time::Instant;
 
 use crate::dns_client;
-use crate::dns_client::{ReadTcpMessageError, ResolveAddressError};
+use crate::dns_client::ResolveAddressError;
 
 /// Why a zone could not be pulled from another server.
 #[derive(Debug, Error)]
@@ -52,7 +51,7 @@ pub(crate) enum FetchZoneError {
     #[error(transparent)]
     Encode(#[from] EncodeMessageError),
     #[error("read failed before the closing SOA: {0}")]
-    Read(#[source] ReadTcpMessageError),
+    Read(#[source] io::Error),
     #[error(transparent)]
     Response(#[from] ParseResponseError),
     #[error(transparent)]
@@ -143,7 +142,8 @@ impl AxfrClient {
         }
     }
 
-    /// Fetch AXFR records including delimiting SOAs (RFC 5936, Section 2.2) on
+    /// Fetch a zone's AXFR records, opening SOA first, the closing SOA that
+    /// delimits the stream (RFC 5936, Section 2.2) checked and dropped, on
     /// the connection, opening or reopening it once; the whole has `import`'s timeout.
     pub(crate) async fn fetch_zone(
         &mut self,
@@ -309,8 +309,6 @@ async fn fetch_zone_on_stream(
                 if index + 1 != batch_len {
                     return Err(FetchZoneError::RecordsAfterClosingSoa);
                 }
-
-                records.push(record);
 
                 return Ok((records, idle_timeout));
             }

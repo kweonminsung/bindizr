@@ -37,16 +37,17 @@ pub struct CatalogZone {
     pub minimum_ttl: Ttl,
 }
 
-/// Build a schema-2 member PTR owner using the same prefix startup validates.
-pub(crate) fn catalog_member_owner_name(catalog_zone_name: &ZoneName, zone_name: &str) -> String {
+/// Build a schema-2 member PTR owner, relative to the catalog zone, using the
+/// same prefix startup validates.
+pub(crate) fn catalog_member_owner_name(zone_name: &ZoneName) -> OwnerName {
     let member_id = zone_name_to_member_id(zone_name);
-    format!("{member_id}.{MEMBER_SUBTREE}.{catalog_zone_name}.")
+    OwnerName::from_row(&format!("{member_id}.{MEMBER_SUBTREE}"))
 }
 
 /// Build a stable member label from truncated SHA-256 (RFC 9432, Section 4.1).
-pub(crate) fn zone_name_to_member_id(zone_name: &str) -> String {
-    // Case-insensitive per RFC 4343, matching the catalog digest.
-    let digest = digest::digest(&SHA256, zone_name.to_ascii_lowercase().as_bytes());
+pub(crate) fn zone_name_to_member_id(zone_name: &ZoneName) -> String {
+    // A zone name is case-folded by construction (RFC 4343), so one zone has one id.
+    let digest = digest::digest(&SHA256, zone_name.as_str().as_bytes());
     hex::encode(&digest.as_ref()[..MEMBER_ID_DIGEST_LEN])
 }
 

@@ -18,15 +18,11 @@ pub enum ParseDnssecKeyError {
     Algorithm { value: String },
     #[error("unsupported DNSSEC algorithm number {value}")]
     AlgorithmNumber { value: i32 },
-    #[error("unsupported DNSSEC key role '{value}' (supported: csk, ksk, zsk)")]
+    #[error("unsupported DNSSEC key role '{value}' (supported: {})", DnssecKeyRole::supported_names().join(", "))]
     Role { value: String },
     #[error("unsupported DNSSEC key state '{value}' (supported: published, active, retired)")]
     State { value: String },
 }
-
-/// Digest for DS/CDS generated from bindizr's keys: SHA-256, recommended by
-/// the IANA registry under RFC 9904. Raw user-supplied DS records are separate.
-pub const DS_DIGEST_TYPE: u8 = 2;
 
 /// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -48,8 +44,8 @@ pub enum DnssecAlgorithm {
 }
 
 impl DnssecAlgorithm {
-    /// Return the IANA algorithm number, the storage form.
-    pub fn as_i32(self) -> i32 {
+    /// Return the IANA algorithm number, the wire octet.
+    pub fn as_u8(self) -> u8 {
         match self {
             Self::RsaSha256 => 8,
             Self::RsaSha512 => 10,
@@ -59,6 +55,21 @@ impl DnssecAlgorithm {
             Self::Ed448 => 16,
         }
     }
+
+    /// Return the IANA algorithm number, the storage form.
+    pub fn as_i32(self) -> i32 {
+        i32::from(self.as_u8())
+    }
+
+    /// Every DnssecAlgorithm value, in declaration order.
+    pub const ALL: [Self; 6] = [
+        Self::RsaSha256,
+        Self::RsaSha512,
+        Self::EcdsaP256Sha256,
+        Self::EcdsaP384Sha384,
+        Self::Ed25519,
+        Self::Ed448,
+    ];
 
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
@@ -72,16 +83,9 @@ impl DnssecAlgorithm {
         }
     }
 
-    /// List all supported algorithm names, for error messages.
-    fn supported_names() -> &'static [&'static str] {
-        &[
-            "rsasha256",
-            "rsasha512",
-            "ecdsap256sha256",
-            "ecdsap384sha384",
-            "ed25519",
-            "ed448",
-        ]
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 
@@ -140,6 +144,9 @@ pub enum DnssecKeyRole {
 }
 
 impl DnssecKeyRole {
+    /// Every DnssecKeyRole value, in declaration order.
+    pub const ALL: [Self; 3] = [Self::Csk, Self::Ksk, Self::Zsk];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -162,6 +169,11 @@ impl DnssecKeyRole {
         } else {
             256
         }
+    }
+
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 
@@ -348,58 +360,4 @@ impl DnssecKey {
 }
 
 #[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-
-    /// Verify that `DnssecAlgorithm` has one spelling across `as_str`, serde, and `FromStr`.
-    #[test]
-    fn dnssec_algorithm_spells_itself_once() {
-        for value in [
-            DnssecAlgorithm::RsaSha256,
-            DnssecAlgorithm::RsaSha512,
-            DnssecAlgorithm::EcdsaP256Sha256,
-            DnssecAlgorithm::EcdsaP384Sha384,
-            DnssecAlgorithm::Ed25519,
-            DnssecAlgorithm::Ed448,
-        ] {
-            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
-            assert_eq!(
-                serde_json::from_value::<DnssecAlgorithm>(json!(value.as_str())).unwrap(),
-                value
-            );
-            assert_eq!(value.as_str().parse::<DnssecAlgorithm>().unwrap(), value);
-        }
-    }
-
-    /// Verify that `DnssecKeyRole` has one spelling across `as_str`, serde, and `FromStr`.
-    #[test]
-    fn dnssec_key_role_spells_itself_once() {
-        for value in [DnssecKeyRole::Csk, DnssecKeyRole::Ksk, DnssecKeyRole::Zsk] {
-            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
-            assert_eq!(
-                serde_json::from_value::<DnssecKeyRole>(json!(value.as_str())).unwrap(),
-                value
-            );
-            assert_eq!(value.as_str().parse::<DnssecKeyRole>().unwrap(), value);
-        }
-    }
-
-    /// Verify that `DnssecKeyState` has one spelling across `as_str`, serde, and `FromStr`.
-    #[test]
-    fn dnssec_key_state_spells_itself_once() {
-        for value in [
-            DnssecKeyState::Published,
-            DnssecKeyState::Active,
-            DnssecKeyState::Retired,
-        ] {
-            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
-            assert_eq!(
-                serde_json::from_value::<DnssecKeyState>(json!(value.as_str())).unwrap(),
-                value
-            );
-            assert_eq!(value.as_str().parse::<DnssecKeyState>().unwrap(), value);
-        }
-    }
-}
+mod tests;

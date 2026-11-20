@@ -11,7 +11,8 @@ id_newtype!(
     ZoneId
 );
 
-/// Zone metadata used to generate the SOA and NS records.
+/// A zone row: the SOA fields and zone settings the served SOA is built from.
+/// Apex NS records are ordinary record rows, seeded once by zone creation.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Zone {
     pub id: ZoneId,

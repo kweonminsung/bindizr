@@ -1,5 +1,5 @@
-use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::{Serial, Ttl};
 use bindizr_core::model::dnssec_policy::PolicyId;
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::zone::{Zone, ZoneId};
@@ -18,9 +18,9 @@ pub struct ZoneFilter {
     pub id: Option<ZoneId>,
     pub mname: Option<String>,
     pub rname: Option<String>,
-    pub default_ttl: Option<i64>,
-    pub min_default_ttl: Option<i64>,
-    pub max_default_ttl: Option<i64>,
+    pub default_ttl: Option<Ttl>,
+    pub min_default_ttl: Option<Ttl>,
+    pub max_default_ttl: Option<Ttl>,
     pub serial: Option<Serial>,
     pub min_serial: Option<Serial>,
     pub max_serial: Option<Serial>,

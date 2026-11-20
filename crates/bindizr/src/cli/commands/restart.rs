@@ -42,9 +42,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
 
     match replaced {
         Some(status) => {
-            let pid = status
-                .pid
-                .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
+            let pid = status.pid;
 
             if output == OutputFormat::Table {
                 outln!("Bindizr restarted: pid {pid} (version {})", status.version);

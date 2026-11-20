@@ -15,9 +15,9 @@ use crate::model::change::{ChangeActor, ChangeActorColumns};
 /// An access column holding a source or result bindizr does not record.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseAccessLogError {
-    #[error("unsupported access source '{value}' (supported: api, nsupdate)")]
+    #[error("unsupported access source '{value}' (supported: {})", AccessSource::supported_names().join(", "))]
     Source { value: String },
-    #[error("unsupported access result '{value}' (supported: ok, denied, failed)")]
+    #[error("unsupported access result '{value}' (supported: {})", AccessResult::supported_names().join(", "))]
     Result { value: String },
 }
 
@@ -32,12 +32,20 @@ pub enum AccessSource {
 }
 
 impl AccessSource {
+    /// Every AccessSource value, in declaration order.
+    pub const ALL: [Self; 2] = [Self::Api, Self::Nsupdate];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Api => "api",
             Self::Nsupdate => "nsupdate",
         }
+    }
+
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 
@@ -86,6 +94,9 @@ pub enum AccessResult {
 }
 
 impl AccessResult {
+    /// Every AccessResult value, in declaration order.
+    pub const ALL: [Self; 3] = [Self::Ok, Self::Denied, Self::Failed];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -93,6 +104,11 @@ impl AccessResult {
             Self::Denied => "denied",
             Self::Failed => "failed",
         }
+    }
+
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 

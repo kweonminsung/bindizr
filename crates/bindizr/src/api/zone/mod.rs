@@ -23,7 +23,7 @@ pub(crate) use history::{
 pub(crate) use import::{__path_import_zone, __path_import_zones, import_zone, import_zones};
 pub(crate) use status::{__path_get_zone_status, get_zone_status};
 
-use crate::api::middleware::body_parser::MAX_UPLOAD_BODY_BYTES;
+use crate::api::extract::MAX_UPLOAD_BODY_BYTES;
 
 /// Build the zone API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

@@ -13,7 +13,7 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use crate::authorization::Caller;
-use crate::dnssec::{SignedZone, parent_ns_addrs, status};
+use crate::dnssec::{SignedZone, parent_ns_addrs};
 use crate::error::ServiceError;
 use crate::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest,
@@ -136,7 +136,7 @@ pub async fn enable(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::lookup_status_tx(
+        let response = dnssec::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -288,7 +288,7 @@ pub async fn update_settings(
         .await?;
 
         let response =
-            status::lookup_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial)
+            dnssec::lookup_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial)
                 .await?;
 
         Ok((response, new_serial != candidate.serial))
@@ -363,7 +363,6 @@ pub async fn disable(
                 record_rdata: Some(record.rdata.clone()),
                 record_ttl: record.ttl,
                 record_priority: None,
-                derived: true,
             })
             .collect();
 

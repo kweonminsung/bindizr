@@ -193,7 +193,6 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
                 }),
             )
             .await?;
-            log::debug!("Audit log result: {response:?}");
             output::print_page(&response.data, output, |log| AuditLogRow::from(log))?;
         }
         LogCommand::Access {
@@ -224,7 +223,6 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
                 }),
             )
             .await?;
-            log::debug!("Access log result: {response:?}");
             output::print_page(&response.data, output, |log| AccessLogRow::from(log))?;
         }
         LogCommand::Transfer {
@@ -255,7 +253,6 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
                 }),
             )
             .await?;
-            log::debug!("Transfer log result: {response:?}");
             output::print_page(&response.data, output, |log| TransferLogRow::from(log))?;
         }
     }

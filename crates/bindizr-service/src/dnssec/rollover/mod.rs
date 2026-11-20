@@ -1,5 +1,6 @@
-//! Operator-driven key pre-publication and promotion after parent DS confirmation.
-//! The scheduler promotes ZSKs without parent interaction.
+//! Operator rollover entry points, and the key-transition steps they share with
+//! `dnssec::maintenance`, whose scheduler transactions advance the same
+//! transitions on deadlines and on the parent's DS answer.
 
 use bindizr_core::dns::dnssec::{KeyTag, SigningPass};
 use bindizr_core::dns::name::ZoneName;
@@ -13,7 +14,7 @@ use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
 use crate::authorization::Caller;
-use crate::dnssec::{SignedZone, status};
+use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown,
@@ -93,7 +94,7 @@ pub async fn start_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::lookup_status_tx(
+        let response = dnssec::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -218,7 +219,7 @@ pub async fn advance_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::lookup_status_tx(
+        let response = dnssec::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),

@@ -84,9 +84,6 @@ impl IntoResponse for UpstreamError {
             error @ (Self::Unreachable(_) | Self::InvalidResponse(_)) => {
                 (StatusCode::BAD_GATEWAY, error.to_string()).into_response()
             }
-            Self::NoManageableNames => {
-                (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
-            }
         }
     }
 }
@@ -281,11 +278,15 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
     }
 }
 
-/// `GET /healthz` — report that this process is up, bindizr answers, and it
-/// accepts the adapter's token.
+/// `GET /healthz` — report that this process is up, bindizr answers, and the
+/// adapter's token reaches a manageable name, which bindizr's unauthenticated
+/// `/health` cannot prove.
 async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
-    match state.upstream.probe_health().await {
-        Ok(()) => (StatusCode::OK, "ok").into_response(),
+    match state.upstream.list_domains().await {
+        Ok(domains) if domains.is_empty() => {
+            (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
+        }
+        Ok(_) => (StatusCode::OK, "ok").into_response(),
         Err(UpstreamError::Rejected { status, message }) => (
             StatusCode::SERVICE_UNAVAILABLE,
             format!("bindizr answered {status}: {message}"),
@@ -293,9 +294,6 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
             .into_response(),
         Err(error @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_))) => {
             (StatusCode::SERVICE_UNAVAILABLE, error.to_string()).into_response()
-        }
-        Err(UpstreamError::NoManageableNames) => {
-            (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
         }
     }
 }

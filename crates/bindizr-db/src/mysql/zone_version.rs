@@ -30,7 +30,7 @@ const EXCLUDE_PAST_SIGNER_ONLY_FILTER: &str = r#"
 pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, MySql>,
     version: ZoneVersion,
-) -> Result<ZoneVersion, DatabaseError> {
+) -> Result<(), DatabaseError> {
     let (changed_by_kind, changed_by_name) = version
         .changed_by
         .as_ref()
@@ -70,9 +70,7 @@ pub(crate) async fn upsert_tx(
     .execute(&mut **tx)
     .await?;
 
-    get_by_serial_tx(tx, version.zone_id, version.serial, LockLevel::Unlocked)
-        .await?
-        .ok_or_else(|| DatabaseError::QueryFailed(sqlx::Error::RowNotFound))
+    Ok(())
 }
 
 /// List the versions with serial in the closed interval `[from_serial,

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use base64::DecodeError;
 use base64::engine::general_purpose;
-use domain::base::iana::{Rcode, TsigRcode};
+use domain::base::iana::{Class, Rcode, TsigRcode};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, ToName};
 use domain::rdata::tsig::{Time48, Tsig};
@@ -54,8 +54,12 @@ pub enum TsigError {
     /// The caller checked for a TSIG record, so `domain` must find one too.
     #[error("TSIG record not found during validation")]
     RecordMissing,
-    #[error("failed to build TSIG error response ({rcode})")]
-    BuildResponse { rcode: TsigRcode },
+    #[error("failed to build TSIG error response ({rcode}): {source}")]
+    BuildResponse {
+        rcode: TsigRcode,
+        #[source]
+        source: LibraryError,
+    },
     /// Validation failed; authenticated errors retain the key and server time for the encoder.
     #[error("TSIG validation failed: {rcode}")]
     Rejected {
@@ -200,11 +204,6 @@ pub fn verify_response(
     Ok(())
 }
 
-/// Return the bytes a signed message must leave for its TSIG record.
-pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
-    usize::from(signer.key().compose_len())
-}
-
 impl TsigKey {
     /// Decode and validate this stored key for TSIG signing and verification.
     pub fn to_signing_key(&self) -> Result<TsigSigningKey, TsigError> {
@@ -217,11 +216,12 @@ impl TsigKey {
             source: Box::new(error),
         })?;
 
-        let (algorithm, hmac_algorithm) = match self.algorithm {
-            TsigAlgorithm::HmacSha1 => (Algorithm::Sha1, hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY),
-            TsigAlgorithm::HmacSha256 => (Algorithm::Sha256, hmac::HMAC_SHA256),
-            TsigAlgorithm::HmacSha384 => (Algorithm::Sha384, hmac::HMAC_SHA384),
-            TsigAlgorithm::HmacSha512 => (Algorithm::Sha512, hmac::HMAC_SHA512),
+        let algorithm = Algorithm::from(self.algorithm);
+        let hmac_algorithm = match self.algorithm {
+            TsigAlgorithm::HmacSha1 => hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY,
+            TsigAlgorithm::HmacSha256 => hmac::HMAC_SHA256,
+            TsigAlgorithm::HmacSha384 => hmac::HMAC_SHA384,
+            TsigAlgorithm::HmacSha512 => hmac::HMAC_SHA512,
         };
 
         let secret = general_purpose::STANDARD
@@ -233,14 +233,17 @@ impl TsigKey {
         }
 
         // RFC 8945, Section 5.2: authenticate the MAC before checking local length policy.
-        let min_mac_len = 10.max(algorithm.native_len() / 2);
-        let domain =
-            Key::new(algorithm, &secret, name, Some(min_mac_len), None).map_err(|error| {
-                TsigError::InvalidKey {
-                    name: self.name.clone(),
-                    source: Box::new(error),
-                }
-            })?;
+        let domain = Key::new(
+            algorithm,
+            &secret,
+            name,
+            Some(minimum_mac_len(algorithm)),
+            None,
+        )
+        .map_err(|error| TsigError::InvalidKey {
+            name: self.name.clone(),
+            source: Box::new(error),
+        })?;
 
         Ok(TsigSigningKey {
             domain: Arc::new(domain),
@@ -344,12 +347,42 @@ pub(crate) fn is_mac_size_in_bounds<N: ToName>(algorithm: &N, mac_len: usize) ->
     let Some(algorithm) = algorithm_from_name(algorithm) else {
         return true;
     };
-    let native = algorithm.native_len();
-    mac_len <= native && mac_len >= 10.max(native / 2)
+    mac_len <= algorithm.native_len() && mac_len >= minimum_mac_len(algorithm)
 }
 
-/// Match a supported algorithm name ignoring ASCII case (RFC 1035, Section
-/// 2.3.3), where `domain::tsig::Algorithm::from_name` compares bytes.
+/// Return the shortest MAC an algorithm accepts: half its hash length, but
+/// never under 10 octets (RFC 8945, Section 5.2.2.1).
+fn minimum_mac_len(algorithm: Algorithm) -> usize {
+    10.max(algorithm.native_len() / 2)
+}
+
+/// Feed the TSIG variables to a MAC digest (RFC 8945, Section 4.3.3): the key
+/// name and algorithm in canonical form, class ANY, TTL zero, the time, fudge
+/// and error, and the Other Data after its length. Other Data is read from a
+/// TSIG record or is the six-octet server time, so its length fits Other Len.
+pub(crate) fn digest_tsig_variables(
+    digest: &mut hmac::Context,
+    name: &[u8],
+    algorithm: &[u8],
+    time_signed: Time48,
+    fudge: u16,
+    error: TsigRcode,
+    other: &[u8],
+) {
+    digest.update(name);
+    digest.update(&Class::ANY.to_int().to_be_bytes());
+    digest.update(&0u32.to_be_bytes());
+    digest.update(algorithm);
+    digest.update(&time_signed.into_octets());
+    digest.update(&fudge.to_be_bytes());
+    digest.update(&error.to_int().to_be_bytes());
+    digest.update(&(other.len() as u16).to_be_bytes());
+    digest.update(other);
+}
+
+/// Match a supported algorithm name through [`TsigAlgorithm`]'s parser, which
+/// ignores ASCII case (RFC 1035, Section 2.3.3) where
+/// `domain::tsig::Algorithm::from_name` compares bytes.
 fn algorithm_from_name<N: ToName>(name: &N) -> Option<Algorithm> {
     let mut labels = name.iter_labels();
     let first = labels.next()?;
@@ -358,15 +391,24 @@ fn algorithm_from_name<N: ToName>(name: &N) -> Option<Algorithm> {
         return None;
     }
 
-    [
-        ("hmac-sha1", Algorithm::Sha1),
-        ("hmac-sha256", Algorithm::Sha256),
-        ("hmac-sha384", Algorithm::Sha384),
-        ("hmac-sha512", Algorithm::Sha512),
-    ]
-    .into_iter()
-    .find(|(text, _)| first.as_slice().eq_ignore_ascii_case(text.as_bytes()))
-    .map(|(_, algorithm)| algorithm)
+    let algorithm = str::from_utf8(first.as_slice())
+        .ok()?
+        .parse::<TsigAlgorithm>()
+        .ok()?;
+
+    Some(Algorithm::from(algorithm))
+}
+
+impl From<TsigAlgorithm> for Algorithm {
+    /// Convert a stored algorithm into the `domain` crate's TSIG algorithm.
+    fn from(algorithm: TsigAlgorithm) -> Self {
+        match algorithm {
+            TsigAlgorithm::HmacSha1 => Self::Sha1,
+            TsigAlgorithm::HmacSha256 => Self::Sha256,
+            TsigAlgorithm::HmacSha384 => Self::Sha384,
+            TsigAlgorithm::HmacSha512 => Self::Sha512,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -43,7 +43,6 @@ fn change(
         record_rdata: None,
         record_ttl: Ttl::from_secs(300),
         record_priority: None,
-        derived: false,
     }
 }
 

@@ -22,9 +22,8 @@ fn missing_parent_nameservers_remains_a_typed_service_error() {
     assert_eq!(error.code(), ErrorCode::DnssecDsUnverified);
     assert_eq!(
         error.to_string(),
-        "could not verify that the parent zone serves no DS for zone 'example.com': \
-         the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'; \
-         set the zone's parent nameserver addresses, or skip the DS check"
+        "could not ask the parent zone for the DS of zone 'example.com': \
+         the zone names no parent nameservers"
     );
     assert!(matches!(
         error
@@ -77,7 +76,7 @@ fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRecord {
         key_tag: key.key_tag,
         digest_type,
         rdata: key
-            .ds_rdata(&apex, digest_type)
+            .ds_rdata(&apex, DsDigestType::try_from(digest_type).unwrap())
             .unwrap()
             .as_bytes()
             .to_vec(),

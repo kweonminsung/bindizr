@@ -3,6 +3,7 @@
 use std::slice;
 
 use bindizr_core::dns::record;
+use bindizr_core::model::record::RecordType;
 use bindizr_service::types::{
     DiffZoneVersionsResponse, RecordChange, RecordDiffEntryResponse, RecordDiffResponse,
     RecordDiffValueResponse, RecordValue,
@@ -10,28 +11,26 @@ use bindizr_service::types::{
 
 use crate::cli::output::color;
 
-/// Render one record's value as zone-file rdata: MX/SRV carry the priority
-/// inline, TXT is quoted per character-string, other types use the value as-is.
-fn display_rdata(diff_value: &RecordDiffValueResponse, record_type: &str) -> String {
-    match record_type {
-        "TXT" => {
-            let segments: &[String] = match &diff_value.value {
-                RecordValue::Text(value) => slice::from_ref(value),
-                RecordValue::Segments(segments) => segments,
-                RecordValue::Presentation { presentation } => return presentation.clone(),
-            };
-            segments
-                .iter()
-                .map(|segment| record::to_quoted_charstr(segment.as_bytes()))
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
-        "MX" | "SRV" => format!(
-            "{} {}",
-            diff_value.priority.unwrap_or(10),
-            diff_value.value.to_text()
-        ),
-        _ => diff_value.value.to_text(),
+/// Render one record's value as zone-file rdata: TXT is quoted per
+/// character-string, and a value whose payload carries a priority shows it inline.
+fn display_rdata(diff_value: &RecordDiffValueResponse, record_type: RecordType) -> String {
+    if record_type == RecordType::Txt {
+        let segments: &[String] = match &diff_value.value {
+            RecordValue::Text(value) => slice::from_ref(value),
+            RecordValue::Segments(segments) => segments,
+            RecordValue::Presentation { presentation } => return presentation.clone(),
+        };
+
+        return segments
+            .iter()
+            .map(|segment| record::to_quoted_charstr(segment.as_bytes()))
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
+
+    match diff_value.priority {
+        Some(priority) => format!("{priority} {}", diff_value.value),
+        None => diff_value.value.to_string(),
     }
 }
 
@@ -42,7 +41,7 @@ fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
 
     for entry in entries {
         let sign = entry.change.to_string();
-        let record_type = entry.record_type.as_str();
+        let record_type = entry.record_type;
 
         // Show only the delta: records removed, then records added.
         let render_line = |diff_value: &RecordDiffValueResponse| {

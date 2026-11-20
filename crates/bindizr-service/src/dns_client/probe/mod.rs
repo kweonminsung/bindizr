@@ -4,9 +4,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use bindizr_core::dns::address::AddressTarget;
-use bindizr_core::dns::dnssec::EncodeWireNameError;
 use bindizr_core::dns::message::{Name, Opcode, Rtype};
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::name::{EncodeWireNameError, ZoneName};
 use bindizr_core::dns::query::ParseResponseError;
 use bindizr_core::dns::{Serial, query};
 use thiserror::Error;

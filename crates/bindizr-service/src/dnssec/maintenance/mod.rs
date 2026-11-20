@@ -1,4 +1,5 @@
-//! Per-zone DNSSEC maintenance transactions for signing and rollover.
+//! Per-zone DNSSEC maintenance transactions for signing and rollover, taking
+//! their key transitions from `dnssec::rollover`; only here are retired keys pruned.
 
 use std::mem;
 
@@ -10,7 +11,6 @@ use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
 use crate::change::ChangeOrigin;
-use crate::dnssec::rollover;
 use crate::error::ServiceError;
 use crate::types::Holddown;
 use crate::{Context, dnssec, transaction};
@@ -188,7 +188,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         };
 
         // The same rule `ds-seen` applies, minus the errors it reports.
-        let Ok(awaiting) = rollover::promotable_sep_key_ids(&signed, Holddown::Wait) else {
+        let Ok(awaiting) = dnssec::promotable_sep_key_ids(&signed, Holddown::Wait) else {
             return Ok(None);
         };
 
@@ -261,10 +261,11 @@ fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<DnssecKeyId>
                 return false;
             }
 
+            // An active key signs zone data exactly when its role is CSK or ZSK.
             let another_key_signs_data = keys.iter().any(|other| {
-                matches!(other.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk)
+                other.algorithm == key.algorithm
                     && other.state == DnssecKeyState::Active
-                    && other.algorithm == key.algorithm
+                    && other.signs_zone_data(keys)
             });
 
             another_key_signs_data

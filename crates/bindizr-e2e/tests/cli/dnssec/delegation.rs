@@ -122,7 +122,7 @@ async fn zone_dnssec_disable_skips_parent_ds_check_when_requested() {
     let args = ["dnssec", "disable", &zone_name];
 
     let refused = app.run_cli(&args, None).await;
-    crate::common::assert_cli_failure_contains(&args, &refused, "could not verify");
+    crate::common::assert_cli_failure_contains(&args, &refused, "could not ask the parent zone");
 
     let disabled = app
         .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)

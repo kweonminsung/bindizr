@@ -1,7 +1,7 @@
 use std::fmt;
 
+use bindizr_core::dns::Serial;
 use bindizr_core::dns::dnssec::KeyTag;
-use bindizr_core::dns::{ConvertSerialError, ConvertTtlError, Serial};
 use bindizr_core::model::record::RecordId;
 use bindizr_core::model::role_grant::RoleGrantId;
 use bindizr_db::error::DatabaseError;
@@ -542,8 +542,7 @@ impl ServiceError {
     ) -> Self {
         Self::DnssecDsUnverified {
             message: format!(
-                "could not verify that the parent zone serves no DS for zone '{zone_name}': {source}; set the \
-                 zone's parent nameserver addresses, or skip the DS check"
+                "could not ask the parent zone for the DS of zone '{zone_name}': {source}"
             ),
             source: Some(Box::new(source)),
         }
@@ -579,29 +578,9 @@ impl ServiceError {
     }
 }
 
-/// Unclassified database errors and invalid stored serials are internal failures.
-/// Call sites map UNIQUE/FK conflicts where their meaning is known.
-impl From<ConvertSerialError> for ServiceError {
-    /// Build an internal error from the conversion failure, keeping it as source.
-    fn from(error: ConvertSerialError) -> Self {
-        Self::Internal {
-            message: error.to_string(),
-            source: Some(Box::new(error)),
-        }
-    }
-}
-
-/// A stored TTL that does not convert is corrupt data: a server fault.
-impl From<ConvertTtlError> for ServiceError {
-    /// Build an internal error from the conversion failure, keeping it as source.
-    fn from(error: ConvertTtlError) -> Self {
-        Self::Internal {
-            message: error.to_string(),
-            source: Some(Box::new(error)),
-        }
-    }
-}
-
+/// Unclassified database errors, a stored value that does not decode among
+/// them, are internal failures. Call sites map UNIQUE/FK conflicts where their
+/// meaning is known.
 impl From<DatabaseError> for ServiceError {
     /// Build an internal error wrapping a database error.
     fn from(error: DatabaseError) -> Self {

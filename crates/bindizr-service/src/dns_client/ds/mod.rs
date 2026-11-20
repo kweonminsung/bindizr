@@ -4,11 +4,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use bindizr_core::dns::dnssec::EncodeWireNameError;
-use bindizr_core::dns::message::{Name, Opcode, Rtype};
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::message::{EDNS_UDP_PAYLOAD_SIZE, Name, Opcode, Rtype};
+use bindizr_core::dns::name::{EncodeWireNameError, ZoneName};
 use bindizr_core::dns::query;
-use bindizr_core::dns::query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, ParseResponseError};
+use bindizr_core::dns::query::{DsRecordSet, ParseResponseError};
 use thiserror::Error;
 use tokio::task::{JoinError, JoinSet};
 

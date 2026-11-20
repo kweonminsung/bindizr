@@ -3,9 +3,10 @@
 use std::sync::{Arc, OnceLock, RwLock};
 
 use bindizr_core::config::{Config, ConfigError};
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::metrics::Metrics;
 use bindizr_core::model::access_log::AccessLog;
-use bindizr_db::{Db, PoolStats};
+use bindizr_db::Db;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 use tokio::sync::mpsc::{Sender, UnboundedSender};
@@ -14,7 +15,6 @@ use tokio::sync::{Semaphore, watch};
 use crate::dns_client::notify::NotifyClient;
 use crate::error::ServiceError;
 use crate::notify;
-use crate::notify::NotifyTarget;
 use crate::notify::queue::NotifyJob;
 
 /// Why a reload left the configuration as it was.
@@ -92,11 +92,6 @@ impl Context {
             .clone()
     }
 
-    /// Return the file the configuration came from.
-    pub fn config_path(&self) -> &str {
-        &self.config_path
-    }
-
     /// Read the configuration file again, refusing one whose fixed settings
     /// differ from the running one; nothing changes until `set_config`.
     pub fn load_config(&self) -> Result<Config, ReloadConfigError> {
@@ -140,11 +135,6 @@ impl Context {
         &self.metrics
     }
 
-    /// Return the pool's occupancy, for the metrics scrape.
-    pub fn db_stats(&self) -> PoolStats {
-        self.db.stats()
-    }
-
     /// Return the moment the daemon began serving, absent while it is still starting.
     pub fn started_at(&self) -> Option<DateTime<Utc>> {
         self.started_at.get().copied()
@@ -160,8 +150,8 @@ impl Context {
 
     /// Queue a NOTIFY to send later. `false` once the worker has stopped,
     /// so the caller can fall back to sending inline.
-    pub(crate) fn enqueue_notify(&self, target: NotifyTarget<'_>) -> bool {
-        self.notify_jobs.send(NotifyJob::new(target)).is_ok()
+    pub(crate) fn enqueue_notify(&self, zone_name: &ZoneName) -> bool {
+        self.notify_jobs.send(NotifyJob::new(zone_name)).is_ok()
     }
 
     /// Queue an access log row for the writer without waiting. `false` when

@@ -3,13 +3,11 @@
 
 use std::net::{IpAddr, SocketAddr};
 
-use bindizr_core::dns::message::{
-    DnsMessageBuilder, ExtendedErrorCode, OptRcode, ParsedQuery, QueryMetadata, Rtype,
-};
+use bindizr_core::dns::message::{DnsMessageBuilder, OptRcode, ParsedQuery, QueryMetadata, Rtype};
 use bindizr_core::dns::tsig;
 use bindizr_core::dns::tsig::{RequestSignature, TransferSigner};
 use bindizr_core::metrics::{SoaResult, XfrResult};
-use bindizr_core::model::transfer::TransferTransport;
+use bindizr_core::model::transfer::{TransferKind, TransferTransport};
 use bindizr_service::authorization::Caller;
 use bindizr_service::zone;
 use bindizr_service::zone::TransferAccess;
@@ -99,15 +97,21 @@ pub(crate) async fn handle_udp_ixfr(
     )
     .await
     .inspect_err(|_| {
-        cx.metrics()
-            .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed);
+        cx.metrics().track_xfr(
+            TransferKind::Ixfr,
+            TransferTransport::Udp,
+            XfrResult::Failed,
+        );
     })?;
     socket
         .send_to(&response, target, query.response_limit())
         .await
         .inspect_err(|_| {
-            cx.metrics()
-                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed);
+            cx.metrics().track_xfr(
+                TransferKind::Ixfr,
+                TransferTransport::Udp,
+                XfrResult::Failed,
+            );
         })?;
 
     let result = match outcome {
@@ -117,7 +121,7 @@ pub(crate) async fn handle_udp_ixfr(
         SoaResult::Failed => XfrResult::Failed,
     };
     cx.metrics()
-        .track_xfr(Rtype::IXFR, TransferTransport::Udp, result);
+        .track_xfr(TransferKind::Ixfr, TransferTransport::Udp, result);
 
     Ok(())
 }
@@ -182,7 +186,7 @@ async fn handle_soa_request(
 
     // The question is echoed as asked: SOA, or a UDP IXFR answered by it.
     let build = |signer: Option<TransferSigner>| {
-        let mut builder = DnsMessageBuilder::new(query, query.qtype);
+        let mut builder = DnsMessageBuilder::new(query);
 
         if let Some(signer) = signer {
             builder = builder.sign_with(signer);
@@ -218,14 +222,12 @@ async fn handle_soa_request(
         let (catalog_zone, _) = match access {
             TransferAccess::Granted(content) => content,
             TransferAccess::NotAuth => {
-                return Ok((
-                    query.build_signed_error_response(
-                        OptRcode::NOTAUTH,
-                        Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-                        identity.signer.as_mut(),
-                    )?,
-                    SoaResult::NotAuth,
-                ));
+                return TransferRefusal::not_auth(
+                    format!("not authoritative for zone: {zone_name_str}"),
+                    identity.signer,
+                )
+                .into_response(&QueryMetadata::from(query), query_data)
+                .map(|response| (response, SoaResult::NotAuth));
             }
             TransferAccess::Refused(reason) => {
                 log::warn!(
@@ -276,14 +278,12 @@ async fn handle_soa_request(
     let (zone, signatures) = match access {
         TransferAccess::Granted(content) => content,
         TransferAccess::NotAuth => {
-            return Ok((
-                query.build_signed_error_response(
-                    OptRcode::NOTAUTH,
-                    Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-                    identity.signer.as_mut(),
-                )?,
-                SoaResult::NotAuth,
-            ));
+            return TransferRefusal::not_auth(
+                format!("not authoritative for zone: {zone_name_str}"),
+                identity.signer,
+            )
+            .into_response(&QueryMetadata::from(query), query_data)
+            .map(|response| (response, SoaResult::NotAuth));
         }
         TransferAccess::Refused(reason) => {
             log::warn!(

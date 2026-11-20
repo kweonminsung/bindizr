@@ -49,7 +49,7 @@ fn parse_reads_generic_rdata_of_known_types() {
         parsed
             .errors
             .iter()
-            .any(|error| error.contains("does not encode a A record")),
+            .any(|error| error.to_string().contains("does not encode a A record")),
         "{:?}",
         parsed.errors
     );
@@ -67,7 +67,10 @@ fn parse_error_names_the_line_of_the_submitted_text() {
     );
 
     assert!(
-        parsed.errors.iter().any(|error| error.contains(": 2:")),
+        parsed
+            .errors
+            .iter()
+            .any(|error| error.to_string().contains(": 2:")),
         "expected the error to name line 2, got: {:?}",
         parsed.errors
     );
@@ -114,7 +117,9 @@ fn zonefile_rejects_ttl_units() {
     assert_eq!(parsed.records.len(), 1);
     assert_eq!(parsed.errors.len(), 1, "{:?}", parsed.errors);
     assert!(
-        parsed.errors[0].starts_with("failed to parse zone file: 2:"),
+        parsed.errors[0]
+            .to_string()
+            .starts_with("failed to parse zone file: 2:"),
         "{}",
         parsed.errors[0]
     );
@@ -168,7 +173,7 @@ fn zonefile_rejects_non_apex_soa() {
         parsed
             .errors
             .iter()
-            .any(|error| error.contains("does not belong to zone")),
+            .any(|error| error.to_string().contains("does not belong to zone")),
         "{:?}",
         parsed.errors
     );
@@ -195,7 +200,7 @@ fn zonefile_rejects_non_apex_soa() {
         parsed
             .errors
             .iter()
-            .any(|error| error.contains("more than one SOA")),
+            .any(|error| error.to_string().contains("more than one SOA")),
         "{:?}",
         parsed.errors
     );
@@ -252,15 +257,13 @@ fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
     }
 }
 
-/// Verify that the opening SOA is kept and its closing delimiter discarded.
+/// Verify that the opening SOA becomes the zone's own, never one of its records.
 #[test]
 fn transfer_keeps_one_soa_for_creation() {
-    // The closing SOA is a transfer delimiter, not a second zone definition.
     const SOA: &str = "ns1.example.com. admin.example.com. 7 300 60 3600000 86400";
     let records = [
         transfer_record("example.com.", Rtype::SOA, SOA),
         transfer_record("www.example.com.", Rtype::A, "192.0.2.1"),
-        transfer_record("example.com.", Rtype::SOA, SOA),
     ];
 
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
@@ -283,7 +286,12 @@ fn transfer_rejects_unsupported_ordinary_types() {
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
 
     assert_eq!(parsed.records.len(), 1);
-    assert!(parsed.errors.iter().any(|error| error.contains("HINFO")));
+    assert!(
+        parsed
+            .errors
+            .iter()
+            .any(|error| error.to_string().contains("HINFO"))
+    );
 }
 
 /// Verify that wire conversion preserves label boundaries.
@@ -392,32 +400,4 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         parsed.records[0].value,
         ZoneFileValue::Rdata(r#""\255""#.to_string())
     );
-}
-
-/// Verify that the closing SOA matches case-insensitively without received RDATA changing.
-#[test]
-fn transfer_accepts_case_varied_closing_soa() {
-    let zone_name = ZoneName::parse("example.com").unwrap();
-    let opening = transfer_record(
-        "example.com.",
-        Rtype::SOA,
-        "NS1.Example.COM. Hostmaster.Example.COM. 42 7200 3600 604800 300",
-    );
-    let closing = transfer_record(
-        "EXAMPLE.COM.",
-        Rtype::SOA,
-        "ns1.example.com. hostmaster.example.com. 42 7200 3600 604800 300",
-    );
-    let original = opening.rdata.clone();
-    let records = [
-        opening,
-        transfer_record("example.com.", Rtype::NS, "ns1.example.com."),
-        closing,
-    ];
-    let parsed = ParsedZoneFile::from_transfer(&records, &zone_name);
-
-    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
-    assert!(parsed.soa.is_some());
-    assert_eq!(parsed.records.len(), 1);
-    assert_eq!(records[0].rdata, original);
 }

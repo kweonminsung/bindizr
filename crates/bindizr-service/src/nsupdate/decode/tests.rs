@@ -1,6 +1,8 @@
+use std::error::Error;
 use std::slice;
 
 use bindizr_core::dns::message::Rcode;
+use bindizr_core::dns::name::ParseNameError;
 
 use super::*;
 
@@ -31,13 +33,13 @@ fn nsupdate_decode_rejects_managed_dnssec_changes_after_validating_wire_data() {
             decode_updates(&[record(class, Rtype::DNSKEY, 0, data)], &zone_name, data).unwrap_err();
 
         assert!(matches!(error, NsupdateError::ManagedType(Rtype::DNSKEY)));
-        assert_eq!(error.rcode(), Rcode::REFUSED);
+        assert_eq!(error.rcode().ok(), Some(Rcode::REFUSED));
     }
 
     for class in [Class::IN, Class::NONE] {
         let error =
             decode_updates(&[record(class, Rtype::DNSKEY, 0, &[1])], &zone_name, &[1]).unwrap_err();
-        assert_eq!(error.rcode(), Rcode::FORMERR);
+        assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR));
     }
 
     let value = [1, 1, 3, 13, 1];
@@ -75,7 +77,7 @@ fn nsupdate_decode_returns_formerr_for_malformed_sections() {
         record(Class::CH, Rtype::ANY, 0, &[]),
     ] {
         let error = decode_prerequisite(&prerequisite, &zone_name, &[]).unwrap_err();
-        assert_eq!(error.rcode(), Rcode::FORMERR, "{error}");
+        assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR), "{error}");
     }
 
     for update in [
@@ -85,7 +87,7 @@ fn nsupdate_decode_returns_formerr_for_malformed_sections() {
         record(Class::CH, Rtype::A, 0, &[1, 2, 3, 4]),
     ] {
         let error = decode_updates(&[update], &zone_name, &[]).unwrap_err();
-        assert_eq!(error.rcode(), Rcode::FORMERR, "{error}");
+        assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR), "{error}");
     }
 }
 
@@ -113,21 +115,21 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
                 assert!(result.unwrap().is_empty());
             } else {
                 // RFC 2136, Section 3.4.1.2: an unrecognized type fails the prescan.
-                assert_eq!(result.unwrap_err().rcode(), Rcode::FORMERR);
+                assert_eq!(result.unwrap_err().rcode().ok(), Some(Rcode::FORMERR));
             }
 
             for name in ["elsewhere.example.net.", r"outside\.example.com.", "."] {
                 let mut outside = valid.clone();
                 outside.name = name.to_string();
                 let error = decode_updates(&[outside], &zone_name, data).unwrap_err();
-                assert_eq!(error.rcode(), Rcode::NOTZONE, "{error}");
+                assert_eq!(error.rcode().ok(), Some(Rcode::NOTZONE), "{error}");
             }
 
             let mut malformed = valid;
             malformed.ttl = 1;
             let error = decode_updates(&[malformed], &zone_name, data).unwrap_err();
 
-            assert_eq!(error.rcode(), Rcode::FORMERR, "{error}");
+            assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR), "{error}");
         }
     }
 }
@@ -141,7 +143,7 @@ fn nsupdate_decode_prescans_all_records_before_decoding_operations() {
     let mut outside = record(Class::ANY, Rtype::SOA, 0, &[]);
     outside.name = "outside.example.net.".to_string();
     let error = decode_updates(&[malformed_add, outside], &zone_name, &[]).unwrap_err();
-    assert_eq!(error.rcode(), Rcode::NOTZONE, "{error}");
+    assert_eq!(error.rcode().ok(), Some(Rcode::NOTZONE), "{error}");
 }
 
 /// Verify that execution receives the checked owner, and an add with a
@@ -162,5 +164,76 @@ fn nsupdate_decode_returns_operations_with_checked_owners() {
             assert_eq!(ttl.as_secs(), u32::MAX);
         }
         other => panic!("{other:?}"),
+    }
+}
+
+/// Verify that `parse_update_owner` reduces an in-zone owner to its stored form.
+#[test]
+fn parse_update_owner_reduces_an_in_zone_owner_to_its_stored_form() {
+    assert_eq!(
+        parse_update_owner("www.example.com.", &ZoneName::parse("example.com").unwrap())
+            .unwrap()
+            .to_stored(),
+        "www"
+    );
+    assert!(
+        parse_update_owner("example.com.", &ZoneName::parse("example.com").unwrap())
+            .unwrap()
+            .is_apex()
+    );
+
+    // A dotted wire label is one label, so it is data rather than a boundary.
+    assert_eq!(
+        parse_update_owner(
+            r"host\.name.example.com.",
+            &ZoneName::parse("example.com").unwrap()
+        )
+        .unwrap()
+        .labels(),
+        [b"host.name".to_vec()]
+    );
+}
+
+/// Verify that `parse_update_owner` rejects owners outside the zone.
+#[test]
+fn parse_update_owner_rejects_owners_outside_the_zone() {
+    for owner in [
+        "aexample.com.",
+        "badexample.com.",
+        "www.badexample.com.",
+        ".",
+        // One label spelling the zone is not inside it.
+        r"evil\.example.com.",
+    ] {
+        let error =
+            parse_update_owner(owner, &ZoneName::parse("example.com").unwrap()).unwrap_err();
+        assert_eq!(error.rcode().ok(), Some(Rcode::NOTZONE), "{owner:?}");
+    }
+}
+
+/// Verify that an outside-zone owner is distinguished from malformed names without losing the
+/// parser cause.
+#[test]
+fn owner_errors_retain_their_sources_and_classification() {
+    let zone_name = ZoneName::parse("example.com").unwrap();
+
+    for (name, source, rcode) in [
+        (
+            "outside.example.net.",
+            ParseNameError::OutsideZone,
+            Rcode::NOTZONE,
+        ),
+        (
+            "bad..example.com.",
+            ParseNameError::EmptyLabel,
+            Rcode::REFUSED,
+        ),
+    ] {
+        let error = parse_update_owner(name, &zone_name).unwrap_err();
+        assert_eq!(error.rcode().ok(), Some(rcode));
+        assert_eq!(
+            error.source().unwrap().downcast_ref::<ParseNameError>(),
+            Some(&source)
+        );
     }
 }

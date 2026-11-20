@@ -127,9 +127,7 @@ impl Caller {
             }
         };
 
-        if let Some(expires_at) = stored_token.expires_at
-            && Utc::now() >= expires_at
-        {
+        if stored_token.is_expired(Utc::now()) {
             return Err(ServiceError::invalid_token("token has expired"));
         }
 
@@ -261,11 +259,7 @@ impl Caller {
             } => {
                 let token = bindizr_db::api_token::get_tx(tx, *token_id, LockLevel::Shared)
                     .await?
-                    .filter(|token| {
-                        token
-                            .expires_at
-                            .is_none_or(|expires_at| Utc::now() < expires_at)
-                    })
+                    .filter(|token| !token.is_expired(Utc::now()))
                     .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
 
                 (token.role_id, Credential::Token(token.id))
@@ -301,7 +295,27 @@ impl Caller {
             return Err(ServiceError::zone_not_found(&zone.name));
         }
 
-        authorize_with_grants(grants, zone, writes)
+        // Every write needs its action at its name and type.
+        for write in writes {
+            if !grants.covers_record(
+                write.action,
+                zone.id,
+                &write.relative_name,
+                write.record_type,
+            ) {
+                return Err(ServiceError::forbidden(format!(
+                    "role does not permit '{}' on '{}' {} in zone '{}'",
+                    write.action,
+                    write.relative_name,
+                    write
+                        .record_type
+                        .map_or("records".to_string(), |record_type| record_type.to_string()),
+                    zone.name
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     /// Return whether `record:read` or the write `action` covers a record of this
@@ -496,8 +510,10 @@ impl<T> ReadableRecords<T> {
 }
 
 /// Proof that the caller may read a zone's records whole, from
-/// [`Caller::authorize_whole_zone_read`].
+/// [`Caller::authorize_whole_zone_read`]; the rows it covers reach a response
+/// through it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
 pub(crate) struct WholeZoneRead {
     _proof: (),
 }
@@ -507,34 +523,6 @@ impl WholeZoneRead {
     pub(crate) fn readable_records<T>(self, records: Vec<T>) -> ReadableRecords<T> {
         ReadableRecords(records)
     }
-}
-
-/// Authorize every action at its name and type against the supplied grants.
-fn authorize_with_grants(
-    grants: &RoleGrants,
-    zone: &Zone,
-    writes: &[RecordAccess],
-) -> Result<(), ServiceError> {
-    for write in writes {
-        if !grants.covers_record(
-            write.action,
-            zone.id,
-            &write.relative_name,
-            write.record_type,
-        ) {
-            return Err(ServiceError::forbidden(format!(
-                "role does not permit '{}' on '{}' {} in zone '{}'",
-                write.action,
-                write.relative_name,
-                write
-                    .record_type
-                    .map_or("records".to_string(), |record_type| record_type.to_string()),
-                zone.name
-            )));
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

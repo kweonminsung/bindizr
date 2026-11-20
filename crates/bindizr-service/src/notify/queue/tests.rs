@@ -73,9 +73,7 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
     let (jobs_tx, jobs) = mpsc::unbounded_channel();
     let worker = spawn(cx.clone(), jobs);
     let catalog_zone_name = cx.config().dns.catalog_zone_name.clone();
-    jobs_tx
-        .send(NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name)))
-        .unwrap();
+    jobs_tx.send(NotifyJob::new(&catalog_zone_name)).unwrap();
     let mut buffer = [0; 4096];
 
     let (len, first_peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
@@ -84,9 +82,7 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
         .unwrap();
     let first_request = buffer[..len].to_vec();
     let zone_name = ZoneName::parse("second.example").unwrap();
-    jobs_tx
-        .send(NotifyJob::new(NotifyTarget::Zone(&zone_name)))
-        .unwrap();
+    jobs_tx.send(NotifyJob::new(&zone_name)).unwrap();
 
     let (len, second_peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
         .await
@@ -118,7 +114,7 @@ async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
 
     time::pause();
     let catalog_zone_name = cx.config().dns.catalog_zone_name.clone();
-    let first = NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name));
+    let first = NotifyJob::new(&catalog_zone_name);
     let (jobs_tx, mut jobs) = mpsc::unbounded_channel();
     let (_stop_tx, mut stop) = watch::channel(false);
 
@@ -126,9 +122,7 @@ async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
     task::yield_now().await;
     time::advance(Duration::from_millis(600)).await;
 
-    jobs_tx
-        .send(NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name)))
-        .unwrap();
+    jobs_tx.send(NotifyJob::new(&catalog_zone_name)).unwrap();
 
     task::yield_now().await;
     time::advance(Duration::from_millis(399)).await;
@@ -141,7 +135,7 @@ async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
     time::advance(Duration::from_millis(1)).await;
     let batch = task.await.unwrap();
 
-    assert_eq!(batch.zones, HashSet::from([catalog_zone_name]));
+    assert_eq!(batch, HashSet::from([catalog_zone_name]));
 }
 
 /// Verify that backlogged jobs retain their original age and that the catalog uses its
@@ -152,13 +146,13 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
 
     time::pause();
     let catalog_zone_name = cx.config().dns.catalog_zone_name.clone();
-    let first = NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name));
+    let first = NotifyJob::new(&catalog_zone_name);
 
     let deadline = lookup_batch_deadline(&cx, &first).await;
 
     assert_eq!(
         deadline - first.enqueued_at,
-        Duration::from_secs(u64::from(CATALOG_SOA_REFRESH.as_secs())),
+        Duration::from_secs(u64::from(zone::CATALOG_SOA_REFRESH.as_secs())),
         "the catalog's served SOA REFRESH must cap the configured 2h batching window"
     );
 
@@ -175,7 +169,7 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
         started,
         "an expired batching window must flush without starting a new wait"
     );
-    assert_eq!(batch.zones.len(), 1);
+    assert_eq!(batch.len(), 1);
 }
 
 /// Verify that a shorter delay advances a pending deadline and that shutdown flushes
@@ -186,7 +180,7 @@ async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
 
     time::pause();
     let catalog_zone_name = cx.config().dns.catalog_zone_name.clone();
-    let first = NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name));
+    let first = NotifyJob::new(&catalog_zone_name);
     let (jobs_tx, mut jobs) = mpsc::unbounded_channel();
     let (stop_tx, mut stop) = watch::channel(false);
     let worker_cx = cx.clone();
@@ -199,25 +193,24 @@ async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
     let mut config = (*cx.config()).clone();
     config.dns.notify.batch_ms = 100;
     cx.set_config(config);
-    jobs_tx
-        .send(NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name)))
-        .unwrap();
+    jobs_tx.send(NotifyJob::new(&catalog_zone_name)).unwrap();
 
     task::yield_now().await;
     time::advance(Duration::from_millis(100)).await;
 
-    assert_eq!(task.await.unwrap().zones.len(), 1);
+    assert_eq!(task.await.unwrap().len(), 1);
 
     let started = Instant::now();
-    let first = NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name));
+    let first = NotifyJob::new(&catalog_zone_name);
     let (jobs_tx, mut jobs) = mpsc::unbounded_channel();
-    jobs_tx.send(NotifyJob::new(NotifyTarget::All)).unwrap();
+    let other_zone_name = ZoneName::parse("other.example").unwrap();
+    jobs_tx.send(NotifyJob::new(&other_zone_name)).unwrap();
     let mut stop = stop_tx.subscribe();
     stop_tx.send(true).unwrap();
 
     let batch = collect_batch(&cx, &mut jobs, &mut stop, first).await;
 
-    assert!(batch.all_zones);
+    assert_eq!(batch.len(), 2);
     assert_eq!(
         Instant::now(),
         started,

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use bindizr_core::dns::Serial;
-use bindizr_core::dns::message::{DnsMessageBuilder, ParsedQuery, Rtype};
+use bindizr_core::dns::message::{DnsMessageBuilder, ParsedQuery};
 use bindizr_core::dns::tsig::TransferSigner;
 use bindizr_core::model::zone::Zone;
 use bindizr_core::model::zone_change::{ChangeOperation, ZoneChange};
@@ -20,7 +20,7 @@ pub(crate) async fn send_soa_response(
     zone: &Zone,
     signer: Option<TransferSigner>,
 ) -> Result<(), DnsError> {
-    let mut builder = DnsMessageBuilder::new(query, Rtype::IXFR);
+    let mut builder = DnsMessageBuilder::new(query);
 
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
@@ -63,7 +63,7 @@ pub(crate) async fn send_ixfr_response(
     versions_by_serial: &HashMap<Serial, ZoneVersion>,
     signer: Option<TransferSigner>,
 ) -> Result<(), SendIxfrError> {
-    let mut builder = DnsMessageBuilder::new(query, Rtype::IXFR);
+    let mut builder = DnsMessageBuilder::new(query);
 
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
@@ -95,7 +95,7 @@ pub(crate) async fn send_ixfr_response(
         }
 
         let mut serials: Vec<Serial> = changes_by_serial.keys().copied().collect();
-        serials.sort_by_key(|serial| serial.as_u32().wrapping_sub(client_serial.as_u32()));
+        serials.sort_by_key(|serial| serial.distance_from(client_serial));
 
         for (index, &serial) in serials.iter().enumerate() {
             let serial_changes = &changes_by_serial[&serial];

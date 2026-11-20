@@ -13,19 +13,19 @@ mod notify;
 mod status;
 mod transfer;
 mod update;
-pub(crate) mod validation;
+mod validation;
 pub(crate) mod version;
 
-pub(crate) use catalog_zone::refresh_catalog_tx;
-pub use catalog_zone::{refresh_catalog, validate_catalog_zone_name};
+pub use catalog_zone::validate_catalog_zone_name;
+pub(crate) use catalog_zone::{CATALOG_SOA_REFRESH, refresh_catalog_tx};
 pub use create::create;
 pub(crate) use create::create_tx;
 pub use delete::delete;
 pub use export::export;
 pub(crate) use force::force_increment_serial;
-pub use get::{count, count_all, get_by_name, list, list_by_filter, probe_table};
+pub use get::{count_all, get_by_name, list, list_by_filter, probe_table};
 pub(crate) use get::{
-    find_by_name_tx, find_served_by_name, find_served_by_name_tx, lookup_by_name, lookup_by_name_tx,
+    find_served_by_name, find_served_by_name_tx, lookup_by_name, lookup_by_name_tx,
 };
 pub use history::{diff_versions, get_version, list_versions, rollback};
 pub use import::{import, import_many};
@@ -39,5 +39,8 @@ pub use transfer::{
 pub(crate) use update::soa_replacement_changes;
 pub use update::update;
 pub use validation::normalize_name;
-pub(crate) use validation::{validate_name, validate_record_changes_tx};
+pub(crate) use validation::{
+    normalize_mname, normalize_rname, reject_catalog_zone_name, validate_name,
+    validate_record_changes_tx,
+};
 pub(crate) use version::{advance_serial_tx, save_version_tx};

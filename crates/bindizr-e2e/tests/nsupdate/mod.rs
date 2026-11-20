@@ -1951,12 +1951,28 @@ async fn nsupdate_signs_parse_errors_with_request_key() {
 
     let key = tsig::create_tsig_key(&app, "formerr-key", KeyRole::Admin).await;
 
-    let (rcode, signed) =
-        nsupdate::send_signed_update_with_two_zones(app.dns_port(), zone_name, &key)
-            .expect("update");
+    // Two zone sections, invalid under RFC 2136, Section 3.1.1.
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(2136);
+    builder.header_mut().set_opcode(Opcode::UPDATE);
+    let mut question = builder.question();
 
-    assert_eq!(rcode, Rcode::FORMERR);
-    assert!(signed, "the FORMERR was not signed");
+    for _ in 0..2 {
+        question
+            .push((&dns::parse_name(zone_name).unwrap(), Rtype::SOA, Class::IN))
+            .unwrap();
+    }
+
+    let response = dns::exchange_request(question.additional(), Some(&key), |message| {
+        dns::exchange_udp(app.dns_port(), message)
+    })
+    .unwrap();
+
+    assert_eq!(response.header().rcode(), Rcode::FORMERR);
+    assert!(
+        tsig::parse_tsig_presence(&response).unwrap(),
+        "the FORMERR was not signed"
+    );
 }
 
 /// Verify that a signed request's BADVERS is answered under its key
@@ -1970,12 +1986,27 @@ async fn nsupdate_signs_badvers_with_request_key() {
 
     let key = tsig::create_tsig_key(&app, "badvers-key", KeyRole::Admin).await;
 
-    let (rcode, signed) =
-        nsupdate::send_signed_update_with_edns_version(app.dns_port(), zone_name, &key, 1)
-            .expect("update");
+    let mut request = nsupdate::build_update(6891, zone_name, Class::IN, &[], &[]).unwrap();
+    request
+        .opt(|opt| {
+            opt.set_udp_payload_size(4096);
+            opt.set_version(1);
+            Ok(())
+        })
+        .unwrap();
+    let response = dns::exchange_request(request, Some(&key), |message| {
+        dns::exchange_udp(app.dns_port(), message)
+    })
+    .unwrap();
 
-    assert_eq!(rcode, OptRcode::BADVERS);
-    assert!(signed, "the BADVERS was not signed");
+    assert_eq!(
+        response.opt().unwrap().rcode(response.header()),
+        OptRcode::BADVERS
+    );
+    assert!(
+        tsig::parse_tsig_presence(&response).unwrap(),
+        "the BADVERS was not signed"
+    );
 }
 
 /// Verify that DO is echoed in signed UPDATE success and BADVERS responses over UDP and TCP.

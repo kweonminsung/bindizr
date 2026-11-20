@@ -50,8 +50,8 @@ async fn fixture() -> Pool<Sqlite> {
 
     for (zone_id, zone_name) in [(1, "example.com"), (2, "other.com")] {
         sqlx::query(
-            "INSERT INTO zones (id, name, mname, rname, default_ttl, serial, created_at)
-             VALUES (?, ?, 'ns1.example.com', 'admin@example.com', 3600, 1, ?)",
+            "INSERT INTO zones (id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, created_at)
+             VALUES (?, ?, 'ns1.example.com', 'admin@example.com', 3600, 1, 300, 60, 3600000, 86400, ?)",
         )
         .bind(zone_id)
         .bind(zone_name)
@@ -196,7 +196,13 @@ async fn listings_match_role_grants_visibility() {
         .await
         .unwrap()
         .into_iter()
-        .map(|record| (record.zone_id, record.name.to_string(), record.record_type))
+        .map(|record| {
+            (
+                record.record.zone_id,
+                record.record.name.to_string(),
+                record.record.record_type,
+            )
+        })
         .collect();
 
         let expected: BTreeSet<_> = all_records
@@ -204,12 +210,18 @@ async fn listings_match_role_grants_visibility() {
             .filter(|record| {
                 rules.covers_record(
                     Action::RecordRead,
-                    record.zone_id,
-                    &record.name,
-                    Some(record.record_type),
+                    record.record.zone_id,
+                    &record.record.name,
+                    Some(record.record.record_type),
                 )
             })
-            .map(|record| (record.zone_id, record.name.to_string(), record.record_type))
+            .map(|record| {
+                (
+                    record.record.zone_id,
+                    record.record.name.to_string(),
+                    record.record.record_type,
+                )
+            })
             .collect();
 
         assert_eq!(listed, expected, "records, {case}");

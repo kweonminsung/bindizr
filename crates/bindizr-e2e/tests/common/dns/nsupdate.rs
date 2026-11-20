@@ -2,13 +2,12 @@
 
 use std::process;
 
-use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype};
+use domain::base::iana::{Class, Opcode, Rcode, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{MessageBuilder, Name, Record, Ttl, UnknownRecordData};
 use domain::rdata::{A, Cname, Dname, Ns, Soa};
 
 use crate::common::dns;
-use crate::common::dns::tsig;
 use crate::common::dns::tsig::SigningKey;
 
 /// One record of an update section, in the class that gives it its meaning
@@ -113,62 +112,6 @@ pub(crate) fn send_update_tcp(
     let request = build_update(query_id, zone_name, Class::IN, prerequisites, updates)?;
     let response = dns::exchange_request(request, key, |message| dns::exchange_tcp(port, message))?;
     Ok(response.header().rcode())
-}
-
-/// Send a signed two-zone UPDATE, invalid under RFC 2136, Section 3.1.1.
-pub(crate) fn send_signed_update_with_two_zones(
-    port: u16,
-    zone_name: &str,
-    key: &SigningKey,
-) -> Result<(Rcode, bool), String> {
-    let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(2);
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(query_id);
-    builder.header_mut().set_opcode(Opcode::UPDATE);
-    let mut question = builder.question();
-
-    for _ in 0..2 {
-        question
-            .push((&dns::parse_name(zone_name)?, Rtype::SOA, Class::IN))
-            .map_err(|error| error.to_string())?;
-    }
-
-    let response = dns::exchange_request(question.additional(), Some(key), |message| {
-        dns::exchange_udp(port, message)
-    })?;
-
-    Ok((
-        response.header().rcode(),
-        tsig::parse_tsig_presence(&response)?,
-    ))
-}
-
-/// Send a signed UPDATE with the specified EDNS version.
-pub(crate) fn send_signed_update_with_edns_version(
-    port: u16,
-    zone_name: &str,
-    key: &SigningKey,
-    version: u8,
-) -> Result<(OptRcode, bool), String> {
-    let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(3);
-    let mut request = build_update(query_id, zone_name, Class::IN, &[], &[])?;
-    request
-        .opt(|opt| {
-            opt.set_udp_payload_size(4096);
-            opt.set_version(version);
-            Ok(())
-        })
-        .map_err(|error| error.to_string())?;
-    let response = dns::exchange_request(request, Some(key), |message| {
-        dns::exchange_udp(port, message)
-    })?;
-    let rcode = response
-        .opt()
-        .map_or(OptRcode::from(response.header().rcode()), |opt| {
-            opt.rcode(response.header())
-        });
-
-    Ok((rcode, tsig::parse_tsig_presence(&response)?))
 }
 
 /// Build zone, prerequisite, and update sections (RFC 2136, Section 2.1).

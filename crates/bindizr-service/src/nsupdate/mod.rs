@@ -7,8 +7,7 @@ mod plan;
 mod prerequisite;
 
 use bindizr_core::dns::message::{Class, Rcode, Rtype};
-use bindizr_core::dns::name;
-use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
+use bindizr_core::dns::name::{ParseNameError, ZoneName};
 use bindizr_core::dns::nsupdate::parser::{
     ParseUpdateError, UpdateRecord, ValidateUpdateShapeError,
 };
@@ -72,9 +71,10 @@ pub enum NsupdateError {
 }
 
 impl NsupdateError {
-    /// Classify an UPDATE failure without consuming its original cause.
-    pub fn rcode(&self) -> Rcode {
-        match self {
+    /// Return the RCODE RFC 2136 gives this outcome, or the wrapped
+    /// `ServiceError` whose code the transport maps to its own RCODE.
+    pub fn rcode(&self) -> Result<Rcode, &ServiceError> {
+        let rcode = match self {
             // RFC 2136, Section 3.4.1.2: an unrecognized type is a prescan failure.
             Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) | Self::UnsupportedType(_) => {
                 Rcode::FORMERR
@@ -92,15 +92,16 @@ impl NsupdateError {
             Self::NxRrset(_) => Rcode::NXRRSET,
             Self::NotAuth(_) => Rcode::NOTAUTH,
             Self::Refused(_) => Rcode::REFUSED,
-            Self::Service(error) if error.code().is_internal() => Rcode::SERVFAIL,
-            Self::Service(_) => Rcode::REFUSED,
-        }
+            Self::Service(error) => return Err(error),
+        };
+
+        Ok(rcode)
     }
 }
 
-/// A database failure is a backend fault, classified through the service error.
+/// A database failure is a backend fault, carried as the service error.
 impl From<DatabaseError> for NsupdateError {
-    /// Map a database failure to SERVFAIL.
+    /// Wrap a database failure in its service error.
     fn from(error: DatabaseError) -> Self {
         Self::from(ServiceError::from(error))
     }
@@ -249,21 +250,61 @@ pub async fn apply(
     Ok(changed)
 }
 
-/// Parse the owner of an update record. The wire carries owners absolutely, so a name
-/// outside the zone is NOTZONE rather than something to qualify.
-fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, NsupdateError> {
-    if name.trim_end_matches('.').is_empty() {
-        return Err(NsupdateError::NotZone(
-            "root owner is not supported".to_string(),
-        ));
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use std::io;
+
+    use super::*;
+
+    /// Verify that parser failures are preserved while retaining their FORMERR classification.
+    #[test]
+    fn parser_errors_retain_their_sources() {
+        let shape = ValidateUpdateShapeError::NonzeroTtl;
+        let error = NsupdateError::from(shape);
+
+        assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR));
+        assert_eq!(
+            error
+                .source()
+                .unwrap()
+                .downcast_ref::<ValidateUpdateShapeError>(),
+            Some(&shape)
+        );
+
+        let parse = ParseUpdateError::Rdata { record_type: "A" };
+        let error = NsupdateError::from(parse.clone());
+
+        assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR));
+        assert_eq!(
+            error.source().unwrap().downcast_ref::<ParseUpdateError>(),
+            Some(&parse)
+        );
     }
 
-    OwnerName::parse_absolute_in_zone(name, zone_name).map_err(|source| NsupdateError::Owner {
-        name: name::to_fqdn(name),
-        zone_name: zone_name.clone(),
-        source,
-    })
-}
+    /// Verify that caller and backend failures stay typed and reach the transport
+    /// unclassified, for it to map their codes.
+    #[test]
+    fn service_errors_retain_their_sources_and_codes() {
+        for source in [
+            ServiceError::forbidden("denied"),
+            ServiceError::internal_with_source("storage failed", io::Error::other("storage")),
+        ] {
+            let code = source.code();
+            let message = source.to_string();
+            let error = NsupdateError::from(source);
 
-#[cfg(test)]
-mod tests;
+            assert_eq!(error.rcode().map_err(ServiceError::code), Err(code));
+            assert_eq!(error.to_string(), message);
+            let service = error
+                .source()
+                .unwrap()
+                .downcast_ref::<ServiceError>()
+                .unwrap();
+
+            if code.is_internal() {
+                assert!(service.source().unwrap().is::<io::Error>());
+            }
+        }
+    }
+}

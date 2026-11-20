@@ -711,7 +711,7 @@ fn reload_rejects_settings_that_require_restart() {
     );
 
     let mut catalog_renamed = current.clone();
-    catalog_renamed.dns.catalog_zone_name = ZoneName::from_row("catalog.other");
+    catalog_renamed.dns.catalog_zone_name = ZoneName::parse("catalog.other").unwrap();
 
     assert_eq!(
         current.fixed_settings_changed(&catalog_renamed),

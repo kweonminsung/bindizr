@@ -8,7 +8,6 @@ use bindizr_db::LockLevel;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{UpdateZoneRequest, WriteZoneResponse, ZoneResponse};
-use crate::zone::validation;
 use crate::{Context, dnssec, notify, record, serial, text, transaction, ttl, zone};
 
 /// Outcome of the transactional part of a zone update.
@@ -34,14 +33,13 @@ pub(crate) fn soa_replacement_changes(
             operation,
             record_name: OwnerName::apex(),
             record_type: JournalRecordType::Soa,
-            record_value: Some(
-                zone.soa_presentation_rdata()
-                    .map_err(ServiceError::invalid_zone_field)?,
-            ),
+            // The rname was validated where it entered, so a failure is the row's.
+            record_value: Some(zone.soa_presentation_rdata().map_err(|error| {
+                ServiceError::internal_with_source("failed to encode the SOA mailbox", error)
+            })?),
             record_rdata: None,
             record_ttl: zone.default_ttl,
             record_priority: None,
-            derived: false,
         })
     };
 
@@ -64,20 +62,20 @@ pub async fn update(
         .name
         .as_deref()
         .map(|new_zone_name| {
-            let new_zone_name = validation::normalize_name(new_zone_name)?;
-            validation::reject_catalog_zone_name(cx, &new_zone_name)?;
+            let new_zone_name = zone::normalize_name(new_zone_name)?;
+            zone::reject_catalog_zone_name(cx, &new_zone_name)?;
             Ok::<_, ServiceError>(new_zone_name)
         })
         .transpose();
     let mname = request
         .mname
         .as_deref()
-        .map(validation::normalize_mname)
+        .map(zone::normalize_mname)
         .transpose();
     let rname = request
         .rname
         .as_deref()
-        .map(validation::normalize_rname)
+        .map(zone::normalize_rname)
         .transpose();
     let default_ttl = request
         .default_ttl

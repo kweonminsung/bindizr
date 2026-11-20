@@ -14,13 +14,16 @@ use domain::rdata::Soa;
 use thiserror::Error;
 
 use crate::dns::message::{EncodeMessageError, QueryMetadata, RECORD_FIELDS_LEN, ResponseLimit};
-use crate::dns::query::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::tsig::TransferSigner;
 use crate::dns::{LibraryError, message};
 
 /// A UDP answer to a query without EDNS is at most 512 octets (RFC 1035,
 /// Section 4.2.1).
 pub const UDP_PAYLOAD_SIZE_WITHOUT_EDNS: u16 = 512;
+
+/// The EDNS UDP payload size bindizr advertises in its queries and the
+/// ceiling of a UDP response it sends (DNS Flag Day 2020).
+pub const EDNS_UDP_PAYLOAD_SIZE: u16 = 1232;
 
 /// The wire size of the OPT record a response carries, options aside.
 pub(crate) const OPT_RECORD_LEN: usize = 1 + RECORD_FIELDS_LEN;

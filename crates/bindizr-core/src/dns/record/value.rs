@@ -124,7 +124,8 @@ pub(crate) fn parse_u16_record_field(
         })
 }
 
-/// Decode one quoted or bare string using RFC 1035, Section 5.1 escapes.
+/// Decode one quoted or bare string using RFC 1035, Section 5.1 escapes,
+/// returning the input after it untrimmed, for the caller's separator rule.
 pub(crate) fn parse_string_octets<'a>(
     field: &'static str,
     input: &'a str,
@@ -142,11 +143,10 @@ pub(crate) fn parse_string_octets<'a>(
     while let Some((index, byte)) = bytes.next() {
         match byte {
             b'"' if quoted => {
-                let consumed = &rest[index + 1..];
-                return Ok((octets, consumed.trim_start()));
+                return Ok((octets, &rest[index + 1..]));
             }
             byte if !quoted && byte.is_ascii_whitespace() => {
-                return Ok((octets, rest[index..].trim_start()));
+                return Ok((octets, &rest[index..]));
             }
             b'"' => {
                 return Err(ParseRecordValueError::NotQuoted {
@@ -207,7 +207,7 @@ pub(crate) fn parse_char_string<'a>(
         return Err(ParseRecordValueError::CharStringTooLong { field });
     }
 
-    Ok((text, rest))
+    Ok((text, rest.trim_start()))
 }
 
 /// Validate record-value names using decoded owner-label rules, preserving escaped
@@ -222,8 +222,10 @@ pub(crate) fn validate_domain_record_value(
         return Err(ParseRecordValueError::Empty { field });
     }
 
-    if trimmed == "." {
-        return Err(ParseRecordValueError::RootZone { field });
+    // RFC 2181, Section 11 permits the root as a domain-name value; only the
+    // exact text, so a padded ` . ` still meets the decoder's whitespace error.
+    if value == "." {
+        return Ok(());
     }
 
     name::decode_name_labels(value)
@@ -247,6 +249,7 @@ mod tests {
             "1.0/25.2.0.192.in-addr.arpa.", // RFC 2317, Section 4 delegation
             "_dmarc.example.com.",
             "host-name.example.com",
+            ".",
         ] {
             validate_domain_record_value("CNAME record value", value)
                 .unwrap_or_else(|error| panic!("{value} was rejected: {error}"));
@@ -258,7 +261,7 @@ mod tests {
     fn record_value_rejects_names_without_reversible_presentation() {
         for value in [
             "",
-            ".",
+            " . ",
             "bad target.example.com",
             " leading.example.com",
             "trailing.example.com ",

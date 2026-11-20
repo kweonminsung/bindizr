@@ -1,5 +1,6 @@
 //! Table rows for CLI output, each built from the typed daemon response so
-//! the column set is all this module decides; the cells come from `display`.
+//! the column set is all this module decides: a cell shared or assembled from
+//! several fields comes from `display`, one field's label from the row's `From`.
 
 use bindizr_core::dns::dnssec::KeyTag;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
@@ -99,7 +100,7 @@ impl RecordRow {
             id: record.id,
             name: record.name.clone(),
             record_type: record.record_type.to_string(),
-            value: record.value.to_text(),
+            value: record.value.to_string(),
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,

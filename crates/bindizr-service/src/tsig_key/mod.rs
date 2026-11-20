@@ -154,9 +154,7 @@ pub async fn get(
     caller.authorize_action(Action::AccessManage)?;
 
     let tsig_key = lookup_by_name(cx, name).await?;
-    let role = bindizr_db::role::get(cx.db(), tsig_key.role_id)
-        .await?
-        .ok_or_else(|| ServiceError::role_not_found(tsig_key.role_id))?;
+    let role = role::lookup(cx, tsig_key.role_id).await?;
 
     Ok((
         TsigKeyResponse::from_tsig_key(&tsig_key, &role.name),

@@ -1,7 +1,9 @@
 //! Resolve a bulk import's zone list and report each zone's independent outcome.
 
+use std::collections::HashSet;
+
 use bindizr_core::dns;
-use bindizr_core::dns::address;
+use bindizr_core::dns::name::ZoneName;
 
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
@@ -34,13 +36,7 @@ pub async fn import_many(
             MissingZoneAction::Reject
         },
     };
-    let address = request.from_server.trim();
-
-    if !address::is_address_target(address) {
-        return Err(ServiceError::invalid_input(
-            "from_server must name one server as host[:port]",
-        ));
-    }
+    let address = import::normalize_from_server(&request.from_server)?;
 
     // Checked once, before any transfer: every zone's `create` would fail alike.
     if request.create {
@@ -51,7 +47,7 @@ pub async fn import_many(
     let mut client = AxfrClient::new(address);
 
     let zone_names = match (&request.zone_names, &request.from_catalog) {
-        (Some(names), None) => import::normalize_zone_names(names)?,
+        (Some(names), None) => normalize_zone_names(names)?,
         (None, Some(catalog)) => {
             // A catalog names every zone its server provisions, so reading it
             // through Bindizr is an all-zones act.
@@ -151,4 +147,58 @@ pub async fn import_many(
         summary,
         zones,
     })
+}
+
+/// Normalize the zones a bulk import names, in request order without repeats.
+fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError> {
+    if names.is_empty() {
+        return Err(ServiceError::invalid_input(
+            "zone_names must name at least one zone",
+        ));
+    }
+
+    let mut zone_names: Vec<ZoneName> = Vec::with_capacity(names.len());
+    let mut seen: HashSet<ZoneName> = HashSet::with_capacity(names.len());
+
+    for name in names {
+        let zone_name = zone::normalize_name(name)?;
+        if seen.insert(zone_name.clone()) {
+            zone_names.push(zone_name);
+        }
+    }
+
+    Ok(zone_names)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::ErrorCode;
+
+    /// Verify that zone names normalize and deduplicate in request order.
+    #[test]
+    fn normalize_zone_names_canonicalizes_and_drops_repeats() {
+        let names =
+            ["Example.COM.", "example.net", " example.com", "example.net"].map(str::to_string);
+
+        let zone_names = normalize_zone_names(&names).unwrap();
+
+        assert_eq!(
+            zone_names,
+            [
+                ZoneName::parse("example.com").unwrap(),
+                ZoneName::parse("example.net").unwrap(),
+            ]
+        );
+    }
+
+    /// Verify that zone-name lists reject empty input and invalid names.
+    #[test]
+    fn normalize_zone_names_rejects_empty_list_and_bad_name() {
+        let empty = normalize_zone_names(&[]).unwrap_err();
+        assert_eq!(empty.code(), ErrorCode::InvalidInput);
+
+        let root = normalize_zone_names(&["example.com".to_string(), ".".to_string()]).unwrap_err();
+        assert_eq!(root.code(), ErrorCode::InvalidZoneField);
+    }
 }

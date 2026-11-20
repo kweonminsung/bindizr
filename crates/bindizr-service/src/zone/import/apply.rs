@@ -14,7 +14,6 @@ use chrono::Utc;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::record::validation;
 use crate::types::{
     ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,
 };
@@ -30,25 +29,24 @@ fn prepare_zone(
     soa: &ZoneFileSoa,
     default_ttl: Ttl,
 ) -> Result<Zone, ServiceError> {
-    zone::validation::reject_catalog_zone_name(cx, zone_name)?;
+    zone::reject_catalog_zone_name(cx, zone_name)?;
     let rname = SoaMailbox::from_encoded(&soa.rname)
         .to_email()
         .map_err(|error| {
             ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {error}"))
         })?;
-    let normalized = zone::validation::normalize_soa(&soa.mname, &rname, i64::from(default_ttl))?;
 
     Ok(Zone {
         id: ZoneId::UNWRITTEN,
         name: zone_name.clone(),
-        mname: normalized.mname,
-        rname: normalized.rname,
-        default_ttl: normalized.ttl,
+        mname: zone::normalize_mname(&soa.mname)?,
+        rname: zone::normalize_rname(&rname)?,
+        default_ttl: ttl::validate_default_ttl(i64::from(default_ttl))?,
         serial: soa.serial,
-        refresh: ttl::validate_soa_interval(i32::from(soa.refresh), "refresh")?,
-        retry: ttl::validate_soa_interval(i32::from(soa.retry), "retry")?,
-        expire: ttl::validate_soa_interval(i32::from(soa.expire), "expire")?,
-        minimum_ttl: ttl::validate_minimum_ttl(i64::from(soa.minimum_ttl))?,
+        refresh: soa.refresh,
+        retry: soa.retry,
+        expire: soa.expire,
+        minimum_ttl: soa.minimum_ttl,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -103,7 +101,9 @@ pub(crate) async fn apply_import(
     let apply_result: Result<_, ServiceError> = async {
         let started = Instant::now();
 
-        let existing_zone = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        // Disabled zones included, so an import still writes their records.
+        let existing_zone =
+            bindizr_db::zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
         let zone_missing = existing_zone.is_none();
@@ -136,7 +136,8 @@ pub(crate) async fn apply_import(
             }
         };
         timings.parse_ms = time::elapsed_ms(started);
-        let mut errors = parsed.errors;
+        // The parser keeps its causes typed; the response is where they become text.
+        let mut errors: Vec<String> = parsed.errors.iter().map(ToString::to_string).collect();
         let mut skipped = 0usize;
 
         // Normalize parsed records and drop duplicates within the file by identity.
@@ -162,14 +163,14 @@ pub(crate) async fn apply_import(
                     continue;
                 }
             };
-            let owner =
-                match validation::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
-                    Ok(owner) => owner,
-                    Err(error) => {
-                        errors.push(format!("{}: {error}", record.owner_fqdn));
-                        continue;
-                    }
-                };
+            // The parser hands owners over absolute, from text and wire alike.
+            let owner = match OwnerName::parse_absolute_in_zone(&record.owner_fqdn, &zone.name) {
+                Ok(owner) => owner,
+                Err(error) => {
+                    errors.push(format!("{}: record name {error}", record.owner_fqdn));
+                    continue;
+                }
+            };
 
             let data = RecordData {
                 name: owner,
@@ -282,7 +283,7 @@ pub(crate) async fn apply_import(
                 .entry(desired_record.data.name.clone())
                 .or_default();
 
-            match validation::validate_record_constraints(
+            match record::validate_record_constraints(
                 records_at_name,
                 &desired_record.data.name,
                 desired_record.data.record_type,
@@ -372,8 +373,8 @@ pub(crate) async fn apply_import(
         if will_apply && has_changes {
             let started = Instant::now();
 
-            record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &all_deletes).await?;
-            record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+            record::delete_with_changes_tx(&mut tx, new_serial, &all_deletes).await?;
+            record::create_with_changes_tx(&mut tx, new_serial, &to_insert).await?;
 
             timings.db_write_ms = time::elapsed_ms(started);
 

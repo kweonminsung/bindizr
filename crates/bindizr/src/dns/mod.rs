@@ -1,5 +1,5 @@
 //! DNS front end: the TCP, UDP, and XoT listeners, plus zone transfer
-//! (AXFR/IXFR), NOTIFY, SOA queries, RFC 2136 nsupdate, and secondary ACLs.
+//! (AXFR/IXFR), SOA queries, RFC 2136 nsupdate, and secondary ACLs.
 
 mod connection;
 pub(crate) mod error;
@@ -14,7 +14,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bindizr_service::{Context, zone};
+use bindizr_service::Context;
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
@@ -54,26 +54,15 @@ pub(crate) struct DnsServers {
     pub(crate) tls: Option<JoinHandle<()>>,
 }
 
-/// Bring the DNS front end up: prepare the catalog zone and spawn the TCP,
-/// UDP, and (with a certificate) TLS servers, handing back their accept loops.
+/// Bring the DNS front end up: spawn the TCP, UDP, and (with a certificate)
+/// TLS servers, handing back their accept loops. The catalog zone is built
+/// from the zones each time a secondary asks for it.
 pub(crate) async fn start(
     cx: Arc<Context>,
     shutdown: &Shutdown,
     certificate: Option<Arc<TlsCertificate>>,
 ) -> Result<DnsServers, StartDnsError> {
     let dns_cx = Arc::new(DnsContext::new(cx.clone()));
-
-    // The catalog zone must exist before a secondary asks for it.
-    match zone::refresh_catalog(&cx).await {
-        Ok((catalog_zone, _)) => {
-            log::info!(
-                "Catalog zone '{}' is ready (serial: {})",
-                cx.config().dns.catalog_zone_name,
-                catalog_zone.serial
-            );
-        }
-        Err(error) => log::warn!("Failed to generate catalog zone: {error}"),
-    }
 
     let config = cx.config();
     let listen_addr = SocketAddr::new(config.dns.listen_addr, config.dns.listen_port);

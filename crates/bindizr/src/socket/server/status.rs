@@ -4,13 +4,10 @@ use std::sync::Arc;
 
 use bindizr_core::config::Config;
 use bindizr_service::error::ServiceError;
-use bindizr_service::types::MessageResponse;
 use bindizr_service::{Context, secondary, zone};
 use tokio::time;
 
-use crate::daemon;
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
-use crate::socket::server::SocketContext;
 use crate::socket::types::{DaemonResponse, DaemonStatusResponse};
 
 /// Get the daemon's current status as JSON.
@@ -43,7 +40,7 @@ pub(crate) async fn get_daemon_status(
         "http"
     };
     let response = DaemonStatusResponse {
-        pid: Some(process::id()),
+        pid: process::id(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         started_at_ms: cx
             .started_at()
@@ -66,25 +63,6 @@ pub(crate) async fn get_daemon_status(
     Ok(DaemonResponse {
         message: "Status retrieved successfully".to_string(),
         data: response,
-    })
-}
-
-/// Reload the daemon configuration and return the result.
-pub(crate) fn reload_config(
-    socket_cx: &SocketContext,
-) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    let changed = daemon::reload_config(socket_cx.daemon(), socket_cx.tls())?;
-
-    let message = if changed.is_empty() {
-        "Configuration reloaded; nothing changed".to_string()
-    } else {
-        format!("Configuration reloaded: {} changed", changed.join(", "))
-    };
-    log::info!("event=config_reload changed={}", changed.join(","));
-
-    Ok(DaemonResponse {
-        message: message.clone(),
-        data: MessageResponse { message },
     })
 }
 

@@ -2,6 +2,7 @@
 
 use thiserror::Error;
 
+use crate::dns::LibraryError;
 use crate::dns::name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN};
 
 /// Why a name could not be parsed. Callers phrase these for their own layer.
@@ -17,15 +18,6 @@ pub enum ParseNameError {
     EmptyLabel,
     #[error("labels must be {MAX_DNS_LABEL_LEN} bytes or fewer")]
     LabelTooLong,
-    /// Hostname syntax for connection addresses, independent of DNS owner labels.
-    #[error("labels must contain only {}", if *underscore_allowed {
-        "ASCII letters, digits, hyphens, or underscores"
-    } else {
-        "ASCII letters, digits, or hyphens"
-    })]
-    LabelCharset { underscore_allowed: bool },
-    #[error("labels must not start or end with hyphens")]
-    LabelHyphen,
     /// A `\` with nothing after it (RFC 1035, Section 5.1).
     #[error("ends with an incomplete escape")]
     DanglingEscape,
@@ -34,6 +26,15 @@ pub enum ParseNameError {
     InvalidEscape,
     #[error("is outside the zone")]
     OutsideZone,
+}
+
+/// A typed name whose wire bytes the `domain` crate did not accept.
+#[derive(Debug, Error)]
+pub enum EncodeWireNameError {
+    #[error(transparent)]
+    Name(#[from] ParseNameError),
+    #[error("invalid wire name: {0}")]
+    Octets(#[source] LibraryError),
 }
 
 /// A presentation-form name that could not become wire labels.

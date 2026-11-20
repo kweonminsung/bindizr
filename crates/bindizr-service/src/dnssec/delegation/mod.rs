@@ -1,6 +1,6 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
-use bindizr_core::dns::dnssec::{DS_DIGEST_TYPES, KeyTag};
+use bindizr_core::dns::dnssec::{DsDigestType, KeyTag};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecordSet;
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyState};
@@ -13,7 +13,7 @@ use thiserror::Error;
 use crate::authorization::Caller;
 use crate::dns_client::ds;
 use crate::dns_client::ds::ParentDs;
-use crate::dnssec::{SignedZone, status};
+use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState,
@@ -23,7 +23,7 @@ use crate::{Context, dnssec, transaction};
 /// Why the zone's configuration prevents a delegation check.
 #[derive(Debug, Error)]
 enum ProbeDelegationError {
-    #[error("the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'")]
+    #[error("the zone names no parent nameservers")]
     NoParentNameservers,
 }
 
@@ -45,7 +45,7 @@ pub async fn check_ds(
             LockLevel::Shared,
         )
         .await?;
-        let status = status::lookup_status_tx(
+        let status = dnssec::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -113,12 +113,11 @@ fn build_delegation_response(
     for key in keys.iter().filter(|key| key.role.is_sep()) {
         // Compare full RDATA to avoid key-tag collisions, using the parent's digest types.
         // Require every server to agree before promoting a key.
-        let mut digest_types: Vec<u8> = served
+        let mut digest_types: Vec<DsDigestType> = served
             .iter()
             .flat_map(|record_set| record_set.records.iter())
             .filter(|record| record.key_tag == key.key_tag)
-            .map(|record| record.digest_type)
-            .filter(|digest_type| DS_DIGEST_TYPES.contains(digest_type))
+            .filter_map(|record| DsDigestType::try_from(record.digest_type).ok())
             .collect();
         digest_types.sort_unstable();
         digest_types.dedup();
@@ -133,7 +132,7 @@ fn build_delegation_response(
                     .filter(|record| record.key_tag == key.key_tag)
                     .peekable();
                 for_key.peek().is_some()
-                    && !for_key.any(|record| DS_DIGEST_TYPES.contains(&record.digest_type))
+                    && !for_key.any(|record| DsDigestType::try_from(record.digest_type).is_ok())
             })
         });
 

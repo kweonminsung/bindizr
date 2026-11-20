@@ -6,8 +6,6 @@ use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::model::zone::{Zone, ZoneId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::openapi::RefOr;
-use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, Schema, SchemaFormat, SchemaType, Type};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::types::transfer::TransferLogResponse;
@@ -142,7 +140,7 @@ pub struct CreateZoneRequest {
     pub retry: Option<i32>,
     #[schema(example = 604_800)]
     pub expire: Option<i32>,
-    #[schema(schema_with = build_minimum_ttl_schema)]
+    #[schema(example = 3600, value_type = Option<Ttl>, inline)]
     pub minimum_ttl: Option<i64>,
     /// Free-text note for operators, at most 255 characters.
     #[schema(example = "customer A, migrated 2026-01")]
@@ -156,17 +154,6 @@ pub struct CreateZoneRequest {
     #[serde(default)]
     #[schema(example = false)]
     pub dry_run: bool,
-}
-
-/// Describe the nullable nonnegative SOA minimum accepted by zone writes.
-fn build_minimum_ttl_schema() -> RefOr<Schema> {
-    ObjectBuilder::new()
-        .schema_type(SchemaType::from_iter([Type::Integer, Type::Null]))
-        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
-        .minimum(Some(0u64))
-        .maximum(Some(u64::from(Ttl::MAX.as_secs())))
-        .examples([3600])
-        .into()
 }
 
 /// Create the apex NS record when a request leaves the choice out.
@@ -273,7 +260,7 @@ pub struct UpdateZoneRequest {
     #[schema(example = 604_800)]
     pub expire: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(schema_with = build_minimum_ttl_schema)]
+    #[schema(example = 3600, value_type = Option<Ttl>, inline)]
     pub minimum_ttl: Option<i64>,
     /// `false` stops the DNS plane serving the zone without deleting it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

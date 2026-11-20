@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use bindizr_core::dns::message::{DnsMessageBuilder, ParsedQuery, Rtype};
+use bindizr_core::dns::message::{DnsMessageBuilder, ParsedQuery};
 use bindizr_core::model::transfer::TransferKind;
 use bindizr_service::zone::TransferAccess;
 use bindizr_service::{transfer, zone};
@@ -17,7 +17,6 @@ pub(crate) async fn handle_axfr(
     writer: &ResponseWriter,
     client_ip: IpAddr,
     query: &ParsedQuery,
-    response_qtype: Rtype,
     identity: &mut TransferIdentity,
 ) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
@@ -42,14 +41,7 @@ pub(crate) async fn handle_axfr(
             TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
         };
 
-        return catalog::send_catalog_response(
-            writer,
-            query,
-            response_qtype,
-            &mut identity.signer,
-            content,
-        )
-        .await;
+        return catalog::send_catalog_response(writer, query, &mut identity.signer, content).await;
     }
 
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
@@ -81,7 +73,7 @@ pub(crate) async fn handle_axfr(
         zone.serial
     );
 
-    let mut builder = DnsMessageBuilder::new(query, response_qtype);
+    let mut builder = DnsMessageBuilder::new(query);
 
     if let Some(signer) = identity.signer.take() {
         builder = builder.sign_with(signer);
@@ -141,7 +133,7 @@ pub(crate) async fn handle_axfr(
         cx,
         client_ip,
         zone.id,
-        TransferKind::from_qtype(response_qtype),
+        TransferKind::from_qtype(query.qtype),
         writer.transport(),
         false,
         serial,

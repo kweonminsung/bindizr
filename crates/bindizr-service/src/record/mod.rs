@@ -6,7 +6,7 @@ mod create;
 mod delete;
 mod get;
 mod update;
-pub(crate) mod validation;
+mod validation;
 
 use bindizr_core::model::dnssec_record::DnssecRecordWithZone;
 use bindizr_core::model::record::RecordWithZone;
@@ -17,7 +17,9 @@ pub use delete::{delete, delete_matching};
 pub use get::{count_all, get, list_by_filter_with_zone};
 pub use update::{update, update_by_name};
 pub(crate) use validation::{
-    AddResult, validate_add_tx, validate_record_constraints, validate_record_name_in_zone,
+    AddResult, ParsedRecord, normalize_record_owner_name, parse_record_fields, parse_record_type,
+    validate_add_tx, validate_management_value, validate_record_constraints,
+    validate_record_name_in_zone,
 };
 
 use crate::authorization::Caller;
@@ -34,9 +36,13 @@ enum ServedRecord {
 fn build_record_response(caller: &Caller, record: &ServedRecord) -> RecordResponse {
     match record {
         ServedRecord::User(record) => RecordResponse::from_record(
-            &record.record(),
+            &record.record,
             &record.zone_name,
-            caller.record_actions(record.zone_id, &record.name, record.record_type),
+            caller.record_actions(
+                record.record.zone_id,
+                &record.record.name,
+                record.record.record_type,
+            ),
         ),
         ServedRecord::Derived(record) => RecordResponse {
             id: None,

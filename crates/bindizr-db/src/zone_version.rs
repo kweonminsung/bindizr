@@ -11,7 +11,7 @@ use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 pub async fn upsert_tx(
     tx: &mut Transaction<'_>,
     version: ZoneVersion,
-) -> Result<ZoneVersion, DatabaseError> {
+) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::zone_version::upsert_tx(tx, version).await,
         TransactionKind::Postgres(tx) => postgres::zone_version::upsert_tx(tx, version).await,

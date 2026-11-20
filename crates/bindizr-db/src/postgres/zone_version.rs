@@ -30,14 +30,14 @@ const EXCLUDE_PAST_SIGNER_ONLY_FILTER: &str = r#"
 pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, Postgres>,
     version: ZoneVersion,
-) -> Result<ZoneVersion, DatabaseError> {
+) -> Result<(), DatabaseError> {
     let (changed_by_kind, changed_by_name) = version
         .changed_by
         .as_ref()
         .map(ChangeActor::as_columns)
         .unzip();
 
-    let version = sqlx::query_as::<_, ZoneVersion>(
+    sqlx::query(
         r#"
         INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -53,7 +53,6 @@ pub(crate) async fn upsert_tx(
             change_source = EXCLUDED.change_source,
             changed_by_kind = EXCLUDED.changed_by_kind,
             changed_by_name = EXCLUDED.changed_by_name
-        RETURNING id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         "#,
     )
     .bind(version.zone_id)
@@ -69,10 +68,10 @@ pub(crate) async fn upsert_tx(
     .bind(changed_by_kind)
     .bind(changed_by_name)
     .bind(Utc::now())
-    .fetch_one(&mut **tx)
+    .execute(&mut **tx)
     .await?;
 
-    Ok(version)
+    Ok(())
 }
 
 /// List the versions with serial in the closed interval `[from_serial,

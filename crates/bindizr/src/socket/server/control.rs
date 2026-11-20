@@ -1,9 +1,8 @@
-use std::time::Duration;
-
+use bindizr_service::error::ServiceError;
 use bindizr_service::types::MessageResponse;
 use tokio::sync::mpsc;
-use tokio::time;
 
+use crate::daemon;
 use crate::socket::server::SocketContext;
 use crate::socket::types::DaemonResponse;
 
@@ -40,13 +39,27 @@ pub(crate) fn restart(socket_cx: &SocketContext) -> DaemonResponse<MessageRespon
     }
 }
 
-/// Send the transition after a short delay so the command response reaches
-/// the client before the daemon tears down.
-fn send_control(socket_cx: &SocketContext, control: DaemonControl) {
-    let control_tx = socket_cx.control().clone();
+/// Reload the daemon configuration and return the result.
+pub(crate) fn reload_config(
+    socket_cx: &SocketContext,
+) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
+    let changed = daemon::reload_config(socket_cx.daemon(), socket_cx.tls())?;
 
-    tokio::spawn(async move {
-        time::sleep(Duration::from_millis(100)).await;
-        let _ = control_tx.send(control).await;
-    });
+    let message = if changed.is_empty() {
+        "Configuration reloaded; nothing changed".to_string()
+    } else {
+        format!("Configuration reloaded: {} changed", changed.join(", "))
+    };
+
+    Ok(DaemonResponse {
+        message: message.clone(),
+        data: MessageResponse { message },
+    })
+}
+
+/// Queue the lifecycle transition; the socket server's drain lets this
+/// command's reply reach the client before the daemon tears down.
+fn send_control(socket_cx: &SocketContext, control: DaemonControl) {
+    // A transition already queued wins; a second has nothing left to do.
+    let _ = socket_cx.control().try_send(control);
 }

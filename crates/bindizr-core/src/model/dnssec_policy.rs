@@ -16,7 +16,7 @@ pub const DEFAULT_DNSSEC_POLICY_NAME: &str = "default";
 
 /// A denial mode outside NSEC and NSEC3.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("unsupported denial mode '{value}' (supported: nsec, nsec3)")]
+#[error("unsupported denial mode '{value}' (supported: {})", DnssecDenial::supported_names().join(", "))]
 pub struct ParseDenialError {
     pub value: String,
 }
@@ -32,12 +32,20 @@ pub enum DnssecDenial {
 }
 
 impl DnssecDenial {
+    /// Every DnssecDenial value, in declaration order.
+    pub const ALL: [Self; 2] = [Self::Nsec, Self::Nsec3];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Nsec => "nsec",
             Self::Nsec3 => "nsec3",
         }
+    }
+
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 
@@ -287,5 +295,52 @@ mod tests {
             );
             assert_eq!(value.as_str().parse::<DnssecDenial>().unwrap(), value);
         }
+    }
+
+    /// Build a policy fixture with the requested signature timing.
+    fn policy(signature_validity_days: u32, signature_refresh_days: u32) -> DnssecPolicy {
+        DnssecPolicy {
+            id: PolicyId::from(1),
+            name: "default".to_string(),
+            algorithm: DnssecAlgorithm::EcdsaP256Sha256,
+            denial: DnssecDenial::Nsec,
+            split_keys: false,
+            signature_validity_days: Days::try_from(signature_validity_days).unwrap(),
+            signature_refresh_days: Days::try_from(signature_refresh_days).unwrap(),
+            zsk_lifetime_days: Days::try_from(0).unwrap(),
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Verify that jitter spreads over half the room the policy leaves.
+    #[test]
+    fn jitter_spreads_over_half_the_room_the_policy_leaves() {
+        // The built-in default: 14 days of validity re-signed with 5 left.
+        assert_eq!(
+            policy(14, 5).expiration_jitter_secs(),
+            (9 * 86400) / 2,
+            "a fixed window would come due for the whole zone at once"
+        );
+    }
+
+    /// Verify that the earliest signature stays clear of its refresh window.
+    #[test]
+    fn jitter_keeps_signatures_outside_refresh_window() {
+        for (validity, refresh) in [(14, 5), (30, 7), (7, 6), (2, 1)] {
+            let policy = policy(validity, refresh);
+            let earliest = i64::from(validity) * 86400 - policy.expiration_jitter_secs();
+
+            assert!(
+                earliest > i64::from(refresh) * 86400,
+                "validity {validity}, refresh {refresh}: signing would land inside the window"
+            );
+        }
+    }
+
+    /// Verify that a policy leaving no room takes no jitter.
+    #[test]
+    fn jitter_returns_zero_when_policy_leaves_no_room() {
+        assert_eq!(policy(5, 5).expiration_jitter_secs(), 0);
+        assert_eq!(policy(5, 7).expiration_jitter_secs(), 0);
     }
 }

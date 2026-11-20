@@ -4,11 +4,11 @@ use domain::base::iana::{Class, TsigRcode};
 use domain::base::message_builder::{AdditionalBuilder, PushError};
 use domain::base::wire::Composer;
 use domain::rdata::tsig::{Time48, Tsig};
-use domain::tsig::Key;
 use ring::hmac;
 use thiserror::Error;
 
 use crate::dns::nsupdate::DEFAULT_FUDGE;
+use crate::dns::tsig;
 use crate::dns::tsig::TsigSigningKey;
 
 /// The response signature could not be appended to the DNS message.
@@ -24,15 +24,6 @@ pub struct ResponseSigner {
 }
 
 impl ResponseSigner {
-    /// Sign one response with the suggested TSIG fudge (RFC 8945, Section 10).
-    pub fn sign_response<T: Composer>(
-        self,
-        additional: &mut AdditionalBuilder<T>,
-        now: Time48,
-    ) -> Result<(), SignResponseError> {
-        self.sign_response_with_fudge(additional, now, DEFAULT_FUDGE)
-    }
-
     /// Sign one response with the caller's accepted clock tolerance.
     pub fn sign_response_with_fudge<T: Composer>(
         self,
@@ -41,11 +32,6 @@ impl ResponseSigner {
         fudge: u16,
     ) -> Result<(), SignResponseError> {
         TransferSigner::from(self).sign_response_with_fudge(additional, now, fudge)
-    }
-
-    /// Return the key whose name and algorithm the response carries.
-    pub fn key(&self) -> &Key {
-        self.key.as_ref()
     }
 }
 
@@ -83,18 +69,20 @@ impl TransferSigner {
         digest.update(&self.previous_mac);
         digest.update(additional.as_slice());
 
+        // Later messages of a chain cover the timers alone (RFC 8945, Section 5.3.1).
         if self.first {
-            digest.update(name.as_slice());
-            digest.update(&Class::ANY.to_int().to_be_bytes());
-            digest.update(&0u32.to_be_bytes());
-            digest.update(algorithm.as_slice());
-        }
-
-        digest.update(&now.into_octets());
-        digest.update(&fudge.to_be_bytes());
-
-        if self.first {
-            digest.update(&[0, 0, 0, 0]); // Error and Other Len.
+            tsig::digest_tsig_variables(
+                &mut digest,
+                name.as_slice(),
+                algorithm.as_slice(),
+                now,
+                fudge,
+                TsigRcode::NOERROR,
+                b"",
+            );
+        } else {
+            digest.update(&now.into_octets());
+            digest.update(&fudge.to_be_bytes());
         }
 
         let mac = digest.sign();
@@ -119,9 +107,9 @@ impl TransferSigner {
         Ok(())
     }
 
-    /// Return the key used to size and identify the next signature.
-    pub fn key(&self) -> &Key {
-        self.key.as_ref()
+    /// Return the bytes a signed message must leave for its TSIG record.
+    pub(crate) fn signature_len(&self) -> usize {
+        usize::from(self.key.as_ref().compose_len())
     }
 }
 

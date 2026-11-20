@@ -10,7 +10,9 @@ use crate::authorization::Caller;
 use crate::change::ChangeOrigin;
 use crate::error::ServiceError;
 use crate::types::{AuditLogFilter, AuditLogResponse, PaginatedResponse};
-use crate::{Context, Transaction, pagination};
+use crate::{
+    Context, Transaction, dnssec_policy, pagination, role, secondary, token, tsig_key, zone,
+};
 
 /// Audit a management write before commit; `detail` describes changes without secrets.
 pub(crate) async fn save_tx(
@@ -70,8 +72,8 @@ pub async fn list(
     ))
 }
 
-/// Parse the listing's entity and sort, trim its name to the row spelling
-/// every entity stores (lowercase), and bound its page.
+/// Parse the listing's entity and sort, spell its name as that entity stores
+/// it, and bound its page.
 fn normalize_filter(
     filter: &AuditLogFilter,
 ) -> Result<bindizr_db::audit_log::AuditLogFilter, ServiceError> {
@@ -88,13 +90,22 @@ fn normalize_filter(
         .as_deref()
         .map(str::trim)
         .filter(|name| !name.is_empty())
-        .map(str::to_ascii_lowercase);
+        .map(|name| match entity {
+            Some(AuditEntity::Zone) => {
+                zone::normalize_name(name).map(|zone_name| zone_name.to_string())
+            }
+            Some(AuditEntity::TsigKey) => tsig_key::normalize_name(name),
+            Some(AuditEntity::Token) => token::normalize_name(name),
+            // A grant's row carries its role's name.
+            Some(AuditEntity::Role | AuditEntity::RoleGrant) => role::normalize_name(name),
+            Some(AuditEntity::Secondary) => secondary::normalize_name(name),
+            Some(AuditEntity::DnssecPolicy) => dnssec_policy::normalize_name(name),
+            // With no kind there is no one spelling to reach; fold what every kind folds.
+            None => Ok(name.to_ascii_lowercase()),
+        })
+        .transpose()?;
 
-    if let (Some(since), Some(until)) = (filter.since, filter.until)
-        && since >= until
-    {
-        return Err(ServiceError::invalid_input("since must be before until"));
-    }
+    pagination::validate_time_window(filter.since, filter.until)?;
 
     // Newest first is the log's natural order, whatever the field.
     let defaults = bindizr_db::audit_log::AuditLogFilter::default();
@@ -115,93 +126,4 @@ fn normalize_filter(
 }
 
 #[cfg(test)]
-mod tests {
-    use bindizr_db::{AuditLogSortField, SortOrder};
-    use chrono::TimeZone;
-
-    use super::*;
-    use crate::error::ErrorCode;
-
-    /// Verify that `normalize_filter` parses the entity, lowercases the name, and bounds the page.
-    #[test]
-    fn normalize_filter_parses_entity_and_folds_name_case() {
-        let filter = normalize_filter(&AuditLogFilter {
-            entity: Some(" TSIG_KEY ".to_string()),
-            entity_name: Some(" Update-Key ".to_string()),
-            limit: Some(10),
-            offset: Some(5),
-            ..Default::default()
-        })
-        .unwrap();
-
-        assert_eq!(filter.entity, Some(AuditEntity::TsigKey));
-        assert_eq!(filter.entity_name.as_deref(), Some("update-key"));
-        assert_eq!(filter.limit, Some(10));
-        assert_eq!(filter.offset, Some(5));
-        assert_eq!(filter.sort, AuditLogSortField::CreatedAt);
-        assert_eq!(filter.order, SortOrder::Desc);
-    }
-
-    /// Verify that `normalize_filter` reads the sort field and direction, and refuses unknown ones.
-    #[test]
-    fn normalize_filter_reads_sort_and_order() {
-        let filter = normalize_filter(&AuditLogFilter {
-            sort: Some("entity_name".to_string()),
-            order: Some("asc".to_string()),
-            ..Default::default()
-        })
-        .unwrap();
-
-        assert_eq!(filter.sort, AuditLogSortField::EntityName);
-        assert_eq!(filter.order, SortOrder::Asc);
-
-        for (sort, order) in [(Some("name"), None), (None, Some("newest"))] {
-            let error = normalize_filter(&AuditLogFilter {
-                sort: sort.map(str::to_string),
-                order: order.map(str::to_string),
-                ..Default::default()
-            })
-            .unwrap_err();
-
-            assert_eq!(error.code(), ErrorCode::InvalidInput);
-        }
-    }
-
-    /// Verify that blank selectors normalize to absent without supplying a page limit.
-    #[test]
-    fn normalize_filter_reads_blank_selectors_as_absent() {
-        let filter = normalize_filter(&AuditLogFilter {
-            entity: Some(String::new()),
-            entity_name: Some("   ".to_string()),
-            ..Default::default()
-        })
-        .unwrap();
-
-        assert_eq!(filter.entity, None);
-        assert_eq!(filter.entity_name, None);
-        assert_eq!(filter.limit, None);
-    }
-
-    /// Verify that `normalize_filter` rejects an unknown entity and an empty time window.
-    #[test]
-    fn normalize_filter_rejects_unknown_entity_and_inverted_window() {
-        let unknown = normalize_filter(&AuditLogFilter {
-            entity: Some("record".to_string()),
-            ..Default::default()
-        })
-        .unwrap_err();
-
-        assert_eq!(unknown.code(), ErrorCode::InvalidInput);
-        assert!(unknown.to_string().contains("tsig_key"), "{unknown}");
-
-        let later = Utc.with_ymd_and_hms(2026, 10, 2, 0, 0, 0).unwrap();
-        let inverted = normalize_filter(&AuditLogFilter {
-            since: Some(later),
-            until: Some(later),
-            ..Default::default()
-        })
-        .unwrap_err();
-
-        assert_eq!(inverted.code(), ErrorCode::InvalidInput);
-    }
-}
+mod tests;

@@ -13,7 +13,7 @@ fn txt_rdata_round_trips_stored_form() {
     assert_eq!(stored, r#""ab" "c""#);
     assert_eq!(
         TxtRecordValue::from_presentation(&stored).map(TxtRecordValue::into_rdata),
-        Some(rdata.to_vec())
+        Ok(rdata.to_vec())
     );
 }
 
@@ -24,10 +24,7 @@ fn txt_segments_round_trip_wire_encoding() {
 
     assert_eq!(
         rdata.to_content(),
-        Some(TxtContent::Segments(vec![
-            "a".to_string(),
-            "bc".to_string()
-        ]))
+        Some(vec!["a".to_string(), "bc".to_string()])
     );
 }
 
@@ -53,7 +50,7 @@ fn txt_segments_allow_single_empty_segment() {
     let rdata = TxtRecordValue::from_segments([""]).unwrap();
 
     assert_eq!(rdata.clone().into_rdata(), vec![0]);
-    assert_eq!(rdata.to_content(), Some(TxtContent::Single(String::new())));
+    assert_eq!(rdata.to_content(), Some(vec![String::new()]));
 }
 
 /// Verify that TXT string splits long values.
@@ -71,7 +68,7 @@ fn txt_string_splits_long_values() {
     });
     assert_eq!(
         rdata.to_content(),
-        Some(TxtContent::Segments(vec!["a".repeat(255), "a".repeat(45)]))
+        Some(vec!["a".repeat(255), "a".repeat(45)])
     );
 }
 
@@ -82,15 +79,15 @@ fn txt_string_splits_on_utf8_boundaries() {
 
     assert_eq!(
         rdata.to_content(),
-        Some(TxtContent::Segments(vec!["a".repeat(254), "é".to_string()]))
+        Some(vec!["a".repeat(254), "é".to_string()])
     );
 }
 
 /// Verify that `from_presentation` rejects unquoted values.
 #[test]
 fn from_presentation_rejects_unquoted_values() {
-    assert!(TxtRecordValue::from_presentation("v=spf1 -all").is_none());
-    assert!(TxtRecordValue::from_presentation("bindizr:txt-rdata:v1:A2Fi").is_none());
+    assert!(TxtRecordValue::from_presentation("v=spf1 -all").is_err());
+    assert!(TxtRecordValue::from_presentation("bindizr:txt-rdata:v1:A2Fi").is_err());
 }
 
 /// Verify that `parse` reads quoted segments.
@@ -100,22 +97,19 @@ fn parse_reads_quoted_segments() {
         TxtRecordValue::parse(r#""heritage=external-dns,external-dns/owner=default""#)
             .unwrap()
             .to_content(),
-        Some(TxtContent::Single(
+        Some(vec![
             "heritage=external-dns,external-dns/owner=default".to_string()
-        ))
+        ])
     );
     assert_eq!(
         TxtRecordValue::parse(r#""first" "second""#)
             .unwrap()
             .to_content(),
-        Some(TxtContent::Segments(vec![
-            "first".to_string(),
-            "second".to_string()
-        ]))
+        Some(vec!["first".to_string(), "second".to_string()])
     );
     assert_eq!(
         TxtRecordValue::parse(r#""""#).unwrap().to_content(),
-        Some(TxtContent::Single(String::new()))
+        Some(vec![String::new()])
     );
 }
 
@@ -126,7 +120,7 @@ fn parse_unescapes_quotes_backslashes_and_ddd() {
         TxtRecordValue::parse(r#""a\"b\\c\032d""#)
             .unwrap()
             .to_content(),
-        Some(TxtContent::Single(r#"a"b\c d"#.to_string()))
+        Some(vec![r#"a"b\c d"#.to_string()])
     );
 }
 
@@ -135,7 +129,7 @@ fn parse_unescapes_quotes_backslashes_and_ddd() {
 fn parse_treats_bare_value_as_content() {
     assert_eq!(
         TxtRecordValue::parse("v=spf1 -all").unwrap().to_content(),
-        Some(TxtContent::Single("v=spf1 -all".to_string()))
+        Some(vec!["v=spf1 -all".to_string()])
     );
 }
 
@@ -144,11 +138,11 @@ fn parse_treats_bare_value_as_content() {
 fn parse_keeps_bare_value_whitespace() {
     assert_eq!(
         TxtRecordValue::parse(" padded ").unwrap().to_content(),
-        Some(TxtContent::Single(" padded ".to_string()))
+        Some(vec![" padded ".to_string()])
     );
     assert_eq!(
         TxtRecordValue::parse("   ").unwrap().to_content(),
-        Some(TxtContent::Single("   ".to_string()))
+        Some(vec!["   ".to_string()])
     );
 
     // Whitespace around a quoted value is formatting, not content.
@@ -156,7 +150,7 @@ fn parse_keeps_bare_value_whitespace() {
         TxtRecordValue::parse(r#"  "padded"  "#)
             .unwrap()
             .to_content(),
-        Some(TxtContent::Single("padded".to_string()))
+        Some(vec!["padded".to_string()])
     );
 }
 
@@ -167,7 +161,7 @@ fn parse_splits_long_bare_value() {
         TxtRecordValue::parse(&"a".repeat(300))
             .unwrap()
             .to_content(),
-        Some(TxtContent::Segments(vec!["a".repeat(255), "a".repeat(45)]))
+        Some(vec!["a".repeat(255), "a".repeat(45)])
     );
 }
 

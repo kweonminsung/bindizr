@@ -13,7 +13,7 @@ use bindizr_service::{Context, external_dns};
 
 use crate::api::RequestCaller;
 use crate::api::error::ApiError;
-use crate::api::middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES};
+use crate::api::extract::{JsonBody, MAX_UPLOAD_BODY_BYTES};
 
 /// Build ExternalDNS routes, registered only when `api.external_dns_enabled` is set.
 pub(crate) fn routes() -> Router<Arc<Context>> {

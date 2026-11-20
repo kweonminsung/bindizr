@@ -35,12 +35,7 @@ fn zone_content(records: usize) -> CachedTransferContent {
 #[test]
 fn transfer_cache_serves_oversized_zone_without_caching() {
     let mut entries = Entries::default();
-    entries.store(
-        ZoneId::from(1),
-        ZoneVersionId::from(1),
-        zone_content(MAX_RECORDS + 1),
-        MAX_RECORDS,
-    );
+    entries.store(ZoneId::from(1), zone_content(MAX_RECORDS + 1), MAX_RECORDS);
 
     assert!(
         entries
@@ -54,16 +49,13 @@ fn transfer_cache_serves_oversized_zone_without_caching() {
 #[test]
 fn transfer_cache_releases_entry_when_zone_exceeds_budget() {
     let mut entries = Entries::default();
+    entries.store(ZoneId::from(1), zone_content(MAX_RECORDS / 2), MAX_RECORDS);
     entries.store(
         ZoneId::from(1),
-        ZoneVersionId::from(1),
-        zone_content(MAX_RECORDS / 2),
-        MAX_RECORDS,
-    );
-    entries.store(
-        ZoneId::from(1),
-        ZoneVersionId::from(2),
-        zone_content(MAX_RECORDS + 1),
+        CachedTransferContent {
+            version_id: ZoneVersionId::from(2),
+            ..zone_content(MAX_RECORDS + 1)
+        },
         MAX_RECORDS,
     );
 
@@ -88,13 +80,11 @@ fn transfer_cache_evicts_previous_zone_to_fit_new_zone() {
     // A cap on zones would have held both, at 120% of the budget.
     entries.store(
         ZoneId::from(1),
-        ZoneVersionId::from(1),
         zone_content(MAX_RECORDS * 3 / 5),
         MAX_RECORDS,
     );
     entries.store(
         ZoneId::from(2),
-        ZoneVersionId::from(1),
         zone_content(MAX_RECORDS * 3 / 5),
         MAX_RECORDS,
     );
@@ -118,13 +108,11 @@ fn transfer_cache_evicts_least_recently_used_zone() {
     let mut entries = Entries::default();
     entries.store(
         ZoneId::from(1),
-        ZoneVersionId::from(1),
         zone_content(MAX_RECORDS * 2 / 5),
         MAX_RECORDS,
     );
     entries.store(
         ZoneId::from(2),
-        ZoneVersionId::from(1),
         zone_content(MAX_RECORDS * 2 / 5),
         MAX_RECORDS,
     );
@@ -136,12 +124,7 @@ fn transfer_cache_evicts_least_recently_used_zone() {
     );
 
     // Fits only after one of the two is evicted, and zone 1 was just read.
-    entries.store(
-        ZoneId::from(3),
-        ZoneVersionId::from(1),
-        zone_content(MAX_RECORDS / 2),
-        MAX_RECORDS,
-    );
+    entries.store(ZoneId::from(3), zone_content(MAX_RECORDS / 2), MAX_RECORDS);
 
     assert!(
         entries
@@ -167,16 +150,13 @@ fn transfer_cache_replaces_records_when_zone_is_restored() {
     let content = zone_content(4);
     let records = content.record_count();
 
+    entries.store(ZoneId::from(1), content.clone(), MAX_RECORDS);
     entries.store(
         ZoneId::from(1),
-        ZoneVersionId::from(1),
-        content.clone(),
-        MAX_RECORDS,
-    );
-    entries.store(
-        ZoneId::from(1),
-        ZoneVersionId::from(2),
-        content,
+        CachedTransferContent {
+            version_id: ZoneVersionId::from(2),
+            ..content
+        },
         MAX_RECORDS,
     );
 
@@ -197,8 +177,8 @@ fn transfer_cache_replaces_records_when_zone_is_restored() {
 #[test]
 fn transfer_cache_evicts_existing_zones_when_budget_is_lowered() {
     let mut entries = Entries::default();
-    entries.store(ZoneId::from(1), ZoneVersionId::from(1), zone_content(3), 10);
-    entries.store(ZoneId::from(2), ZoneVersionId::from(1), zone_content(3), 10);
+    entries.store(ZoneId::from(1), zone_content(3), 10);
+    entries.store(ZoneId::from(2), zone_content(3), 10);
 
     assert_eq!(entries.records, 6);
 

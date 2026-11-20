@@ -8,7 +8,7 @@ use bindizr_service::types::{
 };
 use clap::Subcommand;
 
-use crate::cli::commands::dnssec;
+use crate::cli::commands::{ReadInputError, dnssec};
 use crate::cli::error::CliError;
 use crate::cli::output::OutputFormat;
 use crate::socket::client;
@@ -93,15 +93,15 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             let mut keys = Vec::with_capacity(key.len());
 
             for (key, private) in key.iter().zip(&private) {
-                let dnskey = fs::read_to_string(key).map_err(|error| {
-                    CliError::request_with_source(format!("failed to read '{key}': {error}"), error)
+                let dnskey = fs::read_to_string(key).map_err(|source| ReadInputError::File {
+                    path: key.clone(),
+                    source,
                 })?;
-                let private_key = fs::read_to_string(private).map_err(|error| {
-                    CliError::request_with_source(
-                        format!("failed to read '{private}': {error}"),
-                        error,
-                    )
-                })?;
+                let private_key =
+                    fs::read_to_string(private).map_err(|source| ReadInputError::File {
+                        path: private.clone(),
+                        source,
+                    })?;
                 keys.push(ImportDnssecKeyPair {
                     dnskey,
                     private_key,

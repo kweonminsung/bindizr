@@ -1,5 +1,7 @@
-//! DNS record constraint validation: CNAME/NS/MX/SOA rules, duplicate
-//! detection, and owner-name normalization.
+//! Record request validation: parsing the request's record fields, owner
+//! normalization, owner-local constraints (CNAME, DNAME, NS, MX, WKS, DS, one
+//! TTL per name and type), the duplicate and add-outcome check, and the
+//! stored-name wire fit check.
 
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
@@ -62,7 +64,7 @@ pub(crate) fn validate_management_value(
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
     value
         .parse::<RecordType>()
-        .map_err(|_| ServiceError::invalid_input(format!("invalid record type: {value}")))
+        .map_err(ServiceError::invalid_input)
 }
 
 /// Validate and normalize a record owner relative to its zone.
@@ -131,9 +133,9 @@ pub(crate) fn validate_record_constraints(
     }
 
     if record_type == RecordType::Wks
-        && records_at_name.iter().any(|record| {
-            record.record_type == RecordType::Wks && record.is_replaced_by(value, priority)
-        })
+        && records_at_name
+            .iter()
+            .any(|record| record.is_replaced_by(RecordType::Wks, value, priority))
     {
         return Err(ServiceError::record_conflict(
             "WKS records at the same name must have distinct addresses or protocols",

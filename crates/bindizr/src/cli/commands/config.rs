@@ -83,7 +83,7 @@ fn validate_config(config_file: Option<&str>, output: OutputFormat) -> Result<()
         outln!("Checking configuration file: {path}");
     }
 
-    Config::load(&path).map_err(CliError::configuration)?;
+    Config::load(&path)?;
 
     let message = format!("Configuration file '{path}' is valid");
 

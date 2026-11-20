@@ -1,5 +1,5 @@
 //! Inbound DNS serving: AXFR/IXFR dispatch with TSIG or ACL gating, SOA
-//! responses, catalog-zone generation, and RFC 2136 nsupdate handling.
+//! responses, streaming the service's catalog zone, and RFC 2136 nsupdate handling.
 
 pub(crate) mod acl;
 pub(crate) mod auth;
@@ -180,9 +180,7 @@ pub(crate) async fn handle_tcp_xfr(
     );
 
     let result = match query.qtype {
-        Rtype::AXFR => {
-            axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::AXFR, &mut identity).await
-        }
+        Rtype::AXFR => axfr::handle_axfr(dns_cx, writer, client_ip, query, &mut identity).await,
         Rtype::IXFR => ixfr::handle_ixfr(dns_cx, writer, client_ip, query, &mut identity).await,
         _ => {
             log::warn!("Unsupported query type: {:?}", query.qtype);
@@ -196,18 +194,21 @@ pub(crate) async fn handle_tcp_xfr(
     // key that asked; other transfer failures propagate to the listener.
     match result {
         Ok(()) => {
-            cx.metrics()
-                .track_xfr(query.qtype, transport, XfrResult::Ok);
+            cx.metrics().track_xfr(
+                TransferKind::from_qtype(query.qtype),
+                transport,
+                XfrResult::Ok,
+            );
             Ok(())
         }
-        Err(DnsError::NotAuth { zone_name }) => {
+        Err(error @ DnsError::NotAuth { .. }) => {
             refuse_tcp_xfr(
                 dns_cx,
                 writer,
                 client_ip,
                 query,
                 query_data,
-                TransferRefusal::not_auth(zone_name, identity.signer.take()),
+                TransferRefusal::not_auth(error.to_string(), identity.signer.take()),
             )
             .await
         }
@@ -232,8 +233,11 @@ pub(crate) async fn handle_tcp_xfr(
                 );
             }
 
-            cx.metrics()
-                .track_xfr(query.qtype, transport, XfrResult::Failed);
+            cx.metrics().track_xfr(
+                TransferKind::from_qtype(query.qtype),
+                transport,
+                XfrResult::Failed,
+            );
 
             transfer::save_failed(
                 cx,
@@ -309,7 +313,8 @@ async fn refuse_tcp_xfr(
         reason = error.to_string();
     }
 
-    cx.metrics().track_xfr(query.qtype, transport, outcome);
+    cx.metrics()
+        .track_xfr(TransferKind::from_qtype(query.qtype), transport, outcome);
     log::warn!("Refused XFR {transport} query from {client_ip}: {reason}");
 
     match outcome {
@@ -401,7 +406,7 @@ pub(crate) async fn handle_udp_xfr(
 
     // The transfer itself follows over TCP; count this response only after sending it.
     cx.metrics().track_xfr(
-        query.qtype,
+        TransferKind::from_qtype(query.qtype),
         TransferTransport::Udp,
         if sent.is_err() {
             XfrResult::Failed

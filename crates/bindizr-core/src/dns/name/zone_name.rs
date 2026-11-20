@@ -7,7 +7,7 @@ use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 
 use crate::dns::name;
-use crate::dns::name::ParseNameError;
+use crate::dns::name::{EncodeWireNameError, ParseNameError, WireName};
 
 /// A zone's name as rows store it: escaped octet labels, ASCII-folded, without a trailing dot.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -22,11 +22,6 @@ impl ZoneName {
         }
         let (labels, _) = name::decode_name_labels(trimmed)?;
         Ok(Self(name::labels_to_presentation(&labels)))
-    }
-
-    /// Wrap a name already in stored form, as read from a row.
-    pub fn from_row(value: &str) -> Self {
-        Self::parse(value).expect("zone name validated before storage")
     }
 
     /// Return the canonical wire spelling.
@@ -49,6 +44,11 @@ impl ZoneName {
     /// Encode the zone name as an absolute DNS wire-format name.
     pub fn to_wire(&self) -> Result<Vec<u8>, ParseNameError> {
         name::labels_to_wire(self.labels().iter().map(Vec::as_slice))
+    }
+
+    /// Convert the zone apex into the `domain` crate's name form.
+    pub fn to_wire_name(&self) -> Result<WireName, EncodeWireNameError> {
+        name::wire_to_name(self.to_wire()?)
     }
 }
 

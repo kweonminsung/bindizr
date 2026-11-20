@@ -40,7 +40,9 @@ fn verify_response_rejects_invalid_class_and_ttl() {
         .start_answer(&query, Rcode::NOERROR)
         .unwrap()
         .additional();
-    server.sign_response(&mut response, Time48::now()).unwrap();
+    TransferSigner::from(server)
+        .sign_response(&mut response, Time48::now())
+        .unwrap();
     let response = response.finish();
     verify_response(&verifier, &response).unwrap();
     let start = Message::from_octets(response.as_slice())
@@ -132,7 +134,9 @@ fn verify_tsig_authenticates_original_other_data() {
                 .start_answer(&message, Rcode::NOERROR)
                 .unwrap()
                 .additional();
-            signer.sign_response(&mut response, Time48::now()).unwrap();
+            TransferSigner::from(signer)
+                .sign_response(&mut response, Time48::now())
+                .unwrap();
             assert_response_mac(&query_data, &response.finish(), algorithm);
             let mut tampered = query_data;
             *tampered.last_mut().unwrap() ^= 1;
@@ -1280,4 +1284,37 @@ fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
 
         assert_eq!(request_signature(&malformed), RequestSignature::Malformed);
     }
+}
+
+/// Verify that an error response that cannot be built keeps why, rather than
+/// only naming the RCODE it was for.
+#[test]
+fn build_error_response_keeps_the_cause_of_a_failure() {
+    use std::error::Error;
+
+    let builder = MessageBuilder::new_vec();
+    let mut question = builder.question();
+    question
+        .push((
+            Name::<Vec<u8>>::from_str("example.com.").unwrap(),
+            Rtype::SOA,
+        ))
+        .unwrap();
+    let query_data = question.finish();
+
+    // No TSIG to echo, so the error cannot be composed.
+    let error = build_error_response(
+        &query_data,
+        None,
+        TsigRcode::BADKEY,
+        Time48::now(),
+        ResponseLimit::STREAM,
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(error, TsigError::BuildResponse { .. }),
+        "{error:?}"
+    );
+    assert!(error.source().is_some(), "{error:?}");
 }

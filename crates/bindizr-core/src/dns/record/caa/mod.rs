@@ -32,7 +32,7 @@ impl<'a> CaaRecordValue<'a> {
         // or non-UTF-8 values; the presentation escapes preserve those bytes.
         let (value, trailing) = value::parse_string_octets("CAA value", rest)?;
 
-        if !trailing.is_empty() {
+        if !trailing.trim_start().is_empty() {
             return Err(error());
         }
 

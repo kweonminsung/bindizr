@@ -9,7 +9,7 @@ mod notify;
 mod record;
 mod role;
 mod secondary;
-pub(crate) mod status;
+mod status;
 mod token;
 mod tsig_key;
 mod zone;
@@ -341,7 +341,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
     match command {
         DaemonCommand::Status => encode_response(status::get_daemon_status(cx).await),
         DaemonCommand::Config => encode_response(Ok(status::get_config(cx))),
-        DaemonCommand::ReloadConfig => encode_response(status::reload_config(socket_cx)),
+        DaemonCommand::ReloadConfig => encode_response(control::reload_config(socket_cx)),
         DaemonCommand::Doctor => encode_response(doctor::check_installation(cx).await),
         DaemonCommand::Shutdown => encode_response(Ok(control::shutdown(socket_cx))),
         DaemonCommand::Restart => encode_response(Ok(control::restart(socket_cx))),

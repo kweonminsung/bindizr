@@ -7,7 +7,6 @@ use bindizr_db::LockLevel;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::record::validation;
 use crate::types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, record, serial, transaction, zone};
@@ -136,13 +135,8 @@ pub async fn delete(
             return Ok((response, zone.name));
         }
 
-        record::delete_with_changes_tx(
-            &mut tx,
-            zone.id,
-            new_serial,
-            slice::from_ref(&existing_record),
-        )
-        .await?;
+        record::delete_with_changes_tx(&mut tx, new_serial, slice::from_ref(&existing_record))
+            .await?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 
@@ -178,11 +172,11 @@ pub async fn delete_matching(
     request: &DeleteRecordsRequest,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
     let zone_name = zone::normalize_name(&request.zone_name)?;
-    let owner = validation::normalize_record_owner_name(&request.name, &zone_name)?;
+    let owner = record::normalize_record_owner_name(&request.name, &zone_name)?;
     let record_type = request
         .record_type
         .as_deref()
-        .map(validation::parse_record_type)
+        .map(record::parse_record_type)
         .transpose()?;
 
     if request.value.is_some() && record_type.is_none() {
@@ -276,7 +270,7 @@ pub async fn delete_matching(
         }
 
         // Apply the complete deletion and refresh signatures in the same transaction.
-        record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
+        record::delete_with_changes_tx(&mut tx, new_serial, &matched).await?;
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 
         // Once for the whole set, so IXFR consumers see one step.

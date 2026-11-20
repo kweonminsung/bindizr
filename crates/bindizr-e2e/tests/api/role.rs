@@ -4,7 +4,8 @@ use tokio::io;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 
-use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
+use crate::api::common::RECORD_ACTIONS;
+use crate::common::{TestApp, TestAppOptions};
 
 /// Verify that roles and grants can be managed over HTTP, and that both are guarded.
 #[tokio::test]

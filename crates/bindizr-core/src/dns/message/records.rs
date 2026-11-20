@@ -3,11 +3,10 @@
 use domain::base::iana::Rtype;
 
 use crate::dns;
-use crate::dns::dnssec::EncodeWireNameError;
-use crate::dns::message::{DnsMessageBuilder, EncodeMessageError, Name};
+use crate::dns::message::{DnsMessageBuilder, EncodeMessageError};
 use crate::dns::name::{OwnerName, ZoneName};
-use crate::dns::record::{EncodedRdata, SoaRecordValue, TxtRecordValue};
-use crate::dns::{CatalogZone, Serial, Ttl, name};
+use crate::dns::record::{Rdata, SoaRecordValue, TxtRecordValue};
+use crate::dns::{CatalogZone, Serial, Ttl};
 use crate::model::dnssec_record::DnssecRecord;
 use crate::model::record::{Record, RecordType};
 use crate::model::zone::Zone;
@@ -109,30 +108,14 @@ impl DnsMessageBuilder {
         )
     }
 
-    /// Add one answer of any supported stored type at an absolute owner name.
-    pub fn add_text_rdata(
-        &mut self,
-        name: &str,
-        record_type: RecordType,
-        value: &str,
-        ttl: u32,
-        priority: Option<i32>,
-    ) -> Result<(), EncodeMessageError> {
-        let EncodedRdata {
-            record_type: rtype,
-            rdata,
-        } = EncodedRdata::from_columns(record_type, value, priority)?;
-        self.add_raw_rdata(parse_name(name)?, rtype, ttl, rdata)
-    }
-
     /// Add the catalog-zone NS record, which is the placeholder "invalid".
     pub fn add_catalog_ns(&mut self, catalog_zone: &CatalogZone) -> Result<(), EncodeMessageError> {
-        let apex_name = catalog_zone.name.to_fqdn();
-        self.add_text_rdata(
-            &apex_name,
+        self.add_record_parts(
+            &OwnerName::apex(),
+            &catalog_zone.name,
             RecordType::Ns,
             "invalid",
-            catalog_zone.default_ttl.as_secs(),
+            catalog_zone.default_ttl,
             None,
         )
     }
@@ -142,13 +125,13 @@ impl DnsMessageBuilder {
         &mut self,
         catalog_zone: &CatalogZone,
     ) -> Result<(), EncodeMessageError> {
-        let version_name = format!("version.{}.", catalog_zone.name);
         // "2" is the RFC 9432 catalog zone schema version.
-        self.add_text_rdata(
-            &version_name,
+        self.add_record_parts(
+            &OwnerName::from_row("version"),
+            &catalog_zone.name,
             RecordType::Txt,
             &TxtRecordValue::from_string("2").to_presentation(),
-            catalog_zone.default_ttl.as_secs(),
+            catalog_zone.default_ttl,
             None,
         )
     }
@@ -157,16 +140,14 @@ impl DnsMessageBuilder {
     pub fn add_catalog_ptr(
         &mut self,
         catalog_zone: &CatalogZone,
-        zone_name: &str,
+        zone_name: &ZoneName,
     ) -> Result<(), EncodeMessageError> {
-        let ptr_name = dns::catalog_member_owner_name(&catalog_zone.name, zone_name);
-        let ptr_target = name::to_fqdn(zone_name);
-
-        self.add_text_rdata(
-            &ptr_name,
+        self.add_record_parts(
+            &dns::catalog_member_owner_name(zone_name),
+            &catalog_zone.name,
             RecordType::Ptr,
-            &ptr_target,
-            catalog_zone.default_ttl.as_secs(),
+            &zone_name.to_fqdn(),
+            catalog_zone.default_ttl,
             None,
         )
     }
@@ -198,10 +179,8 @@ impl DnsMessageBuilder {
         ttl: Ttl,
         priority: Option<i32>,
     ) -> Result<(), EncodeMessageError> {
-        let EncodedRdata {
-            record_type: rtype,
-            rdata,
-        } = EncodedRdata::from_columns(record_type, value, priority)?;
+        let rdata = Rdata::from_columns(record_type, value, priority)?;
+        let rtype = record_type.wire_type();
         self.add_raw_rdata(owner.to_wire_name(zone_name)?, rtype, ttl.as_secs(), rdata)
     }
 
@@ -218,10 +197,4 @@ impl DnsMessageBuilder {
             record.rdata.clone(),
         )
     }
-}
-
-/// Parse a presentation-form name through the one core name encoding.
-fn parse_name(name: &str) -> Result<Name<Vec<u8>>, EncodeMessageError> {
-    let wire = name::encode_name(name)?;
-    Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)).into())
 }

@@ -4,7 +4,7 @@ use domain::rdata::Rrsig;
 
 use super::*;
 use crate::dns::SoaInterval;
-use crate::dns::record::EncodedRdata;
+use crate::dns::record::Rdata;
 use crate::model::record::RecordId;
 use crate::model::zone::ZoneId;
 
@@ -222,9 +222,7 @@ fn signatures_validate_case_preserving_rdata() {
 
         assert_eq!(signature.original_ttl().as_secs(), u32::MAX);
         assert_eq!(rows[0].ttl.as_secs(), u32::MAX);
-        let rdata = EncodedRdata::from_columns(record_type, canonical_value, priority)
-            .unwrap()
-            .rdata;
+        let rdata = Rdata::from_columns(record_type, canonical_value, priority).unwrap();
 
         // RFC 4034: RRSIG fields without the signature, then the canonical record.
         let mut signed_data = wire[..wire.len() - signature.signature().len()].to_vec();

@@ -7,8 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 
-use crate::dns::name;
-use crate::dns::name::MAX_DOMAIN_LEN;
+use crate::dns::name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN};
 
 /// The port a `host` without one is taken to serve DNS on.
 pub const DEFAULT_DNS_PORT: u16 = 53;
@@ -143,15 +142,23 @@ pub fn is_address_target(value: &str) -> bool {
     }
 }
 
-/// Return whether a hostname uses valid domain labels. A resolver target is an
-/// LDH name with no escapes, so the dot is always a label boundary here.
+/// Return whether a hostname uses valid domain labels: each non-empty, at most
+/// 63 bytes, letters, digits, hyphens or underscores, no hyphen at either end.
+/// A resolver target is an LDH name with no escapes, so the dot is always a
+/// label boundary here.
 fn is_hostname(value: &str) -> bool {
     let name = value.strip_suffix('.').unwrap_or(value);
     !name.is_empty()
         && name.len() <= MAX_DOMAIN_LEN
-        && name
-            .split('.')
-            .all(|label| name::classify_domain_label(label).is_ok())
+        && name.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= MAX_DNS_LABEL_LEN
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+        })
 }
 
 /// Return whether an address target includes a valid explicit port.

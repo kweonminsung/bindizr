@@ -46,8 +46,6 @@ pub enum ParseRecordValueError {
     CharStringTooLong { field: &'static str },
     #[error("{field} must not contain whitespace or control characters")]
     Whitespace { field: &'static str },
-    #[error("{field} must not be the root zone")]
-    RootZone { field: &'static str },
     #[error("{field} {source}")]
     Name {
         field: &'static str,
@@ -116,10 +114,6 @@ pub enum ParseRecordValueError {
     TxtTooLong { max: usize, len: usize },
     #[error("TXT character-strings must be separated by spaces")]
     TxtUnseparated,
-    #[error("TXT value contains a dangling escape")]
-    TxtDanglingEscape,
-    #[error("TXT value contains an unterminated quote")]
-    TxtUnterminatedQuote,
     #[error(
         "NAPTR record value must be '<order> <preference> \"<flags>\" \"<services>\" \"<regexp>\" <replacement>': {value}"
     )]
@@ -135,5 +129,9 @@ pub enum ParseRecordValueError {
     #[error("{record_type} records do not take a priority")]
     PriorityNotTaken { record_type: RecordType },
     #[error("stored TXT value is not in presentation form: {value}")]
-    StoredTxtNotPresentation { value: String },
+    StoredTxtNotPresentation {
+        value: String,
+        #[source]
+        source: Box<Self>,
+    },
 }

@@ -13,6 +13,7 @@ use bindizr_core::model::role::RoleId;
 use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
 use chrono::Utc;
 use ring::hmac;
+use thiserror::Error;
 use tokio::net::UdpSocket;
 use tokio::time;
 
@@ -577,57 +578,210 @@ async fn signed_notify_times_out_under_unsigned_response_flood() {
     ));
 }
 
-/// Verify that `validate_notify_response` accepts matching noerror response.
-#[test]
-fn validate_notify_response_accepts_matching_noerror_response() {
-    // 0xa000 = QR set + opcode NOTIFY, NOERROR.
-    let response = build_notify_response(1234, 0xa000, "example.com");
+/// Verify that every affected request retains the same socket error, including OS codes
+/// and custom causes.
+#[tokio::test]
+async fn shared_socket_failure_preserves_original_io_error() {
+    use std::error::Error;
 
-    assert!(query::validate_notify_response(1234, &qname(), &response).is_ok());
+    #[derive(Debug, Error)]
+    #[error("socket operation failed")]
+    struct SocketCause;
+
+    for original in [
+        io::Error::from_raw_os_error(54),
+        io::Error::other(SocketCause),
+    ] {
+        let code = original.raw_os_error();
+        let message = original.to_string();
+        let qname = Name::from_str("example.com").unwrap();
+        let mut requests = HashMap::new();
+        let mut replies = Vec::new();
+
+        for id in 0..2 {
+            let (reply, response) = oneshot::channel();
+            let builder = query::build_notify_query(id, &qname, None);
+            requests.insert(
+                id,
+                PendingNotify {
+                    request: builder.finish(),
+                    limit: ResponseLimit::UDP,
+                    verifier: None,
+                    timeout: Duration::from_secs(1),
+                    retries_left: 0,
+                    deadline: Instant::now(),
+                    waiting: true,
+                    sent: true,
+                    qname: qname.clone(),
+                    reply,
+                },
+            );
+            replies.push(response);
+        }
+
+        fail_requests(&mut requests, original);
+
+        assert!(requests.is_empty());
+        let mut shared = Vec::new();
+
+        for reply in replies {
+            let error = reply.await.unwrap().unwrap_err();
+
+            assert_eq!(error.to_string(), message);
+            assert!(error.source().is_some());
+            let SendNotifyError::Io(source) = error else {
+                panic!("socket failure changed classification");
+            };
+
+            assert_eq!(source.raw_os_error(), code);
+
+            if code.is_none() {
+                assert!(source.get_ref().unwrap().is::<SocketCause>());
+            }
+
+            shared.push(source);
+        }
+
+        assert!(Arc::ptr_eq(&shared[0], &shared[1]));
+    }
 }
 
-/// Verify that `validate_notify_response` rejects id mismatch.
-#[test]
-fn validate_notify_response_rejects_id_mismatch() {
-    let response = build_notify_response(1234, 0xa000, "example.com");
+/// Verify that exhausting an ID space rotates the socket instead of reusing a live or
+/// retired ID.
+#[tokio::test]
+async fn id_exhaustion_rotates_the_socket() {
+    let client = NotifyClient::default();
 
-    let error = query::validate_notify_response(5678, &qname(), &response).unwrap_err();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let addr = socket.local_addr().unwrap();
 
-    assert!(error.to_string().contains("ID mismatch"));
+    let (first, id) = client.reserve(addr).await.unwrap();
+    let mut ids = HashSet::from([id]);
+
+    for _ in 0..u16::MAX {
+        let (target, id) = client.reserve(addr).await.unwrap();
+        assert!(Arc::ptr_eq(&target, &first));
+        assert!(ids.insert(id));
+    }
+
+    assert_eq!(ids.len(), 65536);
+
+    let (next, _) = client.reserve(addr).await.unwrap();
+
+    assert!(!Arc::ptr_eq(&next, &first));
 }
 
-/// Verify that `validate_notify_response` rejects error rcode.
-#[test]
-fn validate_notify_response_rejects_error_rcode() {
-    // 0xa005 adds RCODE 5 (REFUSED).
-    let response = build_notify_response(1234, 0xa005, "example.com");
+/// Verify that peer filtering and retired IDs prevent old or spoofed ACKs ending a later
+/// event.
+#[tokio::test]
+async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
+    let client = NotifyClient::default();
 
-    let error = query::validate_notify_response(1234, &qname(), &response).unwrap_err();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let addr = socket.local_addr().unwrap();
+    let qname = Name::from_str("example.com").unwrap();
 
-    assert!(error.to_string().contains("RCODE 5"));
+    let mut first = client
+        .send(&qname, addr, Duration::from_secs(1), 0, None)
+        .await
+        .unwrap();
+
+    let mut buffer = [0; 4096];
+
+    let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+    let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
+    let old_ack = query
+        .build_signed_error_response(OptRcode::NOERROR, None, None)
+        .unwrap();
+
+    let intruder = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    intruder.send_to(&old_ack, peer).await.unwrap();
+    time::sleep(Duration::from_millis(10)).await;
+
+    assert!(matches!(
+        first.response.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ));
+
+    // Hold the socket across completion to exercise retired IDs on the same peer port.
+    let held = first.target.clone();
+
+    socket.send_to(&old_ack, peer).await.unwrap();
+    first.wait().await.unwrap();
+    let mut second = client
+        .send(&qname, addr, Duration::from_secs(1), 0, None)
+        .await
+        .unwrap();
+    let (len, second_peer) = socket.recv_from(&mut buffer).await.unwrap();
+
+    assert_eq!(peer, second_peer);
+    let next = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
+
+    assert_ne!(query.query_id, next.query_id);
+
+    socket.send_to(&old_ack, peer).await.unwrap();
+    time::sleep(Duration::from_millis(10)).await;
+
+    assert!(matches!(
+        second.response.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ));
+
+    socket
+        .send_to(
+            &next
+                .build_signed_error_response(OptRcode::NOERROR, None, None)
+                .unwrap(),
+            peer,
+        )
+        .await
+        .unwrap();
+    second.wait().await.unwrap();
+
+    drop(held);
 }
 
-/// Verify that `validate_notify_response` reports the RCODE of a refusal
-/// that carries no question.
-#[test]
-fn validate_notify_response_reports_rcode_without_question() {
-    // NSD 4.6 answers NOTIFY for a zone it does not serve with NOTAUTH
-    // (RCODE 9) and an empty question section.
-    let mut response = build_notify_response(1234, 0xa009, "example.com");
-    response.truncate(12);
-    response[4..6].copy_from_slice(&0u16.to_be_bytes());
+/// Verify that an oversized matching ACK, including a truncated prefix, cannot end a
+/// transaction.
+#[tokio::test]
+async fn send_ignores_oversized_ack_until_a_bounded_ack_arrives() {
+    for size in [513, 4096] {
+        let client = NotifyClient::default();
 
-    let error = query::validate_notify_response(1234, &qname(), &response).unwrap_err();
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
 
-    assert!(error.to_string().contains("RCODE 9"), "{error}");
-}
+        let qname = Name::from_str("example.com").unwrap();
 
-/// Verify that `validate_notify_response` rejects another question.
-#[test]
-fn validate_notify_response_rejects_another_question() {
-    let response = build_notify_response(1234, 0xa000, "other.com");
+        let mut handle = client
+            .send(
+                &qname,
+                socket.local_addr().unwrap(),
+                Duration::from_secs(1),
+                0,
+                None,
+            )
+            .await
+            .unwrap();
 
-    let error = query::validate_notify_response(1234, &qname(), &response).unwrap_err();
+        let mut buffer = [0; 1232];
 
-    assert!(error.to_string().contains("another question"), "{error}");
+        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+        let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
+        let ack = query
+            .build_signed_error_response(OptRcode::NOERROR, None, None)
+            .unwrap();
+        let mut oversized = ack.clone();
+        oversized.resize(size, 0);
+
+        socket.send_to(&oversized, peer).await.unwrap();
+        time::sleep(Duration::from_millis(20)).await;
+
+        assert!(matches!(
+            handle.response.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+
+        socket.send_to(&ack, peer).await.unwrap();
+        handle.wait().await.unwrap();
+    }
 }

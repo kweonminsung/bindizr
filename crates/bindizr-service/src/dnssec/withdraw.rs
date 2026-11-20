@@ -7,7 +7,6 @@ use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
-use crate::dnssec::status;
 use crate::error::ServiceError;
 use crate::types::DnssecStatusResponse;
 use crate::{Context, dnssec, notify, transaction};
@@ -51,7 +50,7 @@ pub async fn withdraw(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::lookup_status_tx(
+        let response = dnssec::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -117,7 +116,7 @@ pub async fn cancel_withdrawal(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::lookup_status_tx(
+        let response = dnssec::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),

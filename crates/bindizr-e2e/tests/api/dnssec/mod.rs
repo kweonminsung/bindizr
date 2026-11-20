@@ -4,7 +4,8 @@ mod rollover;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
-use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
+use crate::api::common::RECORD_ACTIONS;
+use crate::common::{TestApp, TestAppOptions};
 
 /// Verify that DNSSEC can be enabled, reported, re-signed, and disabled.
 #[tokio::test]

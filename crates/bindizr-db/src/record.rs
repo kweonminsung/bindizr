@@ -1,3 +1,4 @@
+use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::record::{Record, RecordId, RecordType, RecordWithZone};
 use bindizr_core::model::role::RoleId;
@@ -18,9 +19,9 @@ pub struct RecordFilter {
     pub name: Option<String>,
     pub record_type: Option<RecordType>,
     pub value: Option<String>,
-    pub ttl: Option<i64>,
-    pub min_ttl: Option<i64>,
-    pub max_ttl: Option<i64>,
+    pub ttl: Option<Ttl>,
+    pub min_ttl: Option<Ttl>,
+    pub max_ttl: Option<Ttl>,
     pub priority: Option<i32>,
     pub min_priority: Option<i32>,
     pub max_priority: Option<i32>,

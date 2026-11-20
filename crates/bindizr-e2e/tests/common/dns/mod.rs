@@ -1,4 +1,3 @@
-pub(crate) mod notify;
 pub(crate) mod nsupdate;
 mod parent;
 mod transfer;
@@ -100,10 +99,6 @@ pub(crate) async fn wait_for_dns_records(
                 eprintln!("{name} type {record_type} propagated through 127.0.0.1:{port}.");
                 return;
             }
-            Err(error) if is_deleted_zone_absence(record_type, expected, &error) => {
-                eprintln!("{name} type {record_type} is absent from 127.0.0.1:{port} ({error}).");
-                return;
-            }
             _ => {}
         }
 
@@ -119,11 +114,6 @@ pub(crate) async fn wait_for_dns_records(
     panic!(
         "{expected_count} type {record_type} record(s) for {name} did not propagate to 127.0.0.1:{port}"
     );
-}
-
-/// Return whether a DNS failure represents an expected deleted zone.
-fn is_deleted_zone_absence(record_type: u16, expected: &[Value], error: &str) -> bool {
-    record_type == Rtype::SOA.to_int() && expected.is_empty() && error.contains("REFUSED RCODE")
 }
 
 /// A response record, including referrals, in the harness comparison form.
@@ -185,10 +175,17 @@ pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: 
     panic!("no type {record_type} record for {name} appeared on 127.0.0.1:{port}");
 }
 
-/// Return whether the DNS plane serves `zone_name`: a zone it does not know
-/// answers REFUSED, which `validate_response_header` reports as an error.
-pub(crate) fn probe_zone_soa(port: u16, zone_name: &str) -> bool {
-    matches!(query_dns_records(port, zone_name, Rtype::SOA.to_int()), Ok(records) if !records.is_empty())
+/// Return the RCODE the DNS plane answers an SOA query for `zone_name` with:
+/// NOERROR for a zone it serves, NOTAUTH for one it does not.
+pub(crate) fn probe_zone_soa(port: u16, zone_name: &str) -> Result<Rcode, String> {
+    let (query_id, response) = exchange_dns_query(port, zone_name, Rtype::SOA.to_int())?;
+    let response = Message::from_octets(response.as_slice()).map_err(|error| error.to_string())?;
+
+    if response.header().id() != query_id {
+        return Err("DNS response query id mismatch".to_string());
+    }
+
+    Ok(response.header().rcode())
 }
 
 /// Query DNS and decode answer or referral records.

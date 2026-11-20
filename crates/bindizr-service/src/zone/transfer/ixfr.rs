@@ -90,9 +90,8 @@ pub async fn authorize_ixfr_plan_by_name(
 
                     let mut journal_serials: Vec<Serial> =
                         changes.iter().map(|change| change.serial).collect();
-                    journal_serials.sort_unstable_by_key(|serial| {
-                        serial.as_u32().wrapping_sub(client_serial.as_u32())
-                    });
+                    journal_serials
+                        .sort_unstable_by_key(|serial| serial.distance_from(client_serial));
                     journal_serials.dedup();
                     let version_serials: Vec<Serial> =
                         versions.iter().map(|version| version.serial).collect();
@@ -159,7 +158,7 @@ fn validate_delta(
         .copied()
         .filter(|&serial| serial.is_newer_than(client_serial))
         .collect();
-    steps.sort_unstable_by_key(|serial| serial.as_u32().wrapping_sub(client_serial.as_u32()));
+    steps.sort_unstable_by_key(|serial| serial.distance_from(client_serial));
 
     if journal_serials != steps {
         return Err(ValidateDeltaError::StepsDiffer {

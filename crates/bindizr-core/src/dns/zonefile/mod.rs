@@ -12,11 +12,13 @@ use domain::dep::octseq::parse::Parser;
 use domain::rdata::ZoneRecordData;
 use domain::zonefile::inplace;
 use domain::zonefile::inplace::{Entry, Zonefile};
+use thiserror::Error;
+pub use wks::RewriteNativeRecordsError;
 
 use crate::dns::name::ZoneName;
 use crate::dns::query::TransferRecord;
-use crate::dns::record::{NaptrRecordValue, WksRecordValue};
-use crate::dns::{Serial, SoaInterval, Ttl, name, record};
+use crate::dns::record::{NaptrRecordValue, ParseRecordValueError, WksRecordValue};
+use crate::dns::{LibraryError, Serial, SoaInterval, Ttl, name, record};
 use crate::model::record::RecordType;
 
 /// Directives `ParsedZoneFile::parse` prepends before handing the text to the parser.
@@ -55,15 +57,62 @@ pub struct ZoneFileSoa {
     pub minimum_ttl: Ttl,
 }
 
+/// Why part of a zone file or transfer could not be imported; each is
+/// reported beside the records that could.
+#[derive(Debug, Error)]
+pub enum ParseZoneFileError {
+    #[error(transparent)]
+    Rewrite(#[from] RewriteNativeRecordsError),
+    #[error("unsupported record class '{class}' for '{owner}'")]
+    UnsupportedClass { class: Class, owner: String },
+    #[error("$INCLUDE directives are not supported")]
+    Include,
+    /// The scanner keeps its position private, so its message, renumbered to
+    /// the submitted text, is all there is.
+    #[error("failed to parse zone file: {reason}")]
+    Syntax { reason: String },
+    #[error("{owner}: trailing RDATA bytes")]
+    TrailingRdata { owner: String },
+    #[error("{owner}: {source}")]
+    Rdata {
+        owner: String,
+        #[source]
+        source: LibraryError,
+    },
+    #[error("generic RDATA for '{owner}' does not encode a {rtype} record")]
+    GenericRdata { owner: String, rtype: Rtype },
+    #[error("SOA for '{owner}' does not belong to zone '{zone_name}'")]
+    ForeignSoa { owner: String, zone_name: String },
+    #[error("zone '{zone_name}' carries more than one SOA")]
+    DuplicateSoa { zone_name: String },
+    #[error(
+        "SOA for '{owner}' has a refresh, retry or expire past {} seconds",
+        SoaInterval::MAX
+    )]
+    SoaIntervalTooLarge { owner: String },
+    #[error("unsupported record type '{rtype}' for '{owner}'")]
+    UnsupportedType { rtype: Rtype, owner: String },
+    #[error("WKS value for '{owner}': {source}")]
+    Wks {
+        owner: String,
+        #[source]
+        source: ParseRecordValueError,
+    },
+    #[error("NAPTR value for '{owner}': {source}")]
+    Naptr {
+        owner: String,
+        #[source]
+        source: ParseRecordValueError,
+    },
+}
+
 /// What a zone file yielded: its usable records, and what it could not use.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ParsedZoneFile {
     pub records: Vec<ZoneFileRecord>,
     /// The apex SOA's fields, when the file carried one.
     pub soa: Option<ZoneFileSoa>,
-    /// Human-readable problems (parse failure, out-of-range TTL, unsupported
-    /// directive).
-    pub errors: Vec<String>,
+    pub errors: Vec<ParseZoneFileError>,
 }
 
 impl ParsedZoneFile {
@@ -76,7 +125,7 @@ impl ParsedZoneFile {
                 return Self {
                     records: Vec::new(),
                     soa: None,
-                    errors: vec![error.to_string()],
+                    errors: vec![ParseZoneFileError::from(error)],
                 };
             }
         };
@@ -106,11 +155,10 @@ impl ParsedZoneFile {
             match zonefile.next_entry() {
                 Ok(Some(Entry::Record(record))) => {
                     if record.class() != Class::IN {
-                        parsed.errors.push(format!(
-                            "unsupported record class '{}' for '{}'",
-                            record.class(),
-                            record.owner()
-                        ));
+                        parsed.errors.push(ParseZoneFileError::UnsupportedClass {
+                            class: record.class(),
+                            owner: record.owner().to_string(),
+                        });
                         continue;
                     }
 
@@ -123,16 +171,13 @@ impl ParsedZoneFile {
                     );
                 }
                 Ok(Some(Entry::Include { .. })) => {
-                    parsed
-                        .errors
-                        .push("$INCLUDE directives are not supported".to_string());
+                    parsed.errors.push(ParseZoneFileError::Include);
                 }
                 Ok(None) => break,
                 Err(error) => {
-                    parsed.errors.push(format!(
-                        "failed to parse zone file: {}",
-                        to_input_line_message(&error)
-                    ));
+                    parsed.errors.push(ParseZoneFileError::Syntax {
+                        reason: to_input_line_message(&error),
+                    });
                     // domain documents the scanner as invalid once an entry fails.
                     break;
                 }
@@ -142,7 +187,8 @@ impl ParsedZoneFile {
         parsed
     }
 
-    /// Convert a validated AXFR stream without a master-file text round trip.
+    /// Convert a validated AXFR stream, its closing SOA already dropped by the
+    /// client, without a master-file text round trip.
     pub fn from_transfer(records: &[TransferRecord], zone_name: &ZoneName) -> Self {
         let mut parsed = Self {
             records: Vec::new(),
@@ -151,7 +197,7 @@ impl ParsedZoneFile {
         };
         let origin_fqdn = zone_name.to_fqdn();
 
-        for (index, record) in records.iter().enumerate() {
+        for record in records {
             if matches!(
                 record.rtype,
                 Rtype::RRSIG
@@ -164,21 +210,6 @@ impl ParsedZoneFile {
             ) {
                 continue;
             }
-            if index > 0
-                && index + 1 == records.len()
-                && record.rtype == Rtype::SOA
-                && name::to_fqdn_lowercase(&record.name)
-                    == name::to_fqdn_lowercase(&records[0].name)
-                && record.rdata.to_canonical(Rtype::SOA).is_ok_and(|closing| {
-                    records[0]
-                        .rdata
-                        .to_canonical(Rtype::SOA)
-                        .is_ok_and(|opening| closing == opening)
-                })
-            {
-                continue;
-            }
-
             let mut parser = Parser::from_ref(record.rdata.as_bytes());
 
             match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(record.rtype, &mut parser) {
@@ -189,10 +220,13 @@ impl ParsedZoneFile {
                     record.ttl,
                     &data,
                 ),
-                Ok(_) => parsed
-                    .errors
-                    .push(format!("{}: trailing RDATA bytes", record.name)),
-                Err(error) => parsed.errors.push(format!("{}: {error}", record.name)),
+                Ok(_) => parsed.errors.push(ParseZoneFileError::TrailingRdata {
+                    owner: record.name.clone(),
+                }),
+                Err(error) => parsed.errors.push(ParseZoneFileError::Rdata {
+                    owner: record.name.clone(),
+                    source: Box::new(error),
+                }),
             }
         }
 
@@ -221,9 +255,9 @@ impl ParsedZoneFile {
                 Ok(Some(typed)) if parser.remaining() == 0 => {
                     self.push_record(origin_fqdn, owner, rtype, ttl_secs, &typed);
                 }
-                _ => self.errors.push(format!(
-                    "generic RDATA for '{owner}' does not encode a {rtype} record"
-                )),
+                _ => self
+                    .errors
+                    .push(ParseZoneFileError::GenericRdata { owner, rtype }),
             };
         }
 
@@ -231,19 +265,20 @@ impl ParsedZoneFile {
             // Only the apex SOA supplies this zone's serial and timers.
             Rtype::SOA => {
                 if name::to_fqdn_lowercase(&owner) != origin_fqdn {
-                    self.errors.push(format!(
-                        "SOA for '{owner}' does not belong to zone '{origin_fqdn}'"
-                    ));
+                    self.errors.push(ParseZoneFileError::ForeignSoa {
+                        owner,
+                        zone_name: origin_fqdn.to_string(),
+                    });
                 } else if self.soa.is_some() {
-                    self.errors
-                        .push(format!("zone '{origin_fqdn}' carries more than one SOA"));
+                    self.errors.push(ParseZoneFileError::DuplicateSoa {
+                        zone_name: origin_fqdn.to_string(),
+                    });
                 } else {
                     match to_zone_file_soa(data) {
                         Some(soa) => self.soa = Some(soa),
-                        None => self.errors.push(format!(
-                            "SOA for '{owner}' has a refresh, retry or expire past {} seconds",
-                            SoaInterval::MAX
-                        )),
+                        None => self
+                            .errors
+                            .push(ParseZoneFileError::SoaIntervalTooLarge { owner }),
                     }
                 }
 
@@ -252,8 +287,10 @@ impl ParsedZoneFile {
             other => match RecordType::try_from(other) {
                 Ok(record_type) => record_type,
                 Err(_) => {
-                    self.errors
-                        .push(format!("unsupported record type '{other}' for '{owner}'"));
+                    self.errors.push(ParseZoneFileError::UnsupportedType {
+                        rtype: other,
+                        owner,
+                    });
                     return;
                 }
             },
@@ -267,9 +304,8 @@ impl ParsedZoneFile {
 
             match WksRecordValue::from_rdata(&bytes) {
                 Ok(value) => (ZoneFileValue::Rdata(value.canonical()), None),
-                Err(error) => {
-                    self.errors
-                        .push(format!("WKS value for '{owner}': {error}"));
+                Err(source) => {
+                    self.errors.push(ParseZoneFileError::Wks { owner, source });
                     return;
                 }
             }
@@ -303,9 +339,9 @@ impl ParsedZoneFile {
                 .map(|value| value.canonical())
                 {
                     Ok(text) => (ZoneFileValue::Rdata(text), None),
-                    Err(error) => {
+                    Err(source) => {
                         self.errors
-                            .push(format!("NAPTR value for '{owner}': {error}"));
+                            .push(ParseZoneFileError::Naptr { owner, source });
                         return;
                     }
                 },

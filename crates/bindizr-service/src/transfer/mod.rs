@@ -158,7 +158,25 @@ pub async fn list(
 ) -> Result<PaginatedResponse<TransferLogResponse>, ServiceError> {
     caller.authorize_action(Action::LogRead)?;
 
-    let filter = normalize_filter(cx, filter).await?;
+    let secondary_name = filter.secondary_name.as_deref();
+    let mut filter = normalize_filter(filter)?;
+
+    // A secondary selects the addresses it resolves to, which key its rows;
+    // with an address too, that address only when the secondary resolves to it.
+    if let Some(secondary_name) = secondary_name {
+        let secondary = secondary::lookup_by_name(cx, secondary_name).await?;
+        let secondary_addrs = secondary::resolve_ips(cx, &secondary)
+            .await
+            .into_iter()
+            .map(|ip| ip.to_string());
+
+        filter.client_addrs = Some(match filter.client_addrs {
+            Some(client_addrs) => secondary_addrs
+                .filter(|addr| client_addrs.contains(addr))
+                .collect(),
+            None => secondary_addrs.collect(),
+        });
+    }
 
     let total = bindizr_db::transfer_log::count_by_filter(cx.db(), &filter).await?;
     let logs = bindizr_db::transfer_log::list_by_filter_with_zone(cx.db(), &filter).await?;
@@ -171,11 +189,8 @@ pub async fn list(
     ))
 }
 
-/// Parse the listing's zone, result, address and order, resolve its secondary
-/// to the addresses that key its rows, and bound its page. A secondary and an address
-/// together select the address only when the secondary resolves to it.
-async fn normalize_filter(
-    cx: &Context,
+/// Parse the listing's zone, result, address and order, and bound its page.
+fn normalize_filter(
     filter: &TransferLogFilter,
 ) -> Result<bindizr_db::transfer_log::TransferLogFilter, ServiceError> {
     let zone_name = filter
@@ -203,11 +218,7 @@ async fn normalize_filter(
         })
         .transpose()?;
 
-    if let (Some(since), Some(until)) = (filter.since, filter.until)
-        && since >= until
-    {
-        return Err(ServiceError::invalid_input("since must be before until"));
-    }
+    pagination::validate_time_window(filter.since, filter.until)?;
 
     // Newest first is the log's natural order, whatever the field.
     let defaults = bindizr_db::transfer_log::TransferLogFilter::default();
@@ -215,27 +226,8 @@ async fn normalize_filter(
     let order = pagination::parse_setting(filter.order.as_deref(), defaults.order)?;
     pagination::validate_page_limit(filter.limit)?;
 
-    let secondary_ips = match filter.secondary_name.as_deref() {
-        Some(secondary_name) => {
-            let secondary = secondary::lookup_by_name(cx, secondary_name).await?;
-            Some(secondary::resolve_ips(cx, &secondary).await)
-        }
-        None => None,
-    };
-    let client_ips: Option<Vec<IpAddr>> = match (secondary_ips, address) {
-        (Some(secondary_ips), Some(address)) => Some(
-            secondary_ips
-                .into_iter()
-                .filter(|ip| *ip == address)
-                .collect(),
-        ),
-        (Some(secondary_ips), None) => Some(secondary_ips),
-        (None, Some(address)) => Some(vec![address]),
-        (None, None) => None,
-    };
-
     Ok(bindizr_db::transfer_log::TransferLogFilter {
-        client_addrs: client_ips.map(|ips| ips.iter().map(IpAddr::to_string).collect()),
+        client_addrs: address.map(|address| vec![address.to_string()]),
         zone_name,
         result,
         since: filter.since,

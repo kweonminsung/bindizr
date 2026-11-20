@@ -152,37 +152,3 @@ fn rollover_waits_for_latest_published_key_deadline() {
 
     assert_eq!(error.code(), ErrorCode::InvalidInput);
 }
-
-/// Verify that a retiring key waits out the signatures it made.
-#[test]
-fn retiring_key_waits_for_signature_expiration() {
-    let mut zsk = key(1, DnssecKeyRole::Zsk, DnssecKeyState::Active, 0);
-    zsk.max_signed_ttl = Ttl::from_secs(900);
-
-    // A ZSK has no DS at the parent, so only its signatures hold it back.
-    assert_eq!(zsk.retirement_interval_secs(Some(86400), 0), 900);
-
-    // Propagation is added whole: a secondary may need the SOA refresh to catch up.
-    assert_eq!(zsk.retirement_interval_secs(Some(86400), 300), 1200);
-}
-
-/// Verify that a retiring sep key also waits out the parents DS.
-#[test]
-fn retiring_sep_key_waits_for_parent_ds_expiration() {
-    // Resolvers that cached the parent's DS record set before the replacement was
-    // added hold it for its TTL, and it names only the key being removed.
-    let mut csk = key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, 0);
-    csk.max_signed_ttl = Ttl::from_secs(900);
-
-    assert_eq!(csk.retirement_interval_secs(Some(86400), 0), 86400);
-
-    // A zone signed with a longer TTL than the parent's outlasts it.
-    csk.max_signed_ttl = Ttl::from_secs(604_800);
-
-    assert_eq!(csk.retirement_interval_secs(Some(86400), 0), 604_800);
-
-    // Nothing observed the parent, so only the signatures are known.
-    csk.max_signed_ttl = Ttl::from_secs(900);
-
-    assert_eq!(csk.retirement_interval_secs(None, 0), 900);
-}

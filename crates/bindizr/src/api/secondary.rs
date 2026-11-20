@@ -5,16 +5,16 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing};
 use bindizr_service::types::{
-    CheckSecondaryResponse, CreateSecondaryRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
-    MessageResponse, PageRequest, PaginatedResponse, SecondaryResponse, SingleSecondaryResponse,
-    UpdateSecondaryRequest,
+    CheckSecondaryResponse, CreateSecondaryRequest, ErrorResponse, MessageResponse, PageRequest,
+    PaginatedResponse, SecondaryResponse, SingleSecondaryResponse, UpdateSecondaryRequest,
 };
 use bindizr_service::{Context, secondary};
 
 use crate::api::RequestCaller;
-use crate::api::error::{ApiError, Path, Query};
-use crate::api::middleware::body_parser::JsonBody;
-use crate::params::NameParams;
+use crate::api::error::ApiError;
+use crate::api::extract::{JsonBody, Path, Query};
+use crate::api::params::NameParams;
+use crate::api::query::DEFAULT_PAGE_LIMIT;
 
 /// Build the secondary API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

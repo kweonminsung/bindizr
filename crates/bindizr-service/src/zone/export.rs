@@ -25,7 +25,7 @@ pub async fn export(
 
     let result: Result<_, ServiceError> = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-        caller
+        let read = caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_whole_zone_read(&zone)?;
@@ -36,11 +36,11 @@ pub async fn export(
             Vec::new()
         };
 
-        Ok((zone, records, derived))
+        Ok((zone, read, records, derived))
     }
     .await;
 
-    let (zone, mut records, mut derived) =
+    let (zone, read, mut records, mut derived) =
         transaction::finish_tx(tx, result, "failed to export zone").await?;
 
     let origin = zone.name.to_fqdn();
@@ -49,7 +49,7 @@ pub async fn export(
     out.push_str(&format!("$TTL {}\n", zone.default_ttl));
 
     // SOA carries names as absolute FQDNs so they are not read as relative
-    // to $ORIGIN. `soa_mailbox` already escapes the local part per RFC 1035.
+    // to $ORIGIN; a mailbox is one already, its local part escaped by the name codec.
     let mailbox = zone.soa_mailbox().map_err(|error| {
         ServiceError::internal_with_source(format!("failed to render SOA mailbox: {error}"), error)
     })?;
@@ -57,7 +57,7 @@ pub async fn export(
         "@\t{}\tIN\tSOA\t{} {} {} {} {} {} {}\n",
         zone.default_ttl,
         name::to_fqdn(&zone.mname),
-        name::to_fqdn(mailbox.as_str()),
+        mailbox,
         zone.serial,
         zone.refresh,
         zone.retry,
@@ -77,7 +77,7 @@ pub async fn export(
         )
     });
 
-    for record in &records {
+    for record in read.readable_records(records).as_slice() {
         // Written straight into `out`: a zone can hold millions of records,
         // and `push_str(&format!(..))` would allocate a line at a time.
         let _ = writeln!(
@@ -101,7 +101,7 @@ pub async fn export(
         )
     });
 
-    for record in &derived {
+    for record in read.readable_records(derived).as_slice() {
         let _ = writeln!(
             out,
             "{}\t{}\tIN\t{}\t{}",

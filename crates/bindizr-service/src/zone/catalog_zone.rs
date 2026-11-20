@@ -1,16 +1,20 @@
 //! Virtual catalog membership and its persisted serial.
 
-use bindizr_core::dns::{CATALOG_SOA_REFRESH, CatalogZone, Serial, SoaInterval, Ttl};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::{CatalogZone, Serial, SoaInterval, Ttl};
 use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use ring::digest;
 use ring::digest::SHA256;
 
 use crate::error::ServiceError;
-use crate::{Context, Transaction, transaction};
+use crate::{Context, Transaction};
 
 /// TTL used by the generated catalog's records.
 const DEFAULT_TTL: Ttl = Ttl::from_secs(3600);
+
+/// SOA REFRESH of the generated catalog, also bounding its NOTIFY batching delay.
+pub(crate) const CATALOG_SOA_REFRESH: SoaInterval = SoaInterval::from_secs(3600);
 
 /// SOA retry interval of the generated catalog.
 const SOA_RETRY: SoaInterval = SoaInterval::from_secs(600);
@@ -38,15 +42,6 @@ pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError
     Ok(())
 }
 
-/// Refresh the catalog at startup from every enabled managed zone.
-pub async fn refresh_catalog(cx: &Context) -> Result<(CatalogZone, Vec<String>), ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "failed to update catalog state").await?;
-
-    let refresh_result = refresh_catalog_tx(&mut tx, cx).await;
-
-    transaction::finish_tx(tx, refresh_result, "failed to update catalog state").await
-}
-
 /// Build the catalog from the enabled zones and advance its persisted serial
 /// when their membership changed.
 ///
@@ -55,7 +50,7 @@ pub async fn refresh_catalog(cx: &Context) -> Result<(CatalogZone, Vec<String>),
 pub(crate) async fn refresh_catalog_tx(
     tx: &mut Transaction<'_>,
     cx: &Context,
-) -> Result<(CatalogZone, Vec<String>), ServiceError> {
+) -> Result<(CatalogZone, Vec<ZoneName>), ServiceError> {
     let config = cx.config();
     let catalog_zone_name = &config.dns.catalog_zone_name;
     log::info!("Generating catalog zone: {catalog_zone_name}");
@@ -70,11 +65,11 @@ pub(crate) async fn refresh_catalog_tx(
         .collect();
 
     // The catalog zone is not a member of itself.
-    let member_zones: Vec<String> = zones
+    let member_zones: Vec<ZoneName> = zones
         .iter()
         .map(|zone| &zone.name)
         .filter(|zone_name| *zone_name != catalog_zone_name)
-        .map(ToString::to_string)
+        .cloned()
         .collect();
 
     log::info!("Catalog zone contains {} member zones", member_zones.len());
@@ -105,7 +100,7 @@ pub(crate) async fn refresh_catalog_tx(
 
 /// Hash sorted member names so only membership changes advance the catalog serial.
 /// Exclude member serials: record writes do not require catalog re-provisioning.
-fn catalog_digest(member_zones: &[String]) -> String {
+fn catalog_digest(member_zones: &[ZoneName]) -> String {
     // Names are canonical, so sorting needs no case folding.
     let mut members = member_zones.to_vec();
     members.sort();
@@ -113,7 +108,7 @@ fn catalog_digest(member_zones: &[String]) -> String {
     let mut hasher = digest::Context::new(&SHA256);
 
     for member in members {
-        hasher.update(member.as_bytes());
+        hasher.update(member.as_str().as_bytes());
         hasher.update(b"\n");
     }
 
@@ -128,7 +123,12 @@ mod tests {
     /// indifferent to their order.
     #[test]
     fn catalog_digest_changes_only_with_membership() {
-        let members = |names: &[&str]| names.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let members = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| ZoneName::parse(name).unwrap())
+                .collect::<Vec<_>>()
+        };
 
         let original = catalog_digest(&members(&["example.com", "test.com"]));
 

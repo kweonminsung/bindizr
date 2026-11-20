@@ -155,3 +155,17 @@ async fn badvers_update_counts_as_badvers() {
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"badvers\"} 1\n"));
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"noerror\"} 0\n"));
 }
+
+/// Verify that a service failure answers SERVFAIL only for a server fault, and
+/// REFUSED for a policy or input refusal.
+#[test]
+fn update_rcode_separates_server_faults_from_refusals() {
+    for (code, rcode) in [
+        (ErrorCode::Forbidden, Rcode::REFUSED),
+        (ErrorCode::InvalidRecordValue, Rcode::REFUSED),
+        (ErrorCode::Internal, Rcode::SERVFAIL),
+        (ErrorCode::DnssecSigningFailed, Rcode::SERVFAIL),
+    ] {
+        assert_eq!(update_rcode(code), rcode, "{code:?}");
+    }
+}

@@ -11,7 +11,7 @@ use crate::dns::name::{OwnerName, ZoneName};
 use crate::dns::query::TransferMessagePosition;
 use crate::dns::record::{MAX_RECORD_RDATA, TxtRecordValue};
 use crate::dns::tsig::TsigSigningKey;
-use crate::dns::{CatalogZone, DNS_TCP_MAX_SIZE, Serial, SoaInterval, Ttl, query};
+use crate::dns::{CatalogZone, DNS_TCP_MAX_SIZE, Serial, SoaInterval, Ttl, query, tsig};
 use crate::model::record::RecordType;
 use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
@@ -32,12 +32,12 @@ fn catalog_response_preserves_metadata_and_member_records() {
     question.push((qname.clone(), Rtype::AXFR)).unwrap();
     let query_data = question.finish().into_target();
     let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
-    let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR);
+    let mut builder = DnsMessageBuilder::new(&query);
     builder.add_catalog_soa(&catalog_zone).unwrap();
     builder.add_catalog_ns(&catalog_zone).unwrap();
     builder.add_catalog_schema_version(&catalog_zone).unwrap();
     builder
-        .add_catalog_ptr(&catalog_zone, "member.example")
+        .add_catalog_ptr(&catalog_zone, &ZoneName::parse("member.example").unwrap())
         .unwrap();
     builder.add_catalog_soa(&catalog_zone).unwrap();
     let response = builder.build().unwrap();
@@ -153,7 +153,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         );
         tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
 
-        let mut builder = DnsMessageBuilder::new(&query, Rtype::SOA).sign_with(signer);
+        let mut builder = DnsMessageBuilder::new(&query).sign_with(signer);
         builder
             .add_raw_rdata(
                 query.qname.clone(),
@@ -242,17 +242,18 @@ fn encode_tcp_message_rejects_oversized_payload() {
 /// Verify that overflowing answers split into multiple frames.
 #[test]
 fn encoding_splits_overflowing_answers_into_frames() {
-    let mut builder = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
+    let mut builder = DnsMessageBuilder::new(&axfr_query());
     let mut wire = Vec::new();
 
     for index in 0..4000 {
         let frame = builder
             .add_answer_or_overflow(|builder| {
-                builder.add_text_rdata(
-                    &format!("host-{index}.example.com."),
+                builder.add_record_parts(
+                    &OwnerName::from_row(&format!("host-{index}")),
+                    &ZoneName::parse("example.com").unwrap(),
                     RecordType::A,
                     &format!("192.0.2.{}", index % 255),
-                    3600,
+                    Ttl::from_secs(3600),
                     None,
                 )
             })
@@ -458,7 +459,7 @@ fn signed_transfer_authenticates_every_envelope() {
     let (query_data, mut client) = build_signed_axfr_query(key.clone(), Some(true));
     let query = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
 
-    let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR)
+    let mut builder = DnsMessageBuilder::new(&query)
         .sign_with(tsig::verify_tsig(&query_data, Some(key)).unwrap().into());
 
     // Two envelopes, so the second is checked against the MAC chain the first
@@ -468,11 +469,12 @@ fn signed_transfer_authenticates_every_envelope() {
     for index in 0..4000 {
         let frame = builder
             .add_answer_or_overflow(|builder| {
-                builder.add_text_rdata(
-                    &format!("host-{index}.example.com."),
+                builder.add_record_parts(
+                    &OwnerName::from_row(&format!("host-{index}")),
+                    &ZoneName::parse("example.com").unwrap(),
                     RecordType::A,
                     &format!("192.0.2.{}", index % 255),
-                    3600,
+                    Ttl::from_secs(3600),
                     None,
                 )
             })
@@ -503,8 +505,8 @@ fn signed_message_reserves_space_for_tsig() {
         .to_signing_key()
         .unwrap();
     let (query_data, _) = build_signed_axfr_query(key.clone(), None);
-    let unsigned = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
-    let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR)
+    let unsigned = DnsMessageBuilder::new(&axfr_query());
+    let signed = DnsMessageBuilder::new(&axfr_query())
         .sign_with(tsig::verify_tsig(&query_data, Some(key)).unwrap().into());
 
     // Without the reservation an envelope could fill to the wire limit and
@@ -583,7 +585,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
         let query =
             ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::from_secs(30)))
                 .unwrap();
-        let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(
+        let mut builder = DnsMessageBuilder::new(&query).sign_with(
             tsig::verify_tsig(&query_data, Some(key.clone()))
                 .unwrap()
                 .into(),
@@ -748,7 +750,7 @@ fn response_encoding_preserves_edns_dnssec_ok() {
 fn udp_response_truncates_answers_above_limit() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
     let query = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
-    let mut builder = DnsMessageBuilder::new(&query, Rtype::SOA);
+    let mut builder = DnsMessageBuilder::new(&query);
 
     for _ in 0..100 {
         builder
@@ -945,7 +947,7 @@ fn oversized_frame_does_not_advance_the_signer() {
     let query_data = additional.finish();
     let query = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
     let signer = tsig::verify_tsig(&query_data, Some(key)).unwrap();
-    let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(signer.into());
+    let mut builder = DnsMessageBuilder::new(&query).sign_with(signer.into());
 
     // Bypass the chunking helper to exercise the final frame guard itself.
     for _ in 0..70 {

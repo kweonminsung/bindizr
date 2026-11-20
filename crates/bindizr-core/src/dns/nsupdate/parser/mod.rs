@@ -35,17 +35,6 @@ pub enum ParseUpdateError {
     Rdata { record_type: &'static str },
     #[error("invalid prerequisite rdata: {0}")]
     PrerequisiteRdata(#[from] ParseRdataError),
-    /// A name inside the RDATA does not read back into presentation form.
-    #[error("invalid {record_type} rdata: {source}")]
-    RdataName {
-        record_type: &'static str,
-        #[source]
-        source: Box<Self>,
-    },
-    /// The `domain` TXT reader's error implements no `Error`, so its text
-    /// is what is kept.
-    #[error("invalid TXT rdata: {reason}")]
-    TxtRdata { reason: String },
     #[error("invalid TXT rdata: {0}")]
     TxtValue(#[source] ParseRecordValueError),
     #[error(transparent)]
@@ -99,7 +88,7 @@ impl UpdateRequest {
             return Err(ParseUpdateError::InvalidZoneSection);
         }
 
-        let zone_name = to_presentation_name(&zname)?;
+        let zone_name = to_presentation_name(&zname);
 
         // UPDATE uses the answer count for prerequisites and the authority count
         // for changes; these are not ordinary response sections.
@@ -146,7 +135,7 @@ fn parse_record(
     query_data: &[u8],
 ) -> Result<UpdateRecord, ParseUpdateError> {
     let name = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
-    let name = to_presentation_name(&name)?;
+    let name = to_presentation_name(&name);
 
     let rtype = Rtype::from_int(
         parser
@@ -209,7 +198,7 @@ fn skip_additional_section(
 
 /// Render a parsed name in presentation form, escaping a `.` or `\` inside a
 /// label so the text decodes back to the same labels (RFC 1035, Section 5.1).
-fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateError> {
+fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
     let mut labels = Vec::new();
 
     for label in name {
@@ -221,10 +210,10 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateE
     }
 
     if labels.is_empty() {
-        return Ok(".".to_string());
+        return ".".to_string();
     }
 
-    Ok(format!("{}.", name::labels_to_presentation(&labels)))
+    format!("{}.", name::labels_to_presentation(&labels))
 }
 
 #[cfg(test)]

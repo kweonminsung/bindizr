@@ -7,8 +7,7 @@ use chrono::Utc;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::record::validation;
-use crate::record::validation::ParsedRecord;
+use crate::record::ParsedRecord;
 use crate::types::{CreateRecordRequest, RecordResponse, WriteRecordResponse};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, record, serial, transaction, zone};
@@ -25,7 +24,7 @@ pub async fn create(
         value: record_value,
         priority,
         ttl,
-    } = validation::parse_record_fields(
+    } = record::parse_record_fields(
         &request.record_type,
         &request.value,
         request.ttl,
@@ -33,7 +32,7 @@ pub async fn create(
     )?;
 
     let zone_name = zone::normalize_name(&request.zone_name)?;
-    let owner = validation::normalize_record_owner_name(&request.name, &zone_name)?;
+    let owner = record::normalize_record_owner_name(&request.name, &zone_name)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to create record").await?;
 
@@ -62,7 +61,7 @@ pub async fn create(
         // Fixed at write time: a later zone TTL change will not move it.
         let ttl = ttl.unwrap_or(zone.default_ttl);
 
-        validation::validate_record_constraints(
+        record::validate_record_constraints(
             &records_at_name,
             &owner,
             record_type,
@@ -103,15 +102,11 @@ pub async fn create(
         }
 
         // Persist the validated record and its signed view as one journaled serial.
-        let created_record = record::create_with_changes_tx(
-            &mut tx,
-            zone.id,
-            new_serial,
-            slice::from_ref(&candidate),
-        )
-        .await?
-        .pop()
-        .ok_or_else(|| ServiceError::internal("record insert returned no row"))?;
+        let created_record =
+            record::create_with_changes_tx(&mut tx, new_serial, slice::from_ref(&candidate))
+                .await?
+                .pop()
+                .ok_or_else(|| ServiceError::internal("record insert returned no row"))?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 

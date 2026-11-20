@@ -5,17 +5,17 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing};
 use bindizr_service::types::{
-    CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
-    DeleteRecordsRequest, DeleteRecordsResponse, ErrorResponse, PaginatedResponse, RecordFilter,
-    RecordResponse, Run, SingleRecordResponse, UpdateRecordRequest, WriteRecordResponse,
+    CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest, DeleteRecordsRequest,
+    DeleteRecordsResponse, ErrorResponse, PaginatedResponse, RecordFilter, RecordResponse, Run,
+    SingleRecordResponse, UpdateRecordRequest, WriteRecordResponse,
 };
 use bindizr_service::{Context, record};
 
 use crate::api::RequestCaller;
-use crate::api::error::{ApiError, Path, Query};
-use crate::api::middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES};
-use crate::api::query::DryRunQuery;
-use crate::params::IdParams;
+use crate::api::error::ApiError;
+use crate::api::extract::{JsonBody, MAX_UPLOAD_BODY_BYTES, Path, Query};
+use crate::api::params::IdParams;
+use crate::api::query::{DEFAULT_PAGE_LIMIT, DryRunQuery};
 
 /// Build the record API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

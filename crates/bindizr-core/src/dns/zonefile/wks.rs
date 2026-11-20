@@ -10,7 +10,7 @@ use crate::dns::record::{EncodeRdataError, ParseRecordValueError, WksRecordValue
 
 /// Why native WKS text could not be prepared for the zone-file parser.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub(crate) enum RewriteNativeRecordsError {
+pub enum RewriteNativeRecordsError {
     #[error("unexpected ')' in zone file")]
     UnexpectedClosingParenthesis,
     #[error("unterminated parentheses, quote, or escape in zone file")]
@@ -193,7 +193,7 @@ mod tests {
     use super::*;
     use crate::dns::Ttl;
     use crate::dns::name::ZoneName;
-    use crate::dns::zonefile::ParsedZoneFile;
+    use crate::dns::zonefile::{ParseZoneFileError, ParsedZoneFile};
     use crate::model::record::RecordType;
 
     /// Verify that the WKS parse cause is preserved until the zone-file result renders its
@@ -214,7 +214,11 @@ mod tests {
             Ttl::from_secs(300),
         );
 
-        assert_eq!(parsed.errors, vec![error.to_string()]);
+        assert!(
+            matches!(parsed.errors.as_slice(), [ParseZoneFileError::Rewrite(parsed_error)] if *parsed_error == error),
+            "{:?}",
+            parsed.errors
+        );
     }
 
     /// Verify that other records, inherited owners, and line numbers around multiline WKS are

@@ -20,7 +20,7 @@ use crate::cli::error::CliError;
 use crate::cli::output::{
     ImportSummaryRow, ImportZonesRow, OutputFormat, SecondaryStatusRow, ZoneRow,
 };
-use crate::cli::{commands, output};
+use crate::cli::{commands, output, time};
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
@@ -106,11 +106,12 @@ and the contact is the address a resolver operator writes to.")]
         /// Filter by maximum serial
         #[arg(long)]
         max_serial: Option<u32>,
-        /// Keep zones created at or after this RFC 3339 timestamp
-        #[arg(long, value_name = "TIMESTAMP")]
+        /// Keep zones created at or after this time: a span ago (7d, 12h, 30m),
+        /// a UTC date (2026-10-01), or RFC 3339
+        #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
         created_after: Option<DateTime<Utc>>,
-        /// Keep zones created at or before this RFC 3339 timestamp
-        #[arg(long, value_name = "TIMESTAMP")]
+        /// Keep zones created at or before this time, in the same forms
+        #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
         created_before: Option<DateTime<Utc>>,
         /// Keep only zones signing under a DNSSEC policy
         #[arg(long)]
@@ -314,6 +315,8 @@ Examples:
 }
 
 /// CLI import mode, matching the service's `ImportMode` and lowercase wire names.
+/// Kept as its own `ValueEnum`, unlike other enum-valued body fields, because
+/// deriving it is what lists the modes in `--help` and the shell completions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ImportMode {
     /// Add parsed records; records already present are left untouched

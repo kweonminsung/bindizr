@@ -2,9 +2,8 @@ use bindizr_core::model::record::RecordId;
 use bindizr_core::{out, outln};
 use bindizr_service::types::{
     BulkRecordItem, CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest,
-    DeleteRecordsRequest, DeleteRecordsResponse, PaginatedResponse, PaginationResponse,
-    RecordFilter, RecordResponse, RecordValue, Run, SingleRecordResponse, UpdateRecordRequest,
-    WriteRecordResponse,
+    DeleteRecordsRequest, DeleteRecordsResponse, PaginatedResponse, RecordFilter, RecordResponse,
+    RecordValue, Run, SingleRecordResponse, UpdateRecordRequest, WriteRecordResponse,
 };
 use clap::Subcommand;
 use serde_json::Value;
@@ -436,37 +435,16 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             output,
             ..
         } => {
-            // This command promises every record at the owner, so traverse all pages.
-            let mut records: Vec<RecordResponse> = Vec::new();
-            let mut offset = 0u64;
-
-            let total = loop {
-                let page = client::send_command::<PaginatedResponse<RecordResponse>>(
-                    DaemonCommand::ListRecords(RecordFilter {
-                        zone_name: zone.clone(),
-                        name: Some(name.clone()),
-                        offset: Some(offset),
-                        ..Default::default()
-                    }),
-                )
-                .await?
-                .data;
-                let read = page.items.len() as u64;
-                records.extend(page.items);
-                offset += read;
-
-                if read == 0 || offset >= page.pagination.total {
-                    break page.pagination.total;
-                }
-            };
-            let page = PaginatedResponse {
-                items: records,
-                pagination: PaginationResponse {
-                    limit: u32::try_from(total).unwrap_or(u32::MAX),
-                    offset: 0,
-                    total,
-                },
-            };
+            // The socket supplies no page limit, so one answer holds every record at the owner.
+            let page = client::send_command::<PaginatedResponse<RecordResponse>>(
+                DaemonCommand::ListRecords(RecordFilter {
+                    zone_name: zone.clone(),
+                    name: Some(name.clone()),
+                    ..Default::default()
+                }),
+            )
+            .await?
+            .data;
             output::print_page(&page, output, RecordRow::whole)?;
         }
         RecordCommand::Get { .. } => {

@@ -13,12 +13,11 @@ use domain::dnssec::sign::denial::{nsec, nsec3};
 use domain::dnssec::sign::records::{DefaultSorter, RecordsIter};
 use domain::rdata::{Soa, ZoneRecordData};
 
-use crate::dns::dnssec::signed_view;
 use crate::dns::dnssec::signed_view::{
     SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord,
 };
-use crate::dns::record::EncodedRdata;
-use crate::model::dnssec_key::DS_DIGEST_TYPE;
+use crate::dns::dnssec::{DS_DIGEST_TYPE, signed_view};
+use crate::dns::record::Rdata;
 use crate::model::dnssec_policy::DnssecDenial;
 
 impl SignedViewParams<'_> {
@@ -111,11 +110,8 @@ impl SignedViewParams<'_> {
 
         // Add user records to the same input used for denial proofs and signatures.
         for record in self.records {
-            let EncodedRdata {
-                record_type: rtype,
-                rdata,
-            } = EncodedRdata::from_columns(record.record_type, &record.value, record.priority)?;
-            let rtype = Rtype::from_int(rtype);
+            let rdata = Rdata::from_columns(record.record_type, &record.value, record.priority)?;
+            let rtype = Rtype::from(record.record_type);
 
             // UnknownRecordData cannot canonicalize embedded names for signing.
             let rdata = rdata

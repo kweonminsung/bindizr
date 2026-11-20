@@ -99,7 +99,10 @@ async fn matches_client_address<'a>(
                             addrs.into_iter().map(|addr| addr.ip()).collect::<Vec<_>>(),
                             RESOLVED_TTL,
                         ),
-                        Err(_) => (Vec::new(), RESOLVE_FAILURE_TTL),
+                        Err(error) => {
+                            log::warn!("Transfer ACL host '{address}' did not resolve: {error}");
+                            (Vec::new(), RESOLVE_FAILURE_TTL)
+                        }
                     };
                 cache.locked().insert(
                     host_port.clone(),

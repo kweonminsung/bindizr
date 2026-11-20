@@ -237,7 +237,7 @@ impl DnssecKey {
         let dnskey = Dnskey::new(
             flags,
             3,
-            SecurityAlgorithm::from_int(algorithm.as_i32() as u8),
+            SecurityAlgorithm::from_int(algorithm.as_u8()),
             public_key,
         )
         .map_err(|error| ImportKeyError::Dnskey(Box::new(error)))?;

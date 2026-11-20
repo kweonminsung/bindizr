@@ -219,10 +219,16 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
 /// Verify that `zone_name_to_member_id` is stable and case insensitive.
 #[test]
 fn zone_name_to_member_id_preserves_identity_across_case_changes() {
-    let id = zone_name_to_member_id("example.com");
+    let id = zone_name_to_member_id(&ZoneName::parse("example.com").unwrap());
 
-    assert_eq!(id, zone_name_to_member_id("example.com"));
-    assert_eq!(id, zone_name_to_member_id("EXAMPLE.COM"));
+    assert_eq!(
+        id,
+        zone_name_to_member_id(&ZoneName::parse("example.com").unwrap())
+    );
+    assert_eq!(
+        id,
+        zone_name_to_member_id(&ZoneName::parse("EXAMPLE.COM").unwrap())
+    );
     assert!(
         id.chars()
             .all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase())
@@ -243,7 +249,7 @@ fn zone_name_to_member_id_fits_label_limit_for_longest_zone_name() {
     .join(".");
 
     assert_eq!(long.len(), 253);
-    assert!(zone_name_to_member_id(&long).len() <= 63);
+    assert!(zone_name_to_member_id(&ZoneName::parse(&long).unwrap()).len() <= 63);
 }
 
 /// Verify that `zone_name_to_member_id` distinguishes dot from dash.
@@ -251,7 +257,7 @@ fn zone_name_to_member_id_fits_label_limit_for_longest_zone_name() {
 fn zone_name_to_member_id_distinguishes_dot_from_dash() {
     // RFC 9432, Section 4.1 requires unique ids.
     assert_ne!(
-        zone_name_to_member_id("a.b.example.com"),
-        zone_name_to_member_id("a-b.example.com")
+        zone_name_to_member_id(&ZoneName::parse("a.b.example.com").unwrap()),
+        zone_name_to_member_id(&ZoneName::parse("a-b.example.com").unwrap())
     );
 }

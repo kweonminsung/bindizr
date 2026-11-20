@@ -6,59 +6,14 @@ mod key_tag;
 mod rdata;
 mod signed_view;
 
-use domain::base::iana::Rtype;
-use domain::base::{Name, Record};
+use domain::base::Record;
 pub use key::GenerateKeyError;
 pub use key_file::ImportKeyError;
 pub use key_tag::{ConvertKeyTagError, KeyTag};
-pub use rdata::{DS_DIGEST_TYPES, EncodeKeyRdataError};
+pub use rdata::{ConvertDsDigestTypeError, DS_DIGEST_TYPE, DsDigestType, EncodeKeyRdataError};
 pub use signed_view::{SignZoneError, SignedViewDiff, SignedViewParams, SigningPass};
-use thiserror::Error;
 
-use crate::dns::LibraryError;
-use crate::dns::name::{OwnerName, ParseNameError, ZoneName};
-use crate::model::dnssec_record::{DnssecRecordType, ParseDnssecRecordTypeError};
-
-/// A typed name whose wire bytes the `domain` crate did not accept.
-#[derive(Debug, Error)]
-pub enum EncodeWireNameError {
-    #[error(transparent)]
-    Name(#[from] ParseNameError),
-    #[error("invalid wire name: {0}")]
-    Octets(#[source] LibraryError),
-}
-
-/// The name form the `domain` crate's DNSSEC machinery takes.
-pub type WireName = Name<Vec<u8>>;
+use crate::dns::name::WireName;
 
 /// A record in the `domain` crate's form, owned by a [`WireName`].
 pub(crate) type WireRecord<D> = Record<WireName, D>;
-
-/// Convert a typed name's wire bytes into the domain form.
-fn to_wire_name(wire: Vec<u8>) -> Result<WireName, EncodeWireNameError> {
-    Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)))
-}
-
-impl ZoneName {
-    /// Convert the zone apex into the domain form the DNSSEC machinery takes.
-    pub fn to_wire_name(&self) -> Result<WireName, EncodeWireNameError> {
-        to_wire_name(self.to_wire()?)
-    }
-}
-
-impl OwnerName {
-    /// Convert the owner, absolute within `zone_name`, into the domain form the
-    /// DNSSEC machinery takes.
-    pub fn to_wire_name(&self, zone_name: &ZoneName) -> Result<WireName, EncodeWireNameError> {
-        to_wire_name(self.to_wire(zone_name)?)
-    }
-}
-
-impl TryFrom<Rtype> for DnssecRecordType {
-    type Error = ParseDnssecRecordTypeError;
-
-    /// Convert a wire record type to the stored DNSSEC record type it maps to.
-    fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
-        Self::try_from(i32::from(rtype.to_int()))
-    }
-}

@@ -92,7 +92,7 @@ pub(crate) async fn import_zone(
         request,
     )
     .await?;
-    let message = if !response.errors.is_empty() {
+    let message = if response.was_rejected() {
         format!(
             "Import validation failed with {} error(s); nothing applied",
             response.errors.len()

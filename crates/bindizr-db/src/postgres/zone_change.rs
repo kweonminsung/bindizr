@@ -54,7 +54,7 @@ pub(crate) async fn create_many_tx(
                 .bind(&change.record_rdata)
                 .bind(change.record_ttl)
                 .bind(change.record_priority)
-                .bind(change.derived)
+                .bind(change.record_type.is_derived())
                 .bind(now);
         }
 
@@ -99,7 +99,7 @@ pub(crate) async fn list_between_serials_tx(
 ) -> Result<Vec<ZoneChange>, DatabaseError> {
     let changes = sqlx::query_as::<_, ZoneChange>(AssertSqlSafe(format!(
         r#"
-        SELECT zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived
+        SELECT zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority
         FROM zone_journal
         WHERE zone_id = $1 AND ((serial > $2 AND serial <= $3) OR ($2 > $3 AND (serial > $2 OR serial <= $3)))
         ORDER BY id{}

@@ -38,27 +38,12 @@ impl<'a> SrvRecordValue<'a> {
 
     /// Validate the fields of this SRV value.
     pub fn validate(self) -> Result<(), ParseRecordValueError> {
-        if self.target.trim() == "." {
-            return Ok(());
-        }
-
         value::validate_domain_record_value("SRV record target", self.target)
     }
 
     /// Return the host this record names, as stored; `.` when the service is absent.
     pub fn target(self) -> &'a str {
         self.target
-    }
-
-    /// Render the SRV value in canonical text form.
-    pub fn canonical(self) -> String {
-        format!(
-            "{} {} {} {}",
-            self.priority,
-            self.weight,
-            self.port,
-            name::to_fqdn(self.target)
-        )
     }
 
     /// Encode the stored value as wire RDATA (RFC 2782).

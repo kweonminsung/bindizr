@@ -30,6 +30,14 @@ pub enum TsigAlgorithm {
 }
 
 impl TsigAlgorithm {
+    /// Every TsigAlgorithm value, in declaration order.
+    pub const ALL: [Self; 4] = [
+        Self::HmacSha1,
+        Self::HmacSha256,
+        Self::HmacSha384,
+        Self::HmacSha512,
+    ];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -51,9 +59,9 @@ impl TsigAlgorithm {
         }
     }
 
-    /// List all supported algorithm names, for error messages.
-    fn supported_names() -> &'static [&'static str] {
-        &["hmac-sha1", "hmac-sha256", "hmac-sha384", "hmac-sha512"]
+    /// List the names a value parses from, for messages that list them.
+    pub fn supported_names() -> Vec<&'static str> {
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 

@@ -1,13 +1,12 @@
 //! SOA record values, including the RNAME mailbox <-> email conversions.
 
-use std::str::{FromStr, Utf8Error};
+use std::str::Utf8Error;
 use std::{fmt, str};
 
-use domain::base::Name;
-use domain::base::name::{FromStrError, Label};
 use thiserror::Error;
 
 use crate::dns::name;
+use crate::dns::name::{EncodeNameError, ParseNameError};
 use crate::dns::record::{EncodeRdataError, Rdata};
 
 /// An email that does not encode as an SOA mailbox, or a mailbox that does
@@ -17,7 +16,9 @@ pub enum ParseMailboxError {
     #[error("email must contain exactly one @")]
     AtCount,
     #[error(transparent)]
-    Name(#[from] FromStrError),
+    Encode(#[from] EncodeNameError),
+    #[error(transparent)]
+    Decode(#[from] ParseNameError),
     #[error("SOA mailbox local part is not UTF-8: {0}")]
     Utf8(#[from] Utf8Error),
     #[error("SOA mailbox is not a valid encoded email")]
@@ -57,8 +58,8 @@ impl<N: AsRef<str>> SoaRecordValue<N> {
     }
 }
 
-/// An SOA RNAME mailbox in presentation form, with the email local part's
-/// dots escaped.
+/// An SOA RNAME mailbox in presentation form, the email local part one label
+/// escaped by the name codec, so its dots stay label data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SoaMailbox(String);
 
@@ -73,10 +74,10 @@ impl SoaMailbox {
 
         let mailbox = Self(format!(
             "{}.{}.",
-            escape_local_part(local),
+            name::labels_to_presentation(&[local.as_bytes()]),
             domain.trim_end_matches('.')
         ));
-        Name::<Vec<u8>>::from_str(mailbox.as_str())?;
+        name::encode_name(mailbox.as_str())?;
 
         Ok(mailbox)
     }
@@ -89,12 +90,7 @@ impl SoaMailbox {
 
     /// Decode the local part as text and escape domain octets (RFC 1035, Section 5.1).
     pub fn to_email(&self) -> Result<String, ParseMailboxError> {
-        let name = Name::<Vec<u8>>::from_str(&self.0)?;
-        let labels: Vec<_> = name
-            .iter()
-            .filter(|label| !label.is_root())
-            .map(Label::as_slice)
-            .collect();
+        let (labels, _) = name::decode_preserved_labels(&self.0)?;
 
         if labels.len() < 2 {
             return Err(ParseMailboxError::NotEncodedEmail);
@@ -102,7 +98,7 @@ impl SoaMailbox {
 
         Ok(format!(
             "{}@{}",
-            str::from_utf8(labels[0])?,
+            str::from_utf8(&labels[0])?,
             name::labels_to_presentation(&labels[1..])
         ))
     }
@@ -123,20 +119,6 @@ impl fmt::Display for SoaMailbox {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
-}
-
-/// Escape mailbox local-part characters for DNS presentation text.
-fn escape_local_part(local: &str) -> String {
-    let mut escaped = String::with_capacity(local.len());
-
-    for ch in local.chars() {
-        if ch == '.' || ch == '\\' {
-            escaped.push('\\');
-        }
-        escaped.push(ch);
-    }
-
-    escaped
 }
 
 #[cfg(test)]

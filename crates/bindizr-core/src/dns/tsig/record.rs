@@ -7,9 +7,9 @@ use domain::rdata::tsig::Tsig;
 use ring::hmac;
 use thiserror::Error;
 
-use crate::dns::LibraryError;
 use crate::dns::message::DNS_HEADER_LEN;
 use crate::dns::tsig::TsigSigningKey;
+use crate::dns::{LibraryError, tsig};
 
 type WireTsig<'a> = Record<ParsedName<&'a [u8]>, Tsig<&'a [u8], ParsedName<&'a [u8]>>>;
 
@@ -118,15 +118,15 @@ impl<'a> ParsedTsig<'a> {
         digest.update(&message.as_slice()[DNS_HEADER_LEN..self.start]);
         let name = self.record.owner().to_canonical_name::<Vec<u8>>();
         let algorithm = data.algorithm().to_canonical_name::<Vec<u8>>();
-        digest.update(name.as_slice());
-        digest.update(&Class::ANY.to_int().to_be_bytes());
-        digest.update(&0u32.to_be_bytes());
-        digest.update(algorithm.as_slice());
-        digest.update(&data.time_signed().into_octets());
-        digest.update(&data.fudge().to_be_bytes());
-        digest.update(&data.error().to_int().to_be_bytes());
-        digest.update(&(data.other().len() as u16).to_be_bytes());
-        digest.update(data.other());
+        tsig::digest_tsig_variables(
+            &mut digest,
+            name.as_slice(),
+            algorithm.as_slice(),
+            data.time_signed(),
+            data.fudge(),
+            data.error(),
+            data.other(),
+        );
         let expected = digest.sign();
         let Some(expected) = expected.as_ref().get(..data.mac().len()) else {
             return Err(VerifyMacError::Length);

@@ -5,7 +5,7 @@ use std::fmt;
 
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::dns::record::{ParseRecordValueError, TxtContent, TxtRecordValue};
+use bindizr_core::dns::record::{ParseRecordValueError, TxtRecordValue};
 use bindizr_core::model::dnssec_record::DnssecRecordType;
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
@@ -40,17 +40,25 @@ pub enum RecordValue {
     Presentation { presentation: String },
 }
 
-impl RecordValue {
-    /// Return the value as one string; TXT segments concatenate into the text they
-    /// encode.
-    pub fn to_text(&self) -> String {
+/// A value as a person reads it on one line; TXT segments concatenate into the
+/// text they encode.
+impl fmt::Display for RecordValue {
+    /// Write the value's one-line form.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Text(value) => value.clone(),
-            Self::Segments(segments) => segments.concat(),
-            Self::Presentation { presentation } => presentation.clone(),
+            Self::Text(value) => f.write_str(value),
+            Self::Segments(segments) => {
+                for segment in segments {
+                    f.write_str(segment)?;
+                }
+                Ok(())
+            }
+            Self::Presentation { presentation } => f.write_str(presentation),
         }
     }
+}
 
+impl RecordValue {
     /// Encode the request value into its record-row form. A TXT string is raw
     /// content (never presentation form), so quotes carry no special meaning.
     pub(crate) fn to_encoded_value(
@@ -67,8 +75,7 @@ impl RecordValue {
             )
             .map(|parsed| parsed.to_presentation())?),
             (RecordType::Txt, Self::Presentation { presentation }) => {
-                let parsed = TxtRecordValue::from_presentation(presentation)
-                    .ok_or(ParseRecordValueError::TxtRdata)?;
+                let parsed = TxtRecordValue::from_presentation(presentation)?;
                 parsed.validate()?;
                 Ok(parsed.to_presentation())
             }
@@ -80,15 +87,19 @@ impl RecordValue {
 }
 
 /// Build a stored value as the record APIs display it: TXT decoded to string/segments,
-/// other types rendered with trailing-dot FQDNs. Priority stays a separate field.
+/// other types as stored, their names already absolute. Priority stays a separate field.
 pub(crate) fn build_display_value(record_type: RecordType, value: &str) -> RecordValue {
     if record_type != RecordType::Txt {
         return RecordValue::Text(record_type.display_value(value));
     }
 
-    match TxtRecordValue::from_presentation(value).and_then(|rdata| rdata.to_content()) {
-        Some(TxtContent::Single(value)) => RecordValue::Text(value),
-        Some(TxtContent::Segments(segments)) => RecordValue::Segments(segments),
+    match TxtRecordValue::from_presentation(value)
+        .ok()
+        .and_then(|rdata| rdata.to_content())
+    {
+        // One character-string reads as plain text; several keep their boundaries.
+        Some(mut segments) if segments.len() == 1 => RecordValue::Text(segments.remove(0)),
+        Some(segments) => RecordValue::Segments(segments),
         None => RecordValue::Presentation {
             presentation: value.to_string(),
         },
@@ -454,5 +465,25 @@ mod tests {
         for invalid in ["SOA", "ANY", "AAAAA"] {
             assert!(serde_json::from_value::<ServedRecordType>(json!(invalid)).is_err());
         }
+    }
+    /// Verify that a malformed TXT presentation is refused with its own cause,
+    /// not a generic RDATA error.
+    #[test]
+    fn to_encoded_value_keeps_the_cause_of_a_malformed_txt_presentation() {
+        let value = RecordValue::Presentation {
+            presentation: r#""unterminated"#.to_string(),
+        };
+
+        let error = value.to_encoded_value(RecordType::Txt, None).unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                EncodeRecordValueError::Value(ParseRecordValueError::UnterminatedQuote {
+                    field: "TXT value"
+                })
+            ),
+            "{error:?}"
+        );
     }
 }

@@ -23,7 +23,7 @@ pub(crate) async fn check_installation(
 
     // Count zones without materializing them; large tables must fit the deadline.
     let caller = Caller::socket();
-    let zones_probe = zone::count(cx, &caller);
+    let zones_probe = zone::count_all(cx);
 
     let database = match time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
         Ok(Ok(total)) => DoctorCheckResponse {
@@ -118,9 +118,7 @@ pub(crate) async fn check_installation(
         dns_tls_server,
         catalog_zone_name: config.dns.catalog_zone_name.to_string(),
         catalog_serial,
-        secondaries: diagnostics.secondaries,
-        notifies: diagnostics.notifies,
-        transfers: diagnostics.transfers,
+        diagnostics,
     };
 
     Ok(DaemonResponse {

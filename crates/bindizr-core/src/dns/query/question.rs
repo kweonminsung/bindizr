@@ -6,7 +6,7 @@ use domain::base::opt::keepalive::TcpKeepalive;
 use domain::base::{MessageBuilder, Name};
 
 use crate::dns::message;
-use crate::dns::query::EDNS_UDP_PAYLOAD_SIZE;
+use crate::dns::message::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::tsig::TsigSigningKey;
 
 /// Build a random-ID question with optional EDNS; leave additional open for signing.
@@ -61,13 +61,16 @@ pub fn build_axfr_query(qname: &Name<Vec<u8>>) -> (u16, Vec<u8>) {
     (query_id, additional.finish())
 }
 
-/// Add EDNS when the final signed NOTIFY would exceed 512 octets (RFC 1035, Section 4.2.1).
+/// Build a NOTIFY under the caller's reserved `id`, which every retry's signed
+/// bytes reuse; add EDNS when the final signed NOTIFY would exceed 512 octets
+/// (RFC 1035, Section 4.2.1).
 pub fn build_notify_query(
+    id: u16,
     qname: &Name<Vec<u8>>,
     key: Option<&TsigSigningKey>,
-) -> (u16, AdditionalBuilder<Vec<u8>>) {
-    let (query_id, mut additional) =
-        build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA, None);
+) -> AdditionalBuilder<Vec<u8>> {
+    let (_, mut additional) = build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA, None);
+    additional.header_mut().set_id(id);
 
     if key.is_some_and(|key| {
         additional.as_slice().len() + usize::from(key.as_ref().compose_len())
@@ -81,5 +84,5 @@ pub fn build_notify_query(
             .expect("one OPT record fits an unlimited message");
     }
 
-    (query_id, additional)
+    additional
 }

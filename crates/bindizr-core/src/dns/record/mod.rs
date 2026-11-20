@@ -32,13 +32,12 @@ pub use mx::MxRecordValue;
 pub use naptr::{NaptrRecordValue, ValidateNaptrRegexpError};
 pub use ns::NsRecordValue;
 pub use ptr::PtrRecordValue;
-pub(crate) use rdata::EncodedRdata;
 pub use rdata::{EncodeRdataError, ParseRdataError, Rdata};
 pub use soa::{ParseMailboxError, SoaMailbox, SoaRecordValue};
 pub use srv::SrvRecordValue;
 pub use sshfp::SshfpRecordValue;
 pub use tlsa::TlsaRecordValue;
-pub use txt::{TxtContent, TxtRecordValue, to_quoted_charstr};
+pub use txt::{TxtRecordValue, to_quoted_charstr};
 pub(crate) use value::DEFAULT_PRIORITY;
 #[cfg(test)]
 pub(crate) use value::MAX_RECORD_RDATA;

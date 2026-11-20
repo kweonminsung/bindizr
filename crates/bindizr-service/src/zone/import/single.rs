@@ -1,6 +1,5 @@
 //! Read one import payload and select zone-file text or an AXFR source.
 
-use bindizr_core::dns::address;
 use bindizr_core::dns::name::ZoneName;
 
 use crate::authorization::Caller;
@@ -41,14 +40,7 @@ pub async fn import(
     let source = match (&request.content, &request.from_server) {
         (Some(content), None) => ImportSource::Text(content),
         (None, Some(address)) => {
-            let address = address.trim();
-
-            if !address::is_address_target(address) {
-                return Err(ServiceError::invalid_input(
-                    "from_server must name one server as host[:port]",
-                ));
-            }
-
+            let address = zone::import::normalize_from_server(address)?;
             let mut client = AxfrClient::new(address);
 
             return zone::import::import_transfer(

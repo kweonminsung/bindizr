@@ -3,7 +3,7 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::dnssec::KeyTag;
 use bindizr_core::model::dnssec_key::{
-    DnssecAlgorithm, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
+    DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -190,6 +190,23 @@ pub struct DnssecKeyResponse {
     )]
     pub dnskey: String,
     pub created_at: DateTime<Utc>,
+}
+
+impl From<&DnssecKey> for DnssecKeyResponse {
+    /// Describe a stored key's public half and its place in the rollover.
+    fn from(key: &DnssecKey) -> Self {
+        Self {
+            id: key.id,
+            role: key.role,
+            state: key.state,
+            state_changed_at: key.state_changed_at,
+            eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
+            algorithm: key.algorithm,
+            key_tag: key.key_tag,
+            dnskey: key.to_dnskey_presentation(),
+            created_at: key.created_at,
+        }
+    }
 }
 
 /// A key's DS form for parent-zone registration.

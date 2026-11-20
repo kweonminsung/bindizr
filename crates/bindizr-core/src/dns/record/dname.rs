@@ -9,10 +9,7 @@ pub struct DnameRecordValue<'a> {
 impl<'a> DnameRecordValue<'a> {
     /// Parse and validate a DNAME record value.
     pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
-        // RFC 2181, Section 11 allows root targets.
-        if value != "." {
-            value::validate_domain_record_value("DNAME record value", value)?;
-        }
+        value::validate_domain_record_value("DNAME record value", value)?;
 
         Ok(Self { target: value })
     }

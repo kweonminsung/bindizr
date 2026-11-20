@@ -31,10 +31,15 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
 
     match stopped {
         Some(()) => {
+            // The result is the daemon having gone, said the same in every format.
+            let stopped = MessageResponse {
+                message: "Bindizr stopped.".to_string(),
+            };
+
             if output == OutputFormat::Table {
-                outln!("Bindizr stopped.");
+                outln!("{}", stopped.message);
             } else {
-                output::print_payload(&response.data, output)?;
+                output::print_payload(&stopped, output)?;
             }
             Ok(())
         }

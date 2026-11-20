@@ -115,7 +115,7 @@ pub async fn list_records(
         let read = records_with_zones.len();
 
         for record_with_zone in records_with_zones {
-            let record = record_with_zone.record();
+            let record = record_with_zone.record;
 
             if !RECORD_TYPES.contains(&record.record_type) {
                 continue;

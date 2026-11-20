@@ -21,8 +21,8 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
     }
 
     sqlx::query(
-        "INSERT INTO zones (id, name, mname, rname, default_ttl, serial, created_at)
-         VALUES (1, 'example.com', 'ns1.example.com', 'admin@example.com', 3600, 1, ?)",
+        "INSERT INTO zones (id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, created_at)
+         VALUES (1, 'example.com', 'ns1.example.com', 'admin@example.com', 3600, 1, 300, 60, 3600000, 86400, ?)",
     )
     .bind(Utc::now())
     .execute(&pool)
@@ -77,11 +77,7 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
         version.changed_by = actor.clone();
 
         let mut tx = pool.begin().await.unwrap();
-        let saved = upsert_tx(&mut tx, version.clone()).await.unwrap();
-
-        assert_eq!(saved.change_source, source);
-        assert_eq!(saved.changed_by, actor);
-
+        upsert_tx(&mut tx, version.clone()).await.unwrap();
         tx.commit().await.unwrap();
 
         let columns = sqlx::query_as::<_, (Option<String>, Option<String>)>(
@@ -106,6 +102,7 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
         .unwrap();
         tx.commit().await.unwrap();
 
+        assert_eq!(read.change_source, source);
         assert_eq!(read.changed_by, actor);
     }
 }

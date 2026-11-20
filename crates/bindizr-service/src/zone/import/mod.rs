@@ -5,8 +5,7 @@ mod multiple;
 mod plan;
 mod single;
 
-use std::collections::HashSet;
-
+use bindizr_core::dns::address;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::zonefile::ParsedZoneFile;
 use bindizr_core::model::role_grant::Action;
@@ -74,25 +73,17 @@ async fn import_transfer(
     apply::apply_import(cx, caller, zone_name, source, options).await
 }
 
-/// Normalize the zones a bulk import names, in request order without repeats.
-fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError> {
-    if names.is_empty() {
+/// Trim the server an import transfers from, which must name one `host[:port]`.
+fn normalize_from_server(value: &str) -> Result<&str, ServiceError> {
+    let address = value.trim();
+
+    if !address::is_address_target(address) {
         return Err(ServiceError::invalid_input(
-            "zone_names must name at least one zone",
+            "from_server must name one server as host[:port]",
         ));
     }
 
-    let mut zone_names: Vec<ZoneName> = Vec::with_capacity(names.len());
-    let mut seen: HashSet<ZoneName> = HashSet::with_capacity(names.len());
-
-    for name in names {
-        let zone_name = zone::normalize_name(name)?;
-        if seen.insert(zone_name.clone()) {
-            zone_names.push(zone_name);
-        }
-    }
-
-    Ok(zone_names)
+    Ok(address)
 }
 
 /// Return the record actions an import mode performs.
@@ -121,4 +112,94 @@ fn authorize_import(caller: &Caller, mode: ImportMode, zone: &Zone) -> Result<()
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use std::io;
+    use std::net::TcpListener;
+
+    use bindizr_core::config::Config;
+    use bindizr_core::metrics::Metrics;
+    use bindizr_db::Db;
+    use tokio::sync::{mpsc, watch};
+
+    use super::*;
+    use crate::dns_client::axfr::FetchZoneError;
+    use crate::error::ErrorCode;
+    use crate::types::{ImportZoneRequest, ImportZonesRequest};
+    use crate::zone;
+
+    /// Verify that a failed external import keeps its network cause without creating a zone.
+    #[tokio::test]
+    async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
+        use std::error::Error;
+
+        let mut config: Config = serde_json::from_str("{}").unwrap();
+        config.database.sqlite.file_path = "sqlite::memory:".to_string();
+
+        let db = Db::connect(&config.database).await.unwrap();
+        let cx = Context::new(
+            config,
+            String::new(),
+            db,
+            Metrics::new().unwrap(),
+            mpsc::unbounded_channel().0,
+            mpsc::channel(1).0,
+            watch::channel(0).0,
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        drop(listener);
+        let zone_name = ZoneName::parse("example.com").unwrap();
+        let caller = Caller::socket();
+
+        let single = import(
+            &cx,
+            &caller,
+            &zone_name,
+            &ImportZoneRequest {
+                content: None,
+                from_server: Some(address.clone()),
+                mode: "append".to_string(),
+                dry_run: false,
+                create: true,
+            },
+        )
+        .await
+        .unwrap_err();
+        let catalog = import_many(
+            &cx,
+            &caller,
+            &ImportZonesRequest {
+                from_server: address.clone(),
+                zone_names: None,
+                from_catalog: Some("catalog.example".to_string()),
+                mode: "append".to_string(),
+                dry_run: false,
+                create: true,
+            },
+        )
+        .await
+        .unwrap_err();
+
+        for (error, context) in [
+            (single, format!("AXFR from {address} failed")),
+            (
+                catalog,
+                format!("AXFR of catalog catalog.example from {address} failed"),
+            ),
+        ] {
+            assert_eq!(error.code(), ErrorCode::InvalidInput);
+            let source = error.source().unwrap();
+
+            assert!(source.downcast_ref::<FetchZoneError>().is_some());
+            assert_eq!(error.to_string(), format!("{context}: {source}"));
+            let cause = source.source().unwrap().source().unwrap();
+
+            assert!(matches!(
+                cause.downcast_ref::<io::Error>(),
+                Some(cause) if cause.kind() == io::ErrorKind::ConnectionRefused
+            ));
+        }
+
+        assert!(zone::list(&cx).await.unwrap().is_empty());
+    }
+}

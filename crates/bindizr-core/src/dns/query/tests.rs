@@ -11,6 +11,7 @@ use domain::rdata::{A, Ds, Soa};
 
 use super::*;
 use crate::dns::dnssec::KeyTag;
+use crate::dns::message::EDNS_UDP_PAYLOAD_SIZE;
 
 /// Parse a DNS wire-format name for the test.
 fn name(value: &str) -> Name<Vec<u8>> {
@@ -574,11 +575,9 @@ fn responses_reject_extended_rcodes() {
         let mut notify = additional.finish();
         notify[2] |= 0x80;
         append_opt(&mut notify, rcode, 0);
-        let error = validate_notify_response(query_id, &child, &notify).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            format!("NOTIFY response returned RCODE {code}")
+        assert!(
+            matches!(validate_notify_response(query_id, &child, &notify), Err(ParseResponseError::Rcode { rcode: got }) if got == rcode),
+            "NOTIFY did not preserve {code}"
         );
     }
 }
@@ -716,4 +715,205 @@ fn extract_soa_serial_rejects_foreign_classes() {
             "accepted {class}"
         );
     }
+}
+
+/// Build an SOA response with raw header `flags`, its question for `qname`,
+/// and, when `with_answer`, one SOA answer carrying `serial`.
+fn build_flagged_soa_response(
+    query_id: u16,
+    flags: u16,
+    qname: &str,
+    with_answer: bool,
+    serial: u32,
+) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    buffer.extend_from_slice(&query_id.to_be_bytes());
+    buffer.extend_from_slice(&flags.to_be_bytes());
+    buffer.extend_from_slice(&1u16.to_be_bytes());
+    buffer.extend_from_slice(&u16::from(with_answer).to_be_bytes());
+    buffer.extend_from_slice(&0u16.to_be_bytes());
+    buffer.extend_from_slice(&0u16.to_be_bytes());
+
+    buffer.extend_from_slice(&crate::dns::name::encode_name(qname).unwrap());
+    buffer.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+    buffer.extend_from_slice(&Class::IN.to_int().to_be_bytes());
+
+    if with_answer {
+        buffer.extend_from_slice(&crate::dns::name::encode_name(qname).unwrap());
+        buffer.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+        buffer.extend_from_slice(&Class::IN.to_int().to_be_bytes());
+        buffer.extend_from_slice(&3600u32.to_be_bytes());
+
+        let mut rdata = crate::dns::name::encode_name("ns1.example.com").unwrap();
+        rdata.extend_from_slice(&crate::dns::name::encode_name("admin.example.com").unwrap());
+        rdata.extend_from_slice(&serial.to_be_bytes());
+        rdata.extend_from_slice(&7200u32.to_be_bytes());
+        rdata.extend_from_slice(&3600u32.to_be_bytes());
+        rdata.extend_from_slice(&604_800u32.to_be_bytes());
+        rdata.extend_from_slice(&3600u32.to_be_bytes());
+
+        buffer.extend_from_slice(&u16::try_from(rdata.len()).unwrap().to_be_bytes());
+        buffer.extend_from_slice(&rdata);
+    }
+
+    buffer
+}
+
+/// Build a NOTIFY response with raw header `flags`, echoing an SOA question for `qname`.
+fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
+    let mut response = Vec::new();
+    response.extend_from_slice(&query_id.to_be_bytes());
+    response.extend_from_slice(&flags.to_be_bytes());
+    response.extend_from_slice(&1u16.to_be_bytes());
+    response.extend_from_slice(&0u16.to_be_bytes());
+    response.extend_from_slice(&0u16.to_be_bytes());
+    response.extend_from_slice(&0u16.to_be_bytes());
+    response.extend_from_slice(&crate::dns::name::encode_name(qname).unwrap());
+    response.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+    response.extend_from_slice(&Class::IN.to_int().to_be_bytes());
+
+    response
+}
+
+/// Verify that `extract_soa_serial` reads the answer serial.
+#[test]
+fn extract_soa_serial_reads_the_answer_serial() {
+    // 0x8400 = QR + AA, NOERROR.
+    let response = build_flagged_soa_response(42, 0x8400, "example.com", true, 2026);
+    assert_eq!(
+        extract_soa_serial(42, &name("example.com"), &response).unwrap(),
+        2026
+    );
+}
+
+/// Verify that `extract_soa_serial` rejects id mismatch.
+#[test]
+fn extract_soa_serial_rejects_id_mismatch() {
+    let response = build_flagged_soa_response(42, 0x8400, "example.com", true, 2026);
+
+    assert!(
+        extract_soa_serial(7, &name("example.com"), &response)
+            .unwrap_err()
+            .to_string()
+            .contains("ID mismatch")
+    );
+}
+
+/// Verify that `extract_soa_serial` rejects error rcode.
+#[test]
+fn extract_soa_serial_rejects_error_rcode() {
+    // RCODE 5 (REFUSED)
+    let response = build_flagged_soa_response(42, 0x8405, "example.com", true, 2026);
+    assert!(matches!(
+        extract_soa_serial(42, &name("example.com"), &response),
+        Err(ParseResponseError::Rcode {
+            rcode: OptRcode::REFUSED
+        })
+    ));
+}
+
+/// Verify that `extract_soa_serial` rejects missing qr bit.
+#[test]
+fn extract_soa_serial_rejects_missing_qr_bit() {
+    let response = build_flagged_soa_response(42, 0x0400, "example.com", true, 2026);
+
+    assert!(
+        extract_soa_serial(42, &name("example.com"), &response)
+            .unwrap_err()
+            .to_string()
+            .contains("QR bit")
+    );
+}
+
+/// Verify that `extract_soa_serial` rejects truncated response.
+#[test]
+fn extract_soa_serial_rejects_truncated_response() {
+    let response = build_flagged_soa_response(42, 0x8600, "example.com", true, 2026);
+    assert!(matches!(
+        extract_soa_serial(42, &name("example.com"), &response),
+        Err(ParseResponseError::Truncated)
+    ));
+}
+
+/// Verify that `extract_soa_serial` rejects answer without SOA.
+#[test]
+fn extract_soa_serial_rejects_answer_without_soa() {
+    let response = build_flagged_soa_response(42, 0x8400, "example.com", false, 0);
+    assert!(matches!(
+        extract_soa_serial(42, &name("example.com"), &response),
+        Err(ParseResponseError::NoSoa)
+    ));
+}
+
+/// Verify that `extract_soa_serial` rejects a cache or another question.
+#[test]
+fn extract_soa_serial_rejects_a_cache_or_another_question() {
+    // 0x8000 = QR without AA: a cache answered, not the secondary.
+    let cached = build_flagged_soa_response(42, 0x8000, "example.com", true, 2026);
+
+    assert!(matches!(
+        extract_soa_serial(42, &name("example.com"), &cached),
+        Err(ParseResponseError::NotAuthoritative)
+    ));
+    let other = build_flagged_soa_response(42, 0x8400, "other.com", true, 2026);
+
+    assert!(matches!(
+        extract_soa_serial(42, &name("example.com"), &other),
+        Err(ParseResponseError::OtherQuestion)
+    ));
+}
+
+/// Verify that `validate_notify_response` accepts matching noerror response.
+#[test]
+fn validate_notify_response_accepts_matching_noerror_response() {
+    // 0xa000 = QR set + opcode NOTIFY, NOERROR.
+    let response = build_notify_response(1234, 0xa000, "example.com");
+
+    assert!(validate_notify_response(1234, &name("example.com"), &response).is_ok());
+}
+
+/// Verify that `validate_notify_response` rejects id mismatch.
+#[test]
+fn validate_notify_response_rejects_id_mismatch() {
+    let response = build_notify_response(1234, 0xa000, "example.com");
+
+    let error = validate_notify_response(5678, &name("example.com"), &response).unwrap_err();
+
+    assert!(error.to_string().contains("ID mismatch"));
+}
+
+/// Verify that `validate_notify_response` rejects error rcode.
+#[test]
+fn validate_notify_response_rejects_error_rcode() {
+    // 0xa005 adds RCODE 5 (REFUSED).
+    let response = build_notify_response(1234, 0xa005, "example.com");
+
+    let error = validate_notify_response(1234, &name("example.com"), &response).unwrap_err();
+
+    assert!(error.to_string().contains("RCODE 5"));
+}
+
+/// Verify that `validate_notify_response` reports the RCODE of a refusal
+/// that carries no question.
+#[test]
+fn validate_notify_response_reports_rcode_without_question() {
+    // NSD 4.6 answers NOTIFY for a zone it does not serve with NOTAUTH
+    // (RCODE 9) and an empty question section.
+    let mut response = build_notify_response(1234, 0xa009, "example.com");
+    response.truncate(12);
+    response[4..6].copy_from_slice(&0u16.to_be_bytes());
+
+    let error = validate_notify_response(1234, &name("example.com"), &response).unwrap_err();
+
+    assert!(error.to_string().contains("RCODE 9"), "{error}");
+}
+
+/// Verify that `validate_notify_response` rejects another question.
+#[test]
+fn validate_notify_response_rejects_another_question() {
+    let response = build_notify_response(1234, 0xa000, "other.com");
+
+    let error = validate_notify_response(1234, &name("example.com"), &response).unwrap_err();
+
+    assert!(error.to_string().contains("another question"), "{error}");
 }

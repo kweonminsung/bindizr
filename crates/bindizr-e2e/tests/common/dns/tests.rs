@@ -194,8 +194,7 @@ fn extract_dns_records_rejects_invalid_wks_rdata() {
     }
 }
 
-/// Verify that a refused response includes the exact "REFUSED RCODE" text recognized by
-/// `is_deleted_zone_absence`.
+/// Verify that a refused response names its RCODE in the error.
 #[test]
 fn extract_dns_records_names_refused_rcode_in_error() {
     let mut builder = MessageBuilder::new_vec();
