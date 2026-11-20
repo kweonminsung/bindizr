@@ -108,7 +108,7 @@ pub struct SignedViewParams<'a> {
 }
 
 impl SignedViewParams<'_> {
-    /// Derive the jitter slot from record identity so [`Self::compute`] stays
+    /// Derive the jitter slot from record identity so [`SignedViewDiff::compute`] stays
     /// deterministic and re-signing preserves the slot.
     fn record_set_expiration(self, owner: &WireName, covered: i32) -> DateTime<Utc> {
         if self.expiration_jitter_secs <= 0 {
@@ -129,13 +129,29 @@ impl SignedViewParams<'_> {
 
         self.expiration - Duration::seconds((slot % self.expiration_jitter_secs as u64) as i64)
     }
+}
 
-    /// Compute the signed DNSSEC view and its changes from the previous view.
-    pub fn compute(self) -> Result<SignedViewDiff, SignZoneError> {
-        let zone = self.zone;
+/// The derived plane's change set. Rows in neither list are stored and
+/// current; `removed` rows carry their database ids.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignedViewDiff {
+    pub added: Vec<DnssecRecord>,
+    pub removed: Vec<DnssecRecord>,
+}
+
+impl SignedViewDiff {
+    /// Return whether the signed view has no added or removed records.
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty()
+    }
+
+    /// Compute the signed DNSSEC view `params` describe and its changes from
+    /// the previous view.
+    pub fn compute(params: SignedViewParams<'_>) -> Result<Self, SignZoneError> {
+        let zone = params.zone;
         let apex = zone.name.to_wire_name()?;
 
-        let signers = self
+        let signers = params
             .keys
             .iter()
             .map(|key| Signer::new(&apex, key))
@@ -146,17 +162,17 @@ impl SignedViewParams<'_> {
             .collect();
         let data_signers: Vec<&Signer<'_>> = signers
             .iter()
-            .filter(|signer| signer.key.signs_zone_data(self.keys))
+            .filter(|signer| signer.key.signs_zone_data(params.keys))
             .collect();
 
         if !signers.is_empty() && (key_signers.is_empty() || data_signers.is_empty()) {
             return Err(SignZoneError::NoUsableSigner);
         }
 
-        let input = self.signing_input(&apex, &signers)?;
+        let input = params.signing_input(&apex, &signers)?;
 
         let mut new_records: Vec<DnssecRecord> = Vec::new();
-        let denial_records = input::denial_records(&apex, &input, self.denial)?;
+        let denial_records = input::denial_records(&apex, &input, params.denial)?;
 
         // Rows for everything the signer owns: the apex key record sets from `input`
         // and the denial chain. User records and the SOA stay in their own planes.
@@ -225,7 +241,7 @@ impl SignedViewParams<'_> {
         // Index stored signatures by owner and covered type for record set reuse.
         let mut prev_rrsigs: BTreeMap<(String, i32), Vec<&DnssecRecord>> = BTreeMap::new();
 
-        for record in self.prev {
+        for record in params.prev {
             if record.record_type == DnssecRecordType::Rrsig
                 && let Some(covered) = record.covered_record_type
             {
@@ -236,7 +252,7 @@ impl SignedViewParams<'_> {
             }
         }
 
-        let refresh_cutoff = self.now + Duration::seconds(self.refresh_secs);
+        let refresh_cutoff = params.now + Duration::seconds(params.refresh_secs);
 
         for record_set in &signable {
             let owner = parse_derived_owner(record_set[0].owner(), &zone.name)?;
@@ -254,7 +270,7 @@ impl SignedViewParams<'_> {
 
             // Reuse only a complete, unchanged set of signatures that outlives
             // the refresh window; a forced pass regenerates every signature.
-            let reusable = if self.pass == SigningPass::Full {
+            let reusable = if params.pass == SigningPass::Full {
                 None
             } else {
                 prev_rrsigs
@@ -277,10 +293,10 @@ impl SignedViewParams<'_> {
                     }
                 }
                 None => {
-                    let expiration = self.record_set_expiration(record_set[0].owner(), covered);
+                    let expiration = params.record_set_expiration(record_set[0].owner(), covered);
 
                     for signer in record_set_signers {
-                        let rrsig = signer.sign_rrset(record_set, self.inception, expiration)?;
+                        let rrsig = signer.sign_rrset(record_set, params.inception, expiration)?;
                         new_records.push(DnssecRecord {
                             id: DnssecRecordId::UNWRITTEN,
                             zone_id: zone.id,
@@ -298,29 +314,9 @@ impl SignedViewParams<'_> {
         }
 
         // Diff the complete derived plane so unchanged rows keep their storage identity.
-        Ok(SignedViewDiff::compute(self.prev, new_records))
-    }
-}
-
-/// The derived plane's change set. Rows in neither list are stored and
-/// current; `removed` rows carry their database ids.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignedViewDiff {
-    pub added: Vec<DnssecRecord>,
-    pub removed: Vec<DnssecRecord>,
-}
-
-impl SignedViewDiff {
-    /// Return whether the signed view has no added or removed records.
-    pub fn is_empty(&self) -> bool {
-        self.added.is_empty() && self.removed.is_empty()
-    }
-
-    /// Compare derived record identities to find additions and removals.
-    fn compute(prev: &[DnssecRecord], new_records: Vec<DnssecRecord>) -> Self {
         let mut remaining: BTreeMap<DnssecRecordKey, Vec<DnssecRecord>> = BTreeMap::new();
 
-        for record in prev {
+        for record in params.prev {
             remaining
                 .entry(record.match_key())
                 .or_default()
@@ -340,7 +336,7 @@ impl SignedViewDiff {
 
         let removed = remaining.into_values().flatten().collect();
 
-        Self { added, removed }
+        Ok(Self { added, removed })
     }
 }
 

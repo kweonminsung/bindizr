@@ -395,7 +395,7 @@ fn to_record_value_rejects_empty_txt_rdata() {
     let record = update_record(Rtype::TXT, Class::IN, 300, Vec::new());
     assert_eq!(
         record.to_record_value(&[]),
-        Err(ParseUpdateError::TxtValue(ParseRecordValueError::TxtRdata))
+        Err(ParseUpdateError::Value(ParseRecordValueError::TxtRdata))
     );
 }
 

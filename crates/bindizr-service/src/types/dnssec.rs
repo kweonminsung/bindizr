@@ -1,7 +1,7 @@
 //! DNSSEC management payloads.
 
-use bindizr_core::dns::Serial;
 use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::dns::{Serial, Ttl};
 use bindizr_core::model::dnssec_key::{
     DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
 };
@@ -152,8 +152,8 @@ pub struct DnssecDelegationResponse {
     pub keys: Vec<DnssecDelegationKeyResponse>,
     /// TTL of the parent's DS records: how long caches may keep serving
     /// them once removed.
-    #[schema(example = 86400)]
-    pub ds_ttl: Option<u32>,
+    #[schema(example = 86400, value_type = Option<Ttl>, inline)]
+    pub ds_ttl: Option<Ttl>,
     pub checked_at: DateTime<Utc>,
 }
 

@@ -190,12 +190,6 @@ fn decode_update(
 /// Parse the owner of an update record. The wire carries owners absolutely, so a name
 /// outside the zone is NOTZONE rather than something to qualify.
 fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, NsupdateError> {
-    if name.trim_end_matches('.').is_empty() {
-        return Err(NsupdateError::NotZone(
-            "root owner is not supported".to_string(),
-        ));
-    }
-
     OwnerName::parse_absolute_in_zone(name, zone_name).map_err(|source| NsupdateError::Owner {
         name: name::to_fqdn(name),
         zone_name: zone_name.clone(),

@@ -25,7 +25,7 @@ use thiserror::Error;
 
 use crate::dns::LibraryError;
 use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
-use crate::dns::name::{EncodeNameError, EncodeWireNameError};
+use crate::dns::name::EncodeWireNameError;
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::tsig::TransferSigner;
 
@@ -51,8 +51,6 @@ pub enum EncodeMessageError {
     RawRdata(#[source] LibraryError),
     #[error(transparent)]
     Owner(#[from] EncodeWireNameError),
-    #[error(transparent)]
-    Name(#[from] EncodeNameError),
     #[error(transparent)]
     Rdata(#[from] EncodeRdataError),
     #[error("derived change carries no wire rdata")]

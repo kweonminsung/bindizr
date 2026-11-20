@@ -10,6 +10,7 @@ use domain::base::{Message, MessageBuilder, Name};
 use domain::rdata::{A, Ds, Soa};
 
 use super::*;
+use crate::dns::Ttl;
 use crate::dns::dnssec::KeyTag;
 use crate::dns::message::EDNS_UDP_PAYLOAD_SIZE;
 
@@ -332,7 +333,7 @@ fn extract_ds_record_set_reads_the_records_and_the_record_set_ttl() {
         extract_ds_record_set(42, &child, &response).unwrap(),
         Some(DsRecordSet {
             records: vec![parsed_ds_record(2371), parsed_ds_record(34217)],
-            ttl: 3600,
+            ttl: Ttl::from_secs(3600),
         })
     );
 }

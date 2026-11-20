@@ -33,10 +33,8 @@ pub enum ParseUpdateError {
     /// The record's RDATA does not parse as its type, or does not fill RDLENGTH.
     #[error("invalid {record_type} rdata")]
     Rdata { record_type: &'static str },
-    #[error("invalid prerequisite rdata: {0}")]
-    PrerequisiteRdata(#[from] ParseRdataError),
-    #[error("invalid TXT rdata: {0}")]
-    TxtValue(#[source] ParseRecordValueError),
+    #[error("invalid rdata: {0}")]
+    ParseRdata(#[from] ParseRdataError),
     #[error(transparent)]
     RecordType(#[from] ParseRecordTypeError),
     #[error(transparent)]

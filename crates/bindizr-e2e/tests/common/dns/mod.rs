@@ -118,9 +118,9 @@ pub(crate) async fn wait_for_dns_records(
 
 /// A response record, including referrals, in the harness comparison form.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DnsRecord {
-    pub(crate) record_type: u16,
-    pub(crate) value: Option<Value>,
+struct DnsRecord {
+    record_type: u16,
+    value: Option<Value>,
 }
 
 /// Compare response records with expected values for the record type.
@@ -249,10 +249,7 @@ pub(crate) fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
 }
 
 /// Validate a DNS response and extract answer or referral records.
-pub(crate) fn extract_dns_records(
-    query_id: u16,
-    response: &[u8],
-) -> Result<Vec<DnsRecord>, String> {
+fn extract_dns_records(query_id: u16, response: &[u8]) -> Result<Vec<DnsRecord>, String> {
     let response = Message::from_octets(response).map_err(|error| error.to_string())?;
 
     if !validate_response_header(query_id, &response)? {

@@ -10,8 +10,8 @@ use domain::tsig::ClientSequence;
 use rustls::ClientConfig;
 
 use crate::common::dns;
+use crate::common::dns::tsig;
 use crate::common::dns::tsig::SigningKey;
-use crate::common::dns::{transport, tsig};
 
 /// Transferred record count or refusal details.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +52,7 @@ pub(crate) fn fetch_axfr_tcp(
     zone_name: &str,
     key: Option<&SigningKey>,
 ) -> Result<TransferResult, String> {
-    let mut stream = transport::connect_tcp(port)?;
+    let mut stream = dns::connect_tcp(port)?;
     transfer(&mut stream, zone_name, key)
 }
 
@@ -63,7 +63,7 @@ pub(crate) fn fetch_axfr_tls(
     key: Option<&SigningKey>,
     client: ClientConfig,
 ) -> Result<TransferResult, String> {
-    transfer(&mut transport::connect_tls(port, client)?, zone_name, key)
+    transfer(&mut dns::connect_tls(port, client)?, zone_name, key)
 }
 
 /// Transfer a zone over an open stream, verifying the MAC chain when signed.
@@ -91,14 +91,14 @@ fn transfer<S: Read + Write>(
     };
     let query = additional.finish();
 
-    transport::write_frame(stream, &query)?;
+    dns::write_frame(stream, &query)?;
 
     // Keep reading frames until both boundary SOAs arrive; EOF alone is incomplete.
     let mut records = 0usize;
     let mut soa_seen = 0usize;
 
     while soa_seen < 2 {
-        let Some(response) = transport::read_frame(stream)? else {
+        let Some(response) = dns::read_frame(stream)? else {
             return Err(format!(
                 "the transfer ended after {records} record(s) without its closing SOA"
             ));

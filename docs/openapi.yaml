@@ -4943,15 +4943,17 @@ components:
         ds_state:
           $ref: '#/components/schemas/DsState'
         ds_ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: |-
             TTL of the parent's DS records: how long caches may keep serving
             them once removed.
-          example: 86400
-          minimum: 0
         keys:
           type: array
           items:

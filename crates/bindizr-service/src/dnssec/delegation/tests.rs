@@ -85,7 +85,10 @@ fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRecord {
 
 /// Build a record-group fixture from the supplied values.
 fn record_set(records: Vec<DsRecord>) -> Option<DsRecordSet> {
-    Some(DsRecordSet { records, ttl: 3600 })
+    Some(DsRecordSet {
+        records,
+        ttl: Ttl::from_secs(3600),
+    })
 }
 
 /// Build a parent DS probe result from the supplied server answers.
@@ -204,11 +207,11 @@ fn delegation_returns_longest_parent_ttl() {
     let answers = vec![
         Some(DsRecordSet {
             records: vec![ds_of(&key, 2)],
-            ttl: 300,
+            ttl: Ttl::from_secs(300),
         }),
         Some(DsRecordSet {
             records: vec![ds_of(&key, 2)],
-            ttl: 86400,
+            ttl: Ttl::from_secs(86400),
         }),
     ];
 
@@ -216,6 +219,6 @@ fn delegation_returns_longest_parent_ttl() {
         build_delegation_response(&zone(), &[key], parent(answers))
             .unwrap()
             .ds_ttl,
-        Some(86400)
+        Some(Ttl::from_secs(86400))
     );
 }

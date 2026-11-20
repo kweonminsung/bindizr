@@ -387,11 +387,11 @@ pub enum ServedRecordType {
 }
 
 impl ServedRecordType {
-    /// Render the canonical API mnemonic.
-    pub fn to_text(self) -> String {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
         match self {
-            Self::User(record_type) => record_type.to_string(),
-            Self::Derived(record_type) => record_type.to_string(),
+            Self::User(record_type) => record_type.as_str(),
+            Self::Derived(record_type) => record_type.as_str(),
         }
     }
 }
@@ -399,7 +399,7 @@ impl ServedRecordType {
 impl fmt::Display for ServedRecordType {
     /// Write the canonical DNS mnemonic.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad(&self.to_text())
+        f.pad(self.as_str())
     }
 }
 
@@ -423,7 +423,7 @@ mod tests {
 
     use super::*;
 
-    /// Verify that `ServedRecordType` has one spelling across `to_text`, `Display`, and serde.
+    /// Verify that `ServedRecordType` has one spelling across `as_str`, `Display`, and serde.
     #[test]
     fn served_record_type_spells_itself_once() {
         for (value, expected) in [
@@ -453,7 +453,7 @@ mod tests {
             (ServedRecordType::from(DnssecRecordType::Cds), "CDS"),
             (ServedRecordType::from(DnssecRecordType::Cdnskey), "CDNSKEY"),
         ] {
-            assert_eq!(value.to_text(), expected);
+            assert_eq!(value.as_str(), expected);
             assert_eq!(value.to_string(), expected);
             assert_eq!(serde_json::to_value(value).unwrap(), json!(expected));
             assert_eq!(

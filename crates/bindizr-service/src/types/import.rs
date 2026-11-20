@@ -129,20 +129,7 @@ pub struct ImportZoneSummaryResponse {
 
 /// Supply the wire default when an import request omits its mode.
 fn default_import_mode() -> String {
-    ImportMode::Append.as_str().to_string()
-}
-
-impl Default for ImportZoneRequest {
-    /// Default to an append request with all optional actions disabled.
-    fn default() -> Self {
-        Self {
-            content: None,
-            from_server: None,
-            mode: default_import_mode(),
-            dry_run: false,
-            create: false,
-        }
-    }
+    ImportMode::default().as_str().to_string()
 }
 
 /// Request body for importing several zones from one server over AXFR:

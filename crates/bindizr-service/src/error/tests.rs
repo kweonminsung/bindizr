@@ -76,7 +76,7 @@ fn unsupported_ds_digest_preserves_policy_message_without_source() {
     assert!(error.source().is_none());
 }
 
-/// Verify that a signing failure is not an internal error.
+/// Verify that a signing failure keeps its own code and counts as a server fault.
 #[test]
 fn signing_failure_preserves_dnssec_error_class() {
     let error = ServiceError::dnssec_signing_failed(io::Error::other("boom"));

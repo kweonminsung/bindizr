@@ -14,7 +14,7 @@ mod status;
 mod withdraw;
 
 use bindizr_core::dns::Serial;
-use bindizr_core::dns::dnssec::{SignedViewParams, SigningPass};
+use bindizr_core::dns::dnssec::{SignedViewDiff, SignedViewParams, SigningPass};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_key::DnssecKey;
 use bindizr_core::model::dnssec_policy::DnssecPolicy;
@@ -203,7 +203,7 @@ async fn apply_signed_view_tx(
         .is_some();
 
     let now = Utc::now();
-    let diff = SignedViewParams {
+    let diff = SignedViewDiff::compute(SignedViewParams {
         zone,
         new_serial,
         records: &records,
@@ -217,8 +217,7 @@ async fn apply_signed_view_tx(
         refresh_secs: policy.signature_refresh_secs(),
         pass,
         withdraw_parent_ds,
-    }
-    .compute()
+    })
     .map_err(ServiceError::dnssec_signing_failed)?;
 
     // Reused signatures and unchanged derived records need no storage writes.

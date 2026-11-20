@@ -306,6 +306,11 @@ fn owner_name_parse_absolute_never_qualifies_a_foreign_name() {
         OwnerName::parse_absolute_in_zone("@", &zone_name),
         Err(ParseNameError::OutsideZone)
     );
+    // No zone is the root, so the root is outside every zone.
+    assert_eq!(
+        OwnerName::parse_absolute_in_zone(".", &zone_name),
+        Err(ParseNameError::OutsideZone)
+    );
 }
 
 /// Verify that owner name equality and hashing fold case.

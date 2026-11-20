@@ -57,7 +57,7 @@ struct ComputeArgs<'a> {
 /// Compute a signed view using the test's signing parameters.
 fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
     let now = fixed_now();
-    SignedViewParams {
+    SignedViewDiff::compute(SignedViewParams {
         zone: args.zone,
         new_serial: Serial::from(args.new_serial),
         records: args.records,
@@ -71,8 +71,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
         refresh_secs: 5 * 86400,
         pass: args.pass,
         withdraw_parent_ds: false,
-    }
-    .compute()
+    })
     .unwrap()
 }
 

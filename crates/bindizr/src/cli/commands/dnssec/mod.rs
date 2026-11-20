@@ -3,6 +3,7 @@
 mod keys;
 mod policy;
 
+use bindizr_core::dns::Ttl;
 use bindizr_core::outln;
 use bindizr_service::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, Holddown, MessageResponse,
@@ -397,7 +398,7 @@ fn print_status(
                         .map(ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(", "),
-                    delegation.ds_ttl.unwrap_or(0)
+                    delegation.ds_ttl.map_or(0, Ttl::as_secs)
                 );
             }
 

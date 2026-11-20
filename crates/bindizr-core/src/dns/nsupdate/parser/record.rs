@@ -67,7 +67,8 @@ impl UpdateRecord {
         Ok(())
     }
 
-    /// Decode prerequisite RDATA for comparison, resolving names in `message`.
+    /// Decode the RDATA, resolving names in `message`: for a prerequisite's
+    /// comparison and an update record's shape check alike.
     pub fn to_rdata(&self, message: &[u8]) -> Result<Rdata, ParseUpdateError> {
         if self.record_type == Rtype::WKS {
             WksRecordValue::from_rdata(&self.rdata)?;
@@ -152,9 +153,7 @@ impl UpdateRecord {
                 Ok((record_type, value, None))
             }
             RecordType::Txt => {
-                let value = TxtRecordValue::from_rdata(&self.rdata)
-                    .map_err(ParseUpdateError::TxtValue)?
-                    .to_presentation();
+                let value = TxtRecordValue::from_rdata(&self.rdata)?.to_presentation();
                 Ok((RecordType::Txt, value, None))
             }
             RecordType::Caa => {

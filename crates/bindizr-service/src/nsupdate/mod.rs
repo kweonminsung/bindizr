@@ -60,8 +60,6 @@ pub enum NsupdateError {
     NxRrset(String),
     #[error("{0}")]
     NotAuth(String),
-    #[error("{0}")]
-    NotZone(String),
     /// A policy refusal (RFC 2136, Section 3.3): an unsigned request where a
     /// signature is required.
     #[error("{0}")]
@@ -83,8 +81,7 @@ impl NsupdateError {
             Self::Owner {
                 source: ParseNameError::OutsideZone,
                 ..
-            }
-            | Self::NotZone(_) => Rcode::NOTZONE,
+            } => Rcode::NOTZONE,
             Self::Owner { .. } => Rcode::REFUSED,
             Self::YxDomain(_) => Rcode::YXDOMAIN,
             Self::YxRrset(_) => Rcode::YXRRSET,

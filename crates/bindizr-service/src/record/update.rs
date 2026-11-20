@@ -1,6 +1,6 @@
 use std::slice;
 
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::record::{Record, RecordData, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::{Zone, ZoneId};
@@ -24,7 +24,7 @@ enum LockTarget<'a> {
     /// of them on the caller's behalf.
     Name {
         zone_name: &'a ZoneName,
-        name: &'a str,
+        owner: &'a OwnerName,
     },
 }
 
@@ -160,7 +160,18 @@ pub async fn update_by_name(
     name: &str,
     request: &UpdateRecordRequest,
 ) -> Result<WriteRecordResponse, ServiceError> {
-    update_locked(cx, caller, LockTarget::Name { zone_name, name }, request).await
+    let owner = record::normalize_record_owner_name(name, zone_name)?;
+
+    update_locked(
+        cx,
+        caller,
+        LockTarget::Name {
+            zone_name,
+            owner: &owner,
+        },
+        request,
+    )
+    .await
 }
 
 /// Load the record inside the transaction, resolve the update against it,
@@ -223,18 +234,17 @@ async fn update_locked(
 
                 (zone, existing_record, caller)
             }
-            LockTarget::Name { zone_name, name } => {
+            LockTarget::Name { zone_name, owner } => {
                 let zone =
                     zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
                 let caller = caller.reauthenticate_tx(&mut tx).await?;
                 caller.authorize_zone_visible(&zone)?;
-                let owner = record::normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller may read or update.
                 let mut matched: Vec<Record> = bindizr_db::record::list_by_name_tx(
                     &mut tx,
                     zone.id,
-                    &owner,
+                    owner,
                     LockLevel::Exclusive,
                 )
                 .await?
@@ -251,10 +261,10 @@ async fn update_locked(
 
                 match matched.len() {
                     1 => (zone, matched.remove(0), caller),
-                    0 => return Err(ServiceError::record_not_found_at_name(&zone.name, &owner)),
+                    0 => return Err(ServiceError::record_not_found_at_name(&zone.name, owner)),
                     matches => {
                         return Err(ServiceError::record_name_ambiguous(
-                            &zone.name, &owner, matches,
+                            &zone.name, owner, matches,
                         ));
                     }
                 }

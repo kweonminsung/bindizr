@@ -2,6 +2,7 @@
 //! `dnssec::maintenance`, whose scheduler transactions advance the same
 //! transitions on deadlines and on the parent's DS answer.
 
+use bindizr_core::dns::Ttl;
 use bindizr_core::dns::dnssec::{KeyTag, SigningPass};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_key::{
@@ -297,7 +298,7 @@ pub(crate) async fn promote_published_keys_tx(
     zone: &Zone,
     keys: Vec<DnssecKey>,
     promoted: &[DnssecKeyId],
-    parent_ds_ttl: Option<u32>,
+    parent_ds_ttl: Option<Ttl>,
 ) -> Result<Vec<DnssecKey>, ServiceError> {
     let now = Utc::now();
     let promoted_roles: Vec<DnssecKeyRole> = keys

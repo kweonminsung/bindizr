@@ -25,8 +25,10 @@ use crate::dns_client::ResolveAddressError;
 pub(crate) enum FetchZoneError {
     #[error("invalid zone name: {0}")]
     ZoneName(#[from] EncodeWireNameError),
-    #[error("{server}: resolution timed out")]
-    ResolutionTimedOut { server: String },
+    /// The deadline passed before any address of the server accepted:
+    /// resolution or a connect may have hung.
+    #[error("{server}: timed out before a connection was established")]
+    NotConnected { server: String },
     #[error("failed to resolve {entry}: {source}")]
     Unresolved {
         entry: String,
@@ -206,7 +208,7 @@ impl AxfrClient {
             }
             Err(_) => Err(match self.addr {
                 Some(addr) => FetchZoneError::TimedOut { addr },
-                None => FetchZoneError::ResolutionTimedOut {
+                None => FetchZoneError::NotConnected {
                     server: self.server.clone(),
                 },
             }),
