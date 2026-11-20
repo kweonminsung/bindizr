@@ -49,7 +49,7 @@ fn all_zones(actions: &[Action]) -> RoleGrant {
 
 /// Check fixture record writes against the supplied grants.
 fn authorize(grants: &[RoleGrant], writes: &[RecordAccess]) -> Result<(), ServiceError> {
-    authorize_with_grants(&RoleGrants::from(grants.to_vec()), &test_zone(), writes)
+    token(grants.to_vec()).authorize_record_access(&test_zone(), writes)
 }
 
 /// Build a record-create authorization target for the test.

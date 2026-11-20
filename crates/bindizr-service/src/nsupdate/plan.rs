@@ -2,7 +2,7 @@
 
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::dns::record::{SoaMailbox, SoaRecordValue};
-use bindizr_core::dns::{Serial, Ttl};
+use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::model::zone::Zone;
 
 use crate::error::ServiceError;
@@ -78,7 +78,10 @@ impl UpdatePlan {
 /// Apply the existing zone-write policy to an advancing wire SOA.
 fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Zone, ServiceError> {
     let serial = Serial::from(value.serial);
-    let interval = |value| i32::try_from(value).map_err(ServiceError::invalid_zone_field);
+    let interval = |secs: u32, field: &str| {
+        SoaInterval::try_from(secs)
+            .map_err(|error| ServiceError::invalid_zone_field(format!("{field}: {error}")))
+    };
     let rname = SoaMailbox::from_encoded(value.rname)
         .to_email()
         .map_err(ServiceError::invalid_zone_field)?;
@@ -88,10 +91,10 @@ fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Z
         mname: zone::normalize_mname(&value.mname)?,
         rname: zone::normalize_rname(&rname)?,
         default_ttl: ttl::validate_default_ttl(i64::from(ttl))?,
-        refresh: ttl::validate_soa_interval(interval(value.refresh)?, "refresh")?,
-        retry: ttl::validate_soa_interval(interval(value.retry)?, "retry")?,
-        expire: ttl::validate_soa_interval(interval(value.expire)?, "expire")?,
-        minimum_ttl: ttl::validate_minimum_ttl(i64::from(value.minimum))?,
+        refresh: interval(value.refresh, "refresh")?,
+        retry: interval(value.retry, "retry")?,
+        expire: interval(value.expire, "expire")?,
+        minimum_ttl: Ttl::from(value.minimum),
         ..zone.clone()
     })
 }

@@ -20,11 +20,6 @@ use tokio::{net, time};
 /// One byte beyond the largest supported advertisement detects truncated datagrams.
 const UDP_RESPONSE_BUFFER_LEN: usize = message::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
 
-/// Failure to read a length-prefixed DNS message from a TCP stream.
-#[derive(Debug, Error)]
-#[error(transparent)]
-pub struct ReadTcpMessageError(#[from] io::Error);
-
 /// A failed DNS exchange; `what` identifies the operation in timeout and send errors.
 #[derive(Debug, Error)]
 pub enum ExchangeMessageError {
@@ -34,8 +29,6 @@ pub enum ExchangeMessageError {
     Encode(#[from] EncodeMessageError),
     #[error(transparent)]
     Io(#[from] io::Error),
-    #[error(transparent)]
-    Read(#[from] ReadTcpMessageError),
     #[error("{what} TCP timeout")]
     TcpTimedOut { what: &'static str },
     #[error("{what} send timeout")]
@@ -104,9 +97,7 @@ pub(crate) async fn exchange_over_tcp(
 }
 
 /// Read one length-prefixed DNS message (RFC 1035, Section 4.2.2).
-pub(crate) async fn read_tcp_message(
-    stream: &mut TcpStream,
-) -> Result<Vec<u8>, ReadTcpMessageError> {
+pub(crate) async fn read_tcp_message(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
     use tokio::io::AsyncReadExt;
 
     let mut prefix = [0; 2];
@@ -212,19 +203,10 @@ pub async fn resolve_address_entry(
                         Ok(addrs)
                     }
                 }
-                Ok(Err(error)) => {
-                    log::error!("Invalid server address '{target}': {error}");
-                    Err(ResolveAddressError::Lookup(error))
-                }
-                Err(_) => {
-                    log::error!(
-                        "Resolving server address '{target}' timed out after {} seconds",
-                        timeout.as_secs()
-                    );
-                    Err(ResolveAddressError::TimedOut {
-                        secs: timeout.as_secs(),
-                    })
-                }
+                Ok(Err(error)) => Err(ResolveAddressError::Lookup(error)),
+                Err(_) => Err(ResolveAddressError::TimedOut {
+                    secs: timeout.as_secs(),
+                }),
             }
         }
     }

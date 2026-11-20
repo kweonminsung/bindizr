@@ -22,9 +22,8 @@ fn missing_parent_nameservers_remains_a_typed_service_error() {
     assert_eq!(error.code(), ErrorCode::DnssecDsUnverified);
     assert_eq!(
         error.to_string(),
-        "could not verify that the parent zone serves no DS for zone 'example.com': \
-         the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'; \
-         set the zone's parent nameserver addresses, or skip the DS check"
+        "could not ask the parent zone for the DS of zone 'example.com': \
+         the zone names no parent nameservers"
     );
     assert!(matches!(
         error

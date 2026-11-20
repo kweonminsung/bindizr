@@ -18,7 +18,7 @@ use tokio::time;
 use tokio::time::Instant;
 
 use crate::dns_client;
-use crate::dns_client::{ReadTcpMessageError, ResolveAddressError};
+use crate::dns_client::ResolveAddressError;
 
 /// Why a zone could not be pulled from another server.
 #[derive(Debug, Error)]
@@ -51,7 +51,7 @@ pub(crate) enum FetchZoneError {
     #[error(transparent)]
     Encode(#[from] EncodeMessageError),
     #[error("read failed before the closing SOA: {0}")]
-    Read(#[source] ReadTcpMessageError),
+    Read(#[source] io::Error),
     #[error(transparent)]
     Response(#[from] ParseResponseError),
     #[error(transparent)]

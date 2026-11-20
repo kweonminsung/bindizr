@@ -1,14 +1,13 @@
 //! Decode complete UPDATE sections after the service has located the zone.
 //! Wire records survive the prescan even when applying them will do nothing.
 
-use bindizr_core::dns::Ttl;
 use bindizr_core::dns::message::{Class, Rtype};
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::nsupdate::parser::UpdateRecord;
+use bindizr_core::dns::{Ttl, name};
 use bindizr_core::model::dnssec_record::DnssecRecordType;
 use bindizr_core::model::record::RecordType;
 
-use crate::nsupdate;
 use crate::nsupdate::NsupdateError;
 use crate::nsupdate::operation::RecordOperation;
 use crate::nsupdate::plan::UpdateOperation;
@@ -24,7 +23,7 @@ pub(crate) fn decode_updates(
     let checked = records
         .iter()
         .map(|record| {
-            let owner = nsupdate::parse_update_owner(&record.name, zone_name)?;
+            let owner = parse_update_owner(&record.name, zone_name)?;
             record.validate_update_shape()?;
             validate_supported_type(record.record_type)?;
             Ok((record, owner))
@@ -62,7 +61,7 @@ pub(crate) fn decode_prerequisite(
     }
 
     // RFC 2136, Section 3.2 restricts no type; an unstored one is simply absent.
-    let owner = nsupdate::parse_update_owner(&record.name, zone_name)?;
+    let owner = parse_update_owner(&record.name, zone_name)?;
 
     match record.class {
         Class::ANY | Class::NONE => {
@@ -186,6 +185,22 @@ fn decode_update(
             "unsupported update class: {other}"
         ))),
     }
+}
+
+/// Parse the owner of an update record. The wire carries owners absolutely, so a name
+/// outside the zone is NOTZONE rather than something to qualify.
+fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, NsupdateError> {
+    if name.trim_end_matches('.').is_empty() {
+        return Err(NsupdateError::NotZone(
+            "root owner is not supported".to_string(),
+        ));
+    }
+
+    OwnerName::parse_absolute_in_zone(name, zone_name).map_err(|source| NsupdateError::Owner {
+        name: name::to_fqdn(name),
+        zone_name: zone_name.clone(),
+        source,
+    })
 }
 
 #[cfg(test)]

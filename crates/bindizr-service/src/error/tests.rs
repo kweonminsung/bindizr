@@ -45,9 +45,8 @@ fn ds_check_failure_preserves_source_and_wire_message() {
     assert_eq!(error.code(), ErrorCode::DnssecDsUnverified);
     assert_eq!(
         error.to_string(),
-        "could not verify that the parent zone serves no DS for zone 'example.com': \
-         parent server 'ns.parent.example' did not resolve: resolver disconnected; set the \
-         zone's parent nameserver addresses, or skip the DS check"
+        "could not ask the parent zone for the DS of zone 'example.com': \
+         parent server 'ns.parent.example' did not resolve: resolver disconnected"
     );
     let source = error.source().unwrap();
 

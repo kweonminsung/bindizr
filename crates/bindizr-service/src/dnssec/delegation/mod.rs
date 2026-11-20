@@ -23,7 +23,7 @@ use crate::{Context, dnssec, transaction};
 /// Why the zone's configuration prevents a delegation check.
 #[derive(Debug, Error)]
 enum ProbeDelegationError {
-    #[error("the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'")]
+    #[error("the zone names no parent nameservers")]
     NoParentNameservers,
 }
 

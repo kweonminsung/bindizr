@@ -1,4 +1,5 @@
-//! Per-zone DNSSEC maintenance transactions for signing and rollover.
+//! Per-zone DNSSEC maintenance transactions for signing and rollover, taking
+//! their key transitions from `dnssec::rollover`; only here are retired keys pruned.
 
 use std::mem;
 
@@ -260,10 +261,11 @@ fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<DnssecKeyId>
                 return false;
             }
 
+            // An active key signs zone data exactly when its role is CSK or ZSK.
             let another_key_signs_data = keys.iter().any(|other| {
-                matches!(other.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk)
+                other.algorithm == key.algorithm
                     && other.state == DnssecKeyState::Active
-                    && other.algorithm == key.algorithm
+                    && other.signs_zone_data(keys)
             });
 
             another_key_signs_data

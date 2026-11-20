@@ -138,7 +138,7 @@ pub(crate) async fn apply_record_operation_tx(
                     }],
                 )?;
 
-                record::delete_with_changes_tx(tx, zone.id, new_serial, &replaced).await?;
+                record::delete_with_changes_tx(tx, new_serial, &replaced).await?;
 
                 changed = true;
             }
@@ -166,7 +166,7 @@ pub(crate) async fn apply_record_operation_tx(
                     }],
                 )?;
 
-                record::delete_with_changes_tx(tx, zone.id, new_serial, &retimed).await?;
+                record::delete_with_changes_tx(tx, new_serial, &retimed).await?;
 
                 let renewed: Vec<Record> = retimed
                     .into_iter()
@@ -178,7 +178,7 @@ pub(crate) async fn apply_record_operation_tx(
                     })
                     .collect();
 
-                record::create_with_changes_tx(tx, zone.id, new_serial, &renewed).await?;
+                record::create_with_changes_tx(tx, new_serial, &renewed).await?;
 
                 changed = true;
             }
@@ -194,7 +194,6 @@ pub(crate) async fn apply_record_operation_tx(
 
             record::create_with_changes_tx(
                 tx,
-                zone.id,
                 new_serial,
                 &[Record {
                     id: RecordId::UNWRITTEN,
@@ -277,7 +276,7 @@ async fn delete_matching_tx(
         return Ok(false);
     }
 
-    record::delete_with_changes_tx(tx, zone.id, new_serial, &matched).await?;
+    record::delete_with_changes_tx(tx, new_serial, &matched).await?;
 
     Ok(true)
 }

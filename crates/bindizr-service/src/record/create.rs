@@ -102,15 +102,11 @@ pub async fn create(
         }
 
         // Persist the validated record and its signed view as one journaled serial.
-        let created_record = record::create_with_changes_tx(
-            &mut tx,
-            zone.id,
-            new_serial,
-            slice::from_ref(&candidate),
-        )
-        .await?
-        .pop()
-        .ok_or_else(|| ServiceError::internal("record insert returned no row"))?;
+        let created_record =
+            record::create_with_changes_tx(&mut tx, new_serial, slice::from_ref(&candidate))
+                .await?
+                .pop()
+                .ok_or_else(|| ServiceError::internal("record insert returned no row"))?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 

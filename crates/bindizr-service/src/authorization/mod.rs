@@ -301,7 +301,27 @@ impl Caller {
             return Err(ServiceError::zone_not_found(&zone.name));
         }
 
-        authorize_with_grants(grants, zone, writes)
+        // Every write needs its action at its name and type.
+        for write in writes {
+            if !grants.covers_record(
+                write.action,
+                zone.id,
+                &write.relative_name,
+                write.record_type,
+            ) {
+                return Err(ServiceError::forbidden(format!(
+                    "role does not permit '{}' on '{}' {} in zone '{}'",
+                    write.action,
+                    write.relative_name,
+                    write
+                        .record_type
+                        .map_or("records".to_string(), |record_type| record_type.to_string()),
+                    zone.name
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     /// Return whether `record:read` or the write `action` covers a record of this
@@ -509,34 +529,6 @@ impl WholeZoneRead {
     pub(crate) fn readable_records<T>(self, records: Vec<T>) -> ReadableRecords<T> {
         ReadableRecords(records)
     }
-}
-
-/// Authorize every action at its name and type against the supplied grants.
-fn authorize_with_grants(
-    grants: &RoleGrants,
-    zone: &Zone,
-    writes: &[RecordAccess],
-) -> Result<(), ServiceError> {
-    for write in writes {
-        if !grants.covers_record(
-            write.action,
-            zone.id,
-            &write.relative_name,
-            write.record_type,
-        ) {
-            return Err(ServiceError::forbidden(format!(
-                "role does not permit '{}' on '{}' {} in zone '{}'",
-                write.action,
-                write.relative_name,
-                write
-                    .record_type
-                    .map_or("records".to_string(), |record_type| record_type.to_string()),
-                zone.name
-            )));
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

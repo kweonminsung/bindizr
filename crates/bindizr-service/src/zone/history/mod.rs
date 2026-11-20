@@ -345,8 +345,8 @@ pub async fn rollback(
             bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
         }
 
-        record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &deletes).await?;
-        record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+        record::delete_with_changes_tx(&mut tx, new_serial, &deletes).await?;
+        record::create_with_changes_tx(&mut tx, new_serial, &to_insert).await?;
 
         // The restored user plane gets fresh signatures; old RRSIGs are
         // never restored (derived journal rows are skipped on rewind).

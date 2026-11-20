@@ -2,7 +2,6 @@
 
 use bindizr_core::dns::Serial;
 use bindizr_core::model::record::{Record, RecordId};
-use bindizr_core::model::zone::ZoneId;
 use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 
 use crate::Transaction;
@@ -12,7 +11,6 @@ use crate::error::ServiceError;
 /// already validated the rows.
 pub(crate) async fn create_with_changes_tx(
     tx: &mut Transaction<'_>,
-    zone_id: ZoneId,
     new_serial: Serial,
     records: &[Record],
 ) -> Result<Vec<Record>, ServiceError> {
@@ -24,7 +22,7 @@ pub(crate) async fn create_with_changes_tx(
     let changes: Vec<ZoneChange> = created_records
         .iter()
         .map(|record| ZoneChange {
-            zone_id,
+            zone_id: record.zone_id,
             serial: new_serial,
             operation: ChangeOperation::Add,
             record_name: record.name.clone(),
@@ -75,7 +73,6 @@ pub(crate) async fn update_with_changes_tx(
 /// Delete records with their DEL zone changes for IXFR.
 pub(crate) async fn delete_with_changes_tx(
     tx: &mut Transaction<'_>,
-    zone_id: ZoneId,
     new_serial: Serial,
     records: &[Record],
 ) -> Result<(), ServiceError> {
@@ -90,7 +87,7 @@ pub(crate) async fn delete_with_changes_tx(
     let changes: Vec<ZoneChange> = records
         .iter()
         .map(|record| ZoneChange {
-            zone_id,
+            zone_id: record.zone_id,
             serial: new_serial,
             operation: ChangeOperation::Delete,
             record_name: record.name.clone(),

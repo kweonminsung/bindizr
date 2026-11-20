@@ -542,8 +542,7 @@ impl ServiceError {
     ) -> Self {
         Self::DnssecDsUnverified {
             message: format!(
-                "could not verify that the parent zone serves no DS for zone '{zone_name}': {source}; set the \
-                 zone's parent nameserver addresses, or skip the DS check"
+                "could not ask the parent zone for the DS of zone '{zone_name}': {source}"
             ),
             source: Some(Box::new(source)),
         }

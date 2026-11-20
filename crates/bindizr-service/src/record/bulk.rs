@@ -193,7 +193,7 @@ pub async fn create_bulk(
             let started = Instant::now();
 
             let created_records =
-                record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+                record::create_with_changes_tx(&mut tx, new_serial, &to_insert).await?;
 
             timings.db_write_ms = time::elapsed_ms(started);
 

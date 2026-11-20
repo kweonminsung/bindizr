@@ -1,5 +1,6 @@
-//! Operator-driven key pre-publication and promotion after parent DS confirmation.
-//! The scheduler promotes ZSKs without parent interaction.
+//! Operator rollover entry points, and the key-transition steps they share with
+//! `dnssec::maintenance`, whose scheduler transactions advance the same
+//! transitions on deadlines and on the parent's DS answer.
 
 use bindizr_core::dns::dnssec::{KeyTag, SigningPass};
 use bindizr_core::dns::name::ZoneName;

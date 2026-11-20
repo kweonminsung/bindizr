@@ -373,8 +373,8 @@ pub(crate) async fn apply_import(
         if will_apply && has_changes {
             let started = Instant::now();
 
-            record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &all_deletes).await?;
-            record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+            record::delete_with_changes_tx(&mut tx, new_serial, &all_deletes).await?;
+            record::create_with_changes_tx(&mut tx, new_serial, &to_insert).await?;
 
             timings.db_write_ms = time::elapsed_ms(started);
 

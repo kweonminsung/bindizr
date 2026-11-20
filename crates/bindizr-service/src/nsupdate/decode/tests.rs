@@ -1,6 +1,8 @@
+use std::error::Error;
 use std::slice;
 
 use bindizr_core::dns::message::Rcode;
+use bindizr_core::dns::name::ParseNameError;
 
 use super::*;
 
@@ -162,5 +164,76 @@ fn nsupdate_decode_returns_operations_with_checked_owners() {
             assert_eq!(ttl.as_secs(), u32::MAX);
         }
         other => panic!("{other:?}"),
+    }
+}
+
+/// Verify that `parse_update_owner` reduces an in-zone owner to its stored form.
+#[test]
+fn parse_update_owner_reduces_an_in_zone_owner_to_its_stored_form() {
+    assert_eq!(
+        parse_update_owner("www.example.com.", &ZoneName::parse("example.com").unwrap())
+            .unwrap()
+            .to_stored(),
+        "www"
+    );
+    assert!(
+        parse_update_owner("example.com.", &ZoneName::parse("example.com").unwrap())
+            .unwrap()
+            .is_apex()
+    );
+
+    // A dotted wire label is one label, so it is data rather than a boundary.
+    assert_eq!(
+        parse_update_owner(
+            r"host\.name.example.com.",
+            &ZoneName::parse("example.com").unwrap()
+        )
+        .unwrap()
+        .labels(),
+        [b"host.name".to_vec()]
+    );
+}
+
+/// Verify that `parse_update_owner` rejects owners outside the zone.
+#[test]
+fn parse_update_owner_rejects_owners_outside_the_zone() {
+    for owner in [
+        "aexample.com.",
+        "badexample.com.",
+        "www.badexample.com.",
+        ".",
+        // One label spelling the zone is not inside it.
+        r"evil\.example.com.",
+    ] {
+        let error =
+            parse_update_owner(owner, &ZoneName::parse("example.com").unwrap()).unwrap_err();
+        assert_eq!(error.rcode().ok(), Some(Rcode::NOTZONE), "{owner:?}");
+    }
+}
+
+/// Verify that an outside-zone owner is distinguished from malformed names without losing the
+/// parser cause.
+#[test]
+fn owner_errors_retain_their_sources_and_classification() {
+    let zone_name = ZoneName::parse("example.com").unwrap();
+
+    for (name, source, rcode) in [
+        (
+            "outside.example.net.",
+            ParseNameError::OutsideZone,
+            Rcode::NOTZONE,
+        ),
+        (
+            "bad..example.com.",
+            ParseNameError::EmptyLabel,
+            Rcode::REFUSED,
+        ),
+    ] {
+        let error = parse_update_owner(name, &zone_name).unwrap_err();
+        assert_eq!(error.rcode().ok(), Some(rcode));
+        assert_eq!(
+            error.source().unwrap().downcast_ref::<ParseNameError>(),
+            Some(&source)
+        );
     }
 }

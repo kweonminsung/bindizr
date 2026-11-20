@@ -1,4 +1,4 @@
-use bindizr_core::dns::message::{Class, OptRcode};
+use bindizr_core::dns::message::Class;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::time;
 
@@ -99,94 +99,6 @@ fn build_soa_response(
     }
 
     buffer
-}
-
-/// Verify that `extract_soa_serial` reads the answer serial.
-#[test]
-fn extract_soa_serial_reads_the_answer_serial() {
-    // 0x8400 = QR + AA, NOERROR.
-    let response = build_soa_response(42, 0x8400, "example.com", true, 2026);
-    assert_eq!(
-        query::extract_soa_serial(42, &qname(), &response).unwrap(),
-        2026
-    );
-}
-
-/// Verify that `extract_soa_serial` rejects id mismatch.
-#[test]
-fn extract_soa_serial_rejects_id_mismatch() {
-    let response = build_soa_response(42, 0x8400, "example.com", true, 2026);
-
-    assert!(
-        query::extract_soa_serial(7, &qname(), &response)
-            .unwrap_err()
-            .to_string()
-            .contains("ID mismatch")
-    );
-}
-
-/// Verify that `extract_soa_serial` rejects error rcode.
-#[test]
-fn extract_soa_serial_rejects_error_rcode() {
-    // RCODE 5 (REFUSED)
-    let response = build_soa_response(42, 0x8405, "example.com", true, 2026);
-    assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &response),
-        Err(ParseResponseError::Rcode {
-            rcode: OptRcode::REFUSED
-        })
-    ));
-}
-
-/// Verify that `extract_soa_serial` rejects missing qr bit.
-#[test]
-fn extract_soa_serial_rejects_missing_qr_bit() {
-    let response = build_soa_response(42, 0x0400, "example.com", true, 2026);
-
-    assert!(
-        query::extract_soa_serial(42, &qname(), &response)
-            .unwrap_err()
-            .to_string()
-            .contains("QR bit")
-    );
-}
-
-/// Verify that `extract_soa_serial` rejects truncated response.
-#[test]
-fn extract_soa_serial_rejects_truncated_response() {
-    let response = build_soa_response(42, 0x8600, "example.com", true, 2026);
-    assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &response),
-        Err(ParseResponseError::Truncated)
-    ));
-}
-
-/// Verify that `extract_soa_serial` rejects answer without SOA.
-#[test]
-fn extract_soa_serial_rejects_answer_without_soa() {
-    let response = build_soa_response(42, 0x8400, "example.com", false, 0);
-    assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &response),
-        Err(ParseResponseError::NoSoa)
-    ));
-}
-
-/// Verify that `extract_soa_serial` rejects a cache or another question.
-#[test]
-fn extract_soa_serial_rejects_a_cache_or_another_question() {
-    // 0x8000 = QR without AA: a cache answered, not the secondary.
-    let cached = build_soa_response(42, 0x8000, "example.com", true, 2026);
-
-    assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &cached),
-        Err(ParseResponseError::NotAuthoritative)
-    ));
-    let other = build_soa_response(42, 0x8400, "other.com", true, 2026);
-
-    assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &other),
-        Err(ParseResponseError::OtherQuestion)
-    ));
 }
 
 /// Verify that a malformed, unrelated or wrong-opcode datagram cannot end a live UDP

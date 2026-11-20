@@ -578,61 +578,6 @@ async fn signed_notify_times_out_under_unsigned_response_flood() {
     ));
 }
 
-/// Verify that `validate_notify_response` accepts matching noerror response.
-#[test]
-fn validate_notify_response_accepts_matching_noerror_response() {
-    // 0xa000 = QR set + opcode NOTIFY, NOERROR.
-    let response = build_notify_response(1234, 0xa000, "example.com");
-
-    assert!(query::validate_notify_response(1234, &qname(), &response).is_ok());
-}
-
-/// Verify that `validate_notify_response` rejects id mismatch.
-#[test]
-fn validate_notify_response_rejects_id_mismatch() {
-    let response = build_notify_response(1234, 0xa000, "example.com");
-
-    let error = query::validate_notify_response(5678, &qname(), &response).unwrap_err();
-
-    assert!(error.to_string().contains("ID mismatch"));
-}
-
-/// Verify that `validate_notify_response` rejects error rcode.
-#[test]
-fn validate_notify_response_rejects_error_rcode() {
-    // 0xa005 adds RCODE 5 (REFUSED).
-    let response = build_notify_response(1234, 0xa005, "example.com");
-
-    let error = query::validate_notify_response(1234, &qname(), &response).unwrap_err();
-
-    assert!(error.to_string().contains("RCODE 5"));
-}
-
-/// Verify that `validate_notify_response` reports the RCODE of a refusal
-/// that carries no question.
-#[test]
-fn validate_notify_response_reports_rcode_without_question() {
-    // NSD 4.6 answers NOTIFY for a zone it does not serve with NOTAUTH
-    // (RCODE 9) and an empty question section.
-    let mut response = build_notify_response(1234, 0xa009, "example.com");
-    response.truncate(12);
-    response[4..6].copy_from_slice(&0u16.to_be_bytes());
-
-    let error = query::validate_notify_response(1234, &qname(), &response).unwrap_err();
-
-    assert!(error.to_string().contains("RCODE 9"), "{error}");
-}
-
-/// Verify that `validate_notify_response` rejects another question.
-#[test]
-fn validate_notify_response_rejects_another_question() {
-    let response = build_notify_response(1234, 0xa000, "other.com");
-
-    let error = query::validate_notify_response(1234, &qname(), &response).unwrap_err();
-
-    assert!(error.to_string().contains("another question"), "{error}");
-}
-
 /// Verify that every affected request retains the same socket error, including OS codes
 /// and custom causes.
 #[tokio::test]
