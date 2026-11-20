@@ -1,14 +1,15 @@
 use bindizr_core::dns::message::Class;
+use bindizr_core::dns::name::WireName;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::time;
 
 use super::*;
 
 /// Build the test zone's DNS name.
-fn qname() -> Name<Vec<u8>> {
+fn qname() -> WireName {
     use std::str::FromStr;
 
-    Name::from_str("example.com").unwrap()
+    WireName::from_str("example.com").unwrap()
 }
 
 /// Verify that SOA probes retry truncated UDP answers over TCP.

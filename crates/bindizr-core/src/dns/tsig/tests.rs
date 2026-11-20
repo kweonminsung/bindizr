@@ -2,15 +2,16 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
+use domain::base::MessageBuilder;
 use domain::base::iana::{Class, Opcode, Rtype};
 use domain::base::name::ParsedName;
-use domain::base::{MessageBuilder, Name};
 use domain::dep::octseq::parse::Parser;
 use domain::tsig::ServerTransaction;
 
 use super::*;
 use crate::dns::message;
 use crate::dns::message::ResponseLimit;
+use crate::dns::name::WireName;
 use crate::dns::nsupdate::parser;
 use crate::dns::nsupdate::parser::{ParseUpdateError, UpdateRequest};
 use crate::model::role::RoleId;
@@ -26,10 +27,7 @@ fn verify_response_rejects_invalid_class_and_ttl() {
         .unwrap();
     let mut question = MessageBuilder::new_vec().question();
     question
-        .push((
-            Name::<Vec<u8>>::from_str("example.com.").unwrap(),
-            Rtype::SOA,
-        ))
+        .push((WireName::from_str("example.com.").unwrap(), Rtype::SOA))
         .unwrap();
     let mut additional = question.additional();
     let verifier = sign_request(&mut additional, key.clone()).unwrap();
@@ -206,7 +204,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
     );
     let mut question = message::build_response().question();
     question
-        .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
+        .push((WireName::from_str(&name).unwrap(), Rtype::SOA))
         .unwrap();
     let mut additional = question.additional();
     ClientTransaction::request(truncated_key, &mut additional, Time48::now()).unwrap();
@@ -224,7 +222,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
     for stale in [false, true] {
         let mut question = message::build_response().question();
         question
-            .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
+            .push((WireName::from_str(&name).unwrap(), Rtype::SOA))
             .unwrap();
         let mut additional = question.additional();
         let time = Time48::from_u64(
@@ -380,7 +378,7 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                             builder.header_mut().set_rd(true);
                             let mut question = builder.question();
                             question
-                                .push((Name::<Vec<u8>>::from_str(&qname).unwrap(), qtype))
+                                .push((WireName::from_str(&qname).unwrap(), qtype))
                                 .unwrap();
                             let mut additional = question.additional();
 
@@ -539,7 +537,7 @@ pub(crate) fn now_secs() -> u64 {
 
 /// Encode a DNS name for a test wire message.
 pub(crate) fn encode_name(name: &str) -> Vec<u8> {
-    Name::<Vec<u8>>::from_str(name).unwrap().as_slice().to_vec()
+    WireName::from_str(name).unwrap().as_slice().to_vec()
 }
 
 /// Encode a TSIG timestamp as six big-endian bytes.
@@ -880,10 +878,7 @@ fn badtime_response_preserves_edns() {
                     builder.header_mut().set_opcode(opcode);
                     let mut question = builder.question();
                     question
-                        .push((
-                            Name::<Vec<u8>>::from_str("example.com.").unwrap(),
-                            Rtype::SOA,
-                        ))
+                        .push((WireName::from_str("example.com.").unwrap(), Rtype::SOA))
                         .unwrap();
                     let mut additional = question.additional();
 
@@ -979,10 +974,7 @@ fn truncated_requests_follow_validation_order() {
                     builder.header_mut().set_id(8945);
                     let mut question = builder.question();
                     question
-                        .push((
-                            Name::<Vec<u8>>::from_str("example.com.").unwrap(),
-                            Rtype::SOA,
-                        ))
+                        .push((WireName::from_str("example.com.").unwrap(), Rtype::SOA))
                         .unwrap();
                     let mut additional = question.additional();
 
@@ -1100,10 +1092,7 @@ fn outbound_responses_require_full_length_macs() {
         );
         let mut question = MessageBuilder::new_vec().question();
         question
-            .push((
-                Name::<Vec<u8>>::from_str("example.com.").unwrap(),
-                Rtype::SOA,
-            ))
+            .push((WireName::from_str("example.com.").unwrap(), Rtype::SOA))
             .unwrap();
         let mut additional = question.additional();
         let verifier = sign_request(&mut additional, key.clone()).unwrap();
@@ -1295,10 +1284,7 @@ fn build_error_response_keeps_the_cause_of_a_failure() {
     let builder = MessageBuilder::new_vec();
     let mut question = builder.question();
     question
-        .push((
-            Name::<Vec<u8>>::from_str("example.com.").unwrap(),
-            Rtype::SOA,
-        ))
+        .push((WireName::from_str("example.com.").unwrap(), Rtype::SOA))
         .unwrap();
     let query_data = question.finish();
 

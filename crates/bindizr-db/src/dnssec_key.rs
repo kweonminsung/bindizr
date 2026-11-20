@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
-use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
+use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
 /// Insert a DNSSEC key in the current transaction.
 pub async fn create_tx(
@@ -23,14 +23,11 @@ pub async fn create_tx(
 pub async fn list_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
-    lock_level: LockLevel,
 ) -> Result<Vec<DnssecKey>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::dnssec_key::list_tx(tx, zone_id, lock_level).await,
-        TransactionKind::Postgres(tx) => {
-            postgres::dnssec_key::list_tx(tx, zone_id, lock_level).await
-        }
-        TransactionKind::Sqlite(tx) => sqlite::dnssec_key::list_tx(tx, zone_id, lock_level).await,
+        TransactionKind::MySql(tx) => mysql::dnssec_key::list_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_key::list_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_key::list_tx(tx, zone_id).await,
     }
 }
 

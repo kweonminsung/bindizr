@@ -2,9 +2,8 @@ use bindizr_core::dns::Ttl;
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
-use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
+use sqlx::{Pool, Postgres, Row, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
 /// Insert a DNSSEC key in the current transaction.
@@ -45,17 +44,15 @@ pub(crate) async fn create_tx(
 pub(crate) async fn list_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
-    lock_level: LockLevel,
 ) -> Result<Vec<DnssecKey>, DatabaseError> {
-    let keys = sqlx::query_as::<_, DnssecKey>(AssertSqlSafe(format!(
+    let keys = sqlx::query_as::<_, DnssecKey>(
         r#"
         SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
         FROM dnssec_keys
         WHERE zone_id = $1
-        ORDER BY id{}
+        ORDER BY id
         "#,
-        lock_level.clause(),
-    )))
+    )
     .bind(zone_id)
     .fetch_all(&mut **tx)
     .await?;

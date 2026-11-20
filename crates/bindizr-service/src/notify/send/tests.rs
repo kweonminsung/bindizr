@@ -97,15 +97,10 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     let zone_name = ZoneName::parse("example.com").unwrap();
 
     let error = send_zone_notify(&cx, &zone_name).await.unwrap_err();
-    let NotifyZoneError::TargetsFailed {
-        zone_name: failed_zone_name,
-        failures,
-    } = &error
-    else {
+    let NotifyZoneError::TargetsFailed { failures } = &error else {
         panic!("unexpected NOTIFY failure: {error}");
     };
 
-    assert_eq!(failed_zone_name, "example.com");
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].0, failed_address);
     assert!(matches!(
@@ -132,7 +127,7 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
 
     assert_eq!(
         error.to_string(),
-        format!("NOTIFY failed for zone example.com ({failed_address}: {expected_message})")
+        format!("NOTIFY failed: {failed_address}: {expected_message}")
     );
 
     let reports = send_notify_to_secondaries(&cx, &zone_name).await.unwrap();

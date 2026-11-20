@@ -5,7 +5,6 @@ use bindizr_core::model::zone_version::{VersionFilter, ZoneVersion};
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Pool, Postgres, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
 /// Exclude past versions whose nonempty journal contains only derived changes.
@@ -160,16 +159,14 @@ pub(crate) async fn get_by_serial_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
     serial: Serial,
-    lock_level: LockLevel,
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
-    let version = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
+    let version = sqlx::query_as::<_, ZoneVersion>(
         r#"
         SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
-        WHERE zone_id = $1 AND serial = $2{}
+        WHERE zone_id = $1 AND serial = $2
         "#,
-        lock_level.clause(),
-    )))
+    )
     .bind(zone_id)
     .bind(serial)
     .fetch_optional(&mut **tx)

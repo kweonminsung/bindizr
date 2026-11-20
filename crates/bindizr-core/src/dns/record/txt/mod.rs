@@ -112,6 +112,17 @@ impl TxtRecordValue {
         Self::from_octet_segments(segments.iter().map(Vec::as_slice))
     }
 
+    /// Read a stored TXT value. Every entry path writes the presentation
+    /// form, so anything else is corruption, not a plain string.
+    pub fn from_row(value: &str) -> Result<Self, ParseRecordValueError> {
+        Self::from_presentation(value).map_err(|source| {
+            ParseRecordValueError::StoredTxtNotPresentation {
+                value: value.to_string(),
+                source: Box::new(source),
+            }
+        })
+    }
+
     /// Decode into its character-strings as text; `None` on empty RDATA or
     /// non-UTF-8.
     pub fn to_content(&self) -> Option<Vec<String>> {

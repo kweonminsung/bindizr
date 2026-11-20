@@ -5,7 +5,6 @@ use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::zone::Zone;
 use bindizr_core::model::zone_change::ZoneChange;
 use bindizr_core::model::zone_version::ZoneVersion;
-use bindizr_db::LockLevel;
 use thiserror::Error;
 
 use crate::authorization::Caller;
@@ -73,8 +72,7 @@ pub async fn authorize_ixfr_plan_by_name(
                     zone.id,
                     client_serial,
                     current_serial,
-                    LockLevel::Unlocked,
-                )
+)
                 .await?;
 
                 if changes.is_empty() {

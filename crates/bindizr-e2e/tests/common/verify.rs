@@ -91,7 +91,8 @@ impl TestApp {
             }
         }
 
-        // BIND9 requires an apex NS; Bindizr leaves its creation to the operator.
+        // BIND9 will not load a catalog member without an apex NS, which a zone
+        // created with apex_ns disabled, or stripped of it, lacks.
         // Listed record names are absolute, while zone names are bare.
         let is_apex = |record: &Value| {
             record["name"]

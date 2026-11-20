@@ -27,10 +27,10 @@ pub enum SendNotifyError {
 pub enum NotifyZoneError {
     #[error(transparent)]
     Service(#[from] ServiceError),
-    /// Failed targets and their original causes.
-    #[error("NOTIFY failed for zone {zone_name} ({})", failures.iter().map(|(address, error)| format!("{address}: {error}")).collect::<Vec<_>>().join("; "))]
+    /// Failed targets and their original causes; whoever reports it names
+    /// the zone.
+    #[error("NOTIFY failed: {}", failures.iter().map(|(address, error)| format!("{address}: {error}")).collect::<Vec<_>>().join("; "))]
     TargetsFailed {
-        zone_name: String,
         failures: Vec<(String, SendNotifyError)>,
     },
 }
@@ -67,10 +67,7 @@ pub(crate) async fn send_zone_notify(
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(NotifyZoneError::TargetsFailed {
-            zone_name: zone_name.to_string(),
-            failures,
-        })
+        Err(NotifyZoneError::TargetsFailed { failures })
     }
 }
 

@@ -173,12 +173,7 @@ pub(crate) async fn list_by_record_types_tx(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND record_type IN (",
     );
 
-    for i in 0..record_types.len() {
-        if i > 0 {
-            sql.push(',');
-        }
-        sql.push('?');
-    }
+    sql.push_str(&sql::placeholders(record_types.len()));
 
     sql.push_str(") ORDER BY name, id");
 
@@ -226,12 +221,7 @@ pub(crate) async fn list_by_names_tx(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name IN (",
         );
 
-        for i in 0..chunk.len() {
-            if i > 0 {
-                sql.push(',');
-            }
-            sql.push('?');
-        }
+        sql.push_str(&sql::placeholders(chunk.len()));
 
         sql.push(')');
 
@@ -485,12 +475,7 @@ pub(crate) async fn delete_many_tx(
     for chunk in ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM records WHERE id IN (".to_string();
 
-        for i in 0..chunk.len() {
-            if i > 0 {
-                sql.push(',');
-            }
-            sql.push('?');
-        }
+        sql.push_str(&sql::placeholders(chunk.len()));
 
         sql.push(')');
 

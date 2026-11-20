@@ -1,7 +1,8 @@
-//! DNS query parsing, response metadata, and short error or truncated replies.
+//! DNS query parsing: the question, EDNS, keepalive and the response budget.
 
 use std::time::Duration;
 
+use domain::base::Message;
 pub use domain::base::iana::exterr::ExtendedErrorCode;
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
@@ -9,11 +10,11 @@ use domain::base::opt::exterr::ExtendedError;
 use domain::base::opt::keepalive::{IdleTimeout, TcpKeepalive};
 use domain::base::opt::{Opt, OptRecord};
 use domain::base::wire::Composer;
-use domain::base::{Message, Name};
 use domain::rdata::Soa;
 use thiserror::Error;
 
-use crate::dns::message::{EncodeMessageError, QueryMetadata, RECORD_FIELDS_LEN, ResponseLimit};
+use crate::dns::message::{EncodeMessageError, QueryMetadata, ResponseLimit};
+use crate::dns::name::WireName;
 use crate::dns::tsig::TransferSigner;
 use crate::dns::{LibraryError, message};
 
@@ -25,17 +26,12 @@ pub const UDP_PAYLOAD_SIZE_WITHOUT_EDNS: u16 = 512;
 /// ceiling of a UDP response it sends (DNS Flag Day 2020).
 pub const EDNS_UDP_PAYLOAD_SIZE: u16 = 1232;
 
-/// The wire size of the OPT record a response carries, options aside.
-pub(crate) const OPT_RECORD_LEN: usize = 1 + RECORD_FIELDS_LEN;
-
-/// The wire size of the edns-tcp-keepalive option with its timeout.
-pub(crate) const KEEPALIVE_OPTION_LEN: usize = 6;
-
 /// Request EDNS metadata or its format error; requests with OPT receive OPT (RFC 6891).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edns {
     Absent,
-    /// One readable OPT; sizes under 512 read as 512 (RFC 6891, Section 6.2.3).
+    /// One readable OPT, its size as advertised; `ResponseLimit::udp` applies
+    /// the RFC 6891, Section 6.2.3 range.
     Present {
         udp_payload_size: u16,
         version: u8,
@@ -92,7 +88,7 @@ impl Edns {
         }
 
         Self::Present {
-            udp_payload_size: first.udp_payload_size().max(UDP_PAYLOAD_SIZE_WITHOUT_EDNS),
+            udp_payload_size: first.udp_payload_size(),
             version: first.version(),
             dnssec_ok: first.dnssec_ok(),
         }
@@ -198,6 +194,13 @@ impl ParseQueryError {
             Self::Malformed(_) => None,
         }
     }
+
+    /// Return the response code a readable failure is answered with: the EDNS
+    /// error when there is one, FORMERR otherwise; `None` when unreadable.
+    pub fn format_error(&self) -> Option<OptRcode> {
+        self.query_metadata()
+            .map(|metadata| metadata.format_error().unwrap_or(OptRcode::FORMERR))
+    }
 }
 
 /// Require one question for supported QUERY operations; RFC 9619 rejects counts above one.
@@ -220,7 +223,7 @@ pub fn is_response(query_data: &[u8]) -> bool {
 /// A query's question, EDNS metadata, and transfer parameters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedQuery {
-    pub qname: Name<Vec<u8>>,
+    pub qname: WireName,
     /// Presentation form of `qname` without the trailing dot.
     pub zone_name: String,
     pub qtype: Rtype,
@@ -308,11 +311,6 @@ impl ParsedQuery {
             edns,
             keepalive,
         })
-    }
-
-    /// Return the TCP idle timeout to advertise (RFC 7828, Section 3.3.2); none over UDP.
-    pub(crate) fn tcp_keepalive(&self) -> Option<TcpKeepalive> {
-        self.keepalive.tcp_keepalive()
     }
 
     /// Return every response encoder's budget from the request's transport and EDNS advertisement.

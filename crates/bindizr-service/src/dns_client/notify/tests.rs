@@ -6,7 +6,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use base64::engine::general_purpose;
-use bindizr_core::dns::message::{Class, Edns, Keepalive, Name, OptRcode, ParsedQuery, Rtype};
+use bindizr_core::dns::message::{Class, Edns, Keepalive, OptRcode, ParsedQuery, Rtype};
+use bindizr_core::dns::name::WireName;
 use bindizr_core::dns::tsig::{TransferSigner, TsigSigningKey};
 use bindizr_core::dns::{query, tsig};
 use bindizr_core::model::role::RoleId;
@@ -22,7 +23,7 @@ use super::*;
 /// Drive the production transaction lifecycle with an isolated client.
 async fn send_notify_to_server(
     client: &NotifyClient,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     server_addr: SocketAddr,
     timeout: Duration,
     retries: u32,
@@ -56,7 +57,7 @@ async fn signed_notify_advertises_edns_for_long_names() {
         TsigAlgorithm::HmacSha512,
     ] {
         for long in [false, true] {
-            let qname = Name::<Vec<u8>>::from_str(&if long {
+            let qname = WireName::from_str(&if long {
                 long_name("z")
             } else {
                 "example.com".to_string()
@@ -143,8 +144,8 @@ fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
 }
 
 /// Return the test zone's wire name.
-fn qname() -> Name<Vec<u8>> {
-    Name::from_str("example.com").unwrap()
+fn qname() -> WireName {
+    WireName::from_str("example.com").unwrap()
 }
 
 /// Verify that many silent zones share a socket and that wrong or old ACKs cannot finish a
@@ -158,7 +159,7 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
     let mut handles = Vec::new();
 
     for index in 0..64 {
-        let qname = Name::from_str(&format!("zone-{index}.example")).unwrap();
+        let qname = WireName::from_str(&format!("zone-{index}.example")).unwrap();
 
         handles.push(
             client
@@ -227,7 +228,7 @@ async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() 
 
     let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
     let request = buffer[..len].to_vec();
-    let other = Name::from_str("other.example").unwrap();
+    let other = WireName::from_str("other.example").unwrap();
 
     let second = client
         .send(&other, addr, Duration::from_secs(1), 0, None)
@@ -594,7 +595,7 @@ async fn shared_socket_failure_preserves_original_io_error() {
     ] {
         let code = original.raw_os_error();
         let message = original.to_string();
-        let qname = Name::from_str("example.com").unwrap();
+        let qname = WireName::from_str("example.com").unwrap();
         let mut requests = HashMap::new();
         let mut replies = Vec::new();
 
@@ -679,7 +680,7 @@ async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
 
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let addr = socket.local_addr().unwrap();
-    let qname = Name::from_str("example.com").unwrap();
+    let qname = WireName::from_str("example.com").unwrap();
 
     let mut first = client
         .send(&qname, addr, Duration::from_secs(1), 0, None)
@@ -750,7 +751,7 @@ async fn send_ignores_oversized_ack_until_a_bounded_ack_arrives() {
 
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
 
-        let qname = Name::from_str("example.com").unwrap();
+        let qname = WireName::from_str("example.com").unwrap();
 
         let mut handle = client
             .send(

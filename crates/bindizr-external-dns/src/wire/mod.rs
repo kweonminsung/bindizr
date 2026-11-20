@@ -49,29 +49,6 @@ pub(crate) struct Endpoint {
     provider_specific: Vec<ProviderSpecificProperty>,
 }
 
-impl Endpoint {
-    /// Refuse what the bindizr API cannot carry: a `setIdentifier`, which no
-    /// bindizr record has. Every record rule is left to the server.
-    pub(crate) fn validate(&self) -> Result<(), ValidateEndpointError> {
-        if !self.set_identifier.is_empty() {
-            return Err(ValidateEndpointError::SetIdentifier);
-        }
-
-        Ok(())
-    }
-
-    /// Convert the endpoint to a bindizr record as sent, for the server to
-    /// validate, parse and store; TTL 0 is ExternalDNS's unset.
-    pub(crate) fn to_bindizr_record(&self) -> BindizrRecord {
-        BindizrRecord {
-            name: self.dns_name.clone(),
-            record_type: self.record_type.clone(),
-            ttl: (self.record_ttl != 0).then_some(self.record_ttl),
-            values: self.targets.clone(),
-        }
-    }
-}
-
 /// Return whether an endpoint TTL uses the unset sentinel.
 fn is_ttl_unset(ttl: &i64) -> bool {
     *ttl == 0
@@ -148,6 +125,27 @@ impl From<BindizrRecord> for Endpoint {
     }
 }
 
+impl TryFrom<&Endpoint> for BindizrRecord {
+    type Error = ValidateEndpointError;
+
+    /// Convert an endpoint to a bindizr record as sent, for the server to
+    /// validate, parse and store; TTL 0 is ExternalDNS's unset. Only what the
+    /// bindizr API cannot carry is refused: a `setIdentifier`, which no
+    /// bindizr record has.
+    fn try_from(endpoint: &Endpoint) -> Result<Self, Self::Error> {
+        if !endpoint.set_identifier.is_empty() {
+            return Err(ValidateEndpointError::SetIdentifier);
+        }
+
+        Ok(Self {
+            name: endpoint.dns_name.clone(),
+            record_type: endpoint.record_type.clone(),
+            ttl: (endpoint.record_ttl != 0).then_some(endpoint.record_ttl),
+            values: endpoint.targets.clone(),
+        })
+    }
+}
+
 impl TryFrom<&Changes> for ApplyExternalDnsChangesRequest {
     type Error = ConvertChangesError;
 
@@ -168,12 +166,10 @@ impl TryFrom<&Changes> for ApplyExternalDnsChangesRequest {
                 .iter()
                 .zip(&changes.update_new)
                 .map(
-                    |(old, new)| -> Result<BindizrRecordUpdate, ConvertChangesError> {
-                        old.validate()?;
-                        new.validate()?;
+                    |(old, new)| -> Result<BindizrRecordUpdate, ValidateEndpointError> {
                         Ok(BindizrRecordUpdate {
-                            old: old.to_bindizr_record(),
-                            new: new.to_bindizr_record(),
+                            old: BindizrRecord::try_from(old)?,
+                            new: BindizrRecord::try_from(new)?,
                         })
                     },
                 )
@@ -183,21 +179,16 @@ impl TryFrom<&Changes> for ApplyExternalDnsChangesRequest {
     }
 }
 
-/// Validate endpoints and convert them into bindizr records.
+/// Convert endpoints into bindizr records, refusing the first that cannot be one.
 pub(crate) fn to_bindizr_records(
     endpoints: &[Endpoint],
-) -> Result<Vec<BindizrRecord>, ConvertChangesError> {
-    endpoints
-        .iter()
-        .map(|endpoint| -> Result<BindizrRecord, ConvertChangesError> {
-            endpoint.validate()?;
-            Ok(endpoint.to_bindizr_record())
-        })
-        .collect()
+) -> Result<Vec<BindizrRecord>, ValidateEndpointError> {
+    endpoints.iter().map(BindizrRecord::try_from).collect()
 }
 
-/// Pair adjusted records with endpoints by position, retaining caller identity
-/// and server type/TTL/targets; discard unsupported provider-specific properties.
+/// Pair adjusted records with endpoints by position: the caller's name and
+/// labels, the server's type, TTL and targets; provider-specific properties
+/// are dropped as unsupported.
 pub(crate) fn build_adjusted_endpoints(
     endpoints: Vec<Endpoint>,
     adjusted: Vec<BindizrRecord>,
@@ -205,12 +196,10 @@ pub(crate) fn build_adjusted_endpoints(
     endpoints
         .into_iter()
         .zip(adjusted)
-        .map(|(mut endpoint, record)| {
-            endpoint.provider_specific.clear();
-            endpoint.record_type = record.record_type;
-            endpoint.record_ttl = record.ttl.unwrap_or(0);
-            endpoint.targets = record.values;
-            endpoint
+        .map(|(endpoint, record)| Endpoint {
+            dns_name: endpoint.dns_name,
+            labels: endpoint.labels,
+            ..Endpoint::from(record)
         })
         .collect()
 }

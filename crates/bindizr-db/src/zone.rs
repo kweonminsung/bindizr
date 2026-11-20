@@ -43,7 +43,9 @@ pub struct ZoneFilter {
     pub offset: Option<u64>,
 }
 
-/// Insert a zone in the current transaction.
+/// Insert a zone in the current transaction. The DNSSEC-owned
+/// `dnssec_policy_id` and `parent_ns_addrs` start empty, set by their own
+/// `update_<field>_tx`.
 pub async fn create_tx(tx: &mut Transaction<'_>, zone: Zone) -> Result<Zone, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::zone::create_tx(tx, zone).await,
@@ -101,14 +103,11 @@ pub async fn list_all(db: &Db) -> Result<Vec<Zone>, DatabaseError> {
 }
 
 /// List all zones in the current transaction.
-pub async fn list_all_tx(
-    tx: &mut Transaction<'_>,
-    lock_level: LockLevel,
-) -> Result<Vec<Zone>, DatabaseError> {
+pub async fn list_all_tx(tx: &mut Transaction<'_>) -> Result<Vec<Zone>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::zone::list_all_tx(tx, lock_level).await,
-        TransactionKind::Postgres(tx) => postgres::zone::list_all_tx(tx, lock_level).await,
-        TransactionKind::Sqlite(tx) => sqlite::zone::list_all_tx(tx, lock_level).await,
+        TransactionKind::MySql(tx) => mysql::zone::list_all_tx(tx).await,
+        TransactionKind::Postgres(tx) => postgres::zone::list_all_tx(tx).await,
+        TransactionKind::Sqlite(tx) => sqlite::zone::list_all_tx(tx).await,
     }
 }
 

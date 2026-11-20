@@ -68,7 +68,10 @@ fn endpoint_validation_refuses_only_a_set_identifier() {
     let mut with_set_id = endpoint("a.example.com", "A", 0, &["192.0.2.1"]);
     with_set_id.set_identifier = "weighted".to_string();
 
-    assert!(with_set_id.validate().is_err());
+    assert_eq!(
+        BindizrRecord::try_from(&with_set_id),
+        Err(ValidateEndpointError::SetIdentifier)
+    );
 
     // The server answers these with a 400 the adapter passes through.
     for forwarded in [
@@ -78,7 +81,7 @@ fn endpoint_validation_refuses_only_a_set_identifier() {
         endpoint("a.example.com", "CNAME", 0, &["a.", "b."]),
         endpoint("a.example.com", "A", -1, &["192.0.2.1"]),
     ] {
-        assert!(forwarded.validate().is_ok(), "{forwarded:?}");
+        assert!(BindizrRecord::try_from(&forwarded).is_ok(), "{forwarded:?}");
     }
 }
 

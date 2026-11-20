@@ -85,6 +85,17 @@ pub(crate) async fn get_by_token(
     Ok(token)
 }
 
+/// Count all API tokens.
+pub(crate) async fn count_all(pool: &Pool<MySql>) -> Result<u64, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+
+    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM api_tokens")
+        .fetch_one(&mut *connection)
+        .await?;
+
+    Ok(count as u64)
+}
+
 /// List all API tokens.
 pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<ApiToken>, DatabaseError> {
     let mut connection = pool.acquire().await?;

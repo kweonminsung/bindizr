@@ -152,10 +152,11 @@ fn decode_update(
             let record_type = match record.record_type {
                 Rtype::ANY => None,
                 Rtype::SOA => return Ok(None),
-                other => match RecordType::try_from(other) {
-                    Ok(record_type) => Some(record_type),
-                    Err(_) => return Ok(None),
-                },
+                // The prescan refused every other type, so this is its error.
+                other => Some(
+                    RecordType::try_from(other)
+                        .map_err(|_| NsupdateError::UnsupportedType(other))?,
+                ),
             };
             Ok(Some(UpdateOperation::Record(
                 RecordOperation::DeleteRecordSet {
@@ -165,8 +166,8 @@ fn decode_update(
             )))
         }
         Class::NONE => {
-            // No row can match the SOA or an unstored type (RFC 2136, Section 2.5.4).
-            if RecordType::try_from(record.record_type).is_err() {
+            // Deleting the SOA is ignored (RFC 2136, Section 3.4.2.4).
+            if record.record_type == Rtype::SOA {
                 return Ok(None);
             }
 

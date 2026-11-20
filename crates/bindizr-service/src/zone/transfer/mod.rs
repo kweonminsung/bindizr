@@ -144,8 +144,7 @@ pub async fn authorize_transfer_content_by_name(
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
         let records = bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
-        let dnssec_records =
-            bindizr_db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let dnssec_records = bindizr_db::dnssec_record::list_tx(&mut tx, zone.id).await?;
         let version_id = lookup_current_version_id_tx(&mut tx, &zone).await?;
 
         Ok(TransferAccess::Granted(TransferContent {
@@ -165,7 +164,7 @@ async fn lookup_current_version_id_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
 ) -> Result<ZoneVersionId, ServiceError> {
-    bindizr_db::zone_version::get_by_serial_tx(tx, zone.id, zone.serial, LockLevel::Unlocked)
+    bindizr_db::zone_version::get_by_serial_tx(tx, zone.id, zone.serial)
         .await?
         .map(|version| version.id)
         .ok_or_else(|| ServiceError::internal("the current zone version is missing"))

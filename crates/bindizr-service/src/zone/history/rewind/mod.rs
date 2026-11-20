@@ -25,7 +25,6 @@ pub(crate) async fn rewind_records_to_serial_tx(
         zone_id,
         target_serial,
         current_serial,
-        LockLevel::Unlocked,
     )
     .await?;
 

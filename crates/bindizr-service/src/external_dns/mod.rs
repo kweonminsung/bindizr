@@ -88,8 +88,8 @@ pub async fn list_managed_domains(
     Ok(domains.into_iter().collect())
 }
 
-/// List manageable ExternalDNS records grouped by name/type, with absolute
-/// owners and sorted presentation values.
+/// List the records of the supported types the caller may read, grouped by
+/// name/type, with absolute owners and sorted presentation values.
 pub async fn list_records(
     cx: &Context,
     caller: &Caller,

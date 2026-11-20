@@ -30,7 +30,7 @@ fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, 
         Ok(record_type) => Ok(TypeFilter::User(record_type)),
         Err(error) => {
             if view == ZoneView::Signed
-                && let Ok(record_type) = value.to_uppercase().parse::<DnssecRecordType>()
+                && let Ok(record_type) = value.parse::<DnssecRecordType>()
             {
                 return Ok(TypeFilter::Derived(record_type));
             }

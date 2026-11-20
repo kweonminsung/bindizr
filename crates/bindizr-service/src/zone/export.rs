@@ -31,7 +31,7 @@ pub async fn export(
             .authorize_whole_zone_read(&zone)?;
         let records = bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let derived = if view == ZoneView::Signed {
-            bindizr_db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?
+            bindizr_db::dnssec_record::list_tx(&mut tx, zone.id).await?
         } else {
             Vec::new()
         };

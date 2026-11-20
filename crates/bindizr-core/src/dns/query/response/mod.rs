@@ -7,7 +7,7 @@ mod soa;
 mod transfer;
 
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
-use domain::base::{Message, Name, ToName};
+use domain::base::{Message, ToName};
 use domain::rdata::AllRecordData;
 pub use ds::{DsRecord, DsRecordSet, extract_ds_record_set};
 pub use keepalive::extract_tcp_keepalive_timeout;
@@ -18,6 +18,7 @@ pub use transfer::{TransferMessagePosition, TransferRecord, extract_transfer_rec
 
 use crate::dns::LibraryError;
 use crate::dns::message::Edns;
+use crate::dns::name::WireName;
 use crate::dns::record::EncodeRdataError;
 
 /// Why a DNS response could not be parsed or matched to its request.
@@ -129,7 +130,7 @@ pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
 /// Require exactly the IN question that was sent.
 fn validate_question(
     message: &Message<&[u8]>,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     qtype: Rtype,
 ) -> Result<(), ParseResponseError> {
     let question = message
@@ -149,7 +150,7 @@ fn validate_question(
 /// Parse a matching question response and require the authoritative (AA) flag.
 fn parse_authoritative_response<'a>(
     query_id: u16,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     qtype: Rtype,
     response: &'a [u8],
 ) -> Result<Message<&'a [u8]>, ParseResponseError> {

@@ -6,7 +6,6 @@ mod verify;
 
 use std::env::VarError;
 use std::net::TcpListener;
-use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -157,9 +156,15 @@ impl TestApp {
     /// Create a role without grants and a token in it, both named alike, and
     /// return the `(name, plaintext token)`; grant the role with `role grant`.
     pub(crate) async fn create_scoped_api_token(&self) -> (String, String) {
-        let name = format!("{}-scoped", self.namespace);
-        self.run_cli_success(&["role", "create", &name], None).await;
-        self.create_token_with(&["token", "create", &name, "--role", &name])
+        self.create_named_scoped_api_token(&format!("{}-scoped", self.namespace))
+            .await
+    }
+
+    /// Create role `name` without grants and a token of the same name in it,
+    /// returning the `(name, plaintext token)`.
+    pub(crate) async fn create_named_scoped_api_token(&self, name: &str) -> (String, String) {
+        self.run_cli_success(&["role", "create", name], None).await;
+        self.create_token_with(&["token", "create", name, "--role", name])
             .await
     }
 
@@ -191,16 +196,6 @@ impl TestApp {
     /// Return this test's isolation namespace.
     pub(crate) fn namespace(&self) -> &str {
         &self.namespace
-    }
-
-    /// Return the config file the local daemon was started from, for tests
-    /// that rewrite it and reload.
-    pub(crate) fn config_path(&self) -> PathBuf {
-        let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
-            panic!("only the local runtime owns its config file");
-        };
-
-        temp_dir.path().join("bindizr.conf.toml")
     }
 
     /// Return whether this test application includes DNS secondaries.

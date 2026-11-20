@@ -8,9 +8,7 @@ use std::os::fd::AsRawFd;
 use std::sync::Arc;
 
 use bindizr_core::dns::message;
-use bindizr_core::dns::message::{
-    Keepalive, OptRcode, ParsedQuery, QueryMetadata, ResponseLimit, Rtype,
-};
+use bindizr_core::dns::message::{Keepalive, ParsedQuery, QueryMetadata, ResponseLimit, Rtype};
 use bindizr_core::model::transfer::TransferTransport;
 use nix::libc::{in_addr, in_pktinfo, in6_addr, in6_pktinfo};
 use nix::sys::socket;
@@ -302,9 +300,7 @@ async fn handle_udp_query(
     let query = match ParsedQuery::parse(query_data, Keepalive::None) {
         Ok(query) => query,
         Err(error) => {
-            if let Some(metadata) = error.query_metadata() {
-                let rcode = metadata.format_error().unwrap_or(OptRcode::FORMERR);
-
+            if let (Some(metadata), Some(rcode)) = (error.query_metadata(), error.format_error()) {
                 match server::refuse_query(dns_cx, metadata, query_data, rcode, None).await {
                     Ok(response) => {
                         send_udp_response(socket, target, &response, metadata.response_limit())

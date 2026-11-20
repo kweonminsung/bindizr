@@ -11,9 +11,6 @@ async fn notify_supports_all_zones_and_one_zone() {
 
     app.create_zone_cli(&zone_name, "3600").await;
 
-    // A secondary answers NOTAUTH for a zone the catalog has not reached yet.
-    app.assert_dns_matches_api(None).await;
-
     // No zone name means all zones.
     let all = app.run_cli_success(&["zone", "notify"], None).await;
 

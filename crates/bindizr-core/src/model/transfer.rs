@@ -213,14 +213,17 @@ impl TryFrom<String> for TransferTransport {
 
 /// One transfer answered to a client address for a zone, as it is written; a
 /// refusal or failure keeps its reason and no serial.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct TransferLog {
     pub client_addr: String,
     pub zone_id: ZoneId,
     /// The transfer the client asked for.
+    #[sqlx(try_from = "String")]
     pub kind: TransferKind,
+    #[sqlx(try_from = "String")]
     pub result: TransferResult,
     /// Plain TCP or TLS; a transfer never completes over UDP.
+    #[sqlx(try_from = "String")]
     pub transport: TransferTransport,
     /// Whether the answer was a delta; an IXFR the journal could not serve
     /// went out as the whole zone.
@@ -235,17 +238,8 @@ pub struct TransferLog {
 /// A transfer log row joined with its zone's name, as the listings return it.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct TransferLogWithZone {
-    pub client_addr: String,
-    #[sqlx(try_from = "String")]
-    pub kind: TransferKind,
-    #[sqlx(try_from = "String")]
-    pub result: TransferResult,
-    #[sqlx(try_from = "String")]
-    pub transport: TransferTransport,
-    pub incremental: bool,
-    pub serial: Option<Serial>,
-    pub served_at: DateTime<Utc>,
-    pub error: Option<String>,
+    #[sqlx(flatten)]
+    pub log: TransferLog,
     pub zone_name: ZoneName,
 }
 

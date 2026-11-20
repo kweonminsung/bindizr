@@ -98,7 +98,8 @@ pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<Secondary>, Datab
     Ok(secondaries)
 }
 
-/// Write the address and enabled flag; the name is fixed at creation.
+/// Write the address, enabled flag and NOTIFY signing key; the name is fixed
+/// at creation.
 pub(crate) async fn update_tx(
     tx: &mut Transaction<'_, MySql>,
     secondary: Secondary,

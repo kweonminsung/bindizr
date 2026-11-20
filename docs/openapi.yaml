@@ -415,12 +415,12 @@ paths:
     get:
       tags:
       - ExternalDNS
-      summary: List the records of every ExternalDNS-managed zone
-      description: 'Records of all zones the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.'
+      summary: List the records ExternalDNS may read
+      description: 'Records the calling token may read, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.'
       operationId: list_external_dns_records
       responses:
         '200':
-          description: Records of the allowed zones
+          description: Records the token may read
           content:
             application/json:
               schema:
@@ -5631,8 +5631,8 @@ components:
     ListExternalDnsRecordsResponse:
       type: object
       description: |-
-        Records of every ExternalDNS-managed zone, one per name and type, in a
-        deterministic order.
+        Records the calling token may read, of the supported types, one per name
+        and type, in a deterministic order.
       required:
       - records
       properties:

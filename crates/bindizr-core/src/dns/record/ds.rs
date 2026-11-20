@@ -1,30 +1,11 @@
 //! DS record values (RFC 4034, Section 5): a child zone's key digest, entered
 //! by the operator at the delegation point.
 
+use domain::base::iana::SecurityAlgorithm;
+
 use crate::dns::dnssec::KeyTag;
 use crate::dns::record::value::MAX_RECORD_RDATA;
 use crate::dns::record::{EncodeRdataError, ParseRecordValueError, Rdata, value};
-
-/// The algorithm mnemonics a DS may spell instead of a number (RFC 4034,
-/// Appendix A.1 and the IANA DNS Security Algorithm Numbers registry).
-const ALGORITHM_MNEMONICS: [(&str, u8); 16] = [
-    ("RSAMD5", 1),
-    ("DH", 2),
-    ("DSA", 3),
-    ("RSASHA1", 5),
-    ("DSA-NSEC3-SHA1", 6),
-    ("RSASHA1-NSEC3-SHA1", 7),
-    ("RSASHA256", 8),
-    ("RSASHA512", 10),
-    ("ECC-GOST", 12),
-    ("ECDSAP256SHA256", 13),
-    ("ECDSAP384SHA384", 14),
-    ("ED25519", 15),
-    ("ED448", 16),
-    ("INDIRECT", 252),
-    ("PRIVATEDNS", 253),
-    ("PRIVATEOID", 254),
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DsRecordValue {
@@ -57,11 +38,9 @@ impl DsRecordValue {
                 value: value.to_string(),
             });
         };
-        let algorithm = match ALGORITHM_MNEMONICS
-            .iter()
-            .find(|(mnemonic, _)| mnemonic.eq_ignore_ascii_case(algorithm))
-        {
-            Some((_, number)) => *number,
+        // The IANA DNS Security Algorithm Numbers registry, as `domain` carries it.
+        let algorithm = match SecurityAlgorithm::from_mnemonic(algorithm.as_bytes()) {
+            Some(mnemonic) => mnemonic.to_int(),
             None => value::parse_u8_record_field("DS algorithm", algorithm)?,
         };
 
@@ -151,7 +130,12 @@ mod tests {
     /// 4034, Section 5.3) and renders the number.
     #[test]
     fn parse_accepts_algorithm_mnemonics() {
-        for (mnemonic, number) in [("ECDSAP256SHA256", 13), ("rsasha256", 8), ("Ed25519", 15)] {
+        for (mnemonic, number) in [
+            ("ECDSAP256SHA256", 13),
+            ("rsasha256", 8),
+            ("Ed25519", 15),
+            ("MLDSA44", 18),
+        ] {
             let parsed = DsRecordValue::parse(&format!("34217 {mnemonic} 2 4B9B")).unwrap();
             assert_eq!(parsed.canonical(), format!("34217 {number} 2 4B9B"));
         }

@@ -213,7 +213,7 @@ fn signatures_validate_case_preserving_rdata() {
         let rows = rrsigs_covering(
             &diff.added,
             &records[0].name,
-            i32::from(record_type.wire_type()),
+            i32::from(Rtype::from(record_type).to_int()),
         );
 
         assert_eq!(rows.len(), 1);
@@ -227,7 +227,7 @@ fn signatures_validate_case_preserving_rdata() {
         // RFC 4034: RRSIG fields without the signature, then the canonical record.
         let mut signed_data = wire[..wire.len() - signature.signature().len()].to_vec();
         signed_data.extend_from_slice(records[0].name.to_wire_name(&zone.name).unwrap().as_slice());
-        signed_data.extend_from_slice(&record_type.wire_type().to_be_bytes());
+        signed_data.extend_from_slice(&Rtype::from(record_type).to_int().to_be_bytes());
         signed_data.extend_from_slice(&1u16.to_be_bytes());
         signed_data.extend_from_slice(&signature.original_ttl().as_secs().to_be_bytes());
         signed_data.extend_from_slice(&(rdata.as_bytes().len() as u16).to_be_bytes());

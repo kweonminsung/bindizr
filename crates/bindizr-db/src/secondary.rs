@@ -65,7 +65,8 @@ pub async fn list_all(db: &Db) -> Result<Vec<Secondary>, DatabaseError> {
     }
 }
 
-/// Write the address and enabled flag; the name is fixed at creation.
+/// Write the address, enabled flag and NOTIFY signing key; the name is fixed
+/// at creation.
 pub async fn update_tx(
     tx: &mut Transaction<'_>,
     secondary: Secondary,

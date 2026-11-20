@@ -7,7 +7,8 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 use std::{future, io};
 
-use bindizr_core::dns::message::{Keepalive, Name, OptRcode, QueryMetadata, ResponseLimit};
+use bindizr_core::dns::message::{Keepalive, OptRcode, QueryMetadata, ResponseLimit};
+use bindizr_core::dns::name::WireName;
 use bindizr_core::dns::query::ParseResponseError;
 use bindizr_core::dns::tsig::{
     ResponseVerifier, SignRequestError, TsigSigningKey, VerifyResponseError,
@@ -91,7 +92,7 @@ struct PendingNotify {
     deadline: Instant,
     waiting: bool,
     sent: bool,
-    qname: Name<Vec<u8>>,
+    qname: WireName,
     reply: oneshot::Sender<Result<(), SendNotifyError>>,
 }
 
@@ -140,7 +141,7 @@ impl NotifyClient {
     /// Send a NOTIFY request, retrying the same bytes/socket only on silence.
     pub(crate) async fn send(
         &self,
-        qname: &Name<Vec<u8>>,
+        qname: &WireName,
         server_addr: SocketAddr,
         timeout: Duration,
         retries: u32,

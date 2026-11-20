@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
 use crate::dnssec_record::DnssecRecordFilter;
 use crate::error::DatabaseError;
-use crate::{LockLevel, sql};
+use crate::sql;
 
 /// Insert many derived records in one statement (chunked). Ids are not
 /// returned.
@@ -69,7 +69,6 @@ pub(crate) async fn list_signatures_covering_apex_soa_tx(
 pub(crate) async fn list_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
-    _lock_level: LockLevel,
 ) -> Result<Vec<DnssecRecord>, DatabaseError> {
     let records = sqlx::query_as::<_, DnssecRecord>(
         r#"
@@ -98,12 +97,7 @@ pub(crate) async fn delete_many_tx(
     for chunk in ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM dnssec_records WHERE id IN (".to_string();
 
-        for i in 0..chunk.len() {
-            if i > 0 {
-                sql.push(',');
-            }
-            sql.push('?');
-        }
+        sql.push_str(&sql::placeholders(chunk.len()));
 
         sql.push(')');
 

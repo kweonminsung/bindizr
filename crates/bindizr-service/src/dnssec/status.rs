@@ -36,7 +36,7 @@ pub async fn get_status(
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_zone_action(Action::DnssecRead, &zone)?;
-        let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id).await?;
         let policy = dnssec::find_zone_policy_tx(&mut tx, &zone).await?;
 
         lookup_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
@@ -79,7 +79,7 @@ pub(crate) async fn lookup_status_tx(
     keys: &[DnssecKey],
     serial: Serial,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id).await?;
     let earliest_signature_expires_at = derived.iter().filter_map(|record| record.expires_at).min();
 
     // Only RRSIG rows carry an expiration, so counting those counts signatures.

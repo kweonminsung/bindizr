@@ -29,7 +29,7 @@ fn build_transfer_summary(latest: &[TransferLogWithZone]) -> TransferSummaryResp
         failed: 0,
     };
 
-    for log in latest {
+    for TransferLogWithZone { log, .. } in latest {
         match (log.result, log.kind, log.incremental) {
             (TransferResult::Refused, _, _) => summary.refused += 1,
             (TransferResult::Failed, _, _) => summary.failed += 1,

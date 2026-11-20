@@ -4,7 +4,6 @@ use bindizr_core::model::zone_change::ZoneChange;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Postgres, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
 /// Insert many zone changes in one statement (chunked). Ids are not returned.
@@ -95,17 +94,15 @@ pub(crate) async fn list_between_serials_tx(
     zone_id: ZoneId,
     from_serial: Serial,
     to_serial: Serial,
-    lock_level: LockLevel,
 ) -> Result<Vec<ZoneChange>, DatabaseError> {
-    let changes = sqlx::query_as::<_, ZoneChange>(AssertSqlSafe(format!(
+    let changes = sqlx::query_as::<_, ZoneChange>(
         r#"
         SELECT zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority
         FROM zone_journal
         WHERE zone_id = $1 AND ((serial > $2 AND serial <= $3) OR ($2 > $3 AND (serial > $2 OR serial <= $3)))
-        ORDER BY id{}
+        ORDER BY id
         "#,
-        lock_level.clause(),
-    )))
+    )
     .bind(zone_id)
     .bind(from_serial)
     .bind(to_serial)

@@ -158,7 +158,7 @@ pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<TokenResponse, S
 
 /// Count the API tokens, read for the daemon's startup hint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
-    Ok(bindizr_db::api_token::list_all(cx.db()).await?.len() as u64)
+    Ok(bindizr_db::api_token::count_all(cx.db()).await?)
 }
 
 /// Delete the API token with the given name, returning `NotFound` if it

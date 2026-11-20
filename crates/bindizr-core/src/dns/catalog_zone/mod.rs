@@ -3,13 +3,12 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use domain::base::Name;
 use domain::base::iana::Rtype;
 use ring::digest;
 use ring::digest::SHA256;
 use thiserror::Error;
 
-use crate::dns::name::{MAX_WIRE_NAME_LEN, OwnerName, ParseNameError, ZoneName};
+use crate::dns::name::{MAX_WIRE_NAME_LEN, OwnerName, ParseNameError, WireName, ZoneName};
 use crate::dns::query::TransferRecord;
 use crate::dns::{Serial, SoaInterval, Ttl};
 
@@ -115,7 +114,7 @@ pub fn extract_member_zones(
                 version = Some(record.rdata.as_bytes().to_vec());
             }
             Rtype::PTR if labels.len() == 2 && labels[1] == MEMBER_SUBTREE.as_bytes() => {
-                let target = Name::<Vec<u8>>::from_octets(record.rdata.as_bytes().to_vec())
+                let target = WireName::from_octets(record.rdata.as_bytes().to_vec())
                     .map_err(|_| ExtractMemberZonesError::MemberRdata {
                         name: record.name.clone(),
                     })?

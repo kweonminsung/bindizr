@@ -6,17 +6,18 @@ use domain::base::iana::{
     Class, DigestAlgorithm, Opcode, OptRcode, Rcode, Rtype, SecurityAlgorithm,
 };
 use domain::base::opt::AllOptData;
-use domain::base::{Message, MessageBuilder, Name};
+use domain::base::{Message, MessageBuilder};
 use domain::rdata::{A, Ds, Soa};
 
 use super::*;
 use crate::dns::Ttl;
 use crate::dns::dnssec::KeyTag;
 use crate::dns::message::EDNS_UDP_PAYLOAD_SIZE;
+use crate::dns::name::WireName;
 
 /// Parse a DNS wire-format name for the test.
-fn name(value: &str) -> Name<Vec<u8>> {
-    Name::from_str(value).unwrap()
+fn name(value: &str) -> WireName {
+    WireName::from_str(value).unwrap()
 }
 
 /// Verify that keepalive responses carry one two-octet timeout and zero is a valid close request.
@@ -68,7 +69,7 @@ fn build_ds_response(
     aa: bool,
     tc: bool,
     rcode: Rcode,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     records: &[(&str, Class, u32, u16)],
     authority_soa: Option<(&str, Class)>,
 ) -> Vec<u8> {
@@ -136,7 +137,7 @@ fn append_opt(response: &mut Vec<u8>, rcode: OptRcode, version: u8) {
 }
 
 /// Build an authoritative SOA answer with an explicit record class.
-fn build_soa_response(query_id: u16, qname: &Name<Vec<u8>>, class: Class) -> Vec<u8> {
+fn build_soa_response(query_id: u16, qname: &WireName, class: Class) -> Vec<u8> {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
     builder.header_mut().set_qr(true);
@@ -178,12 +179,7 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
 }
 
 /// Build an IN A transfer response with configurable question and AA flag.
-fn build_transfer_message(
-    query_id: u16,
-    qname: &Name<Vec<u8>>,
-    question: bool,
-    aa: bool,
-) -> Vec<u8> {
+fn build_transfer_message(query_id: u16, qname: &WireName, question: bool, aa: bool) -> Vec<u8> {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
     builder.header_mut().set_qr(true);

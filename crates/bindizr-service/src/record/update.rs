@@ -190,11 +190,8 @@ async fn update_locked(
                 let zone =
                     match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
                         Ok(Some(zone)) => zone,
-                        Ok(None) => {
-                            return Err(ServiceError::ZoneNotFound(format!(
-                                "zone with id '{zone_id}' not found"
-                            )));
-                        }
+                        // The zone went with the record the request named.
+                        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
                         Err(error) => {
                             return Err(ServiceError::internal_with_source(
                                 "failed to fetch zone",

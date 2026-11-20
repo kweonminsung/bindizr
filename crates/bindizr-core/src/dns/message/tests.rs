@@ -7,7 +7,7 @@ use domain::tsig::{ClientSequence, ClientTransaction};
 
 use super::*;
 use crate::dns;
-use crate::dns::name::{OwnerName, ZoneName};
+use crate::dns::name::{OwnerName, WireName, ZoneName};
 use crate::dns::query::TransferMessagePosition;
 use crate::dns::record::{MAX_RECORD_RDATA, TxtRecordValue};
 use crate::dns::tsig::TsigSigningKey;
@@ -86,7 +86,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
     for udp_size in [None, Some(512), Some(1232)] {
         let mut question = build_response().question();
         question
-            .push((Name::<Vec<u8>>::from_str(&long_name).unwrap(), Rtype::SOA))
+            .push((WireName::from_str(&long_name).unwrap(), Rtype::SOA))
             .unwrap();
         let mut additional = question.additional();
 
@@ -157,7 +157,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         builder
             .add_raw_rdata(
                 query.qname.clone(),
-                Rtype::TXT.to_int(),
+                Rtype::TXT,
                 3600,
                 Rdata::new(vec![0; 1400]).unwrap(),
             )
@@ -176,7 +176,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
 /// Build a question for example.com and `qtype`, with one OPT record per entry
 /// of `opt_versions`, each advertising 4096 octets.
 fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
-    let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
+    let qname = WireName::from_str("example.com.").unwrap();
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(1234);
     let mut question = builder.question();
@@ -293,10 +293,7 @@ fn truncated_response_echoes_the_question_with_tc_set() {
     builder.header_mut().set_id(4242);
     let mut question = builder.question();
     question
-        .push((
-            Name::<Vec<u8>>::from_str("example.com").unwrap(),
-            Rtype::AXFR,
-        ))
+        .push((WireName::from_str("example.com").unwrap(), Rtype::AXFR))
         .unwrap();
     let query = ParsedQuery::parse(&question.finish(), Keepalive::None).unwrap();
 
@@ -389,6 +386,9 @@ fn question_less_queries_receive_formerr() {
     let mut query_data = build_question(Rtype::SOA, &[])[..12].to_vec();
     query_data[4..6].copy_from_slice(&0u16.to_be_bytes());
     let error = ParsedQuery::parse(&query_data, Keepalive::None).unwrap_err();
+
+    assert_eq!(error.format_error(), Some(OptRcode::FORMERR));
+
     let response = Message::from_octets(
         error
             .query_metadata()
@@ -404,12 +404,10 @@ fn question_less_queries_receive_formerr() {
     assert_eq!(response.header_counts().qdcount(), 0);
 
     // A header shorter than twelve octets names no query to answer.
-    assert!(
-        ParsedQuery::parse(&query_data[..11], Keepalive::None)
-            .unwrap_err()
-            .query_metadata()
-            .is_none()
-    );
+    let unreadable = ParsedQuery::parse(&query_data[..11], Keepalive::None).unwrap_err();
+
+    assert!(unreadable.query_metadata().is_none());
+    assert_eq!(unreadable.format_error(), None);
 }
 
 /// Build a signed AXFR query for `example.com.` and a `domain` client
@@ -422,10 +420,7 @@ fn build_signed_axfr_query(
     builder.header_mut().set_id(1234);
     let mut question = builder.question();
     question
-        .push((
-            &Name::<Vec<u8>>::from_str("example.com.").unwrap(),
-            Rtype::AXFR,
-        ))
+        .push((&WireName::from_str("example.com.").unwrap(), Rtype::AXFR))
         .unwrap();
 
     let mut additional = question.additional();
@@ -625,7 +620,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
             assert!(message.opt().unwrap().opt().tcp_keepalive().is_some());
             let answer = message.answer().unwrap().next().unwrap().unwrap();
 
-            assert_eq!(answer.rtype().to_int(), record_type.wire_type());
+            assert_eq!(answer.rtype(), Rtype::from(record_type));
             assert_eq!(usize::from(answer.rdlen()), MAX_RECORD_RDATA);
             client.answer(&mut message, Time48::now()).unwrap();
         }
@@ -748,7 +743,7 @@ fn response_encoding_preserves_edns_dnssec_ok() {
 /// (RFC 6891, Section 6.2.5).
 #[test]
 fn udp_response_truncates_answers_above_limit() {
-    let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
+    let qname = WireName::from_str("example.com.").unwrap();
     let query = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
     let mut builder = DnsMessageBuilder::new(&query);
 
@@ -756,7 +751,7 @@ fn udp_response_truncates_answers_above_limit() {
         builder
             .add_raw_rdata(
                 qname.clone(),
-                Rtype::TXT.to_int(),
+                Rtype::TXT,
                 300,
                 Rdata::new(vec![3, b'a', b'b', b'c']).unwrap(),
             )
@@ -774,7 +769,7 @@ fn udp_response_truncates_answers_above_limit() {
 /// Verify that a response echoes the class asked (RFC 5936, Section 2.2.2).
 #[test]
 fn response_encoding_preserves_question_class() {
-    let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
+    let qname = WireName::from_str("example.com.").unwrap();
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(5);
     let mut question = builder.question();
@@ -878,7 +873,7 @@ fn response_limits_follow_transport_and_edns() {
             Opcode::QUERY,
             false,
             false,
-            &Name::from_str("example.com").unwrap(),
+            &WireName::from_str("example.com").unwrap(),
             Rtype::SOA,
             Some(advertised),
         );
@@ -898,7 +893,7 @@ fn response_limits_follow_transport_and_edns() {
 /// Verify that a failed final size check does not consume the next MAC in a response chain.
 #[test]
 fn oversized_response_does_not_advance_the_signer() {
-    let qname = Name::<Vec<u8>>::from_str(&format!(
+    let qname = WireName::from_str(&format!(
         "{}.{}.{}.q",
         "a".repeat(63),
         "b".repeat(63),
@@ -954,7 +949,7 @@ fn oversized_frame_does_not_advance_the_signer() {
         builder
             .add_raw_rdata(
                 query.qname.clone(),
-                Rtype::TXT.to_int(),
+                Rtype::TXT,
                 300,
                 Rdata::new(vec![0; 1000]).unwrap(),
             )

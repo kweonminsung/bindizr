@@ -49,6 +49,15 @@ pub async fn get_by_token(db: &Db, token: &str) -> Result<Option<ApiToken>, Data
     }
 }
 
+/// Count all API tokens.
+pub async fn count_all(db: &Db) -> Result<u64, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::api_token::count_all(pool).await,
+        Backend::Postgres(pool) => postgres::api_token::count_all(pool).await,
+        Backend::Sqlite(pool) => sqlite::api_token::count_all(pool).await,
+    }
+}
+
 /// List all API tokens.
 pub async fn list_all(db: &Db) -> Result<Vec<ApiToken>, DatabaseError> {
     match &db.0 {

@@ -36,7 +36,7 @@ async fn validate_serial_diffable_tx(
         return Ok(());
     }
 
-    bindizr_db::zone_version::get_by_serial_tx(tx, zone.id, serial, LockLevel::Unlocked)
+    bindizr_db::zone_version::get_by_serial_tx(tx, zone.id, serial)
         .await?
         .ok_or_else(|| ServiceError::version_not_found(&zone.name, serial))?;
 
@@ -85,14 +85,9 @@ pub async fn get_version(
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_whole_zone_read(&zone)?;
-        let version = bindizr_db::zone_version::get_by_serial_tx(
-            &mut tx,
-            zone.id,
-            serial,
-            LockLevel::Unlocked,
-        )
-        .await?
-        .ok_or_else(|| ServiceError::version_not_found(&zone.name, serial))?;
+        let version = bindizr_db::zone_version::get_by_serial_tx(&mut tx, zone.id, serial)
+            .await?
+            .ok_or_else(|| ServiceError::version_not_found(&zone.name, serial))?;
 
         let records = read.readable_records(
             rewind::list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?,
@@ -186,14 +181,9 @@ pub async fn rollback(
             )));
         }
 
-        let version = bindizr_db::zone_version::get_by_serial_tx(
-            &mut tx,
-            zone.id,
-            target_serial,
-            LockLevel::Unlocked,
-        )
-        .await?
-        .ok_or_else(|| ServiceError::version_not_found(&zone.name, target_serial))?;
+        let version = bindizr_db::zone_version::get_by_serial_tx(&mut tx, zone.id, target_serial)
+            .await?
+            .ok_or_else(|| ServiceError::version_not_found(&zone.name, target_serial))?;
 
         let new_serial = serial::generate_serial(Some(zone.serial));
 

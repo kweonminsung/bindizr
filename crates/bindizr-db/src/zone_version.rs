@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
-use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
+use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
 /// Insert or update a zone version in the current transaction.
 pub async fn upsert_tx(
@@ -85,17 +85,16 @@ pub async fn get_by_serial_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
     serial: Serial,
-    lock_level: LockLevel,
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::zone_version::get_by_serial_tx(tx, zone_id, serial, lock_level).await
+            mysql::zone_version::get_by_serial_tx(tx, zone_id, serial).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::zone_version::get_by_serial_tx(tx, zone_id, serial, lock_level).await
+            postgres::zone_version::get_by_serial_tx(tx, zone_id, serial).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::zone_version::get_by_serial_tx(tx, zone_id, serial, lock_level).await
+            sqlite::zone_version::get_by_serial_tx(tx, zone_id, serial).await
         }
     }
 }

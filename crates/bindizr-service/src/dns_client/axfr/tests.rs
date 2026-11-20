@@ -1,4 +1,5 @@
 use bindizr_core::dns::message::Class;
+use bindizr_core::dns::name::WireName;
 use bindizr_core::dns::record::{Rdata, SoaRecordValue};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
@@ -197,7 +198,7 @@ async fn fetch_transfer(
         }
     });
 
-    let qname = Name::from_str("example.com.").unwrap();
+    let qname = WireName::from_str("example.com.").unwrap();
 
     let mut stream = TcpStream::connect(addr).await.unwrap();
     let result = time::timeout(

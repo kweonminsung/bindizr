@@ -1,16 +1,16 @@
 //! Decode the authoritative SOA serial answering a probe.
 
-use domain::base::Name;
 use domain::base::iana::{Class, OptRcode, Rtype};
 use domain::rdata::Soa;
 
+use crate::dns::name::WireName;
 use crate::dns::query::response;
 use crate::dns::query::response::ParseResponseError;
 
 /// Read the serial served authoritatively for `qname`.
 pub fn extract_soa_serial(
     query_id: u16,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     response: &[u8],
 ) -> Result<u32, ParseResponseError> {
     use domain::base::ToName;

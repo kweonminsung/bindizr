@@ -272,7 +272,7 @@ pub struct DnssecStatusResponse {
 pub struct DnssecKeyMaterialResponse {
     pub role: DnssecKeyRole,
     /// IANA algorithm number.
-    pub algorithm: i32,
+    pub algorithm: u8,
     pub key_tag: KeyTag,
     /// `K*.key` contents: the DNSKEY record line.
     pub dnskey_record: String,

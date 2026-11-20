@@ -102,7 +102,7 @@ impl DnssecKey {
         format!(
             "{} {DNSKEY_PROTOCOL} {} {}",
             self.role.flags(),
-            self.algorithm.as_i32(),
+            self.algorithm.as_u8(),
             self.public_key
         )
     }

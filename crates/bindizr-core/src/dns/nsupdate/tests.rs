@@ -1,11 +1,11 @@
 use std::str::FromStr;
 
-use domain::base::Name;
 use domain::base::iana::{Class, Rcode, Rtype, TsigRcode};
 use domain::rdata::tsig::Tsig;
 use domain::tsig::ClientTransaction;
 
 use super::*;
+use crate::dns::name::WireName;
 use crate::dns::{message, tsig};
 use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
@@ -181,7 +181,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
         builder.header_mut().set_opcode(Opcode::UPDATE);
         let mut question = builder.question();
         question
-            .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
+            .push((WireName::from_str(&name).unwrap(), Rtype::SOA))
             .unwrap();
         let mut additional = question.additional();
 

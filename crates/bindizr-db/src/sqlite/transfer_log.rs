@@ -54,7 +54,7 @@ pub(crate) async fn list_by_filter_with_zone(
 
     let mut query = sqlx::query_as::<_, TransferLogWithZone>(AssertSqlSafe(format!(
         r#"
-        SELECT t.client_addr, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
+        SELECT t.client_addr, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
         FROM transfer_log t
         INNER JOIN zones z ON z.id = t.zone_id
         WHERE (? IS NULL OR z.name = ?)
@@ -141,28 +141,41 @@ pub(crate) async fn count_by_filter(
     Ok(count as u64)
 }
 
-/// List the newest row of each zone a client address asked for, with zone
-/// names.
-pub(crate) async fn list_by_client_addr_with_zone_latest_per_zone(
+/// List the newest row of each zone any of `client_addrs` asked for, with
+/// zone names: newest by `served_at`, then id, as the listings sort.
+pub(crate) async fn list_by_client_addrs_with_zone_latest_per_zone(
     pool: &Pool<Sqlite>,
-    client_addr: &str,
+    client_addrs: &[String],
 ) -> Result<Vec<TransferLogWithZone>, DatabaseError> {
+    // An empty address list selects nothing; `IN ()` is not valid SQL.
+    if client_addrs.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut connection = pool.acquire().await?;
 
-    let logs = sqlx::query_as::<_, TransferLogWithZone>(
+    let sql = format!(
         r#"
-        SELECT t.client_addr, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
-        FROM transfer_log t
-        INNER JOIN zones z ON z.id = t.zone_id
-        WHERE t.id IN (
-            SELECT MAX(id) FROM transfer_log WHERE client_addr = ? GROUP BY zone_id
-        )
-        ORDER BY t.id DESC
+        SELECT client_addr, zone_id, kind, result, transport, incremental, serial, served_at, error, zone_name
+        FROM (
+            SELECT t.client_addr, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name, t.id,
+                ROW_NUMBER() OVER (PARTITION BY t.zone_id ORDER BY t.served_at DESC, t.id DESC) AS recency
+            FROM transfer_log t
+            INNER JOIN zones z ON z.id = t.zone_id
+            WHERE t.client_addr IN ({})
+        ) latest
+        WHERE recency = 1
+        ORDER BY served_at DESC, id DESC
         "#,
-    )
-    .bind(client_addr)
-    .fetch_all(&mut *connection)
-    .await?;
+        sql::placeholders(client_addrs.len()),
+    );
+    let mut query = sqlx::query_as::<_, TransferLogWithZone>(AssertSqlSafe(sql));
+
+    for client_addr in client_addrs {
+        query = query.bind(client_addr);
+    }
+
+    let logs = query.fetch_all(&mut *connection).await?;
 
     Ok(logs)
 }

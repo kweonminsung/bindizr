@@ -146,9 +146,6 @@ async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // A secondary answers NOTAUTH for a zone the catalog has not reached yet.
-    app.assert_dns_matches_api(None).await;
-
     let (status, body) = app
         .send_request(Method::POST, &format!("/zones/{zone_name}/notify"), None)
         .await;

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use bindizr_core::config::Config;
-use bindizr_core::dns::message::{Keepalive, Name, ParsedQuery, Rcode, Rtype};
+use bindizr_core::dns::message::{Keepalive, ParsedQuery, Rcode, Rtype};
+use bindizr_core::dns::name::WireName;
 use bindizr_core::dns::query;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
@@ -61,7 +62,7 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
         Opcode::QUERY,
         false,
         false,
-        &Name::<Vec<u8>>::from_str("example.com").unwrap(),
+        &WireName::from_str("example.com").unwrap(),
         Rtype::SOA,
         None,
     );

@@ -91,15 +91,10 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
         assert_eq!(columns.1.as_deref(), expected_name);
 
         let mut tx = pool.begin().await.unwrap();
-        let read = get_by_serial_tx(
-            &mut tx,
-            version.zone_id,
-            version.serial,
-            LockLevel::Unlocked,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        let read = get_by_serial_tx(&mut tx, version.zone_id, version.serial)
+            .await
+            .unwrap()
+            .unwrap();
         tx.commit().await.unwrap();
 
         assert_eq!(read.change_source, source);
@@ -169,15 +164,9 @@ async fn history_ranges_wrap_and_prune_to_the_unambiguous_half_range() {
 
     assert_eq!(versions, [0, 1, u32::MAX]);
 
-    let journal = zone_change::list_between_serials_tx(
-        &mut tx,
-        version.zone_id,
-        from,
-        to,
-        LockLevel::Unlocked,
-    )
-    .await
-    .unwrap();
+    let journal = zone_change::list_between_serials_tx(&mut tx, version.zone_id, from, to)
+        .await
+        .unwrap();
 
     assert_eq!(
         journal

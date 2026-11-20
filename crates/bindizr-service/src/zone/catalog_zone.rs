@@ -58,7 +58,7 @@ pub(crate) async fn refresh_catalog_tx(
     // Read only for its row lock; the serial served comes from the upsert below.
     bindizr_db::catalog_zone::find_serial_tx(tx, catalog_zone_name, LockLevel::Exclusive).await?;
 
-    let zones: Vec<Zone> = bindizr_db::zone::list_all_tx(tx, LockLevel::Unlocked)
+    let zones: Vec<Zone> = bindizr_db::zone::list_all_tx(tx)
         .await?
         .into_iter()
         .filter(|zone| zone.enabled)

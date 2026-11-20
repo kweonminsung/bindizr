@@ -18,7 +18,7 @@ use domain::rdata::{Dnskey, Rrsig, ZoneRecordData};
 use ring::digest::{Context, SHA256};
 use thiserror::Error;
 
-use crate::dns::dnssec::{EncodeKeyRdataError, KeyTag, WireRecord};
+use crate::dns::dnssec::{EncodeKeyRdataError, WireRecord};
 use crate::dns::name::{EncodeWireNameError, OwnerName, ParseNameError, WireName, ZoneName};
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::{LibraryError, Serial, Ttl};
@@ -371,8 +371,8 @@ fn record_set_digest(
         // Key tags are 16 bits and can collide across a rollover; the row id
         // pins the actual signing key so a stale signature cannot be reused.
         hasher.update(&i32::from(signer.key.id).to_be_bytes());
-        hasher.update(&signer.key_tag.as_u16().to_be_bytes());
-        hasher.update(&[signer.algorithm]);
+        hasher.update(&signer.key.key_tag.as_u16().to_be_bytes());
+        hasher.update(&[signer.key.algorithm.as_u8()]);
     }
 
     Ok(hex::encode(hasher.finish()))
@@ -415,8 +415,6 @@ pub(crate) struct Signer<'a> {
     key: &'a DnssecKey,
     signing_key: SigningKey<Vec<u8>, KeyPair>,
     dnskey: Dnskey<Vec<u8>>,
-    key_tag: KeyTag,
-    algorithm: u8,
 }
 
 impl<'a> Signer<'a> {
@@ -431,8 +429,6 @@ impl<'a> Signer<'a> {
         Ok(Self {
             key,
             signing_key: SigningKey::new(apex.clone(), key.role.flags(), key_pair),
-            key_tag: KeyTag::from(dnskey.key_tag()),
-            algorithm: key.algorithm.as_u8(),
             dnskey,
         })
     }

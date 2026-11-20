@@ -1,15 +1,15 @@
 //! Validate a NOTIFY acknowledgement, including refusals without a question.
 
-use domain::base::Name;
 use domain::base::iana::{Opcode, OptRcode, Rtype};
 
+use crate::dns::name::WireName;
 use crate::dns::query::response;
 use crate::dns::query::response::ParseResponseError;
 
 /// Check that a NOTIFY was acknowledged by the server we asked.
 pub fn validate_notify_response(
     query_id: u16,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     response: &[u8],
 ) -> Result<(), ParseResponseError> {
     let message = response::parse_response(query_id, Opcode::NOTIFY, response)?;

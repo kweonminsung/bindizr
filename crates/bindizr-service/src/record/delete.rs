@@ -38,11 +38,8 @@ pub async fn delete(
     let apply_result: Result<_, ServiceError> = async {
         let zone = match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
             Ok(Some(zone)) => zone,
-            Ok(None) => {
-                return Err(ServiceError::ZoneNotFound(format!(
-                    "zone with id '{zone_id}' not found"
-                )));
-            }
+            // The zone went with the record the request named.
+            Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(error) => {
                 return Err(ServiceError::internal_with_source(
                     "failed to fetch zone",
@@ -190,7 +187,7 @@ pub async fn delete_matching(
         (Some(value), Some(record_type)) => Some(
             value
                 .to_encoded_value(record_type, request.priority)
-                .map_err(ServiceError::invalid_input)?,
+                .map_err(ServiceError::invalid_record_value)?,
         ),
         _ => None,
     };

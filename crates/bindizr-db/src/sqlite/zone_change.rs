@@ -4,7 +4,6 @@ use bindizr_core::model::zone_change::ZoneChange;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
 /// Insert many zone changes in one statement (chunked). Ids are not returned.
@@ -88,7 +87,6 @@ pub(crate) async fn list_between_serials_tx(
     zone_id: ZoneId,
     from_serial: Serial,
     to_serial: Serial,
-    _lock_level: LockLevel,
 ) -> Result<Vec<ZoneChange>, DatabaseError> {
     let changes = sqlx::query_as::<_, ZoneChange>(
         r#"

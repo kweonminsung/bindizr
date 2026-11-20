@@ -58,14 +58,11 @@ impl Rdata {
     pub fn to_presentation(&self, record_type: DnssecRecordType) -> String {
         let mut parser = Parser::from_ref(self.as_bytes());
 
-        AllRecordData::<_, ParsedName<_>>::parse_rdata(
-            Rtype::from_int(record_type.wire_type()),
-            &mut parser,
-        )
-        .ok()
-        .flatten()
-        .filter(|_| parser.remaining() == 0)
-        .map_or_else(|| self.to_base64(), |data| data.to_string())
+        AllRecordData::<_, ParsedName<_>>::parse_rdata(Rtype::from(record_type), &mut parser)
+            .ok()
+            .flatten()
+            .filter(|_| parser.remaining() == 0)
+            .map_or_else(|| self.to_base64(), |data| data.to_string())
     }
 
     /// Wrap wire-format record data after checking its length limit.
@@ -163,16 +160,7 @@ impl Rdata {
             RecordType::Ds => DsRecordValue::parse(value)?.to_rdata()?,
             RecordType::Mx => MxRecordValue::parse(value, priority)?.to_rdata()?,
             RecordType::Naptr => NaptrRecordValue::parse(value)?.to_rdata()?,
-            // Stored TXT is always the presentation form; every entry path
-            // writes it, so anything else here is corruption, not a plain string.
-            RecordType::Txt => Self::new(
-                TxtRecordValue::from_presentation(value)
-                    .map_err(|source| ParseRecordValueError::StoredTxtNotPresentation {
-                        value: value.to_string(),
-                        source: Box::new(source),
-                    })?
-                    .into_rdata(),
-            )?,
+            RecordType::Txt => Self::new(TxtRecordValue::from_row(value)?.into_rdata())?,
             RecordType::Srv => SrvRecordValue::parse(value, priority)?.to_rdata()?,
             RecordType::Sshfp => SshfpRecordValue::parse(value)?.to_rdata()?,
             RecordType::Tlsa => TlsaRecordValue::parse(value)?.to_rdata()?,
