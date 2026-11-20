@@ -1,7 +1,7 @@
 //! Virtual catalog membership and its persisted serial.
 
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::dns::{CATALOG_SOA_REFRESH, CatalogZone, Serial, SoaInterval, Ttl};
+use bindizr_core::dns::{CatalogZone, Serial, SoaInterval, Ttl};
 use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use ring::digest;
@@ -12,6 +12,9 @@ use crate::{Context, Transaction, transaction};
 
 /// TTL used by the generated catalog's records.
 const DEFAULT_TTL: Ttl = Ttl::from_secs(3600);
+
+/// SOA REFRESH of the generated catalog, also bounding its NOTIFY batching delay.
+pub(crate) const CATALOG_SOA_REFRESH: SoaInterval = SoaInterval::from_secs(3600);
 
 /// SOA retry interval of the generated catalog.
 const SOA_RETRY: SoaInterval = SoaInterval::from_secs(600);

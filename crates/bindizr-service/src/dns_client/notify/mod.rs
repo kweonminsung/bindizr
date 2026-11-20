@@ -148,10 +148,7 @@ impl NotifyClient {
     ) -> Result<NotifyHandle, SendNotifyError> {
         let (target, id) = self.reserve(server_addr).await?;
 
-        let (_, mut builder) = query::build_notify_query(qname, key);
-
-        // The reserved ID must be part of the signed bytes reused by every retry.
-        builder.header_mut().set_id(id);
+        let mut builder = query::build_notify_query(id, qname, key);
         let verifier = key
             .map(|key| tsig::sign_request(&mut builder, key.clone()))
             .transpose()?;

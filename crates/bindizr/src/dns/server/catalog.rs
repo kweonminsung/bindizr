@@ -12,17 +12,17 @@ use crate::dns::stream::ResponseWriter;
 pub(crate) async fn send_catalog_response(
     writer: &ResponseWriter,
     query: &ParsedQuery,
-    response_qtype: Rtype,
     signer: &mut Option<TransferSigner>,
     content: (CatalogZone, Vec<ZoneName>),
 ) -> Result<(), DnsError> {
     let (catalog_zone, member_zone_names) = content;
     log::info!(
-        "{response_qtype} request for catalog zone: {}",
+        "{} request for catalog zone: {}",
+        query.qtype,
         catalog_zone.name
     );
 
-    let mut builder = DnsMessageBuilder::new(query, response_qtype);
+    let mut builder = DnsMessageBuilder::new(query);
 
     if let Some(signer) = signer.take() {
         builder = builder.sign_with(signer);
@@ -40,7 +40,7 @@ pub(crate) async fn send_catalog_response(
             .await?;
 
         // RFC 1995, Section 2: equal or newer clients need only the current SOA.
-        if response_qtype == Rtype::IXFR
+        if query.qtype == Rtype::IXFR
             && query.client_serial.is_some_and(|client_serial| {
                 let client_serial = Serial::from(client_serial);
                 client_serial == serial || client_serial.is_newer_than(serial)
@@ -86,7 +86,8 @@ pub(crate) async fn send_catalog_response(
     let messages_sent = streamed?;
 
     log::info!(
-        "Catalog {response_qtype} completed at serial {} in {messages_sent} DNS message(s)",
+        "Catalog {} completed at serial {} in {messages_sent} DNS message(s)",
+        query.qtype,
         catalog_zone.serial
     );
 

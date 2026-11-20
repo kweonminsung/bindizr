@@ -152,7 +152,7 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
 
     assert_eq!(
         deadline - first.enqueued_at,
-        Duration::from_secs(u64::from(CATALOG_SOA_REFRESH.as_secs())),
+        Duration::from_secs(u64::from(zone::CATALOG_SOA_REFRESH.as_secs())),
         "the catalog's served SOA REFRESH must cap the configured 2h batching window"
     );
 

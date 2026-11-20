@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 
 use bindizr_core::dns::Serial;
-use bindizr_core::dns::message::{ParsedQuery, Rtype};
+use bindizr_core::dns::message::ParsedQuery;
 use bindizr_core::model::transfer::TransferKind;
 use bindizr_core::model::zone_version::ZoneVersion;
 use bindizr_service::zone::{IxfrPlan, TransferAccess};
@@ -36,15 +36,14 @@ pub(crate) async fn handle_ixfr(
 
     // Catalogs select their response from the generated snapshot.
     if cx.config().dns.is_catalog_zone(zone_name_str) {
-        return axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::IXFR, identity).await;
+        return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
     }
 
     let client_serial = match query.client_serial {
         Some(serial) => Serial::from(serial),
         None => {
             log::warn!("IXFR: No client serial provided, falling back to AXFR");
-            return axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::IXFR, identity)
-                .await;
+            return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
         }
     };
 
@@ -81,8 +80,7 @@ pub(crate) async fn handle_ixfr(
             log::info!(
                 "IXFR: No incremental answer from serial {client_serial} to {current_serial}, falling back to AXFR"
             );
-            return axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::IXFR, identity)
-                .await;
+            return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
         }
         IxfrPlan::Changes { changes, versions } => (changes, versions),
     };
@@ -123,8 +121,7 @@ pub(crate) async fn handle_ixfr(
             );
             identity.signer = signer.map(|signer| *signer);
 
-            return axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::IXFR, identity)
-                .await;
+            return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
         Err(SendIxfrError::Partial {

@@ -10,8 +10,5 @@ pub use response::{
     extract_transfer_records, is_truncated, matches_response_to_request, validate_notify_response,
 };
 
-/// Default outbound EDNS UDP payload size (DNS Flag Day 2020).
-pub const EDNS_UDP_PAYLOAD_SIZE: u16 = 1232;
-
 #[cfg(test)]
 mod tests;

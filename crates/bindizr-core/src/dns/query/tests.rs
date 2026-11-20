@@ -11,6 +11,7 @@ use domain::rdata::{A, Ds, Soa};
 
 use super::*;
 use crate::dns::dnssec::KeyTag;
+use crate::dns::message::EDNS_UDP_PAYLOAD_SIZE;
 
 /// Parse a DNS wire-format name for the test.
 fn name(value: &str) -> Name<Vec<u8>> {

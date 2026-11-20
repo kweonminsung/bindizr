@@ -1,7 +1,7 @@
 //! The zone's `parent_ns_addrs` setting: the parent nameservers its DS is
 //! asked from, as the operator spells them.
 
-use bindizr_core::dns::{address, name};
+use bindizr_core::dns::address;
 
 use crate::error::ServiceError;
 
@@ -23,7 +23,7 @@ pub(crate) fn normalize(entries: &[String]) -> Result<String, ServiceError> {
     }
 
     for entry in &entries {
-        if name::has_whitespace_or_control(entry) || !address::is_address_target(entry) {
+        if !address::is_address_target(entry) {
             return Err(ServiceError::invalid_input(format!(
                 "parent address '{entry}' must be host[:port] with a numeric port"
             )));

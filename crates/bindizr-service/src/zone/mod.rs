@@ -16,7 +16,7 @@ mod update;
 mod validation;
 pub(crate) mod version;
 
-pub(crate) use catalog_zone::refresh_catalog_tx;
+pub(crate) use catalog_zone::{CATALOG_SOA_REFRESH, refresh_catalog_tx};
 pub use catalog_zone::{refresh_catalog, validate_catalog_zone_name};
 pub use create::create;
 pub(crate) use create::create_tx;

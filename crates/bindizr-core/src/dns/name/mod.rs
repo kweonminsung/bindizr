@@ -5,10 +5,15 @@ mod error;
 mod owner_name;
 mod zone_name;
 
-pub use error::{EncodeNameError, ParseNameError};
-pub(crate) use owner_name::decode_preserved_labels;
-pub use owner_name::{OwnerName, decode_name_labels, is_label_suffix};
+use std::mem;
+
+use domain::base::Name;
+pub use error::{EncodeNameError, EncodeWireNameError, ParseNameError};
+pub use owner_name::OwnerName;
 pub use zone_name::ZoneName;
+
+/// The name form the `domain` crate takes, for messages and DNSSEC alike.
+pub type WireName = Name<Vec<u8>>;
 
 /// Maximum length of a single DNS label, in bytes (RFC 1035).
 pub(crate) const MAX_DNS_LABEL_LEN: usize = 63;
@@ -19,40 +24,6 @@ pub(crate) const MAX_WIRE_NAME_LEN: usize = 255;
 /// Maximum unescaped presentation length, excluding the root dot.
 /// The wire form adds a label-length octet and the terminating zero.
 pub(crate) const MAX_DOMAIN_LEN: usize = MAX_WIRE_NAME_LEN - 2;
-
-/// Return whether text contains whitespace or control characters.
-pub fn has_whitespace_or_control(value: &str) -> bool {
-    value
-        .chars()
-        .any(|ch| ch.is_ascii_control() || ch.is_whitespace())
-}
-
-/// Classify one label's problem, if any: non-empty, at most 63 bytes, LDH
-/// hostname charset including underscores, without a leading/trailing hyphen.
-pub(crate) fn classify_domain_label(label: &str) -> Result<(), ParseNameError> {
-    if label.is_empty() {
-        return Err(ParseNameError::EmptyLabel);
-    }
-
-    if label.len() > MAX_DNS_LABEL_LEN {
-        return Err(ParseNameError::LabelTooLong);
-    }
-
-    if !label
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
-    {
-        return Err(ParseNameError::LabelCharset {
-            underscore_allowed: true,
-        });
-    }
-
-    if label.starts_with('-') || label.ends_with('-') {
-        return Err(ParseNameError::LabelHyphen);
-    }
-
-    Ok(())
-}
 
 /// Trim surrounding input whitespace without eating a final escaped label octet.
 pub fn trim_presentation_name(value: &str) -> &str {
@@ -92,12 +63,12 @@ pub fn parse_lookup_name(value: &str) -> Result<String, ParseNameError> {
 pub fn labels_to_presentation(labels: &[impl AsRef<[u8]>]) -> String {
     // Most owners are one label, which needs no join buffer.
     if let [label] = labels {
-        return owner_name::escape_label(label.as_ref());
+        return escape_label(label.as_ref());
     }
 
     labels
         .iter()
-        .map(|label| owner_name::escape_label(label.as_ref()))
+        .map(|label| escape_label(label.as_ref()))
         .collect::<Vec<_>>()
         .join(".")
 }
@@ -126,7 +97,7 @@ pub fn to_fqdn(value: &str) -> String {
         return value.to_string();
     }
 
-    match owner_name::decode_preserved_labels(value) {
+    match decode_preserved_labels(value) {
         Ok((labels, _)) => format!("{}.", labels_to_presentation(&labels)),
         Err(_) => format!("{}.", value.strip_suffix('.').unwrap_or(value)),
     }
@@ -143,7 +114,7 @@ pub fn encode_name(name: &str) -> Result<Vec<u8>, EncodeNameError> {
         name: name.to_string(),
         source,
     };
-    let (labels, _) = owner_name::decode_preserved_labels(name).map_err(failed)?;
+    let (labels, _) = decode_preserved_labels(name).map_err(failed)?;
 
     labels_to_wire(labels.iter().map(Vec::as_slice)).map_err(failed)
 }
@@ -172,6 +143,146 @@ fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a [u8]>) -> Result<Vec<u8>,
     }
 
     Ok(wire)
+}
+
+/// Escape separators, backslashes, the origin marker `@`, and master-file
+/// metacharacters (RFC 1035, Section 5.1).
+const ESCAPED_IN_LABEL: &[u8] = b".\\@;()\"$";
+
+/// Decode octet labels and enforce wire lengths; return whether the root was present.
+/// An escaped final dot (`a\.`) is label data, not the root.
+pub fn decode_name_labels(name: &str) -> Result<(Vec<Vec<u8>>, bool), ParseNameError> {
+    let (mut labels, absolute) = decode_preserved_labels(name)?;
+    for label in &mut labels {
+        label.make_ascii_lowercase();
+    }
+    Ok((labels, absolute))
+}
+
+/// Decode octet labels without changing case, for RDATA storage and wire output.
+pub(crate) fn decode_preserved_labels(name: &str) -> Result<(Vec<Vec<u8>>, bool), ParseNameError> {
+    let mut labels = decode_labels(name)?;
+
+    // The root's empty label terminates a name rather than being one. Deciding
+    // that here keeps an escaped trailing dot (`a\.`) from reading as the root.
+    let absolute = labels.len() > 1 && labels[labels.len() - 1].is_empty();
+
+    if absolute {
+        labels.pop();
+    }
+
+    for label in &labels {
+        classify_owner_label(label)?;
+    }
+
+    classify_wire_len(&labels, &[])?;
+
+    Ok((labels, absolute))
+}
+
+/// Decode a presentation-form name into octet labels, resolving the `\X`
+/// and `\DDD` escapes (RFC 1035, Section 5.1).
+fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> {
+    let mut labels = Vec::new();
+    let mut label: Vec<u8> = Vec::new();
+    let mut chars = name.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            ch if ch.is_ascii_whitespace() || ch.is_ascii_control() => {
+                return Err(ParseNameError::Whitespace);
+            }
+            '.' => labels.push(mem::take(&mut label)),
+            '\\' => match chars.peek() {
+                Some(digit) if digit.is_ascii_digit() => {
+                    let mut octet = 0u32;
+
+                    for _ in 0..3 {
+                        let digit = chars
+                            .next()
+                            .and_then(|ch| ch.to_digit(10))
+                            .ok_or(ParseNameError::InvalidEscape)?;
+                        octet = octet * 10 + digit;
+                    }
+
+                    label.push(u8::try_from(octet).map_err(|_| ParseNameError::InvalidEscape)?);
+                }
+                Some(&escaped) => {
+                    chars.next();
+                    let mut buffer = [0; 4];
+                    label.extend_from_slice(escaped.encode_utf8(&mut buffer).as_bytes());
+                }
+                None => return Err(ParseNameError::DanglingEscape),
+            },
+            ch => {
+                let mut buffer = [0; 4];
+                label.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+            }
+        }
+    }
+
+    labels.push(label);
+
+    Ok(labels)
+}
+
+/// Validate only the DNS label length (RFC 2181, Section 11).
+fn classify_owner_label(label: &[u8]) -> Result<(), ParseNameError> {
+    if label.is_empty() {
+        return Err(ParseNameError::EmptyLabel);
+    }
+    if label.len() > MAX_DNS_LABEL_LEN {
+        return Err(ParseNameError::LabelTooLong);
+    }
+
+    Ok(())
+}
+
+/// Check the DNS wire-length limit in RFC 1035, Section 2.3.4, including each label's length
+/// octet and the root terminator.
+pub(crate) fn classify_wire_len(owner: &[Vec<u8>], zone: &[Vec<u8>]) -> Result<(), ParseNameError> {
+    let wire_len = owner
+        .iter()
+        .chain(zone)
+        .map(|label| label.len() + 1)
+        .sum::<usize>()
+        + 1;
+
+    if wire_len > MAX_WIRE_NAME_LEN {
+        return Err(ParseNameError::TooLong);
+    }
+
+    Ok(())
+}
+
+/// Escape a label without changing its octets; dots use decimal escapes so
+/// a stored dot is always a label boundary (RFC 1035, Section 5.1).
+fn escape_label(label: &[u8]) -> String {
+    let mut escaped = String::with_capacity(label.len());
+
+    for &byte in label {
+        match byte {
+            b'.' => escaped.push_str(r"\046"),
+            0x21..=0x7e if !ESCAPED_IN_LABEL.contains(&byte) => escaped.push(char::from(byte)),
+            byte if ESCAPED_IN_LABEL.contains(&byte) => {
+                escaped.push('\\');
+                escaped.push(char::from(byte));
+            }
+            byte => escaped.push_str(&format!("\\{byte:03}")),
+        }
+    }
+
+    escaped
+}
+
+/// Return whether `suffix` is a label-wise suffix of `name` (the same name or under it).
+pub fn is_label_suffix(name: &[Vec<u8>], suffix: &[Vec<u8>]) -> bool {
+    name.len() >= suffix.len() && name[name.len() - suffix.len()..] == *suffix
+}
+
+/// Convert a typed name's wire bytes into the `domain` crate's form.
+fn wire_to_name(wire: Vec<u8>) -> Result<WireName, EncodeWireNameError> {
+    Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)))
 }
 
 #[cfg(test)]

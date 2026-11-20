@@ -41,7 +41,7 @@ pub(crate) fn decode_updates(
 fn validate_supported_type(rtype: Rtype) -> Result<(), NsupdateError> {
     if matches!(rtype, Rtype::SOA | Rtype::ANY)
         || RecordType::try_from(rtype).is_ok()
-        || DnssecRecordType::try_from(i32::from(rtype.to_int())).is_ok()
+        || DnssecRecordType::try_from(rtype).is_ok()
     {
         Ok(())
     } else {
@@ -118,7 +118,7 @@ fn decode_update(
     owner: OwnerName,
     message: &[u8],
 ) -> Result<Option<UpdateOperation>, NsupdateError> {
-    if DnssecRecordType::try_from(i32::from(record.record_type.to_int())).is_ok() {
+    if DnssecRecordType::try_from(record.record_type).is_ok() {
         // Malformed RDATA must remain FORMERR, ahead of policy refusal.
         if record.class != Class::ANY {
             record.to_rdata(message)?;

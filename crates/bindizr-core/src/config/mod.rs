@@ -358,7 +358,7 @@ impl ApiTlsConfig {
 fn default_catalog_zone_name() -> ZoneName {
     // RFC 9432, Section 3 leaves the name to the operator; this one says which
     // primary a secondary is holding the catalog of.
-    ZoneName::from_row("catalog.bindizr")
+    ZoneName::parse("catalog.bindizr").expect("the default catalog zone name is a valid zone name")
 }
 
 /// Return the default API authentication setting.

@@ -2,6 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
+use domain::base::iana::Rtype;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::encode::IsNull;
@@ -170,6 +171,15 @@ impl TryFrom<i32> for DnssecRecordType {
             60 => Ok(Self::Cdnskey),
             _ => Err(ParseDnssecRecordTypeError::Number { value }),
         }
+    }
+}
+
+impl TryFrom<Rtype> for DnssecRecordType {
+    type Error = ParseDnssecRecordTypeError;
+
+    /// Convert a wire record type to the stored DNSSEC record type it maps to.
+    fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
+        Self::try_from(i32::from(rtype.to_int()))
     }
 }
 

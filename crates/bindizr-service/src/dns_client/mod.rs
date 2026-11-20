@@ -18,7 +18,7 @@ use tokio::net::{TcpStream, UdpSocket};
 use tokio::{net, time};
 
 /// One byte beyond the largest supported advertisement detects truncated datagrams.
-const UDP_RESPONSE_BUFFER_LEN: usize = query::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
+const UDP_RESPONSE_BUFFER_LEN: usize = message::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
 
 /// Failure to read a length-prefixed DNS message from a TCP stream.
 #[derive(Debug, Error)]

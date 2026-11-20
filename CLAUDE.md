@@ -965,7 +965,7 @@ Prefixes express cost (`C-CONV`): `as_` returns a borrowed view or allocation-fr
 
 - A boolean states a fact (`enabled`, stored `incremental`, `aa`, `rd`, cache hit).
   A choice of policy, interpretation, or execution uses an enum (`Run`, `DsCheck`,
-  `Holddown`, `NotifySerial`, `SigningPass`, `DnssecKeyLayout`, `LabelCharset`,
+  `Holddown`, `NotifySerial`, `SigningPass`, `DnssecKeyLayout`,
   `TransferMessagePosition`; `C-CUSTOM-TYPE`). Three or more such choices on one
   call become named fields of one struct; two remain parameters. Use an explicit
   `All` variant for all-target semantics, not `None` in `Option<&str>`.
@@ -1642,7 +1642,7 @@ A `use` never renames: `use domain::base::Record as WireRecord` hides which
 name a body reads. A foreign name that collides with one of ours is reached
 through its parent module (`inplace::Error`, `domain::base::Ttl`) or, when
 the crate uses it in many places, through a `type` alias declared once
-beside its kin (`WireName`, `WireRecord` in `dns::dnssec`); a module is
+beside its kin (`WireName` in `dns::name`, `WireRecord` in `dns::dnssec`); a module is
 imported as itself (`use bindizr_service::{token, zone}`), never `self as
 service`. The one rename is `as _`, for a trait imported only for its
 methods (`use std::fmt::Write as _`).

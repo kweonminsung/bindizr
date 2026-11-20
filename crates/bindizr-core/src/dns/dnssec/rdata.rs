@@ -8,9 +8,13 @@ use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY, SHA256, SHA384};
 use thiserror::Error;
 
 use crate::dns::LibraryError;
-use crate::dns::dnssec::WireName;
+use crate::dns::name::WireName;
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::model::dnssec_key::DnssecKey;
+
+/// Digest for DS/CDS generated from bindizr's keys: SHA-256, recommended by
+/// the IANA registry under RFC 9904. Raw user-supplied DS records are separate.
+pub const DS_DIGEST_TYPE: u8 = 2;
 
 /// Supported DS digests: SHA-1 only matches existing parent DS records (RFC 9905,
 /// Section 5); new DS/CDS use `DS_DIGEST_TYPE`, SHA-256 (RFC 9904, Section 4).
@@ -41,7 +45,7 @@ impl DnssecKey {
         Dnskey::new(
             self.role.flags(),
             DNSKEY_PROTOCOL,
-            SecurityAlgorithm::from_int(self.algorithm.as_i32() as u8),
+            SecurityAlgorithm::from_int(self.algorithm.as_u8()),
             public_key,
         )
         .map_err(|error| EncodeKeyRdataError::InvalidPublicKey(Box::new(error)))
@@ -65,7 +69,7 @@ impl DnssecKey {
 
         let mut rdata = Vec::with_capacity(4 + digest.len());
         rdata.extend_from_slice(&self.key_tag.as_u16().to_be_bytes());
-        rdata.push(self.algorithm.as_i32() as u8);
+        rdata.push(self.algorithm.as_u8());
         rdata.push(digest_type);
         rdata.extend_from_slice(&digest);
 

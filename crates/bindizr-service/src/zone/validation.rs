@@ -84,7 +84,10 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
         return Err(ServiceError::invalid_zone_field("rname must not be empty"));
     }
 
-    if name::has_whitespace_or_control(value) {
+    if value
+        .chars()
+        .any(|ch| ch.is_ascii_control() || ch.is_whitespace())
+    {
         return Err(ServiceError::invalid_zone_field(
             "rname must not contain whitespace or control characters",
         ));

@@ -655,7 +655,7 @@ async fn shared_socket_failure_preserves_original_io_error() {
 
         for id in 0..2 {
             let (reply, response) = oneshot::channel();
-            let (_, builder) = query::build_notify_query(&qname, None);
+            let builder = query::build_notify_query(id, &qname, None);
             requests.insert(
                 id,
                 PendingNotify {

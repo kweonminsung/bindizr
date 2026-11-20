@@ -13,12 +13,11 @@ use domain::dnssec::sign::denial::{nsec, nsec3};
 use domain::dnssec::sign::records::{DefaultSorter, RecordsIter};
 use domain::rdata::{Soa, ZoneRecordData};
 
-use crate::dns::dnssec::signed_view;
 use crate::dns::dnssec::signed_view::{
     SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord,
 };
+use crate::dns::dnssec::{DS_DIGEST_TYPE, signed_view};
 use crate::dns::record::Rdata;
-use crate::model::dnssec_key::DS_DIGEST_TYPE;
 use crate::model::dnssec_policy::DnssecDenial;
 
 impl SignedViewParams<'_> {

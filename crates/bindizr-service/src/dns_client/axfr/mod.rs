@@ -6,9 +6,8 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use bindizr_core::config::ImportConfig;
-use bindizr_core::dns::dnssec::EncodeWireNameError;
 use bindizr_core::dns::message::{EncodeMessageError, Name, Rtype};
-use bindizr_core::dns::name::{ParseNameError, ZoneName};
+use bindizr_core::dns::name::{EncodeWireNameError, ParseNameError, ZoneName};
 use bindizr_core::dns::query::{ParseResponseError, TransferMessagePosition, TransferRecord};
 use bindizr_core::dns::record::ParseRdataError;
 use bindizr_core::dns::{message, name, query};

@@ -180,9 +180,7 @@ pub(crate) async fn handle_tcp_xfr(
     );
 
     let result = match query.qtype {
-        Rtype::AXFR => {
-            axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::AXFR, &mut identity).await
-        }
+        Rtype::AXFR => axfr::handle_axfr(dns_cx, writer, client_ip, query, &mut identity).await,
         Rtype::IXFR => ixfr::handle_ixfr(dns_cx, writer, client_ip, query, &mut identity).await,
         _ => {
             log::warn!("Unsupported query type: {:?}", query.qtype);

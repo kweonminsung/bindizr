@@ -24,10 +24,6 @@ pub enum ParseDnssecKeyError {
     State { value: String },
 }
 
-/// Digest for DS/CDS generated from bindizr's keys: SHA-256, recommended by
-/// the IANA registry under RFC 9904. Raw user-supplied DS records are separate.
-pub const DS_DIGEST_TYPE: u8 = 2;
-
 /// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -48,8 +44,8 @@ pub enum DnssecAlgorithm {
 }
 
 impl DnssecAlgorithm {
-    /// Return the IANA algorithm number, the storage form.
-    pub fn as_i32(self) -> i32 {
+    /// Return the IANA algorithm number, the wire octet.
+    pub fn as_u8(self) -> u8 {
         match self {
             Self::RsaSha256 => 8,
             Self::RsaSha512 => 10,
@@ -58,6 +54,11 @@ impl DnssecAlgorithm {
             Self::Ed25519 => 15,
             Self::Ed448 => 16,
         }
+    }
+
+    /// Return the IANA algorithm number, the storage form.
+    pub fn as_i32(self) -> i32 {
+        i32::from(self.as_u8())
     }
 
     /// Return the canonical wire spelling.

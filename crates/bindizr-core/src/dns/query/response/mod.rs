@@ -126,19 +126,6 @@ pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
     true
 }
 
-/// Parse a response with the expected IN question.
-fn parse_question_response<'a>(
-    query_id: u16,
-    opcode: Opcode,
-    qname: &Name<Vec<u8>>,
-    qtype: Rtype,
-    response: &'a [u8],
-) -> Result<Message<&'a [u8]>, ParseResponseError> {
-    let message = parse_response(query_id, opcode, response)?;
-    validate_question(&message, qname, qtype)?;
-    Ok(message)
-}
-
 /// Require exactly the IN question that was sent.
 fn validate_question(
     message: &Message<&[u8]>,
@@ -166,7 +153,9 @@ fn parse_authoritative_response<'a>(
     qtype: Rtype,
     response: &'a [u8],
 ) -> Result<Message<&'a [u8]>, ParseResponseError> {
-    let message = parse_question_response(query_id, Opcode::QUERY, qname, qtype, response)?;
+    let message = parse_response(query_id, Opcode::QUERY, response)?;
+    validate_question(&message, qname, qtype)?;
+
     if !message.header().aa() {
         return Err(ParseResponseError::NotAuthoritative);
     }

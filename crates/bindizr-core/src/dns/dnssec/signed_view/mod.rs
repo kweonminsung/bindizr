@@ -18,8 +18,8 @@ use domain::rdata::{Dnskey, Rrsig, ZoneRecordData};
 use ring::digest::{Context, SHA256};
 use thiserror::Error;
 
-use crate::dns::dnssec::{EncodeKeyRdataError, EncodeWireNameError, KeyTag, WireName, WireRecord};
-use crate::dns::name::{OwnerName, ParseNameError, ZoneName};
+use crate::dns::dnssec::{EncodeKeyRdataError, KeyTag, WireRecord};
+use crate::dns::name::{EncodeWireNameError, OwnerName, ParseNameError, WireName, ZoneName};
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::{LibraryError, Serial, Ttl};
 use crate::model::dnssec_key::DnssecKey;
@@ -436,7 +436,7 @@ impl<'a> Signer<'a> {
             key,
             signing_key: SigningKey::new(apex.clone(), key.role.flags(), key_pair),
             key_tag: KeyTag::from(dnskey.key_tag()),
-            algorithm: key.algorithm.as_i32() as u8,
+            algorithm: key.algorithm.as_u8(),
             dnskey,
         })
     }

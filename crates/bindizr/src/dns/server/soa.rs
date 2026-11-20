@@ -188,7 +188,7 @@ async fn handle_soa_request(
 
     // The question is echoed as asked: SOA, or a UDP IXFR answered by it.
     let build = |signer: Option<TransferSigner>| {
-        let mut builder = DnsMessageBuilder::new(query, query.qtype);
+        let mut builder = DnsMessageBuilder::new(query);
 
         if let Some(signer) = signer {
             builder = builder.sign_with(signer);

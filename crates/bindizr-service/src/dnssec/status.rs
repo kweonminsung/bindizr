@@ -2,8 +2,9 @@
 //! and the DS records the parent needs.
 
 use bindizr_core::dns::Serial;
+use bindizr_core::dns::dnssec::DS_DIGEST_TYPE;
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::dnssec_key::{DS_DIGEST_TYPE, DnssecKey, DnssecKeyState};
+use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyState};
 use bindizr_core::model::dnssec_policy::DnssecPolicy;
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
@@ -136,7 +137,7 @@ fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, S
 
     Ok(DnssecDsResponse {
         key_tag: key.key_tag,
-        algorithm: key.algorithm.as_i32() as u8,
+        algorithm: key.algorithm.as_u8(),
         digest_type: DS_DIGEST_TYPE,
         digest: digest.clone(),
         presentation: format!(

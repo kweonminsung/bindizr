@@ -1,5 +1,5 @@
-//! DNS wire-format encoding for zone-transfer responses: message framing and
-//! record/SOA serialization.
+//! The server's DNS messages: request parsing and metadata, EDNS, response
+//! budgets, and response encoding with its record/SOA serialization.
 
 mod limit;
 pub(crate) mod query;
@@ -17,16 +17,15 @@ use domain::base::{MessageBuilder, Record, ToName, UnknownRecordData};
 use domain::rdata::tsig::Time48;
 pub use limit::ResponseLimit;
 pub use query::{
-    Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
+    EDNS_UDP_PAYLOAD_SIZE, Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
     UDP_PAYLOAD_SIZE_WITHOUT_EDNS, extract_opcode, is_response,
 };
 pub use query_metadata::{QueryMetadata, has_readable_sections};
 use thiserror::Error;
 
 use crate::dns::LibraryError;
-use crate::dns::dnssec::EncodeWireNameError;
 use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
-use crate::dns::name::EncodeNameError;
+use crate::dns::name::{EncodeNameError, EncodeWireNameError};
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::tsig::TransferSigner;
 
@@ -133,14 +132,14 @@ pub struct DnsMessageBuilder {
 }
 
 impl DnsMessageBuilder {
-    /// Create a response builder answering `query` under `qtype`, which an
-    /// IXFR falling back to AXFR keeps as asked.
-    pub fn new(query: &ParsedQuery, qtype: Rtype) -> Self {
+    /// Create a response builder answering `query` under its own QTYPE, which
+    /// an IXFR falling back to AXFR keeps as asked.
+    pub fn new(query: &ParsedQuery) -> Self {
         Self {
             limit: query.response_limit(),
             query_id: query.query_id,
             qname: query.qname.clone(),
-            qtype: qtype.to_int(),
+            qtype: query.qtype.to_int(),
             qclass: query.qclass,
             answers: Vec::new(),
             answers_len: 0,

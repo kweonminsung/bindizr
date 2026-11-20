@@ -1,7 +1,7 @@
 //! Normalize secondary identifiers and network addresses before storage.
 
+use bindizr_core::dns::address;
 use bindizr_core::dns::address::{AddressTarget, DEFAULT_DNS_PORT};
-use bindizr_core::dns::{address, name};
 
 use crate::error::ServiceError;
 use crate::text;
@@ -23,7 +23,7 @@ pub(crate) fn normalize_address(value: &str) -> Result<AddressTarget, ServiceErr
             "secondary address must not be empty",
         ));
     }
-    if name::has_whitespace_or_control(address) || !address::is_address_target(address) {
+    if !address::is_address_target(address) {
         return Err(ServiceError::invalid_input(format!(
             "secondary address '{address}' must be host[:port] with a numeric port"
         )));

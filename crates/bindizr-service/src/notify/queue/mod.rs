@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bindizr_core::dns::CATALOG_SOA_REFRESH;
 use bindizr_core::dns::name::ZoneName;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::watch;
@@ -123,7 +122,7 @@ async fn lookup_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
     }
 
     let refresh = if job.zone_name == config.dns.catalog_zone_name {
-        Ok(CATALOG_SOA_REFRESH)
+        Ok(zone::CATALOG_SOA_REFRESH)
     } else {
         zone::lookup_by_name(cx, &job.zone_name)
             .await

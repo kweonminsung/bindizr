@@ -1,6 +1,7 @@
 use super::*;
 use crate::dns::SoaInterval;
-use crate::model::dnssec_key::{DS_DIGEST_TYPE, DnssecKeyId};
+use crate::dns::dnssec::DS_DIGEST_TYPE;
+use crate::model::dnssec_key::DnssecKeyId;
 use crate::model::record::RecordId;
 use crate::model::zone::ZoneId;
 
