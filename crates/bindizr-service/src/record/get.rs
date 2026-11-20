@@ -26,7 +26,7 @@ fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, 
         return Ok(TypeFilter::Any);
     };
 
-    match value.parse::<RecordType>() {
+    match record::parse_record_type(value) {
         Ok(record_type) => Ok(TypeFilter::User(record_type)),
         Err(error) => {
             if view == ZoneView::Signed
@@ -34,7 +34,7 @@ fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, 
             {
                 return Ok(TypeFilter::Derived(record_type));
             }
-            Err(ServiceError::invalid_input(error))
+            Err(error)
         }
     }
 }

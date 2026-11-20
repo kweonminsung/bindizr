@@ -62,7 +62,7 @@ pub(crate) fn validate_management_value(
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
     value
         .parse::<RecordType>()
-        .map_err(|_| ServiceError::invalid_input(format!("invalid record type: {value}")))
+        .map_err(ServiceError::invalid_input)
 }
 
 /// Validate and normalize a record owner relative to its zone.
