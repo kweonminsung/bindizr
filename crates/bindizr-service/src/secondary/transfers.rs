@@ -1,6 +1,6 @@
 //! Summarize the transfer log rows matching a secondary's current addresses.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 
 use bindizr_core::model::secondary::Secondary;
 use bindizr_core::model::transfer::{TransferKind, TransferLogWithZone, TransferResult};
@@ -47,7 +47,8 @@ fn build_transfer_summary(latest: &[TransferLogWithZone]) -> TransferSummaryResp
 pub(crate) async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
     let timeout = cx.config().dns.notify.timeout();
     match dns_client::resolve_address_entry(&secondary.address, timeout).await {
-        Ok(addrs) => addrs.iter().map(SocketAddr::ip).collect(),
+        // Transfer rows store an IPv4-mapped client as IPv4.
+        Ok(addrs) => addrs.iter().map(|addr| addr.ip().to_canonical()).collect(),
         Err(_) => Vec::new(),
     }
 }

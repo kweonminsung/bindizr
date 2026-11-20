@@ -54,7 +54,7 @@ pub(crate) async fn apply_update(
             let (tsig_key, verified) =
                 authenticate_tsig_key(dns_cx, query_data, &tsig.name).await?;
             signer = Some(verified);
-            verified_key = tsig_key;
+            verified_key = Some(tsig_key);
         }
 
         // RFC 6891, Section 6.1.3: BADVERS precedes every policy refusal.
@@ -97,14 +97,16 @@ pub(crate) async fn authenticate_tsig_key(
     dns_cx: &DnsContext,
     query_data: &[u8],
     key_name: &str,
-) -> Result<(Option<TsigKey>, ResponseSigner), UpdateError> {
+) -> Result<(TsigKey, ResponseSigner), UpdateError> {
     let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), key_name)
         .await
         .map_err(UpdateError::LoadTsigKey)?;
+    let Some(tsig_key) = tsig_key else {
+        // An unknown key is answered BADKEY, signed by nothing (RFC 8945, Section 5.2).
+        return Err(tsig::reject_unknown_key(query_data).into());
+    };
 
-    // Verify unknown keys too, so the response encoder receives BADKEY.
-    let signing_key = tsig_key.as_ref().map(TsigKey::to_signing_key).transpose()?;
-    let signer = tsig::verify_tsig(query_data, signing_key)?;
+    let signer = tsig::verify_tsig(query_data, tsig_key.to_signing_key()?)?;
 
     Ok((tsig_key, signer))
 }

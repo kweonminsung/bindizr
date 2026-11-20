@@ -13,7 +13,7 @@ use bindizr_core::dns::query::ParseResponseError;
 use bindizr_core::dns::tsig::{
     ResponseVerifier, SignRequestError, TsigSigningKey, VerifyResponseError,
 };
-use bindizr_core::dns::{query, tsig};
+use bindizr_core::dns::{message, query, tsig};
 use thiserror::Error;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -84,6 +84,8 @@ impl TargetSocket {
 /// One immutable datagram, its verifier, and the timer for its current attempt.
 #[derive(Debug)]
 struct PendingNotify {
+    /// The ID reserved on the target socket, which keys the request.
+    id: u16,
     request: Vec<u8>,
     limit: ResponseLimit,
     verifier: Option<ResponseVerifier>,
@@ -159,6 +161,7 @@ impl NotifyClient {
             .response_limit();
         let (reply, response) = oneshot::channel();
         let request = PendingNotify {
+            id,
             request: query,
             limit,
             verifier,
@@ -240,7 +243,7 @@ async fn serve(
         tokio::select! {
             job = jobs.recv(), if accepting => match job {
                 Some(request) => {
-                    let id = u16::from_be_bytes([request.request[0], request.request[1]]);
+                    let id = request.id;
                     timers.insert((request.deadline, id));
                     requests.insert(id, request);
                     ready.push_back(id);
@@ -342,11 +345,9 @@ async fn serve(
                 };
                 let response = &buffer[..received];
 
-                if response.len() < 2 {
+                let Some(id) = message::extract_id(response) else {
                     continue;
-                }
-
-                let id = u16::from_be_bytes([response[0], response[1]]);
+                };
                 let Some(request) = requests.get(&id) else {
                     continue;
                 };

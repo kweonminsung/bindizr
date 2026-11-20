@@ -4,6 +4,8 @@
 use axum::Json;
 use axum::extract::{FromRequest, FromRequestParts, Request};
 use axum::http::request::Parts;
+use bindizr_core::model::api_token::ApiToken;
+use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
 use serde::de::DeserializeOwned;
 
@@ -73,6 +75,50 @@ where
             .await
             .map(|axum::extract::Path(value)| Self(value))
             .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
+    }
+}
+
+/// The caller attached by the auth middleware, or by the router's
+/// `Caller::unauthenticated_api()` layer when authentication is disabled. A request without
+/// one reached a handler outside both layers, so extraction fails closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RequestCaller(pub(crate) Caller);
+
+impl<S> FromRequestParts<S> for RequestCaller
+where
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    /// Extract the authorized caller from request extensions.
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
+        parts
+            .extensions
+            .get::<Caller>()
+            .cloned()
+            .map(RequestCaller)
+            .ok_or_else(|| ApiError(ServiceError::unauthorized("request has no caller identity")))
+    }
+}
+
+/// The token a request authenticated with, attached by the auth middleware;
+/// absent when authentication is disabled, so a self-reading route answers 404.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AuthenticatedToken(pub(crate) ApiToken);
+
+impl<S> FromRequestParts<S> for AuthenticatedToken
+where
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    /// Extract the authenticated API token from request extensions.
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
+        parts.extensions.get::<Self>().cloned().ok_or_else(|| {
+            ApiError(ServiceError::TokenNotFound(
+                "the request presents no API token: authentication is disabled".to_string(),
+            ))
+        })
     }
 }
 

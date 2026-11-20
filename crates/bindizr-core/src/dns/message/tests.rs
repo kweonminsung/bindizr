@@ -105,9 +105,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
 
         assert!(query_data.len() < 512);
         let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
-        let signer: TransferSigner = tsig::verify_tsig(&query_data, Some(key.clone()))
-            .unwrap()
-            .into();
+        let signer: TransferSigner = tsig::verify_tsig(&query_data, key.clone()).unwrap().into();
 
         for rcode in [
             OptRcode::REFUSED,
@@ -455,7 +453,7 @@ fn signed_transfer_authenticates_every_envelope() {
     let query = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
 
     let mut builder = DnsMessageBuilder::new(&query)
-        .sign_with(tsig::verify_tsig(&query_data, Some(key)).unwrap().into());
+        .sign_with(tsig::verify_tsig(&query_data, key).unwrap().into());
 
     // Two envelopes, so the second is checked against the MAC chain the first
     // started rather than against the request alone (RFC 8945, Section 5.3.1).
@@ -502,7 +500,7 @@ fn signed_message_reserves_space_for_tsig() {
     let (query_data, _) = build_signed_axfr_query(key.clone(), None);
     let unsigned = DnsMessageBuilder::new(&axfr_query());
     let signed = DnsMessageBuilder::new(&axfr_query())
-        .sign_with(tsig::verify_tsig(&query_data, Some(key)).unwrap().into());
+        .sign_with(tsig::verify_tsig(&query_data, key).unwrap().into());
 
     // Without the reservation an envelope could fill to the wire limit and
     // then overflow it once the TSIG record is appended.
@@ -580,11 +578,8 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
         let query =
             ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::from_secs(30)))
                 .unwrap();
-        let mut builder = DnsMessageBuilder::new(&query).sign_with(
-            tsig::verify_tsig(&query_data, Some(key.clone()))
-                .unwrap()
-                .into(),
-        );
+        let mut builder = DnsMessageBuilder::new(&query)
+            .sign_with(tsig::verify_tsig(&query_data, key.clone()).unwrap().into());
         let mut frames = Vec::new();
 
         for _ in 0..2 {
@@ -910,7 +905,7 @@ fn oversized_response_does_not_advance_the_signer() {
         query::build_question(Opcode::QUERY, false, false, &qname, Rtype::SOA, Some(512));
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
     let query_data = additional.finish();
-    let mut signer: TransferSigner = tsig::verify_tsig(&query_data, Some(key)).unwrap().into();
+    let mut signer: TransferSigner = tsig::verify_tsig(&query_data, key).unwrap().into();
     let udp = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
 
     assert!(matches!(
@@ -941,7 +936,7 @@ fn oversized_frame_does_not_advance_the_signer() {
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
     let query_data = additional.finish();
     let query = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
-    let signer = tsig::verify_tsig(&query_data, Some(key)).unwrap();
+    let signer = tsig::verify_tsig(&query_data, key).unwrap();
     let mut builder = DnsMessageBuilder::new(&query).sign_with(signer.into());
 
     // Bypass the chunking helper to exercise the final frame guard itself.

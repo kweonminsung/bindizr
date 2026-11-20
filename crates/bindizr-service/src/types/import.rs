@@ -96,7 +96,7 @@ pub struct ImportZoneResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     pub summary: ImportZoneSummaryResponse,
-    /// The reconcile as a record diff, for previewing the change.
+    /// The reconcile as a record diff on a dry run; empty once applied.
     pub diff: RecordDiffResponse,
     /// Per-record validation errors. When non-empty nothing is applied.
     pub errors: Vec<String>,

@@ -87,10 +87,9 @@ async fn signed_notify_advertises_edns_for_long_names() {
 
                 let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
                 let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
-                let mut signer: TransferSigner =
-                    tsig::verify_tsig(&buffer[..len], Some(server_key))
-                        .unwrap()
-                        .into();
+                let mut signer: TransferSigner = tsig::verify_tsig(&buffer[..len], server_key)
+                    .unwrap()
+                    .into();
                 let response = query
                     .build_signed_error_response(OptRcode::NOERROR, None, Some(&mut signer))
                     .unwrap();
@@ -605,6 +604,7 @@ async fn shared_socket_failure_preserves_original_io_error() {
             requests.insert(
                 id,
                 PendingNotify {
+                    id,
                     request: builder.finish(),
                     limit: ResponseLimit::UDP,
                     verifier: None,

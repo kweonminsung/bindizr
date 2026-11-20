@@ -14,8 +14,6 @@ use crate::{Context, dns_client, secondary, zone};
 /// Why a NOTIFY target could not be reached or acknowledged.
 #[derive(Debug, Error)]
 pub enum SendNotifyError {
-    #[error("{0}")]
-    Key(#[source] ServiceError),
     #[error("failed to resolve: {0}")]
     Resolve(#[source] ResolveAddressError),
     #[error("{0}")]
@@ -127,15 +125,13 @@ async fn send_notify(
     let mut results = Vec::new();
 
     for secondary in secondaries {
+        // A stored key that will not load is a server fault, not a target's
+        // outcome: returned whole, so where it ends logs it.
         let key = match secondary::find_notify_signing_key(cx, &secondary).await {
             Ok(key) => key,
             Err(error) => {
                 cx.metrics().track_notify(NotifyResult::Failed);
-                results.push((
-                    secondary.address.to_string(),
-                    Err(SendNotifyError::Key(error)),
-                ));
-                continue;
+                return Err(error);
             }
         };
         preparations.spawn(async move {

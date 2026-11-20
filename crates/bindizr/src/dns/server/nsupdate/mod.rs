@@ -98,7 +98,7 @@ async fn handle_nsupdate_request(
                 RequestSignature::Key(RequestTsig { name, fudge }) => {
                     match update::authenticate_tsig_key(dns_cx, query_data, &name).await {
                         Ok((tsig_key, signer)) => {
-                            access_log.caller = tsig_key.map(|tsig_key| ChangeActor::TsigKey {
+                            access_log.caller = Some(ChangeActor::TsigKey {
                                 name: tsig_key.name,
                             });
                             (Some(signer), fudge)
@@ -130,14 +130,12 @@ async fn handle_nsupdate_request(
                                 }
                             }
                         }
+                        // The key row would not load or decode: a server fault,
+                        // as in the applied branch.
                         Err(error) => {
-                            if matches!(&error, UpdateError::LoadTsigKey(_)) {
-                                log::error!(
-                                    "NSUPDATE from {client_addr} failed with a server fault: {error:?}"
-                                );
-                            } else {
-                                log::warn!("NSUPDATE key check failed from {client_addr}: {error}");
-                            }
+                            log::error!(
+                                "NSUPDATE from {client_addr} failed with a server fault: {error:?}"
+                            );
 
                             response_rcode = OptRcode::SERVFAIL;
                             access_log.error = Some(error.to_string());

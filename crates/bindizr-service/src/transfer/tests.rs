@@ -381,6 +381,20 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
     assert_eq!(refused.pagination.total, 1, "{refused:?}");
     assert_eq!(refused.items[0].result, TransferResult::Refused);
 
+    // The IPv4-mapped spelling of a stored IPv4 client finds its rows.
+    let mapped = list(
+        &cx,
+        &Caller::socket(),
+        &TransferLogFilter {
+            address: Some("::ffff:192.0.2.1".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(mapped.pagination.total, 2, "{mapped:?}");
+
     let by_result = list(
         &cx,
         &Caller::socket(),

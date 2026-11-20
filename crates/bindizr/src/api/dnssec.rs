@@ -12,9 +12,8 @@ use bindizr_service::{Context, dnssec, zone};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use crate::api::RequestCaller;
 use crate::api::error::ApiError;
-use crate::api::extract::{JsonBody, Path, Query};
+use crate::api::extract::{JsonBody, Path, Query, RequestCaller};
 use crate::api::params::NameParams;
 
 /// Build the DNSSEC API routes.

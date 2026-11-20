@@ -127,7 +127,10 @@ impl TransferRefusal {
                 time,
                 metadata.response_limit(),
             )?),
-            Self::Tsig(_) => {
+            // A stored key that will not decode leaves the process here as SERVFAIL.
+            Self::Tsig(error) => {
+                log::error!("DNS request failed with a server fault: {error:?}");
+
                 Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
             }
         }
@@ -182,15 +185,11 @@ pub(crate) async fn authenticate_tsig_key(
         .await
         .map_err(|error| TransferRefusal::failed("failed to load TSIG key", error, None))?;
     let Some(tsig_key) = tsig_key else {
-        // Verify unknown keys too, so the response encoder receives BADKEY.
-        tsig::verify_tsig(query_data, None)?;
-        return Err(TransferRefusal::refused(
-            "TSIG verification passed without a key".to_string(),
-            None,
-        ));
+        // An unknown key is answered BADKEY, signed by nothing (RFC 8945, Section 5.2).
+        return Err(tsig::reject_unknown_key(query_data).into());
     };
     let signing_key = tsig_key.to_signing_key()?;
-    let signer = tsig::verify_tsig(query_data, Some(signing_key))?;
+    let signer = tsig::verify_tsig(query_data, signing_key)?;
 
     let caller = match Caller::authenticate_tsig_key(cx, &tsig_key).await {
         Ok(caller) => caller,

@@ -98,7 +98,7 @@ fn build_response_signs_with_request_mac_chain() {
     let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let signer = tsig::verify_tsig(&query_data, Some(key)).unwrap();
+    let signer = tsig::verify_tsig(&query_data, key).unwrap();
 
     let response = build_response(
         &query_data,
@@ -197,7 +197,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
         let query_data = additional.finish().into_target();
-        let signer = tsig::verify_tsig(&query_data, Some(key.clone())).unwrap();
+        let signer = tsig::verify_tsig(&query_data, key.clone()).unwrap();
 
         for rcode in [
             OptRcode::NOERROR,

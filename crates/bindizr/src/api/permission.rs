@@ -7,8 +7,8 @@ use axum::{Json, Router, routing};
 use bindizr_service::types::{ErrorResponse, PermissionsResponse};
 use bindizr_service::{Context, permission};
 
-use crate::api::RequestCaller;
 use crate::api::error::ApiError;
+use crate::api::extract::RequestCaller;
 
 /// Build the permission API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

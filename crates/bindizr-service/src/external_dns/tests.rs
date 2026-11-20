@@ -14,8 +14,8 @@ use super::*;
 use crate::error::ErrorCode;
 use crate::external_dns::change_set::{RecordSetOperation, ZoneChangeSet, ZoneOperations};
 use crate::types::{
-    ApplyExternalDnsChangesRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest,
-    CreateZoneRequest, ExternalDnsRecordUpdate, RoleGrantResponse,
+    ApplyExternalDnsChangesRequest, CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest,
+    CreateTokenRequest, CreateZoneRequest, ExternalDnsRecordUpdate, RecordValue, RoleGrantResponse,
 };
 use crate::{record, role, token, zone};
 
@@ -225,6 +225,55 @@ async fn apply_changes_refuses_hidden_zones_as_missing_ones() {
     // A denial in the visible zone answering first would tell the two apart.
     assert_eq!(errors[0], errors[1], "{errors:?}");
     assert_eq!(errors[0].0, ErrorCode::ZoneNotFound);
+}
+
+/// Verify that the listing reports a name only from the zone apply writes it
+/// to: a parent's row below a child zone's apex stays out, hidden child or not.
+#[tokio::test]
+async fn list_records_omits_parent_rows_a_child_zone_shadows() {
+    let cx = context().await;
+    create_zone(&cx, "example.test").await;
+    create_zone(&cx, "child.example.test").await;
+    create_zone(&cx, "hidden.example.test").await;
+
+    for (name, zone_name) in [
+        ("app", "example.test"),
+        ("app.child", "example.test"),
+        ("app", "child.example.test"),
+        ("app.hidden", "example.test"),
+    ] {
+        record::create(
+            &cx,
+            &Caller::socket(),
+            &CreateRecordRequest {
+                name: name.to_string(),
+                record_type: "A".to_string(),
+                value: RecordValue::Text("192.0.2.1".to_string()),
+                ttl: None,
+                priority: None,
+                zone_name: zone_name.to_string(),
+                dry_run: false,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let secret = credential(&cx).await;
+    grant(&cx, "example.test", &["record:read"]).await;
+    grant(&cx, "child.example.test", &["record:read"]).await;
+    let caller = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
+
+    let names: Vec<_> = list_records(&cx, &caller)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|record| record.name)
+        .collect();
+
+    // One app.child.example.test, the child's; app.hidden.example.test falls
+    // to the hidden child zone, which this caller cannot read.
+    assert_eq!(names, ["app.child.example.test", "app.example.test"]);
 }
 
 /// Build a zone fixture for the test.

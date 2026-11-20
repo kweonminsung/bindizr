@@ -17,7 +17,7 @@ use domain::rdata::tsig::Time48;
 pub use limit::ResponseLimit;
 pub use query::{
     EDNS_UDP_PAYLOAD_SIZE, Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
-    UDP_PAYLOAD_SIZE_WITHOUT_EDNS, extract_opcode, is_response,
+    UDP_PAYLOAD_SIZE_WITHOUT_EDNS, extract_id, extract_opcode, is_response,
 };
 pub use query_metadata::{QueryMetadata, has_readable_sections};
 use thiserror::Error;

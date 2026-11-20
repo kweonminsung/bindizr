@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::io;
 
 use bindizr_core::config::Config;
 use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
@@ -153,29 +152,4 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     for server in servers {
         server.await.unwrap();
     }
-}
-
-/// Verify that signing-key preparation keeps its service and underlying storage cause.
-#[test]
-fn notify_key_failure_preserves_service_source() {
-    let error = SendNotifyError::Key(ServiceError::internal_with_source(
-        "failed to read NOTIFY key",
-        io::Error::from_raw_os_error(5),
-    ));
-    let service = error
-        .source()
-        .unwrap()
-        .downcast_ref::<ServiceError>()
-        .unwrap();
-
-    assert_eq!(
-        service
-            .source()
-            .unwrap()
-            .downcast_ref::<io::Error>()
-            .unwrap()
-            .raw_os_error(),
-        Some(5)
-    );
-    assert_eq!(error.to_string(), "failed to read NOTIFY key");
 }

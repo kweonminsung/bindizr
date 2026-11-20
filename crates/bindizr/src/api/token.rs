@@ -12,10 +12,9 @@ use bindizr_service::types::{
 use bindizr_service::{Context, token};
 
 use crate::api::error::ApiError;
-use crate::api::extract::{JsonBody, Path, Query};
+use crate::api::extract::{AuthenticatedToken, JsonBody, Path, Query, RequestCaller};
 use crate::api::params::NameParams;
 use crate::api::query::DEFAULT_PAGE_LIMIT;
-use crate::api::{AuthenticatedToken, RequestCaller};
 
 /// Build the token API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

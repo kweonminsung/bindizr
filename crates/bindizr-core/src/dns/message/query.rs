@@ -215,6 +215,13 @@ pub fn extract_opcode(query_data: &[u8]) -> Option<Opcode> {
         .map(|message| message.header().opcode())
 }
 
+/// Read a message's ID without requiring any particular body layout.
+pub fn extract_id(message_data: &[u8]) -> Option<u16> {
+    Message::from_octets(message_data)
+        .ok()
+        .map(|message| message.header().id())
+}
+
 /// Return whether the message is a QR=1 reply, which must not trigger another reply to a spoofed source.
 pub fn is_response(query_data: &[u8]) -> bool {
     Message::from_octets(query_data).is_ok_and(|message| message.header().qr())

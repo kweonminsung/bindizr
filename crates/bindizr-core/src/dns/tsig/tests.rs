@@ -32,7 +32,7 @@ fn verify_response_rejects_invalid_class_and_ttl() {
     let mut additional = question.additional();
     let verifier = sign_request(&mut additional, key.clone()).unwrap();
     let query_data = additional.finish();
-    let server = verify_tsig(&query_data, Some(key)).unwrap();
+    let server = verify_tsig(&query_data, key).unwrap();
     let query = Message::from_octets(query_data).unwrap();
     let mut response = MessageBuilder::new_vec()
         .start_answer(&query, Rcode::NOERROR)
@@ -101,7 +101,7 @@ fn request_tsig_rejects_nonzero_error() {
                 Err(ParseUpdateError::InvalidTsig)
             );
             assert!(matches!(
-                verify_tsig(&query_data, Some(key.clone())),
+                verify_tsig(&query_data, key.clone()),
                 Err(TsigError::Malformed(_))
             ));
         }
@@ -126,7 +126,7 @@ fn verify_tsig_authenticates_original_other_data() {
                 TsigRcode::NOERROR,
                 other,
             );
-            let signer = verify_tsig(&query_data, Some(key.clone())).unwrap();
+            let signer = verify_tsig(&query_data, key.clone()).unwrap();
             let message = Message::from_octets(query_data.as_slice()).unwrap();
             let mut response = MessageBuilder::new_vec()
                 .start_answer(&message, Rcode::NOERROR)
@@ -138,7 +138,7 @@ fn verify_tsig_authenticates_original_other_data() {
             assert_response_mac(&query_data, &response.finish(), algorithm);
             let mut tampered = query_data;
             *tampered.last_mut().unwrap() ^= 1;
-            let error = verify_tsig(&tampered, Some(key.clone())).unwrap_err();
+            let error = verify_tsig(&tampered, key.clone()).unwrap_err();
 
             assert_eq!(
                 extract_response_tsig(&build_failed_response(
@@ -162,7 +162,7 @@ fn verify_tsig_authenticates_original_other_data() {
         let end = appended.len();
         appended[end - 2..].copy_from_slice(&1u16.to_be_bytes());
         appended.push(0x7f);
-        let error = verify_tsig(&appended, Some(key)).unwrap_err();
+        let error = verify_tsig(&appended, key).unwrap_err();
 
         assert_eq!(
             extract_response_tsig(&build_failed_response(
@@ -211,7 +211,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
     let query_data = additional.finish().into_target();
     let response = build_failed_response(
         &query_data,
-        verify_tsig(&query_data, Some(key.clone())).unwrap_err(),
+        verify_tsig(&query_data, key.clone()).unwrap_err(),
         ResponseLimit::STREAM,
     );
 
@@ -250,7 +250,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
         };
         let unknown = build_failed_response(
             &query_data,
-            verify_tsig(&query_data, None).unwrap_err(),
+            reject_unknown_key(&query_data),
             ResponseLimit::STREAM,
         );
 
@@ -264,7 +264,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
         if stale {
             let response = build_failed_response(
                 &query_data,
-                verify_tsig(&query_data, Some(key.clone())).unwrap_err(),
+                verify_tsig(&query_data, key.clone()).unwrap_err(),
                 ResponseLimit::STREAM,
             );
 
@@ -289,7 +289,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             forged[2] ^= 1;
             let response = build_failed_response(
                 &forged,
-                verify_tsig(&forged, Some(key.clone())).unwrap_err(),
+                verify_tsig(&forged, key.clone()).unwrap_err(),
                 ResponseLimit::STREAM,
             );
 
@@ -412,7 +412,7 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                             assert_eq!(query_data.len(), request_len);
                             let full = build_failed_response(
                                 &query_data,
-                                verify_tsig(&query_data, Some(key.clone())).unwrap_err(),
+                                verify_tsig(&query_data, key.clone()).unwrap_err(),
                                 ResponseLimit::STREAM,
                             );
 
@@ -426,7 +426,7 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                             let limit = usize::from(edns.unwrap_or(512));
                             let response = build_failed_response(
                                 &query_data,
-                                verify_tsig(&query_data, Some(key.clone())).unwrap_err(),
+                                verify_tsig(&query_data, key.clone()).unwrap_err(),
                                 ResponseLimit::udp(edns.unwrap_or(512)),
                             );
 
@@ -701,7 +701,7 @@ fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
     ] {
         let query_data = build_signed_update(algorithm, now_secs());
         let key = test_key(algorithm).to_signing_key().unwrap();
-        verify_tsig(&query_data, Some(key)).unwrap();
+        verify_tsig(&query_data, key).unwrap();
     }
 }
 
@@ -728,7 +728,7 @@ fn verify_tsig_accepts_mixed_case_algorithm_names() {
             RequestSignature::Key(_)
         ));
         let key = test_key(algorithm).to_signing_key().unwrap();
-        verify_tsig(&query_data, Some(key)).unwrap();
+        verify_tsig(&query_data, key).unwrap();
     }
 }
 
@@ -748,7 +748,7 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
         // The MAC ends before original ID, error, and other-len (six bytes).
         let mac_end = query_data.len() - 7;
         query_data[mac_end] ^= 0xff;
-        let error = verify_tsig(&query_data, Some(key.clone())).unwrap_err();
+        let error = verify_tsig(&query_data, key.clone()).unwrap_err();
 
         // RFC 8945, Section 5.2: a failed MAC cannot produce signed BADTIME.
         let (rcode, tsig_rcode, _, mac, other) = extract_response_tsig(&build_failed_response(
@@ -777,7 +777,7 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let error = verify_tsig(&query_data, Some(key)).unwrap_err();
+    let error = verify_tsig(&query_data, key).unwrap_err();
 
     let (rcode, tsig_rcode, _, _, _) = extract_response_tsig(&build_failed_response(
         &query_data,
@@ -797,7 +797,7 @@ fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
     let key = test_key(TsigAlgorithm::HmacSha512)
         .to_signing_key()
         .unwrap();
-    let error = verify_tsig(&query_data, Some(key)).unwrap_err();
+    let error = verify_tsig(&query_data, key).unwrap_err();
 
     let (rcode, tsig_rcode, _, mac, _) = extract_response_tsig(&build_failed_response(
         &query_data,
@@ -810,12 +810,12 @@ fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
     assert!(mac.is_empty());
 }
 
-/// Verify that `verify_tsig` rejects unknown key with badkey.
+/// Verify that `reject_unknown_key` answers a readable TSIG with BADKEY.
 #[test]
-fn verify_tsig_rejects_unknown_key_with_badkey() {
+fn reject_unknown_key_answers_badkey() {
     let query_data = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
-    let error = verify_tsig(&query_data, None).unwrap_err();
+    let error = reject_unknown_key(&query_data);
 
     let (rcode, tsig_rcode, _, mac, _) = extract_response_tsig(&build_failed_response(
         &query_data,
@@ -837,7 +837,7 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let error = verify_tsig(&query_data, Some(key)).unwrap_err();
+    let error = verify_tsig(&query_data, key).unwrap_err();
 
     // RFC 8945, Section 5.2.3: BADTIME responses are signed, echo the client's time,
     // and carry the server's time in other data.
@@ -902,7 +902,7 @@ fn badtime_response_preserves_edns() {
                     .unwrap();
                     let query_data = additional.finish();
                     let before = Time48::now();
-                    let error = verify_tsig(&query_data, Some(key.clone())).unwrap_err();
+                    let error = verify_tsig(&query_data, key.clone()).unwrap_err();
                     let response = build_failed_response(&query_data, error, ResponseLimit::STREAM);
                     let message = Message::from_octets(response.as_slice()).unwrap();
 
@@ -1012,7 +1012,7 @@ fn truncated_requests_follow_validation_order() {
                         TsigRcode::NOERROR
                     };
                     let before = now_secs();
-                    let result = verify_tsig(&query_data, Some(key.clone()));
+                    let result = verify_tsig(&query_data, key.clone());
 
                     if expected == TsigRcode::NOERROR {
                         result.unwrap();
@@ -1059,7 +1059,7 @@ fn truncated_requests_follow_validation_order() {
 
                     let unknown_key = build_failed_response(
                         &query_data,
-                        verify_tsig(&query_data, None).unwrap_err(),
+                        reject_unknown_key(&query_data),
                         ResponseLimit::STREAM,
                     );
                     let (_, tsig_rcode, _, mac, _) = extract_response_tsig(&unknown_key);

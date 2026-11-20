@@ -232,7 +232,7 @@ pub struct DeleteRecordsResponse {
     #[schema(example = 3)]
     pub deleted: u64,
     pub records: Vec<RecordResponse>,
-    /// The removal as a record diff, for previewing the change.
+    /// The removal as a record diff on a dry run; empty once applied.
     pub diff: RecordDiffResponse,
 }
 
@@ -350,7 +350,7 @@ pub struct SingleRecordResponse {
 }
 
 /// What a record write left behind, in the shape every previewable operation
-/// answers with: whether it wrote, and the change as a record diff.
+/// answers with: whether it wrote, and on a dry run the change as a record diff.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct WriteRecordResponse {
     /// Whether this call wrote; a dry run answers `false`.
@@ -359,7 +359,7 @@ pub struct WriteRecordResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     pub record: RecordResponse,
-    /// The write as a record diff, for previewing it.
+    /// The write as a record diff on a dry run; empty once applied.
     pub diff: RecordDiffResponse,
 }
 

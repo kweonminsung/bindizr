@@ -4802,7 +4802,7 @@ components:
           minimum: 0
         diff:
           $ref: '#/components/schemas/RecordDiffResponse'
-          description: The removal as a record diff, for previewing the change.
+          description: The removal as a record diff on a dry run; empty once applied.
         dry_run:
           type: boolean
           example: false
@@ -5452,7 +5452,7 @@ components:
           example: true
         diff:
           $ref: '#/components/schemas/RecordDiffResponse'
-          description: The reconcile as a record diff, for previewing the change.
+          description: The reconcile as a record diff on a dry run; empty once applied.
         dry_run:
           type: boolean
           example: false
@@ -7332,7 +7332,7 @@ components:
       type: object
       description: |-
         What a record write left behind, in the shape every previewable operation
-        answers with: whether it wrote, and the change as a record diff.
+        answers with: whether it wrote, and on a dry run the change as a record diff.
       required:
       - applied
       - dry_run
@@ -7345,7 +7345,7 @@ components:
           example: true
         diff:
           $ref: '#/components/schemas/RecordDiffResponse'
-          description: The write as a record diff, for previewing it.
+          description: The write as a record diff on a dry run; empty once applied.
         dry_run:
           type: boolean
           example: false
