@@ -112,7 +112,6 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 }),
             )
             .await?;
-            log::debug!("Secondary creation result: {response:?}");
             print_secondary(&response.data, output)?;
         }
         SecondaryCommand::List {
@@ -124,7 +123,6 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 DaemonCommand::ListSecondaries(PageRequest { limit, offset }),
             )
             .await?;
-            log::debug!("Secondary list result: {response:?}");
             output::print_page(&response.data, output, |secondary| {
                 SecondaryRow::from(secondary)
             })?;
@@ -135,7 +133,6 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                     name,
                 })
                 .await?;
-            log::debug!("Secondary get result: {response:?}");
             print_secondary(&response.data, output)?;
         }
         SecondaryCommand::Update {
@@ -155,7 +152,6 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                     },
                 })
                 .await?;
-            log::debug!("Secondary update result: {response:?}");
             print_secondary(&response.data, output)?;
         }
         SecondaryCommand::Check { name, output } => {
@@ -164,7 +160,6 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                     name: name.clone(),
                 })
                 .await?;
-            log::debug!("Secondary check result: {response:?}");
             let check = &response.data;
 
             if output == OutputFormat::Table {
@@ -184,7 +179,6 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteSecondary { name })
                     .await?;
-            log::debug!("Secondary deletion result: {response:?}");
 
             if output == OutputFormat::Table {
                 outln!("{}", response.message);

@@ -43,7 +43,7 @@ pub(crate) async fn get_daemon_status(
         "http"
     };
     let response = DaemonStatusResponse {
-        pid: Some(process::id()),
+        pid: process::id(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         started_at_ms: cx
             .started_at()

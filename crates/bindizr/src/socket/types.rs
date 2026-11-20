@@ -225,7 +225,7 @@ pub(crate) struct DaemonResponse<T> {
 /// Daemon status details returned by the `Status` command.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DaemonStatusResponse {
-    pub(crate) pid: Option<u32>,
+    pub(crate) pid: u32,
     pub(crate) version: String,
     /// Restart detection marker: exec keeps the PID, so a new start time is
     /// the only signal that the daemon was replaced. `None` while the front

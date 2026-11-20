@@ -15,9 +15,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
     if output == OutputFormat::Table {
         outln!("=== BINDIZR STATUS ===");
         outln!("Status: {}", color::green("Running"));
-        let pid = status
-            .pid
-            .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
+        let pid = status.pid;
         outln!("PID: {pid}");
         outln!("Version: {}", status.version);
         outln!("Uptime: {}", output::display_uptime(status.started_at_ms));

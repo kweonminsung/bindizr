@@ -133,7 +133,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 }),
             )
             .await?;
-            log::debug!("DNSSEC policy creation result: {response:?}");
             print_policy(&response.data, output)?;
         }
         DnssecPolicyCommand::List {
@@ -145,7 +144,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 DaemonCommand::ListDnssecPolicies(PageRequest { limit, offset }),
             )
             .await?;
-            log::debug!("DNSSEC policy list result: {response:?}");
             output::print_page(&response.data, output, |policy| {
                 DnssecPolicyRow::from(policy)
             })?;
@@ -155,7 +153,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 DaemonCommand::GetDnssecPolicy { name },
             )
             .await?;
-            log::debug!("DNSSEC policy get result: {response:?}");
             print_policy(&response.data, output)?;
         }
         DnssecPolicyCommand::Update {
@@ -176,14 +173,12 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 },
             )
             .await?;
-            log::debug!("DNSSEC policy update result: {response:?}");
             print_policy(&response.data, output)?;
         }
         DnssecPolicyCommand::Delete { name, output } => {
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteDnssecPolicy { name })
                     .await?;
-            log::debug!("DNSSEC policy deletion result: {response:?}");
 
             if output == OutputFormat::Table {
                 outln!("{}", response.message);

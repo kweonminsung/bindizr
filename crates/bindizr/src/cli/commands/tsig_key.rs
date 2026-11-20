@@ -99,7 +99,6 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 }),
             )
             .await?;
-            log::debug!("TSIG key creation result: {response:?}");
             output::print_response(&response.data, output, |response| {
                 vec![TsigKeyRow::from(response)]
             })?;
@@ -118,7 +117,6 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 }),
             )
             .await?;
-            log::debug!("TSIG key list result: {response:?}");
             output::print_page(&response.data, output, |tsig_key| {
                 TsigKeyRow::from(tsig_key)
             })?;
@@ -127,7 +125,6 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             let response =
                 client::send_command::<SingleTsigKeyResponse>(DaemonCommand::GetTsigKey { name })
                     .await?;
-            log::debug!("TSIG key get result: {response:?}");
             output::print_response(&response.data, output, |response| {
                 vec![TsigKeyRow::from(response)]
             })?;
@@ -142,7 +139,6 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteTsigKey { name })
                     .await?;
-            log::debug!("TSIG key deletion result: {response:?}");
 
             if output == OutputFormat::Table {
                 outln!("{}", response.message);

@@ -45,9 +45,7 @@ pub(crate) async fn check_running(report: &mut Report) -> bool {
 
     match status {
         Ok(status) => {
-            let pid = status
-                .pid
-                .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
+            let pid = status.pid;
             report.ok(format!(
                 "Daemon running: pid {pid} (version {})",
                 status.version
