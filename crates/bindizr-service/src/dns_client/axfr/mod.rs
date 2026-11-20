@@ -143,7 +143,8 @@ impl AxfrClient {
         }
     }
 
-    /// Fetch AXFR records including delimiting SOAs (RFC 5936, Section 2.2) on
+    /// Fetch a zone's AXFR records, opening SOA first, the closing SOA that
+    /// delimits the stream (RFC 5936, Section 2.2) checked and dropped, on
     /// the connection, opening or reopening it once; the whole has `import`'s timeout.
     pub(crate) async fn fetch_zone(
         &mut self,
@@ -309,8 +310,6 @@ async fn fetch_zone_on_stream(
                 if index + 1 != batch_len {
                     return Err(FetchZoneError::RecordsAfterClosingSoa);
                 }
-
-                records.push(record);
 
                 return Ok((records, idle_timeout));
             }

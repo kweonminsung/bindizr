@@ -471,3 +471,31 @@ fn record_match_filters_by_priority() {
 fn record_match_rejects_priority_for_unsupported_type() {
     assert!(!record(RecordType::A, "192.0.2.1", None).matches(Some(RecordType::A), None, Some(10)));
 }
+
+/// Verify that every record type spells itself once: serde, Display, FromStr
+/// and the OpenAPI schema's list all read `as_str`.
+#[test]
+fn record_type_spells_itself_once() {
+    use utoipa::PartialSchema;
+
+    for value in RecordType::ALL {
+        assert_eq!(
+            serde_json::to_value(value).unwrap(),
+            serde_json::json!(value.as_str())
+        );
+        assert_eq!(
+            serde_json::from_value::<RecordType>(serde_json::json!(value.as_str())).unwrap(),
+            value
+        );
+        assert_eq!(value.to_string(), value.as_str());
+        assert_eq!(value.as_str().parse::<RecordType>().unwrap(), value);
+    }
+
+    let schema = serde_json::to_value(RecordType::schema()).unwrap();
+    let listed: Vec<_> = RecordType::ALL
+        .iter()
+        .map(|value| serde_json::json!(value.as_str()))
+        .collect();
+
+    assert_eq!(schema["enum"], serde_json::Value::Array(listed));
+}

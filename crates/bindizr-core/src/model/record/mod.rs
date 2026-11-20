@@ -241,6 +241,25 @@ pub enum RecordType {
 }
 
 impl RecordType {
+    /// Every supported user record type, in its declaration order.
+    pub const ALL: [Self; 15] = [
+        Self::A,
+        Self::Aaaa,
+        Self::Caa,
+        Self::Cname,
+        Self::Dname,
+        Self::Ds,
+        Self::Mx,
+        Self::Naptr,
+        Self::Txt,
+        Self::Ns,
+        Self::Srv,
+        Self::Ptr,
+        Self::Sshfp,
+        Self::Tlsa,
+        Self::Wks,
+    ];
+
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -585,7 +604,7 @@ impl utoipa::PartialSchema for RecordType {
     fn schema() -> RefOr<Schema> {
         ObjectBuilder::new()
             .schema_type(Type::String)
-            .enum_values(Some(["A", "AAAA", "CAA", "CNAME", "DNAME", "DS", "MX", "NAPTR", "TXT", "NS", "SRV", "PTR", "SSHFP", "TLSA", "WKS"]))
+            .enum_values(Some(Self::ALL.map(Self::as_str)))
             .description(Some("Supported user record type. WKS values use <IPv4> <protocol> [ports...]. Unsupported types are rejected; SOA and signer-managed DNSSEC records have separate contracts."))
             .into()
     }

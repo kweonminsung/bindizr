@@ -125,7 +125,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                 .await
                 .unwrap()
                 .len(),
-            2
+            1
         );
 
         if idle != 0 {
@@ -138,7 +138,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                 .await
                 .unwrap()
                 .len(),
-            2
+            1
         );
 
         let reused = time::timeout(Duration::from_secs(5), server)
@@ -243,9 +243,8 @@ async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
             .await
             .unwrap();
 
-        assert_eq!(records.len(), 2);
+        assert_eq!(records.len(), 1);
         assert_eq!(records[0].rdata, opening_rdata);
-        assert_eq!(records[1].rdata, closing_rdata);
     }
 }
 

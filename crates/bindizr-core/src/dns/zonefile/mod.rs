@@ -187,7 +187,8 @@ impl ParsedZoneFile {
         parsed
     }
 
-    /// Convert a validated AXFR stream without a master-file text round trip.
+    /// Convert a validated AXFR stream, its closing SOA already dropped by the
+    /// client, without a master-file text round trip.
     pub fn from_transfer(records: &[TransferRecord], zone_name: &ZoneName) -> Self {
         let mut parsed = Self {
             records: Vec::new(),
@@ -196,7 +197,7 @@ impl ParsedZoneFile {
         };
         let origin_fqdn = zone_name.to_fqdn();
 
-        for (index, record) in records.iter().enumerate() {
+        for record in records {
             if matches!(
                 record.rtype,
                 Rtype::RRSIG
@@ -209,21 +210,6 @@ impl ParsedZoneFile {
             ) {
                 continue;
             }
-            if index > 0
-                && index + 1 == records.len()
-                && record.rtype == Rtype::SOA
-                && name::to_fqdn_lowercase(&record.name)
-                    == name::to_fqdn_lowercase(&records[0].name)
-                && record.rdata.to_canonical(Rtype::SOA).is_ok_and(|closing| {
-                    records[0]
-                        .rdata
-                        .to_canonical(Rtype::SOA)
-                        .is_ok_and(|opening| closing == opening)
-                })
-            {
-                continue;
-            }
-
             let mut parser = Parser::from_ref(record.rdata.as_bytes());
 
             match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(record.rtype, &mut parser) {

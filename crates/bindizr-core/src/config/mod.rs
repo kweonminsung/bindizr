@@ -75,8 +75,9 @@ pub enum ConfigError {
         port: u16,
         reserved_for: &'static str,
     },
-    #[error("{present} needs {missing}")]
+    #[error("{section}.{present} needs {section}.{missing}")]
     TlsHalfPair {
+        section: &'static str,
         present: &'static str,
         missing: &'static str,
     },
@@ -345,17 +346,11 @@ impl ApiTlsConfig {
     fn validate(&self) -> Result<(), ConfigError> {
         // Half a pair would serve plain HTTP on a port the operator means to
         // be HTTPS, which no later error would reveal.
-        match (self.cert_file.as_deref(), self.key_file.as_deref()) {
-            (Some(_), None) => Err(ConfigError::TlsHalfPair {
-                present: "api.tls.cert_file",
-                missing: "api.tls.key_file",
-            }),
-            (None, Some(_)) => Err(ConfigError::TlsHalfPair {
-                present: "api.tls.key_file",
-                missing: "api.tls.cert_file",
-            }),
-            _ => Ok(()),
-        }
+        validate_tls_pair(
+            "api.tls",
+            self.cert_file.as_deref(),
+            self.key_file.as_deref(),
+        )
     }
 }
 
@@ -665,8 +660,8 @@ impl DnsConfig {
             return Err(ConfigError::TransferRequiresTlsListener);
         }
 
-        // A zone without its own timers inherits these; a zero is refused
-        // here as it is in a request.
+        // A zone without its own timers inherits these; unlike a requested
+        // value, which may be zero, a default must be positive.
         let defaults = &self.zone_defaults;
 
         for (field, secs) in [
@@ -895,17 +890,32 @@ impl DnsTlsConfig {
 
         // Half a pair would leave the listener off on a port the operator
         // means to serve, which no later error would reveal.
-        match (self.cert_file.as_deref(), self.key_file.as_deref()) {
-            (Some(_), None) => Err(ConfigError::TlsHalfPair {
-                present: "dns.tls.cert_file",
-                missing: "dns.tls.key_file",
-            }),
-            (None, Some(_)) => Err(ConfigError::TlsHalfPair {
-                present: "dns.tls.key_file",
-                missing: "dns.tls.cert_file",
-            }),
-            _ => Ok(()),
-        }
+        validate_tls_pair(
+            "dns.tls",
+            self.cert_file.as_deref(),
+            self.key_file.as_deref(),
+        )
+    }
+}
+
+/// Refuse half of `section`'s certificate and key pair: both are set or neither.
+fn validate_tls_pair(
+    section: &'static str,
+    cert_file: Option<&str>,
+    key_file: Option<&str>,
+) -> Result<(), ConfigError> {
+    match (cert_file, key_file) {
+        (Some(_), None) => Err(ConfigError::TlsHalfPair {
+            section,
+            present: "cert_file",
+            missing: "key_file",
+        }),
+        (None, Some(_)) => Err(ConfigError::TlsHalfPair {
+            section,
+            present: "key_file",
+            missing: "cert_file",
+        }),
+        _ => Ok(()),
     }
 }
 

@@ -124,7 +124,8 @@ pub(crate) fn parse_u16_record_field(
         })
 }
 
-/// Decode one quoted or bare string using RFC 1035, Section 5.1 escapes.
+/// Decode one quoted or bare string using RFC 1035, Section 5.1 escapes,
+/// returning the input after it untrimmed, for the caller's separator rule.
 pub(crate) fn parse_string_octets<'a>(
     field: &'static str,
     input: &'a str,
@@ -142,11 +143,10 @@ pub(crate) fn parse_string_octets<'a>(
     while let Some((index, byte)) = bytes.next() {
         match byte {
             b'"' if quoted => {
-                let consumed = &rest[index + 1..];
-                return Ok((octets, consumed.trim_start()));
+                return Ok((octets, &rest[index + 1..]));
             }
             byte if !quoted && byte.is_ascii_whitespace() => {
-                return Ok((octets, rest[index..].trim_start()));
+                return Ok((octets, &rest[index..]));
             }
             b'"' => {
                 return Err(ParseRecordValueError::NotQuoted {
@@ -207,7 +207,7 @@ pub(crate) fn parse_char_string<'a>(
         return Err(ParseRecordValueError::CharStringTooLong { field });
     }
 
-    Ok((text, rest))
+    Ok((text, rest.trim_start()))
 }
 
 /// Validate record-value names using decoded owner-label rules, preserving escaped

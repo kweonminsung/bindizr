@@ -257,15 +257,13 @@ fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
     }
 }
 
-/// Verify that the opening SOA is kept and its closing delimiter discarded.
+/// Verify that the opening SOA becomes the zone's own, never one of its records.
 #[test]
 fn transfer_keeps_one_soa_for_creation() {
-    // The closing SOA is a transfer delimiter, not a second zone definition.
     const SOA: &str = "ns1.example.com. admin.example.com. 7 300 60 3600000 86400";
     let records = [
         transfer_record("example.com.", Rtype::SOA, SOA),
         transfer_record("www.example.com.", Rtype::A, "192.0.2.1"),
-        transfer_record("example.com.", Rtype::SOA, SOA),
     ];
 
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
@@ -402,32 +400,4 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         parsed.records[0].value,
         ZoneFileValue::Rdata(r#""\255""#.to_string())
     );
-}
-
-/// Verify that the closing SOA matches case-insensitively without received RDATA changing.
-#[test]
-fn transfer_accepts_case_varied_closing_soa() {
-    let zone_name = ZoneName::parse("example.com").unwrap();
-    let opening = transfer_record(
-        "example.com.",
-        Rtype::SOA,
-        "NS1.Example.COM. Hostmaster.Example.COM. 42 7200 3600 604800 300",
-    );
-    let closing = transfer_record(
-        "EXAMPLE.COM.",
-        Rtype::SOA,
-        "ns1.example.com. hostmaster.example.com. 42 7200 3600 604800 300",
-    );
-    let original = opening.rdata.clone();
-    let records = [
-        opening,
-        transfer_record("example.com.", Rtype::NS, "ns1.example.com."),
-        closing,
-    ];
-    let parsed = ParsedZoneFile::from_transfer(&records, &zone_name);
-
-    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
-    assert!(parsed.soa.is_some());
-    assert_eq!(parsed.records.len(), 1);
-    assert_eq!(records[0].rdata, original);
 }

@@ -478,7 +478,9 @@ mod tests {
         assert!(
             matches!(
                 error,
-                EncodeRecordValueError::Value(ParseRecordValueError::TxtUnterminatedQuote)
+                EncodeRecordValueError::Value(ParseRecordValueError::UnterminatedQuote {
+                    field: "TXT value"
+                })
             ),
             "{error:?}"
         );

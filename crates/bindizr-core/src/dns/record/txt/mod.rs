@@ -1,7 +1,7 @@
 use std::str;
 
-use crate::dns::record::ParseRecordValueError;
 use crate::dns::record::value::{MAX_CHARACTER_STRING_LEN, MAX_RECORD_RDATA};
+use crate::dns::record::{ParseRecordValueError, value};
 
 /// The content of a TXT value: a single string or multiple character-strings.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,47 +156,19 @@ impl TxtRecordValue {
     }
 }
 
-/// Parse quoted TXT character strings and their escapes.
+/// Parse quoted TXT character strings, each decoded by the shared escape
+/// decoder, separated by one or more spaces.
 fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValueError> {
     let mut segments = Vec::new();
-    let mut bytes = trimmed.bytes().peekable();
+    let mut rest = trimmed;
 
-    while let Some(byte) = bytes.next() {
-        if byte != b'"' {
+    while !rest.is_empty() {
+        if !rest.starts_with('"') {
             return Err(ParseRecordValueError::TxtUnseparated);
         }
 
         // Decode escapes before checking the character-string's wire byte length.
-        let mut segment: Vec<u8> = Vec::new();
-
-        loop {
-            match bytes.next() {
-                Some(b'"') => break,
-                Some(b'\\') => match bytes.next() {
-                    Some(hundreds @ b'0'..=b'9') => {
-                        let tens = bytes.next().filter(u8::is_ascii_digit);
-                        let ones = bytes.next().filter(u8::is_ascii_digit);
-                        let (Some(tens), Some(ones)) = (tens, ones) else {
-                            return Err(ParseRecordValueError::InvalidEscape {
-                                field: "TXT value",
-                            });
-                        };
-                        let code = u16::from(hundreds - b'0') * 100
-                            + u16::from(tens - b'0') * 10
-                            + u16::from(ones - b'0');
-
-                        let byte = u8::try_from(code).map_err(|_| {
-                            ParseRecordValueError::InvalidEscape { field: "TXT value" }
-                        })?;
-                        segment.push(byte);
-                    }
-                    Some(escaped) => segment.push(escaped),
-                    None => return Err(ParseRecordValueError::TxtDanglingEscape),
-                },
-                Some(other) => segment.push(other),
-                None => return Err(ParseRecordValueError::TxtUnterminatedQuote),
-            }
-        }
+        let (segment, after) = value::parse_string_octets("TXT value", rest)?;
 
         if segment.len() > MAX_CHARACTER_STRING_LEN {
             return Err(ParseRecordValueError::CharStringTooLong {
@@ -207,18 +179,11 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
         segments.push(segment);
 
         // Require spaces between quoted strings while preserving each wire segment.
-        match bytes.next() {
-            Some(b' ') => {
-                while bytes.peek() == Some(&b' ') {
-                    bytes.next();
-                }
-                if bytes.peek().is_none() {
-                    break;
-                }
-            }
-            Some(_) => return Err(ParseRecordValueError::TxtUnseparated),
-            None => break,
-        }
+        rest = match after.strip_prefix(' ') {
+            Some(spaced) => spaced.trim_start_matches(' '),
+            None if after.is_empty() => after,
+            None => return Err(ParseRecordValueError::TxtUnseparated),
+        };
     }
 
     if segments.is_empty() {
