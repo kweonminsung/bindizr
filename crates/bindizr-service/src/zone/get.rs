@@ -5,7 +5,7 @@ use bindizr_db::{LockLevel, SortOrder, ZoneSortField};
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{PaginatedResponse, ZoneFilter, ZoneResponse};
-use crate::{Context, Transaction, pagination, ttl};
+use crate::{Context, Transaction, pagination, ttl, zone};
 
 /// Find the DNS plane's view of a zone: a disabled one is absent rather than
 /// served. The nsupdate apply and the transfer authorization read it.
@@ -99,7 +99,11 @@ pub async fn list_by_filter(
     let offset = filter.offset;
 
     let zone_filter = bindizr_db::zone::ZoneFilter {
-        name: filter.name.clone(),
+        name: filter
+            .name
+            .as_deref()
+            .map(zone::normalize_name)
+            .transpose()?,
         id: filter.id,
         mname: filter.mname.clone(),
         rname: filter.rname.clone(),
