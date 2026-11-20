@@ -13,7 +13,7 @@ use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, ToName};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::{Algorithm, ClientTransaction, Key, KeyName, ValidationError};
-pub use response::build_error_response;
+pub use response::{BuildErrorResponseError, build_error_response};
 use ring::hmac;
 pub use signer::{ResponseSigner, SignResponseError, TransferSigner};
 use thiserror::Error;
@@ -29,7 +29,8 @@ use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 pub(crate) const MAX_TSIG_RECORD: usize =
     MAX_WIRE_NAME_LEN + RECORD_FIELDS_LEN + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
 
-/// Why a TSIG-signed request could not be accepted.
+/// Why a TSIG key could not be decoded, or a TSIG-signed request could not be
+/// accepted.
 #[derive(Debug, Error)]
 pub enum TsigError {
     /// The request could not be read as a DNS message.
@@ -54,12 +55,6 @@ pub enum TsigError {
     /// The caller checked for a TSIG record, so `domain` must find one too.
     #[error("TSIG record not found during validation")]
     RecordMissing,
-    #[error("failed to build TSIG error response ({rcode}): {source}")]
-    BuildResponse {
-        rcode: TsigRcode,
-        #[source]
-        source: LibraryError,
-    },
     /// Validation failed; authenticated errors retain the key and server time for the encoder.
     #[error("TSIG validation failed: {rcode}")]
     Rejected {

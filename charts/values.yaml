@@ -91,7 +91,8 @@ bindizr:
     maxDays: 365
   # The logs read with `bindizr log <subject>` and GET /logs/<subject>, each
   # kept maxDays (0 = forever); `logging` below is Bindizr's own process log.
-  # Who changed a token, role, grant, key, secondary, or policy.
+  # Who changed a token, role, grant, key, secondary, policy or zone's DNSSEC
+  # settings, or deleted a zone.
   auditLog:
     maxDays: 365
   # The API requests and nsupdates answered.

@@ -296,7 +296,7 @@ pub(crate) async fn refuse_query(
             log::warn!("Failed to authenticate the TSIG of a refused request: {refusal}");
 
             match refusal.into_response(metadata, query_data) {
-                Err(DnsError::Tsig(error)) => {
+                Err(DnsError::TsigResponse(error)) => {
                     log::warn!("Failed to encode TSIG refusal: {error}");
                     Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
                 }

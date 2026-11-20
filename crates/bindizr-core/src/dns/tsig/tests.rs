@@ -1313,7 +1313,7 @@ fn build_error_response_keeps_the_cause_of_a_failure() {
     .unwrap_err();
 
     assert!(
-        matches!(error, TsigError::BuildResponse { .. }),
+        matches!(error, BuildErrorResponseError::Build { .. }),
         "{error:?}"
     );
     assert!(error.source().is_some(), "{error:?}");

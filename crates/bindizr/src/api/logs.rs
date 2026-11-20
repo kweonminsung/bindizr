@@ -32,7 +32,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/logs/audit",
         tag = "Log",
         summary = "List the audit log",
-        description = "The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone's versions instead. Kept for `audit_log.max_days`. Needs `log:read` in all zones.",
+        description = "The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, a zone's DNSSEC settings changed, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone's versions instead. Kept for `audit_log.max_days`. Needs `log:read` in all zones.",
         params(AuditLogFilter),
         responses(
             (status = 200, description = "The rows selected", body = PaginatedResponse<AuditLogResponse>),

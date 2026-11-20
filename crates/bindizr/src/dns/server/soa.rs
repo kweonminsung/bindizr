@@ -167,7 +167,7 @@ async fn handle_soa_request(
 
             return match refusal.into_response(&QueryMetadata::from(query), query_data) {
                 Ok(response) => Ok((response, outcome)),
-                Err(DnsError::Tsig(error)) => {
+                Err(DnsError::TsigResponse(error)) => {
                     log::warn!("Failed to encode {} TSIG refusal: {error}", query.qtype);
                     Ok((
                         query.build_signed_error_response(OptRcode::SERVFAIL, None, None)?,

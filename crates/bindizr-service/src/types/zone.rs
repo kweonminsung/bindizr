@@ -222,8 +222,8 @@ pub struct ZoneFilter {
     /// `asc` (the default) or `desc`.
     #[schema(example = "asc")]
     pub order: Option<String>,
-    /// Zones per page; defaults to 50 when omitted, 1000 is the largest page
-    /// accepted.
+    /// Zones per page, 1 to 1000; the HTTP API pages at 50 when it is
+    /// omitted, the daemon socket not at all.
     #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,

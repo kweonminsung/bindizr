@@ -153,7 +153,8 @@ async fn handle_client(
         let response = match serde_json::from_str::<DaemonCommand>(&line) {
             Ok(command) => handle_command(socket_cx, command).await,
             Err(error) => {
-                log::error!("Failed to parse command: {error}");
+                // A client's mistake, answered INVALID_INPUT; not a server fault.
+                log::warn!("Failed to parse command: {error}");
                 encode_error(&ServiceError::invalid_input(format!(
                     "failed to parse command: {error}"
                 )))

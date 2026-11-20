@@ -621,7 +621,7 @@ paths:
       tags:
       - Log
       summary: List the audit log
-      description: 'The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone''s versions instead. Kept for `audit_log.max_days`. Needs `log:read` in all zones.'
+      description: 'The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, a zone''s DNSSEC settings changed, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone''s versions instead. Kept for `audit_log.max_days`. Needs `log:read` in all zones.'
       operationId: list_audit_logs
       parameters:
       - name: entity
@@ -1001,8 +1001,8 @@ paths:
       - name: limit
         in: query
         description: |-
-          Records per page; defaults to 50 when omitted, 1000 is the largest
-          page accepted.
+          Records per page, 1 to 1000; the HTTP API pages at 50 when it is
+          omitted, the daemon socket not at all.
         required: false
         schema:
           type: integer
@@ -2711,8 +2711,8 @@ paths:
       - name: limit
         in: query
         description: |-
-          Zones per page; defaults to 50 when omitted, 1000 is the largest page
-          accepted.
+          Zones per page, 1 to 1000; the HTTP API pages at 50 when it is
+          omitted, the daemon socket not at all.
         required: false
         schema:
           type: integer
@@ -3384,7 +3384,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: DNSSEC is not enabled for the zone, no rollover is in progress, the parent does not serve the new DS yet, or the parent could not be asked
+          description: DNSSEC is not enabled for the zone, no published key awaits promotion, the parent does not serve the new DS yet, or the parent could not be asked
           content:
             application/json:
               schema:

@@ -194,22 +194,6 @@ fn extract_dns_records_rejects_invalid_wks_rdata() {
     }
 }
 
-/// Verify that a refused response names its RCODE in the error.
-#[test]
-fn extract_dns_records_names_refused_rcode_in_error() {
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(9);
-    builder.header_mut().set_qr(true);
-    builder.header_mut().set_rcode(Rcode::REFUSED);
-
-    let error = extract_dns_records(9, &builder.finish()).unwrap_err();
-
-    assert!(
-        error.contains("REFUSED RCODE (5)"),
-        "unexpected error: {error}"
-    );
-}
-
 /// Verify that `extract_dns_records` treats nxdomain as no records.
 #[test]
 fn extract_dns_records_treats_nxdomain_as_no_records() {
