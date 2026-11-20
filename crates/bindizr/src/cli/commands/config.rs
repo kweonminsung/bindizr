@@ -1,6 +1,6 @@
 use std::fmt;
 
-use bindizr_core::config::{Config, DatabaseTlsMode};
+use bindizr_core::config::Config;
 use bindizr_core::{config, outln};
 use bindizr_service::types::MessageResponse;
 use clap::Subcommand;
@@ -102,7 +102,8 @@ async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
     let response = client::send_control_command::<Config>(DaemonCommand::Config).await?;
 
     if output == OutputFormat::Table {
-        print_config(&response.data);
+        let config = serde_json::to_value(&response.data).map_err(RenderOutputError::Json)?;
+        print_config(&config, "");
     } else {
         output::print_payload(&response.data, output)?;
     }
@@ -142,125 +143,43 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
     Ok(())
 }
 
-/// Print configuration values grouped by section.
-fn print_config(config: &Config) {
-    print_section("api");
-    print_value("listen_addr", config.api.listen_addr);
-    print_value("listen_port", config.api.listen_port);
-    print_value(
-        "authentication_required",
-        config.api.authentication_required,
-    );
-    print_value("metrics_enabled", config.api.metrics_enabled);
-    print_value("external_dns_enabled", config.api.external_dns_enabled);
-    print_value("openapi_enabled", config.api.openapi_enabled);
-    outln!();
+/// Print the serialized configuration grouped by section, `config get`'s
+/// view of it: an object is a `[section]`, every other value a key under it.
+fn print_config(value: &Value, section: &str) {
+    let Value::Object(fields) = value else {
+        return;
+    };
+    let (sections, keys): (Vec<_>, Vec<_>) =
+        fields.iter().partition(|(_, value)| value.is_object());
 
-    print_section("api.tls");
-    print_optional("cert_file", config.api.tls.cert_file.as_deref());
-    print_optional("key_file", config.api.tls.key_file.as_deref());
-    outln!();
+    if !keys.is_empty() {
+        print_section(section);
 
-    print_section("database");
-    print_value("type", config.database.database_type);
-    outln!();
+        for (key, value) in keys {
+            match value {
+                // Shown as unset rather than absent, so the list says what the daemon holds.
+                Value::Null => print_value(key, "(unset)"),
+                Value::String(value) => print_value(key, value),
+                value => print_value(key, value),
+            }
+        }
 
-    print_section("database.mysql");
-    print_value("url", &config.database.mysql.url);
-    outln!();
+        outln!();
+    }
 
-    print_section("database.sqlite");
-    print_value("file_path", &config.database.sqlite.file_path);
-    outln!();
-
-    print_section("database.postgresql");
-    print_value("url", &config.database.postgresql.url);
-
-    print_section("database.tls");
-    print_optional(
-        "mode",
-        config.database.tls.mode.map(DatabaseTlsMode::as_str),
-    );
-    print_optional("ca_file", config.database.tls.ca_file.as_deref());
-    outln!();
-
-    print_section("dns");
-    print_value("listen_addr", config.dns.listen_addr);
-    print_value("listen_port", config.dns.listen_port);
-    print_value(
-        "scheduler_interval_secs",
-        config.dns.scheduler_interval_secs,
-    );
-    print_value("tcp_idle_timeout_secs", config.dns.tcp_idle_timeout_secs);
-    print_value("tcp_max_connections", config.dns.tcp_max_connections);
-    outln!();
-
-    print_section("dns.import");
-    print_value("timeout_secs", config.dns.import.timeout_secs);
-    print_value("max_records", config.dns.import.max_records);
-    outln!();
-
-    print_section("dns.notify");
-    print_value("batch_ms", config.dns.notify.batch_ms);
-    print_value("retries", config.dns.notify.retries);
-    print_value("timeout_secs", config.dns.notify.timeout_secs);
-    outln!();
-
-    print_section("dns.nsupdate");
-    print_value("tsig_required", config.dns.nsupdate.tsig_required);
-    outln!();
-
-    print_section("dns.tls");
-    print_value("listen_port", config.dns.tls.listen_port);
-    print_optional("cert_file", config.dns.tls.cert_file.as_deref());
-    print_optional("key_file", config.dns.tls.key_file.as_deref());
-    outln!();
-
-    print_section("dns.transfer");
-    print_value("cache_max_records", config.dns.transfer.cache_max_records);
-    print_value("require_tls", config.dns.transfer.require_tls);
-    outln!();
-
-    print_section("dns.zone_defaults");
-    print_value("ttl", config.dns.zone_defaults.ttl);
-    print_value("refresh", config.dns.zone_defaults.refresh);
-    print_value("retry", config.dns.zone_defaults.retry);
-    print_value("expire", config.dns.zone_defaults.expire);
-    print_value("minimum_ttl", config.dns.zone_defaults.minimum_ttl);
-    outln!();
-
-    print_section("history");
-    print_value("max_days", config.history.max_days);
-    outln!();
-
-    print_section("audit_log");
-    print_value("max_days", config.audit_log.max_days);
-    outln!();
-
-    print_section("access_log");
-    print_value("save", config.access_log.save);
-    print_value("max_days", config.access_log.max_days);
-    outln!();
-
-    print_section("transfer_log");
-    print_value("save", config.transfer_log.save);
-    print_value("max_days", config.transfer_log.max_days);
-    outln!();
-
-    print_section("logging");
-    print_value("level", config.logging.level);
-    print_value("format", config.logging.format);
+    for (key, value) in sections {
+        let path = if section.is_empty() {
+            key.clone()
+        } else {
+            format!("{section}.{key}")
+        };
+        print_config(value, &path);
+    }
 }
 
 /// Print a configuration section heading.
 fn print_section(name: &str) {
     outln!("{}", color::cyan(&format!("[{name}]")));
-}
-
-/// Print a value the configuration may leave out, shown as unset rather than
-/// absent so the list says what the daemon actually holds.
-fn print_optional(key: &str, value: Option<&str>) {
-    print_value(key, value.unwrap_or("(unset)"));
 }
 
 /// Print one configuration key and its value.
