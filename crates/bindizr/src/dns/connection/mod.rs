@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bindizr_core::dns::message;
-use bindizr_core::dns::message::{Keepalive, Opcode, OptRcode, ParsedQuery, QueryMetadata, Rtype};
+use bindizr_core::dns::message::{Keepalive, Opcode, ParsedQuery, QueryMetadata, Rtype};
 use tokio::task::JoinSet;
 use tokio::time;
 
@@ -187,9 +187,8 @@ async fn handle_tcp_query(
         Err(error) => {
             log::warn!("Failed to parse DNS {transport} query from {client_addr}: {error}");
 
-            if let Some(metadata) = error.query_metadata() {
+            if let (Some(metadata), Some(rcode)) = (error.query_metadata(), error.format_error()) {
                 let result = async {
-                    let rcode = metadata.format_error().unwrap_or(OptRcode::FORMERR);
                     let response =
                         server::refuse_query(dns_cx, metadata, query_data, rcode, None).await?;
                     writer.write_message(&response).await
@@ -222,13 +221,17 @@ async fn handle_tcp_query(
     }
     .await;
 
-    if let Err(error) = result {
-        log::error!(
+    // A handler logs a server fault with its cause where it answers; this adds
+    // where the query came from, as the UDP dispatcher does. A peer that went
+    // away is not a failure of the query.
+    match result {
+        Ok(()) | Err(DnsError::PeerClosed) => {}
+        Err(error) => log::warn!(
             "DNS {transport} query from {client_addr} failed (opcode={:?} qtype={:?} qclass={}): {error}",
             query.opcode,
             query.qtype,
             query.qclass
-        );
+        ),
     }
 }
 

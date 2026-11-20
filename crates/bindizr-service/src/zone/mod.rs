@@ -14,7 +14,7 @@ mod status;
 mod transfer;
 mod update;
 mod validation;
-pub(crate) mod version;
+mod version;
 
 pub use catalog_zone::validate_catalog_zone_name;
 pub(crate) use catalog_zone::{CATALOG_SOA_REFRESH, refresh_catalog_tx};

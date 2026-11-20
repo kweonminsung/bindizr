@@ -105,7 +105,7 @@ async fn list_ages(
         .await
         .iter()
         .map(|log| {
-            let age = now - log.served_at + Duration::hours(12);
+            let age = now - log.log.served_at + Duration::hours(12);
             (log.zone_name.to_string(), age.num_days())
         })
         .collect()
@@ -130,7 +130,7 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
     save_failed(&cx, CLIENT, "example.test", axfr, tcp, "closed".to_string()).await;
 
     let logs = list_logs(&cx, &transfer_log::TransferLogFilter::default()).await;
-    let results: Vec<_> = logs.iter().map(|log| log.result).collect();
+    let results: Vec<_> = logs.iter().map(|log| log.log.result).collect();
 
     assert_eq!(
         results,
@@ -141,7 +141,7 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
         ]
     );
     // The failure that followed did not erase the serial last served.
-    assert_eq!(logs[1].serial, Some(Serial::from(7)));
+    assert_eq!(logs[1].log.serial, Some(Serial::from(7)));
 
     let latest = list_latest_by_clients(&cx, &[CLIENT]).await.unwrap();
     let zone_name = ZoneName::parse("example.test").unwrap();
@@ -150,8 +150,11 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
         .unwrap();
 
     assert_eq!(latest.len(), 1, "{latest:?}");
-    assert_eq!(latest[0].result, TransferResult::Failed);
-    assert_eq!(found.map(|log| log.result), Some(TransferResult::Failed));
+    assert_eq!(latest[0].log.result, TransferResult::Failed);
+    assert_eq!(
+        found.map(|log| log.log.result),
+        Some(TransferResult::Failed)
+    );
 }
 
 /// Verify that the latest transfer of a zone served to several addresses of
@@ -179,7 +182,7 @@ async fn list_latest_by_clients_keeps_one_row_per_zone_across_addresses() {
         .unwrap();
 
     assert_eq!(latest.len(), 1, "{latest:?}");
-    assert_eq!(latest[0].serial, Some(Serial::from(8)));
+    assert_eq!(latest[0].log.serial, Some(Serial::from(8)));
 }
 
 /// Verify that `transfer_log.save = "unserved"` saves refusals and failures alone.
@@ -202,7 +205,7 @@ async fn save_ok_leaves_no_row_when_only_unserved_transfers_are_saved() {
     let logs = list_logs(&cx, &transfer_log::TransferLogFilter::default()).await;
 
     assert_eq!(logs.len(), 1, "{logs:?}");
-    assert_eq!(logs[0].result, TransferResult::Refused);
+    assert_eq!(logs[0].log.result, TransferResult::Refused);
 }
 
 /// Verify that `transfer_log.save = "none"` saves no transfer, served or not.
@@ -377,6 +380,20 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
 
     assert_eq!(refused.pagination.total, 1, "{refused:?}");
     assert_eq!(refused.items[0].result, TransferResult::Refused);
+
+    // The IPv4-mapped spelling of a stored IPv4 client finds its rows.
+    let mapped = list(
+        &cx,
+        &Caller::socket(),
+        &TransferLogFilter {
+            address: Some("::ffff:192.0.2.1".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(mapped.pagination.total, 2, "{mapped:?}");
 
     let by_result = list(
         &cx,

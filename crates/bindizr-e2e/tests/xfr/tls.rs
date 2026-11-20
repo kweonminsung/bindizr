@@ -3,21 +3,20 @@
 
 use std::io;
 
-use base64::engine::general_purpose;
 use domain::base::iana::{Class, ExtendedErrorCode, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::opt::exterr::ExtendedError;
 use domain::base::{Message, MessageBuilder};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::rdata::{Dnskey, Rrsig, Soa};
-use domain::tsig::{Algorithm, ClientSequence, ClientTransaction, Key, KeyName};
+use domain::tsig::{Algorithm, ClientSequence, ClientTransaction, Key};
 use reqwest::{Method, StatusCode};
 use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};
 use rustls::version;
 use serde_json::json;
 
 use crate::common::dns::nsupdate::UpdateRecord;
-use crate::common::dns::tsig::KeyRole;
+use crate::common::dns::tsig::{KeyRole, SigningKey};
 use crate::common::dns::{nsupdate, tsig};
 use crate::common::{TestApp, TestAppOptions, dns};
 use crate::xfr::common;
@@ -66,10 +65,6 @@ fn exchange_signed_boundary_transfer<S: io::Read + io::Write>(
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
-    use std::str::FromStr;
-
-    use base64::Engine;
-
     let app = xot_app().await;
     app.create_secondary("boundary-loopback", "127.0.0.1:9")
         .await;
@@ -108,16 +103,12 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let secret = general_purpose::STANDARD
-        .decode(body["secret"].as_str().unwrap())
-        .unwrap();
-    let key = Key::new(
-        Algorithm::Sha512,
-        &secret,
-        KeyName::from_str(&tsig_key_name).unwrap(),
-        None,
-        None,
-    )
+    let key = SigningKey {
+        name: tsig_key_name.clone(),
+        secret: body["secret"].as_str().unwrap().to_string(),
+        algorithm: Algorithm::Sha512,
+    }
+    .to_tsig_key()
     .unwrap();
 
     // 64,618 wire bytes leave room for maximal names, TSIG, OPT and keepalive.

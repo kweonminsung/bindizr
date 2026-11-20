@@ -76,23 +76,26 @@ pub async fn count_by_filter(db: &Db, filter: &TransferLogFilter) -> Result<u64,
     }
 }
 
-/// List the newest row of each zone a client address asked for, with zone
-/// names.
-pub async fn list_by_client_addr_with_zone_latest_per_zone(
+/// List the newest row of each zone any of `client_addrs` asked for, with
+/// zone names: newest by `served_at`, then id, as the listings sort.
+pub async fn list_by_client_addrs_with_zone_latest_per_zone(
     db: &Db,
-    client_addr: &str,
+    client_addrs: &[String],
 ) -> Result<Vec<TransferLogWithZone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
-            mysql::transfer_log::list_by_client_addr_with_zone_latest_per_zone(pool, client_addr)
+            mysql::transfer_log::list_by_client_addrs_with_zone_latest_per_zone(pool, client_addrs)
                 .await
         }
         Backend::Postgres(pool) => {
-            postgres::transfer_log::list_by_client_addr_with_zone_latest_per_zone(pool, client_addr)
-                .await
+            postgres::transfer_log::list_by_client_addrs_with_zone_latest_per_zone(
+                pool,
+                client_addrs,
+            )
+            .await
         }
         Backend::Sqlite(pool) => {
-            sqlite::transfer_log::list_by_client_addr_with_zone_latest_per_zone(pool, client_addr)
+            sqlite::transfer_log::list_by_client_addrs_with_zone_latest_per_zone(pool, client_addrs)
                 .await
         }
     }

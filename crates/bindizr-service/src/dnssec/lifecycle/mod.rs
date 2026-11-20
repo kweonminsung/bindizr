@@ -65,8 +65,7 @@ pub async fn enable(
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
 
-        let existing_keys =
-            bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let existing_keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id).await?;
 
         if !existing_keys.is_empty() {
             return Err(ServiceError::dnssec_already_enabled(&zone.name));
@@ -199,7 +198,7 @@ pub async fn update_settings(
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
 
-        let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id).await?;
         let (policy, policy_change) = match &policy_name {
             Some(policy_name) => {
                 if keys.is_empty() {
@@ -343,9 +342,7 @@ pub async fn disable(
             }
         }
 
-        let derived =
-            bindizr_db::dnssec_record::list_tx(&mut tx, signed.zone.id, LockLevel::Unlocked)
-                .await?;
+        let derived = bindizr_db::dnssec_record::list_tx(&mut tx, signed.zone.id).await?;
 
         let new_serial = serial::generate_serial(Some(signed.zone.serial));
 

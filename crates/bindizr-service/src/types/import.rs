@@ -96,7 +96,7 @@ pub struct ImportZoneResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     pub summary: ImportZoneSummaryResponse,
-    /// The reconcile as a record diff, for previewing the change.
+    /// The reconcile as a record diff on a dry run; empty once applied.
     pub diff: RecordDiffResponse,
     /// Per-record validation errors. When non-empty nothing is applied.
     pub errors: Vec<String>,
@@ -129,20 +129,7 @@ pub struct ImportZoneSummaryResponse {
 
 /// Supply the wire default when an import request omits its mode.
 fn default_import_mode() -> String {
-    ImportMode::Append.as_str().to_string()
-}
-
-impl Default for ImportZoneRequest {
-    /// Default to an append request with all optional actions disabled.
-    fn default() -> Self {
-        Self {
-            content: None,
-            from_server: None,
-            mode: default_import_mode(),
-            dry_run: false,
-            create: false,
-        }
-    }
+    ImportMode::default().as_str().to_string()
 }
 
 /// Request body for importing several zones from one server over AXFR:

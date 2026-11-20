@@ -1,5 +1,6 @@
 use bindizr_core::config::Config;
-use bindizr_core::dns::message::{Name, Rcode};
+use bindizr_core::dns::message::{OptRcode, Rcode};
+use bindizr_core::dns::name::WireName;
 use bindizr_core::dns::query;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
@@ -109,7 +110,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             Opcode::UPDATE,
             false,
             false,
-            &Name::<Vec<u8>>::from_str("example.com").unwrap(),
+            &WireName::from_str("example.com").unwrap(),
             Rtype::SOA,
             None,
         );

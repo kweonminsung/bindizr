@@ -12,9 +12,8 @@ use bindizr_service::{Context, dnssec, zone};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use crate::api::RequestCaller;
 use crate::api::error::ApiError;
-use crate::api::extract::{JsonBody, Path, Query};
+use crate::api::extract::{JsonBody, Path, Query, RequestCaller};
 use crate::api::params::NameParams;
 
 /// Build the DNSSEC API routes.
@@ -249,7 +248,7 @@ pub(crate) struct AdvanceDnssecRolloverQuery {
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
-            (status = 409, description = "DNSSEC is not enabled for the zone, no rollover is in progress, the parent does not serve the new DS yet, or the parent could not be asked", body = ErrorResponse),
+            (status = 409, description = "DNSSEC is not enabled for the zone, no published key awaits promotion, the parent does not serve the new DS yet, or the parent could not be asked", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]

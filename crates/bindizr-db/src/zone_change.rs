@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
-use crate::{LockLevel, Transaction, mysql, postgres, sqlite};
+use crate::{Transaction, mysql, postgres, sqlite};
 
 /// Insert many zone changes in one statement (chunked). Ids are not returned.
 pub async fn create_many_tx(
@@ -48,38 +48,17 @@ pub async fn list_between_serials_tx(
     zone_id: ZoneId,
     from_serial: Serial,
     to_serial: Serial,
-    lock_level: LockLevel,
 ) -> Result<Vec<ZoneChange>, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::zone_change::list_between_serials_tx(
-                tx,
-                zone_id,
-                from_serial,
-                to_serial,
-                lock_level,
-            )
-            .await
+            mysql::zone_change::list_between_serials_tx(tx, zone_id, from_serial, to_serial).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::zone_change::list_between_serials_tx(
-                tx,
-                zone_id,
-                from_serial,
-                to_serial,
-                lock_level,
-            )
-            .await
+            postgres::zone_change::list_between_serials_tx(tx, zone_id, from_serial, to_serial)
+                .await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::zone_change::list_between_serials_tx(
-                tx,
-                zone_id,
-                from_serial,
-                to_serial,
-                lock_level,
-            )
-            .await
+            sqlite::zone_change::list_between_serials_tx(tx, zone_id, from_serial, to_serial).await
         }
     }
 }

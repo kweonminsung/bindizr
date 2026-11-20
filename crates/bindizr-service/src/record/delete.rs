@@ -7,7 +7,9 @@ use bindizr_db::LockLevel;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run};
+use crate::types::{
+    DeleteRecordsRequest, DeleteRecordsResponse, RecordDiffResponse, RecordResponse, Run,
+};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, record, serial, transaction, zone};
 
@@ -38,11 +40,8 @@ pub async fn delete(
     let apply_result: Result<_, ServiceError> = async {
         let zone = match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
             Ok(Some(zone)) => zone,
-            Ok(None) => {
-                return Err(ServiceError::ZoneNotFound(format!(
-                    "zone with id '{zone_id}' not found"
-                )));
-            }
+            // The zone went with the record the request named.
+            Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(error) => {
                 return Err(ServiceError::internal_with_source(
                     "failed to fetch zone",
@@ -85,26 +84,32 @@ pub async fn delete(
             }],
         )?;
 
-        // The owner's rows frame the diff, as they do for every change.
-        let records_at_name = bindizr_db::record::list_by_name_tx(
-            &mut tx,
-            zone.id,
-            &existing_record.name,
-            LockLevel::Exclusive,
-        )
-        .await?;
-        let before = caller.readable_records(
-            zone.id,
-            records_at_name.iter().cloned().map(RecordData::from),
-        );
-        let after = caller.readable_records(
-            zone.id,
-            records_at_name
-                .iter()
-                .filter(|record| record.id != existing_record.id)
-                .cloned()
-                .map(RecordData::from),
-        );
+        // Only a preview carries the diff; the owner's rows frame it.
+        let diff = if run.is_dry_run() {
+            let records_at_name = bindizr_db::record::list_by_name_tx(
+                &mut tx,
+                zone.id,
+                &existing_record.name,
+                LockLevel::Exclusive,
+            )
+            .await?;
+            let before = caller.readable_records(
+                zone.id,
+                records_at_name.iter().cloned().map(RecordData::from),
+            );
+            let after = caller.readable_records(
+                zone.id,
+                records_at_name
+                    .iter()
+                    .filter(|record| record.id != existing_record.id)
+                    .cloned()
+                    .map(RecordData::from),
+            );
+
+            diff::build_record_diff(&zone, &before, &after)
+        } else {
+            RecordDiffResponse::default()
+        };
 
         let response = DeleteRecordsResponse {
             applied: !run.is_dry_run(),
@@ -123,7 +128,7 @@ pub async fn delete(
                     )
                 })
                 .collect(),
-            diff: diff::build_record_diff(&zone, &before, &after),
+            diff,
         };
 
         zone::validate_record_changes_tx(&mut tx, &zone, slice::from_ref(&existing_record), &[])
@@ -190,7 +195,7 @@ pub async fn delete_matching(
         (Some(value), Some(record_type)) => Some(
             value
                 .to_encoded_value(record_type, request.priority)
-                .map_err(ServiceError::invalid_input)?,
+                .map_err(ServiceError::invalid_record_value)?,
         ),
         _ => None,
     };
@@ -222,21 +227,27 @@ pub async fn delete_matching(
             .cloned()
             .collect();
 
-        // Build the preview from the validated rows; dry runs and empty matches
-        // return it before any records or serials are written.
-        let before = caller.readable_records(
-            zone.id,
-            records_at_name.iter().cloned().map(RecordData::from),
-        );
-        let deleted_ids: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
-        let after = caller.readable_records(
-            zone.id,
-            records_at_name
-                .iter()
-                .filter(|record| !deleted_ids.contains(&record.id))
-                .cloned()
-                .map(RecordData::from),
-        );
+        // Only a preview carries the diff, built from the validated rows; dry
+        // runs and empty matches return before any records or serials are written.
+        let diff = if request.dry_run {
+            let before = caller.readable_records(
+                zone.id,
+                records_at_name.iter().cloned().map(RecordData::from),
+            );
+            let deleted_ids: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
+            let after = caller.readable_records(
+                zone.id,
+                records_at_name
+                    .iter()
+                    .filter(|record| !deleted_ids.contains(&record.id))
+                    .cloned()
+                    .map(RecordData::from),
+            );
+
+            diff::build_record_diff(&zone, &before, &after)
+        } else {
+            RecordDiffResponse::default()
+        };
 
         let response = DeleteRecordsResponse {
             applied: !request.dry_run,
@@ -254,7 +265,7 @@ pub async fn delete_matching(
                     )
                 })
                 .collect(),
-            diff: diff::build_record_diff(&zone, &before, &after),
+            diff,
         };
 
         zone::validate_record_changes_tx(&mut tx, &zone, &matched, &[]).await?;

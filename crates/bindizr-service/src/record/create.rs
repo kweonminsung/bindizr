@@ -8,7 +8,7 @@ use chrono::Utc;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
 use crate::record::ParsedRecord;
-use crate::types::{CreateRecordRequest, RecordResponse, WriteRecordResponse};
+use crate::types::{CreateRecordRequest, RecordDiffResponse, RecordResponse, WriteRecordResponse};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, record, serial, transaction, zone};
 
@@ -71,11 +71,6 @@ pub async fn create(
             None,
         )?;
 
-        // The owner's rows frame the diff, as they do for every change.
-        let before = caller.readable_records(
-            zone.id,
-            records_at_name.iter().cloned().map(RecordData::from),
-        );
         let candidate = Record {
             id: RecordId::UNWRITTEN,
             name: owner,
@@ -89,15 +84,20 @@ pub async fn create(
 
         zone::validate_record_changes_tx(&mut tx, &zone, &[], slice::from_ref(&candidate)).await?;
 
-        let mut after = before.clone();
-        after.push_written(RecordData::from(candidate.clone()));
-        let diff = diff::build_record_diff(&zone, &before, &after);
-
         let new_serial = serial::generate_serial(Some(zone.serial));
         let actions = caller.record_actions(zone.id, &candidate.name, candidate.record_type);
 
-        // The record is validated and authorized, so a dry run stops here.
+        // The record is validated and authorized, so a dry run stops here
+        // with its preview; the owner's rows frame the diff.
         if request.dry_run {
+            let before = caller.readable_records(
+                zone.id,
+                records_at_name.iter().cloned().map(RecordData::from),
+            );
+            let mut after = before.clone();
+            after.push_written(RecordData::from(candidate.clone()));
+            let diff = diff::build_record_diff(&zone, &before, &after);
+
             return Ok((candidate, zone.name, diff, actions));
         }
 
@@ -113,7 +113,13 @@ pub async fn create(
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok((created_record, zone.name, diff, actions))
+        // Only a preview carries the diff.
+        Ok((
+            created_record,
+            zone.name,
+            RecordDiffResponse::default(),
+            actions,
+        ))
     }
     .await;
 

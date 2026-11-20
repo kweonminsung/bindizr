@@ -906,7 +906,7 @@ fn apply_env_overrides_rejects_an_unusable_catalog_zone_name() {
 }
 
 /// Verify that a zero zone default is refused when the configuration loads,
-/// as the same value in a request would be.
+/// though a request may give zero for its own zone.
 #[test]
 fn dns_validate_rejects_a_zero_zone_default() {
     let mut parsed = parse_config(TestConfigToml::default()).unwrap();

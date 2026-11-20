@@ -1,4 +1,5 @@
-//! HTTP API server: routing, middleware, and the zone/record/notify endpoints.
+//! HTTP API: the route modules, and the listener that serves them over HTTP
+//! or HTTPS.
 
 mod dnssec;
 mod dnssec_policy;
@@ -27,70 +28,20 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::FromRequestParts;
-use axum::http::request::Parts;
 use axum_server::Handle;
 use axum_server::tls_rustls::RustlsConfig;
-use bindizr_core::model::api_token::ApiToken;
 use bindizr_service::Context;
-use bindizr_service::authorization::Caller;
-use bindizr_service::error::ServiceError;
 use rustls::ServerConfig;
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
-use crate::api::error::ApiError;
 use crate::shutdown::Shutdown;
 use crate::tls::TlsCertificate;
 
 /// How long a TLS shutdown waits for in-flight requests before dropping the
 /// connections; the plain-HTTP path waits without a deadline, as axum does.
 const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
-
-/// The caller attached by the auth middleware, or by the router's
-/// `Caller::unauthenticated_api()` layer when authentication is disabled. A request without
-/// one reached a handler outside both layers, so extraction fails closed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RequestCaller(pub(crate) Caller);
-
-impl<S> FromRequestParts<S> for RequestCaller
-where
-    S: Send + Sync,
-{
-    type Rejection = ApiError;
-
-    /// Extract the authorized caller from request extensions.
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
-        parts
-            .extensions
-            .get::<Caller>()
-            .cloned()
-            .map(RequestCaller)
-            .ok_or_else(|| ApiError(ServiceError::unauthorized("request has no caller identity")))
-    }
-}
-
-/// The token a request authenticated with, attached by the auth middleware;
-/// absent when authentication is disabled, so a self-reading route answers 404.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AuthenticatedToken(pub(crate) ApiToken);
-
-impl<S> FromRequestParts<S> for AuthenticatedToken
-where
-    S: Send + Sync,
-{
-    type Rejection = ApiError;
-
-    /// Extract the authenticated API token from request extensions.
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
-        parts.extensions.get::<Self>().cloned().ok_or_else(|| {
-            ApiError(ServiceError::TokenNotFound(
-                "the request presents no API token: authentication is disabled".to_string(),
-            ))
-        })
-    }
-}
 
 /// Why the HTTP API could not come up.
 #[derive(Debug, Error)]

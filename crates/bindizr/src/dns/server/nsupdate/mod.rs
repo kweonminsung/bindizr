@@ -98,7 +98,7 @@ async fn handle_nsupdate_request(
                 RequestSignature::Key(RequestTsig { name, fudge }) => {
                     match update::authenticate_tsig_key(dns_cx, query_data, &name).await {
                         Ok((tsig_key, signer)) => {
-                            access_log.caller = tsig_key.map(|tsig_key| ChangeActor::TsigKey {
+                            access_log.caller = Some(ChangeActor::TsigKey {
                                 name: tsig_key.name,
                             });
                             (Some(signer), fudge)
@@ -130,25 +130,15 @@ async fn handle_nsupdate_request(
                                 }
                             }
                         }
+                        // The key row would not load or decode: a server fault,
+                        // as in the applied branch.
                         Err(error) => {
-                            if matches!(&error, UpdateError::LoadTsigKey(_)) {
-                                log::error!(
-                                    "NSUPDATE from {client_addr} failed with a server fault: {error:?}"
-                                );
-                            } else {
-                                log::warn!("NSUPDATE key check failed from {client_addr}: {error}");
-                            }
+                            log::error!(
+                                "NSUPDATE from {client_addr} failed with a server fault: {error:?}"
+                            );
 
-                            if matches!(&error, UpdateError::LoadTsigKey(_))
-                                || matches!(
-                                    &error,
-                                    UpdateError::Tsig(error)
-                                        if !matches!(error, TsigError::Malformed(_))
-                                )
-                            {
-                                response_rcode = OptRcode::SERVFAIL;
-                                access_log.error = Some(error.to_string());
-                            }
+                            response_rcode = OptRcode::SERVFAIL;
+                            access_log.error = Some(error.to_string());
 
                             (None, DEFAULT_FUDGE)
                         }
@@ -221,11 +211,6 @@ async fn handle_nsupdate_request(
             log::info!("Refusing the EDNS of an NSUPDATE from {client_addr}");
             access_log.error = Some(format!("unacceptable EDNS: {rcode}"));
             (rcode, None)
-        }
-        Err(error @ UpdateError::Tsig(TsigError::Malformed(_))) => {
-            log::warn!("NSUPDATE refused from {client_addr}: {error}");
-            access_log.error = Some(error.to_string());
-            (OptRcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
         }
         Err(error @ UpdateError::NotAuth { .. }) => {
             log::warn!("NSUPDATE notauth from {client_addr}: {error}");

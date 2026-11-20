@@ -292,7 +292,7 @@ async fn refuse_tcp_xfr(
     };
     let mut reason = refusal.to_string();
     let response = match refusal.into_response(&QueryMetadata::from(query), query_data) {
-        Err(DnsError::Tsig(error)) => {
+        Err(DnsError::TsigResponse(error)) => {
             outcome = XfrResult::Failed;
             reason = error.to_string();
             query
@@ -375,7 +375,7 @@ pub(crate) async fn handle_udp_xfr(
             let mut failed = refusal.is_failure();
             log::warn!("Refused XFR UDP query from {}: {refusal}", client_addr.ip());
             let response = match refusal.into_response(&QueryMetadata::from(query), query_data) {
-                Err(DnsError::Tsig(error)) => {
+                Err(DnsError::TsigResponse(error)) => {
                     failed = true;
                     log::warn!("Failed to encode XFR UDP TSIG refusal: {error}");
                     query

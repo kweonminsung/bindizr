@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
-use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
+use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
 /// A derived row's rdata is wire bytes and its type a number, so only the
 /// name half of a search reaches it, and value and priority not at all.
@@ -68,16 +68,11 @@ pub async fn list_signatures_covering_apex_soa_tx(
 pub async fn list_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
-    lock_level: LockLevel,
 ) -> Result<Vec<DnssecRecord>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::dnssec_record::list_tx(tx, zone_id, lock_level).await,
-        TransactionKind::Postgres(tx) => {
-            postgres::dnssec_record::list_tx(tx, zone_id, lock_level).await
-        }
-        TransactionKind::Sqlite(tx) => {
-            sqlite::dnssec_record::list_tx(tx, zone_id, lock_level).await
-        }
+        TransactionKind::MySql(tx) => mysql::dnssec_record::list_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_record::list_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_record::list_tx(tx, zone_id).await,
     }
 }
 

@@ -13,12 +13,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use base64::engine::general_purpose;
 use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
 use domain::base::{Message, MessageBuilder, Ttl};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::rdata::{A, Soa};
-use domain::tsig::{Algorithm, ClientSequence, ClientTransaction, Key, KeyName};
+use domain::tsig::{Algorithm, ClientSequence, ClientTransaction};
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 use tokio::time;
@@ -257,8 +256,6 @@ async fn tsig_algorithm_names_match_regardless_of_case() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn sha1_tsig_key_authenticates_queries_and_updates() {
-    use base64::Engine;
-
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -273,17 +270,13 @@ async fn sha1_tsig_key_authenticates_queries_and_updates() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha1");
-    let secret = general_purpose::STANDARD
-        .decode(body["secret"].as_str().unwrap())
-        .unwrap();
     let key = Arc::new(
-        Key::new(
-            Algorithm::Sha1,
-            &secret,
-            KeyName::from_str("sha1-key").unwrap(),
-            None,
-            None,
-        )
+        SigningKey {
+            name: "sha1-key".to_string(),
+            secret: body["secret"].as_str().unwrap().to_string(),
+            algorithm: Algorithm::Sha1,
+        }
+        .to_tsig_key()
         .unwrap(),
     );
 
@@ -383,12 +376,10 @@ async fn udp_ixfr_returns_current_soa() {
 
     // RFC 1995, Section 2: Windows DNS asks this way after a NOTIFY and goes
     // to TCP only when the answer's serial is ahead of its own.
-    let (query_id, response) =
+    let response =
         dns::exchange_dns_query(app.dns_port(), zone_name, Rtype::IXFR.to_int()).unwrap();
-    let response = Message::from_octets(response).unwrap();
     let header = response.header();
 
-    assert_eq!(header.id(), query_id);
     assert_eq!(header.rcode(), Rcode::NOERROR);
     assert!(header.aa() && !header.tc());
     assert_eq!(response.sole_question().unwrap().qtype(), Rtype::IXFR);
@@ -428,9 +419,8 @@ async fn ixfr_serial_order_selects_soa_only_replies() {
     let mut mismatches = Vec::new();
 
     for (zone_name, full_count) in [(zone["name"].as_str().unwrap(), 3), ("catalog.bindizr", 5)] {
-        let (_, response) =
+        let response =
             dns::exchange_dns_query(app.dns_port(), zone_name, Rtype::SOA.to_int()).unwrap();
-        let response = Message::from_octets(response).unwrap();
         let soa = response
             .answer()
             .unwrap()

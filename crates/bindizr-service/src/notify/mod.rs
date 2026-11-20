@@ -75,8 +75,8 @@ pub(crate) async fn send_notify(
                 let (zone_name, result) = result.map_err(|error| {
                     ServiceError::internal_with_source("NOTIFY task failed", error)
                 })?;
+                // Returned whole to the boundary, which logs it once.
                 if let Err(error) = result {
-                    log::warn!("Failed to send NOTIFY for zone {zone_name}: {error}");
                     failures.push((zone_name, error));
                 }
             }

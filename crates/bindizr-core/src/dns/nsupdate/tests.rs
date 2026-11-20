@@ -1,11 +1,11 @@
 use std::str::FromStr;
 
-use domain::base::Name;
 use domain::base::iana::{Class, Rcode, Rtype, TsigRcode};
 use domain::rdata::tsig::Tsig;
 use domain::tsig::ClientTransaction;
 
 use super::*;
+use crate::dns::name::WireName;
 use crate::dns::{message, tsig};
 use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
@@ -98,7 +98,7 @@ fn build_response_signs_with_request_mac_chain() {
     let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let signer = tsig::verify_tsig(&query_data, Some(key)).unwrap();
+    let signer = tsig::verify_tsig(&query_data, key).unwrap();
 
     let response = build_response(
         &query_data,
@@ -181,7 +181,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
         builder.header_mut().set_opcode(Opcode::UPDATE);
         let mut question = builder.question();
         question
-            .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
+            .push((WireName::from_str(&name).unwrap(), Rtype::SOA))
             .unwrap();
         let mut additional = question.additional();
 
@@ -197,7 +197,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
         let query_data = additional.finish().into_target();
-        let signer = tsig::verify_tsig(&query_data, Some(key.clone())).unwrap();
+        let signer = tsig::verify_tsig(&query_data, key.clone()).unwrap();
 
         for rcode in [
             OptRcode::NOERROR,

@@ -67,8 +67,15 @@ impl OwnerName {
         value: &str,
         zone_name: &ZoneName,
     ) -> Result<Self, ParseNameError> {
+        let trimmed = name::trim_presentation_name(value);
+
+        // No zone is the root, so the root lies outside every zone.
+        if trimmed == "." {
+            return Err(ParseNameError::OutsideZone);
+        }
+
         // `@` is client shorthand, not a name: here it is one label like any other.
-        let (labels, _) = name::decode_name_labels(name::trim_presentation_name(value))?;
+        let (labels, _) = name::decode_name_labels(trimmed)?;
 
         relative_labels(&labels, &zone_name.labels())
             .map(Self)

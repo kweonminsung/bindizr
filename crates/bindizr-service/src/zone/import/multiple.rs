@@ -106,18 +106,34 @@ pub async fn import_many(
 
     // Reuse the transfer connection while each zone keeps its own transaction.
     for zone_name in &zone_names {
-        let (result, import, error) =
-            match import::import_transfer(cx, caller, zone_name, &mut client, address, options)
-                .await
-            {
-                Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
-                Ok(import) => (ImportResult::Ok, Some(import), None),
-                Err(error) => (
+        let (result, import, error) = match import::import_transfer(
+            cx,
+            caller,
+            zone_name,
+            &mut client,
+            address,
+            options,
+        )
+        .await
+        {
+            Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
+            Ok(import) => (ImportResult::Ok, Some(import), None),
+            Err(error) => {
+                // The reply carries the error as text, so a server fault is
+                // logged here, where it leaves the process.
+                if error.code().is_internal() {
+                    log::error!(
+                        "event=zones_import zone_name={zone_name} failed with a server fault: {error:?}"
+                    );
+                }
+
+                (
                     ImportResult::Failed,
                     None,
                     Some(ErrorResponse::from(&error)),
-                ),
-            };
+                )
+            }
+        };
 
         match result {
             ImportResult::Ok => summary.ok += 1,

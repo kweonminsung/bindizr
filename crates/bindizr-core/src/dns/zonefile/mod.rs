@@ -9,7 +9,7 @@ use domain::base::iana::{Class, Rtype};
 use domain::base::name::ParsedName;
 use domain::base::rdata::ParseRecordData;
 use domain::dep::octseq::parse::Parser;
-use domain::rdata::ZoneRecordData;
+use domain::rdata::{Soa, ZoneRecordData};
 use domain::zonefile::inplace;
 use domain::zonefile::inplace::{Entry, Zonefile};
 use thiserror::Error;
@@ -18,7 +18,7 @@ pub use wks::RewriteNativeRecordsError;
 use crate::dns::name::ZoneName;
 use crate::dns::query::TransferRecord;
 use crate::dns::record::{NaptrRecordValue, ParseRecordValueError, WksRecordValue};
-use crate::dns::{LibraryError, Serial, SoaInterval, Ttl, name, record};
+use crate::dns::{ConvertSoaIntervalError, LibraryError, Serial, SoaInterval, Ttl, name, record};
 use crate::model::record::RecordType;
 
 /// Directives `ParsedZoneFile::parse` prepends before handing the text to the parser.
@@ -89,7 +89,11 @@ pub enum ParseZoneFileError {
         "SOA for '{owner}' has a refresh, retry or expire past {} seconds",
         SoaInterval::MAX
     )]
-    SoaIntervalTooLarge { owner: String },
+    SoaIntervalTooLarge {
+        owner: String,
+        #[source]
+        source: ConvertSoaIntervalError,
+    },
     #[error("unsupported record type '{rtype}' for '{owner}'")]
     UnsupportedType { rtype: Rtype, owner: String },
     #[error("WKS value for '{owner}': {source}")]
@@ -273,12 +277,12 @@ impl ParsedZoneFile {
                     self.errors.push(ParseZoneFileError::DuplicateSoa {
                         zone_name: origin_fqdn.to_string(),
                     });
-                } else {
-                    match to_zone_file_soa(data) {
-                        Some(soa) => self.soa = Some(soa),
-                        None => self
+                } else if let ZoneRecordData::Soa(soa) = data {
+                    match to_zone_file_soa(soa) {
+                        Ok(soa) => self.soa = Some(soa),
+                        Err(source) => self
                             .errors
-                            .push(ParseZoneFileError::SoaIntervalTooLarge { owner }),
+                            .push(ParseZoneFileError::SoaIntervalTooLarge { owner, source }),
                     }
                 }
 
@@ -396,17 +400,14 @@ impl ParsedZoneFile {
     }
 }
 
-/// Read an SOA record's fields, or `None` when a timer does not fit the i32
-/// columns a zone stores them in.
-fn to_zone_file_soa<Octs, N: ToName + fmt::Display>(
-    data: &ZoneRecordData<Octs, N>,
-) -> Option<ZoneFileSoa> {
-    let ZoneRecordData::Soa(soa) = data else {
-        return None;
-    };
-    let interval = |value: domain::base::Ttl| SoaInterval::try_from(value.as_secs()).ok();
+/// Read an SOA record's fields; a timer that does not fit the i32 columns a
+/// zone stores them in is refused.
+fn to_zone_file_soa<N: ToName + fmt::Display>(
+    soa: &Soa<N>,
+) -> Result<ZoneFileSoa, ConvertSoaIntervalError> {
+    let interval = |value: domain::base::Ttl| SoaInterval::try_from(value.as_secs());
 
-    Some(ZoneFileSoa {
+    Ok(ZoneFileSoa {
         mname: soa.mname().to_string(),
         // The mailbox is rendered in its SOA form (`admin.example.com.`); the
         // service turns it back into an address.

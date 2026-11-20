@@ -2,11 +2,10 @@
 //! budgets, and response encoding with its record/SOA serialization.
 
 mod limit;
-pub(crate) mod query;
+mod query;
 mod query_metadata;
 mod records;
 
-pub use domain::base::Name;
 pub use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype};
 use domain::base::message_builder::TreeCompressor;
 use domain::base::opt::keepalive::TcpKeepalive;
@@ -18,14 +17,13 @@ use domain::rdata::tsig::Time48;
 pub use limit::ResponseLimit;
 pub use query::{
     EDNS_UDP_PAYLOAD_SIZE, Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
-    UDP_PAYLOAD_SIZE_WITHOUT_EDNS, extract_opcode, is_response,
+    UDP_PAYLOAD_SIZE_WITHOUT_EDNS, extract_id, extract_opcode, is_response,
 };
 pub use query_metadata::{QueryMetadata, has_readable_sections};
 use thiserror::Error;
 
 use crate::dns::LibraryError;
-use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
-use crate::dns::name::{EncodeNameError, EncodeWireNameError};
+use crate::dns::name::{EncodeWireNameError, WireName};
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::tsig::TransferSigner;
 
@@ -37,6 +35,12 @@ pub(crate) const QUESTION_FIELDS_LEN: usize = 4;
 
 /// TYPE, CLASS, TTL and RDLENGTH length, excluding owner name and RDATA.
 pub(crate) const RECORD_FIELDS_LEN: usize = 10;
+
+/// The wire size of the OPT record a response carries, options aside.
+pub(crate) const OPT_RECORD_LEN: usize = 1 + RECORD_FIELDS_LEN;
+
+/// The wire size of the edns-tcp-keepalive option with its timeout.
+pub(crate) const KEEPALIVE_OPTION_LEN: usize = 6;
 
 /// Compress response names before signing.
 pub(crate) fn build_response() -> MessageBuilder<TreeCompressor<Vec<u8>>> {
@@ -51,8 +55,6 @@ pub enum EncodeMessageError {
     RawRdata(#[source] LibraryError),
     #[error(transparent)]
     Owner(#[from] EncodeWireNameError),
-    #[error(transparent)]
-    Name(#[from] EncodeNameError),
     #[error(transparent)]
     Rdata(#[from] EncodeRdataError),
     #[error("derived change carries no wire rdata")]
@@ -113,7 +115,7 @@ impl ComposeRecord for ComposedRecord<'_> {
 pub struct DnsMessageBuilder {
     limit: ResponseLimit,
     query_id: u16,
-    qname: Name<Vec<u8>>,
+    qname: WireName,
     qtype: u16,
     qclass: Class,
     answers: Vec<Vec<u8>>,
@@ -146,7 +148,7 @@ impl DnsMessageBuilder {
             signer: None,
             rd: query.rd,
             edns: query.edns,
-            keepalive: query.tcp_keepalive(),
+            keepalive: query.keepalive.tcp_keepalive(),
             truncated: false,
         }
     }
@@ -167,12 +169,12 @@ impl DnsMessageBuilder {
     /// Add an answer from wire-format RDATA bytes, with no per-type parser.
     pub fn add_raw_rdata(
         &mut self,
-        owner: Name<Vec<u8>>,
-        rtype: u16,
+        owner: WireName,
+        rtype: Rtype,
         ttl: u32,
         rdata: Rdata,
     ) -> Result<(), EncodeMessageError> {
-        let data = UnknownRecordData::from_octets(Rtype::from_int(rtype), rdata.into_bytes())
+        let data = UnknownRecordData::from_octets(rtype, rdata.into_bytes())
             .map_err(|error| EncodeMessageError::RawRdata(Box::new(error)))?;
         self.add_answer(owner, ttl, data);
         Ok(())

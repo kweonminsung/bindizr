@@ -157,9 +157,10 @@ fn normalize_filter(
         .map(str::trim)
         .filter(|address| !address.is_empty())
         .map(|address| {
+            // Rows store an IPv4-mapped client as IPv4, so the key does too.
             address
                 .parse::<IpAddr>()
-                .map(|ip| ip.to_string())
+                .map(|ip| ip.to_canonical().to_string())
                 .map_err(|_| {
                     ServiceError::invalid_input(format!("address '{address}' is not an IP address"))
                 })

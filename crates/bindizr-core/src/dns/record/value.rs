@@ -2,8 +2,9 @@
 
 use std::iter;
 
-use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
-use crate::dns::message::{DNS_HEADER_LEN, QUESTION_FIELDS_LEN, RECORD_FIELDS_LEN};
+use crate::dns::message::{
+    DNS_HEADER_LEN, KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN, QUESTION_FIELDS_LEN, RECORD_FIELDS_LEN,
+};
 use crate::dns::name::MAX_WIRE_NAME_LEN;
 use crate::dns::record::ParseRecordValueError;
 use crate::dns::tsig::MAX_TSIG_RECORD;

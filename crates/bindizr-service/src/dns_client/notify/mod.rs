@@ -7,12 +7,13 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 use std::{future, io};
 
-use bindizr_core::dns::message::{Keepalive, Name, OptRcode, QueryMetadata, ResponseLimit};
+use bindizr_core::dns::message::{Keepalive, OptRcode, QueryMetadata, ResponseLimit};
+use bindizr_core::dns::name::WireName;
 use bindizr_core::dns::query::ParseResponseError;
 use bindizr_core::dns::tsig::{
     ResponseVerifier, SignRequestError, TsigSigningKey, VerifyResponseError,
 };
-use bindizr_core::dns::{query, tsig};
+use bindizr_core::dns::{message, query, tsig};
 use thiserror::Error;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -83,6 +84,8 @@ impl TargetSocket {
 /// One immutable datagram, its verifier, and the timer for its current attempt.
 #[derive(Debug)]
 struct PendingNotify {
+    /// The ID reserved on the target socket, which keys the request.
+    id: u16,
     request: Vec<u8>,
     limit: ResponseLimit,
     verifier: Option<ResponseVerifier>,
@@ -91,7 +94,7 @@ struct PendingNotify {
     deadline: Instant,
     waiting: bool,
     sent: bool,
-    qname: Name<Vec<u8>>,
+    qname: WireName,
     reply: oneshot::Sender<Result<(), SendNotifyError>>,
 }
 
@@ -140,7 +143,7 @@ impl NotifyClient {
     /// Send a NOTIFY request, retrying the same bytes/socket only on silence.
     pub(crate) async fn send(
         &self,
-        qname: &Name<Vec<u8>>,
+        qname: &WireName,
         server_addr: SocketAddr,
         timeout: Duration,
         retries: u32,
@@ -158,6 +161,7 @@ impl NotifyClient {
             .response_limit();
         let (reply, response) = oneshot::channel();
         let request = PendingNotify {
+            id,
             request: query,
             limit,
             verifier,
@@ -239,7 +243,7 @@ async fn serve(
         tokio::select! {
             job = jobs.recv(), if accepting => match job {
                 Some(request) => {
-                    let id = u16::from_be_bytes([request.request[0], request.request[1]]);
+                    let id = request.id;
                     timers.insert((request.deadline, id));
                     requests.insert(id, request);
                     ready.push_back(id);
@@ -341,11 +345,9 @@ async fn serve(
                 };
                 let response = &buffer[..received];
 
-                if response.len() < 2 {
+                let Some(id) = message::extract_id(response) else {
                     continue;
-                }
-
-                let id = u16::from_be_bytes([response[0], response[1]]);
+                };
                 let Some(request) = requests.get(&id) else {
                     continue;
                 };

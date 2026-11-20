@@ -1,6 +1,6 @@
 use std::slice;
 
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::record::{Record, RecordData, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::{Zone, ZoneId};
@@ -8,7 +8,7 @@ use bindizr_db::LockLevel;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::types::{RecordResponse, UpdateRecordRequest, WriteRecordResponse};
+use crate::types::{RecordDiffResponse, RecordResponse, UpdateRecordRequest, WriteRecordResponse};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, record, serial, transaction, ttl, zone};
 
@@ -24,7 +24,7 @@ enum LockTarget<'a> {
     /// of them on the caller's behalf.
     Name {
         zone_name: &'a ZoneName,
-        name: &'a str,
+        owner: &'a OwnerName,
     },
 }
 
@@ -160,7 +160,18 @@ pub async fn update_by_name(
     name: &str,
     request: &UpdateRecordRequest,
 ) -> Result<WriteRecordResponse, ServiceError> {
-    update_locked(cx, caller, LockTarget::Name { zone_name, name }, request).await
+    let owner = record::normalize_record_owner_name(name, zone_name)?;
+
+    update_locked(
+        cx,
+        caller,
+        LockTarget::Name {
+            zone_name,
+            owner: &owner,
+        },
+        request,
+    )
+    .await
 }
 
 /// Load the record inside the transaction, resolve the update against it,
@@ -179,11 +190,8 @@ async fn update_locked(
                 let zone =
                     match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
                         Ok(Some(zone)) => zone,
-                        Ok(None) => {
-                            return Err(ServiceError::ZoneNotFound(format!(
-                                "zone with id '{zone_id}' not found"
-                            )));
-                        }
+                        // The zone went with the record the request named.
+                        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
                         Err(error) => {
                             return Err(ServiceError::internal_with_source(
                                 "failed to fetch zone",
@@ -223,18 +231,17 @@ async fn update_locked(
 
                 (zone, existing_record, caller)
             }
-            LockTarget::Name { zone_name, name } => {
+            LockTarget::Name { zone_name, owner } => {
                 let zone =
                     zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
                 let caller = caller.reauthenticate_tx(&mut tx).await?;
                 caller.authorize_zone_visible(&zone)?;
-                let owner = record::normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller may read or update.
                 let mut matched: Vec<Record> = bindizr_db::record::list_by_name_tx(
                     &mut tx,
                     zone.id,
-                    &owner,
+                    owner,
                     LockLevel::Exclusive,
                 )
                 .await?
@@ -251,10 +258,10 @@ async fn update_locked(
 
                 match matched.len() {
                     1 => (zone, matched.remove(0), caller),
-                    0 => return Err(ServiceError::record_not_found_at_name(&zone.name, &owner)),
+                    0 => return Err(ServiceError::record_not_found_at_name(&zone.name, owner)),
                     matches => {
                         return Err(ServiceError::record_name_ambiguous(
-                            &zone.name, &owner, matches,
+                            &zone.name, owner, matches,
                         ));
                     }
                 }
@@ -310,34 +317,6 @@ async fn update_locked(
             Some(existing_record.id),
         )?;
 
-        // The owner's rows frame the diff. A move spans two, and the record
-        // sits at the one it leaves, so that name's rows come along too.
-        let mut framed = records_at_name.clone();
-
-        if candidate.name != existing_record.name {
-            framed.extend(
-                bindizr_db::record::list_by_name_tx(
-                    &mut tx,
-                    zone.id,
-                    &existing_record.name,
-                    LockLevel::Exclusive,
-                )
-                .await?,
-            );
-        }
-
-        let before = caller.readable_records(zone.id, framed.iter().cloned().map(RecordData::from));
-        let mut after = caller.readable_records(
-            zone.id,
-            framed
-                .iter()
-                .filter(|record| record.id != existing_record.id)
-                .cloned()
-                .map(RecordData::from),
-        );
-        after.push_written(RecordData::from(candidate.clone()));
-        let diff = diff::build_record_diff(&zone, &before, &after);
-
         zone::validate_record_changes_tx(
             &mut tx,
             &zone,
@@ -349,8 +328,38 @@ async fn update_locked(
         let new_serial = serial::generate_serial(Some(zone.serial));
         let actions = caller.record_actions(zone.id, &candidate.name, candidate.record_type);
 
-        // The merge is resolved and validated, so a dry run stops here.
+        // The merge is resolved and validated, so a dry run stops here with
+        // its preview.
         if request.dry_run {
+            // The owner's rows frame the diff. A move spans two, and the record
+            // sits at the one it leaves, so that name's rows come along too.
+            let mut framed = records_at_name.clone();
+
+            if candidate.name != existing_record.name {
+                framed.extend(
+                    bindizr_db::record::list_by_name_tx(
+                        &mut tx,
+                        zone.id,
+                        &existing_record.name,
+                        LockLevel::Exclusive,
+                    )
+                    .await?,
+                );
+            }
+
+            let before =
+                caller.readable_records(zone.id, framed.iter().cloned().map(RecordData::from));
+            let mut after = caller.readable_records(
+                zone.id,
+                framed
+                    .iter()
+                    .filter(|record| record.id != existing_record.id)
+                    .cloned()
+                    .map(RecordData::from),
+            );
+            after.push_written(RecordData::from(candidate.clone()));
+            let diff = diff::build_record_diff(&zone, &before, &after);
+
             return Ok((candidate, zone.name, diff, actions));
         }
 
@@ -366,7 +375,13 @@ async fn update_locked(
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok((updated_record, zone_name, diff, actions))
+        // Only a preview carries the diff.
+        Ok((
+            updated_record,
+            zone_name,
+            RecordDiffResponse::default(),
+            actions,
+        ))
     }
     .await;
 

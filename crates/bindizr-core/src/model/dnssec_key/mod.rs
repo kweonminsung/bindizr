@@ -345,12 +345,12 @@ impl DnssecKey {
     /// the propagation delay.
     pub fn retirement_interval_secs(
         &self,
-        parent_ds_ttl: Option<u32>,
+        parent_ds_ttl: Option<Ttl>,
         propagation_secs: u32,
     ) -> i64 {
         let signatures = i64::from(self.max_signed_ttl.as_secs());
         let cached = if self.role.is_sep() {
-            signatures.max(i64::from(parent_ds_ttl.unwrap_or(0)))
+            signatures.max(i64::from(parent_ds_ttl.map_or(0, Ttl::as_secs)))
         } else {
             signatures
         };

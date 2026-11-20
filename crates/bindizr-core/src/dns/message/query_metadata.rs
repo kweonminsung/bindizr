@@ -2,7 +2,7 @@
 
 use domain::base::iana::{Opcode, OptRcode};
 use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
-use domain::base::{Message, Name, Question};
+use domain::base::{Message, Question};
 use domain::rdata::tsig::Time48;
 
 use crate::dns::message;
@@ -10,6 +10,7 @@ use crate::dns::message::{
     Edns, EncodeMessageError, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
     ResponseLimit,
 };
+use crate::dns::name::WireName;
 use crate::dns::tsig::TransferSigner;
 
 /// Readable request metadata for an error response, with or without a question.
@@ -18,7 +19,7 @@ pub struct QueryMetadata {
     query_id: u16,
     opcode: Opcode,
     rd: bool,
-    question: Option<Question<Name<Vec<u8>>>>,
+    question: Option<Question<WireName>>,
     edns: Edns,
     keepalive: Keepalive,
 }
@@ -60,8 +61,8 @@ impl QueryMetadata {
         }
     }
 
-    /// Return the response code; an EDNS error takes precedence over the default
-    /// questionless refusal.
+    /// Return the EDNS error alone: FORMERR for a malformed OPT, BADVERS for
+    /// an unsupported version (RFC 6891, Sections 6.1.1 and 6.1.3).
     pub fn format_error(&self) -> Option<OptRcode> {
         self.edns.format_error()
     }

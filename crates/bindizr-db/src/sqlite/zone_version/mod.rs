@@ -5,7 +5,6 @@ use bindizr_core::model::zone_version::{VersionFilter, ZoneVersion};
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
 /// Exclude past versions whose nonempty journal contains only derived changes.
@@ -174,7 +173,6 @@ pub(crate) async fn get_by_serial_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
     serial: Serial,
-    _lock_level: LockLevel,
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     let version = sqlx::query_as::<_, ZoneVersion>(
         r#"

@@ -20,12 +20,11 @@ pub async fn create_tx(
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
     id: PolicyId,
-    lock_level: LockLevel,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::dnssec_policy::get_tx(tx, id, lock_level).await,
-        TransactionKind::Postgres(tx) => postgres::dnssec_policy::get_tx(tx, id, lock_level).await,
-        TransactionKind::Sqlite(tx) => sqlite::dnssec_policy::get_tx(tx, id, lock_level).await,
+        TransactionKind::MySql(tx) => mysql::dnssec_policy::get_tx(tx, id).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_policy::get_tx(tx, id).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_policy::get_tx(tx, id).await,
     }
 }
 

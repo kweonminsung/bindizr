@@ -1421,7 +1421,7 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
         let role_name = app.zone_name(&format!("parity{index}"));
         app.set_auth_token(admin_token.clone());
 
-        let token = create_role_with_token(&app, &role_name).await;
+        let token = app.create_named_scoped_api_token(&role_name).await.1;
         app.run_cli_success(
             &[
                 "role",
@@ -1626,21 +1626,6 @@ async fn write_only_grant_changes_matching_records() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Create role `name` and a token in it, returning the token's secret.
-async fn create_role_with_token(app: &TestApp, name: &str) -> String {
-    app.run_cli_success(&["role", "create", name], None).await;
-    let created: Value = serde_json::from_str(
-        &app.run_cli_success(
-            &["token", "create", name, "--role", name, "--output", "json"],
-            None,
-        )
-        .await,
-    )
-    .unwrap();
-
-    created["secret"].as_str().unwrap().to_string()
-}
-
 /// Verify that no response or refusal a restricted role gets, on any record,
 /// zone, version, import or ExternalDNS route, carries a record it cannot read.
 #[tokio::test]
@@ -1752,11 +1737,14 @@ async fn responses_hide_records_outside_read_grants() {
 
     let creator_role_name = format!("{}-creator", app.namespace());
 
-    let creator_token = create_role_with_token(&app, &creator_role_name).await;
+    let creator_token = app
+        .create_named_scoped_api_token(&creator_role_name)
+        .await
+        .1;
 
     let writer_role_name = format!("{}-writer", app.namespace());
 
-    let writer_token = create_role_with_token(&app, &writer_role_name).await;
+    let writer_token = app.create_named_scoped_api_token(&writer_role_name).await.1;
 
     for (role_name, actions) in [
         (&creator_role_name, "zone:read,record:create"),
@@ -1782,7 +1770,10 @@ async fn responses_hide_records_outside_read_grants() {
 
     let renamer_role_name = format!("{}-renamer", app.namespace());
 
-    let renamer_token = create_role_with_token(&app, &renamer_role_name).await;
+    let renamer_token = app
+        .create_named_scoped_api_token(&renamer_role_name)
+        .await
+        .1;
     app.run_cli_success(
         &[
             "role",
@@ -2167,7 +2158,7 @@ async fn zone_import_rejects_credential_revoked_during_transfer() {
         // `zone:read` keeps the zone visible, so a revoked grant reads as 403.
         let role_name = format!("{}-revoked-{revocation}", app.namespace());
 
-        let token = create_role_with_token(&app, &role_name).await;
+        let token = app.create_named_scoped_api_token(&role_name).await.1;
         app.run_cli_success(
             &[
                 "role",

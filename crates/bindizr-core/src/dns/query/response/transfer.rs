@@ -1,9 +1,9 @@
 //! Decode AXFR answer records with the transfer's question and flag rules.
 
-use domain::base::Name;
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::rdata::AllRecordData;
 
+use crate::dns::name::WireName;
 use crate::dns::query::response;
 use crate::dns::query::response::ParseResponseError;
 use crate::dns::record::Rdata;
@@ -22,7 +22,7 @@ pub struct TransferRecord {
 /// Require the initial echoed question; ignore AA/TC (RFC 5936, Sections 2 and 2.2.1).
 pub fn extract_transfer_records(
     query_id: u16,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     position: TransferMessagePosition,
     response: &[u8],
 ) -> Result<Vec<TransferRecord>, ParseResponseError> {

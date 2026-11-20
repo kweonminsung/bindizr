@@ -3,7 +3,7 @@
 
 use std::fs;
 use std::net::{TcpListener, UdpSocket};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
@@ -14,6 +14,9 @@ use tokio::time;
 use crate::common;
 use crate::common::{TestApp, TestAppOptions, TestRuntime};
 
+/// The config file a local daemon is started from, in its temp directory.
+const CONFIG_FILE_NAME: &str = "bindizr.conf.toml";
+
 impl TestApp {
     /// Start with non-default config; always the local runtime, because the
     /// compose stack's config is fixed.
@@ -21,7 +24,7 @@ impl TestApp {
         common::install_crypto_provider();
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("bindizr.sqlite");
-        let config_path = temp_dir.path().join("bindizr.conf.toml");
+        let config_path = temp_dir.path().join(CONFIG_FILE_NAME);
 
         // One certificate serves both TLS listeners; none is written otherwise.
         let tls_cert =
@@ -241,6 +244,18 @@ async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Res
     }
 
     Err(format!("{failure}\n{stderr}"))
+}
+
+impl TestApp {
+    /// Return the config file the local daemon was started from, for tests
+    /// that rewrite it and reload.
+    pub(crate) fn config_path(&self) -> PathBuf {
+        let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
+            panic!("only the local runtime owns its config file");
+        };
+
+        temp_dir.path().join(CONFIG_FILE_NAME)
+    }
 }
 
 impl TestApp {

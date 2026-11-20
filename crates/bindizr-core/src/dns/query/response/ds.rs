@@ -1,10 +1,12 @@
 //! Decode parent DS answers and validate their negative-answer authority.
 
 use domain::base::iana::{Class, OptRcode, Rtype};
-use domain::base::{Message, Name, ToName};
+use domain::base::{Message, ToName};
 use domain::rdata::{Ds, Soa};
 
+use crate::dns::Ttl;
 use crate::dns::dnssec::KeyTag;
+use crate::dns::name::WireName;
 use crate::dns::query::response;
 use crate::dns::query::response::ParseResponseError;
 
@@ -14,7 +16,7 @@ pub struct DsRecordSet {
     /// Child DS records, deduplicated and sorted by key tag then RDATA.
     pub records: Vec<DsRecord>,
     /// Cache TTL of the parent's DS records.
-    pub ttl: u32,
+    pub ttl: Ttl,
 }
 
 impl DsRecordSet {
@@ -39,7 +41,7 @@ pub struct DsRecord {
 /// Require AA to avoid stale cached parent data.
 pub fn extract_ds_record_set(
     query_id: u16,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     response: &[u8],
 ) -> Result<Option<DsRecordSet>, ParseResponseError> {
     use domain::base::rdata::ComposeRecordData;
@@ -93,7 +95,10 @@ pub fn extract_ds_record_set(
     records.sort();
     records.dedup();
 
-    Ok(Some(DsRecordSet { records, ttl }))
+    Ok(Some(DsRecordSet {
+        records,
+        ttl: Ttl::from_secs(ttl),
+    }))
 }
 
 /// Require a strict ancestor's SOA for negative DS answers, NXDOMAIN and NODATA
@@ -101,7 +106,7 @@ pub fn extract_ds_record_set(
 /// NODATA cannot pass.
 fn validate_parent_soa(
     message: &Message<&[u8]>,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
 ) -> Result<(), ParseResponseError> {
     let authority = message
         .authority()

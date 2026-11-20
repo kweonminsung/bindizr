@@ -104,15 +104,7 @@ pub enum DnssecRecordType {
 impl DnssecRecordType {
     /// Return the DNS wire type number for this derived record type.
     pub fn wire_type(self) -> u16 {
-        match self {
-            Self::Rrsig => 46,
-            Self::Nsec => 47,
-            Self::Dnskey => 48,
-            Self::Nsec3 => 50,
-            Self::Nsec3param => 51,
-            Self::Cds => 59,
-            Self::Cdnskey => 60,
-        }
+        Rtype::from(self).to_int()
     }
 
     /// Return the canonical wire spelling.
@@ -139,9 +131,9 @@ impl fmt::Display for DnssecRecordType {
 impl FromStr for DnssecRecordType {
     type Err = ParseDnssecRecordTypeError;
 
-    /// Parse a DNSSEC record type from its text representation.
+    /// Parse a DNSSEC record type from its text representation, in any case.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
+        match value.to_uppercase().as_str() {
             "RRSIG" => Ok(Self::Rrsig),
             "NSEC" => Ok(Self::Nsec),
             "DNSKEY" => Ok(Self::Dnskey),
@@ -161,16 +153,10 @@ impl TryFrom<i32> for DnssecRecordType {
 
     /// Validate and convert the stored value into a DNSSEC record type.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            46 => Ok(Self::Rrsig),
-            47 => Ok(Self::Nsec),
-            48 => Ok(Self::Dnskey),
-            50 => Ok(Self::Nsec3),
-            51 => Ok(Self::Nsec3param),
-            59 => Ok(Self::Cds),
-            60 => Ok(Self::Cdnskey),
-            _ => Err(ParseDnssecRecordTypeError::Number { value }),
-        }
+        let number =
+            u16::try_from(value).map_err(|_| ParseDnssecRecordTypeError::Number { value })?;
+
+        Self::try_from(Rtype::from_int(number))
     }
 }
 
@@ -179,7 +165,33 @@ impl TryFrom<Rtype> for DnssecRecordType {
 
     /// Convert a wire record type to the stored DNSSEC record type it maps to.
     fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
-        Self::try_from(i32::from(rtype.to_int()))
+        match rtype {
+            Rtype::RRSIG => Ok(Self::Rrsig),
+            Rtype::NSEC => Ok(Self::Nsec),
+            Rtype::DNSKEY => Ok(Self::Dnskey),
+            Rtype::NSEC3 => Ok(Self::Nsec3),
+            Rtype::NSEC3PARAM => Ok(Self::Nsec3param),
+            Rtype::CDS => Ok(Self::Cds),
+            Rtype::CDNSKEY => Ok(Self::Cdnskey),
+            _ => Err(ParseDnssecRecordTypeError::Number {
+                value: i32::from(rtype.to_int()),
+            }),
+        }
+    }
+}
+
+impl From<DnssecRecordType> for Rtype {
+    /// Return the wire record type of a derived record type.
+    fn from(record_type: DnssecRecordType) -> Self {
+        match record_type {
+            DnssecRecordType::Rrsig => Self::RRSIG,
+            DnssecRecordType::Nsec => Self::NSEC,
+            DnssecRecordType::Dnskey => Self::DNSKEY,
+            DnssecRecordType::Nsec3 => Self::NSEC3,
+            DnssecRecordType::Nsec3param => Self::NSEC3PARAM,
+            DnssecRecordType::Cds => Self::CDS,
+            DnssecRecordType::Cdnskey => Self::CDNSKEY,
+        }
     }
 }
 
@@ -235,6 +247,11 @@ mod tests {
                 value
             );
             assert_eq!(value.as_str().parse::<DnssecRecordType>().unwrap(), value);
+            assert_eq!(DnssecRecordType::try_from(Rtype::from(value)), Ok(value));
+            assert_eq!(
+                DnssecRecordType::try_from(i32::from(value.wire_type())),
+                Ok(value)
+            );
         }
     }
 }

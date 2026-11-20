@@ -14,8 +14,6 @@ use crate::{Context, dns_client, secondary, zone};
 /// Why a NOTIFY target could not be reached or acknowledged.
 #[derive(Debug, Error)]
 pub enum SendNotifyError {
-    #[error("{0}")]
-    Key(#[source] ServiceError),
     #[error("failed to resolve: {0}")]
     Resolve(#[source] ResolveAddressError),
     #[error("{0}")]
@@ -27,10 +25,10 @@ pub enum SendNotifyError {
 pub enum NotifyZoneError {
     #[error(transparent)]
     Service(#[from] ServiceError),
-    /// Failed targets and their original causes.
-    #[error("NOTIFY failed for zone {zone_name} ({})", failures.iter().map(|(address, error)| format!("{address}: {error}")).collect::<Vec<_>>().join("; "))]
+    /// Failed targets and their original causes; whoever reports it names
+    /// the zone.
+    #[error("NOTIFY failed: {}", failures.iter().map(|(address, error)| format!("{address}: {error}")).collect::<Vec<_>>().join("; "))]
     TargetsFailed {
-        zone_name: String,
         failures: Vec<(String, SendNotifyError)>,
     },
 }
@@ -67,10 +65,7 @@ pub(crate) async fn send_zone_notify(
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(NotifyZoneError::TargetsFailed {
-            zone_name: zone_name.to_string(),
-            failures,
-        })
+        Err(NotifyZoneError::TargetsFailed { failures })
     }
 }
 
@@ -130,15 +125,13 @@ async fn send_notify(
     let mut results = Vec::new();
 
     for secondary in secondaries {
+        // A stored key that will not load is a server fault, not a target's
+        // outcome: returned whole, so where it ends logs it.
         let key = match secondary::find_notify_signing_key(cx, &secondary).await {
             Ok(key) => key,
             Err(error) => {
                 cx.metrics().track_notify(NotifyResult::Failed);
-                results.push((
-                    secondary.address.to_string(),
-                    Err(SendNotifyError::Key(error)),
-                ));
-                continue;
+                return Err(error);
             }
         };
         preparations.spawn(async move {
@@ -187,8 +180,8 @@ async fn send_notify(
                 cx.metrics().track_notify(NotifyResult::Ok);
                 Ok(())
             }
+            // Returned, not logged: the caller that ends the failure reports it.
             Err(error) => {
-                log::error!("Failed to send NOTIFY to {addr}: {error}");
                 cx.metrics().track_notify(NotifyResult::Failed);
                 Err(SendNotifyError::Send(error))
             }

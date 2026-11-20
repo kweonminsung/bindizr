@@ -264,11 +264,6 @@ impl RecordType {
         }
     }
 
-    /// Return the record TYPE number this type's records carry on the wire.
-    pub fn wire_type(self) -> u16 {
-        Rtype::from(self).to_int()
-    }
-
     /// Validate a stored value (and its priority column) for this record type.
     pub fn validate_value(
         self,
@@ -289,13 +284,7 @@ impl RecordType {
             Self::Ds => DsRecordValue::parse(value)?.validate(),
             Self::Mx => MxRecordValue::parse(value, priority)?.validate(),
             Self::Naptr => NaptrRecordValue::parse(value)?.validate(),
-            // Stored TXT is always the presentation form.
-            Self::Txt => TxtRecordValue::from_presentation(value)
-                .map_err(|source| ParseRecordValueError::StoredTxtNotPresentation {
-                    value: value.to_string(),
-                    source: Box::new(source),
-                })?
-                .validate(),
+            Self::Txt => TxtRecordValue::from_row(value)?.validate(),
             Self::Ns => NsRecordValue::parse(value).map(|_| ()),
             Self::Srv => SrvRecordValue::parse(value, priority)?.validate(),
             Self::Ptr => PtrRecordValue::parse(value).map(|_| ()),

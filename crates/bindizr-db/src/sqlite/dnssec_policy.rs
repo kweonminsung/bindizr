@@ -39,7 +39,6 @@ pub(crate) async fn create_tx(
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
     id: PolicyId,
-    _lock_level: LockLevel,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(
         "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = ?",

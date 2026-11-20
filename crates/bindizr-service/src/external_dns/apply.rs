@@ -42,7 +42,7 @@ pub async fn apply_changes(
     let apply_result: Result<_, ServiceError> = async {
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
-        let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
+        let zones = bindizr_db::zone::list_all_tx(&mut tx).await?;
 
         // Only to learn the lock targets, from all zones so a hidden subzone
         // still shadows a granted parent; nothing is decided on these rows.

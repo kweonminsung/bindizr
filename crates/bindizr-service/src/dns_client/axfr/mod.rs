@@ -6,8 +6,8 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use bindizr_core::config::ImportConfig;
-use bindizr_core::dns::message::{EncodeMessageError, Name, Rtype};
-use bindizr_core::dns::name::{EncodeWireNameError, ParseNameError, ZoneName};
+use bindizr_core::dns::message::{EncodeMessageError, Rtype};
+use bindizr_core::dns::name::{EncodeWireNameError, ParseNameError, WireName, ZoneName};
 use bindizr_core::dns::query::{ParseResponseError, TransferMessagePosition, TransferRecord};
 use bindizr_core::dns::record::ParseRdataError;
 use bindizr_core::dns::{message, name, query};
@@ -25,8 +25,10 @@ use crate::dns_client::ResolveAddressError;
 pub(crate) enum FetchZoneError {
     #[error("invalid zone name: {0}")]
     ZoneName(#[from] EncodeWireNameError),
-    #[error("{server}: resolution timed out")]
-    ResolutionTimedOut { server: String },
+    /// The deadline passed before any address of the server accepted:
+    /// resolution or a connect may have hung.
+    #[error("{server}: timed out before a connection was established")]
+    NotConnected { server: String },
     #[error("failed to resolve {entry}: {source}")]
     Unresolved {
         entry: String,
@@ -206,7 +208,7 @@ impl AxfrClient {
             }
             Err(_) => Err(match self.addr {
                 Some(addr) => FetchZoneError::TimedOut { addr },
-                None => FetchZoneError::ResolutionTimedOut {
+                None => FetchZoneError::NotConnected {
                     server: self.server.clone(),
                 },
             }),
@@ -247,7 +249,7 @@ async fn connect_to_server(
 /// closing SOA repeats the opening one.
 async fn fetch_zone_on_stream(
     stream: &mut TcpStream,
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     max_records: usize,
 ) -> Result<(Vec<TransferRecord>, Option<Duration>), FetchZoneError> {
     use tokio::io::AsyncWriteExt;

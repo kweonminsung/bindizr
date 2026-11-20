@@ -66,7 +66,7 @@ pub(crate) async fn list_served_record_sets_tx(
     zone: &Zone,
 ) -> Result<RecordSets, NsupdateError> {
     let records = bindizr_db::record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
-    let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id).await?;
     Ok(zone_record_sets(zone, &records, &derived)?)
 }
 
@@ -177,7 +177,7 @@ fn zone_record_sets(
     for record in derived {
         insert(
             record.name.clone(),
-            Rtype::from_int(record.record_type.wire_type()),
+            Rtype::from(record.record_type),
             record.rdata.clone(),
         )?;
     }

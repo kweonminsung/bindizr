@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use bindizr_core::dns::message::{EDNS_UDP_PAYLOAD_SIZE, Name, Opcode, Rtype};
-use bindizr_core::dns::name::{EncodeWireNameError, ZoneName};
+use bindizr_core::dns::message::{EDNS_UDP_PAYLOAD_SIZE, Opcode, Rtype};
+use bindizr_core::dns::name::{EncodeWireNameError, WireName, ZoneName};
 use bindizr_core::dns::query;
 use bindizr_core::dns::query::{DsRecordSet, ParseResponseError};
 use thiserror::Error;
@@ -147,7 +147,7 @@ async fn query_ds(
 /// Ask one server, at its addresses in order, reporting the first answer
 /// (on failure, the last one tried).
 async fn query_ds_at(
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     addrs: &[SocketAddr],
     timeout: Duration,
 ) -> Result<Option<DsRecordSet>, QueryDsError> {

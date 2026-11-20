@@ -2,6 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
+use domain::tsig::Algorithm;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
@@ -51,12 +52,7 @@ impl TsigAlgorithm {
     /// Return the HMAC output length in bytes, the least a secret should hold
     /// (RFC 8945, Section 8).
     pub fn digest_len(self) -> usize {
-        match self {
-            Self::HmacSha1 => 20,
-            Self::HmacSha256 => 32,
-            Self::HmacSha384 => 48,
-            Self::HmacSha512 => 64,
-        }
+        Algorithm::from(self).native_len()
     }
 
     /// List the names a value parses from, for messages that list them.

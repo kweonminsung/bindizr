@@ -232,7 +232,7 @@ pub struct DeleteRecordsResponse {
     #[schema(example = 3)]
     pub deleted: u64,
     pub records: Vec<RecordResponse>,
-    /// The removal as a record diff, for previewing the change.
+    /// The removal as a record diff on a dry run; empty once applied.
     pub diff: RecordDiffResponse,
 }
 
@@ -289,8 +289,8 @@ pub struct RecordFilter {
     /// Priority filters exclude derived rows; value filters are rejected.
     #[schema(example = false)]
     pub signed: Option<bool>,
-    /// Records per page; defaults to 50 when omitted, 1000 is the largest
-    /// page accepted.
+    /// Records per page, 1 to 1000; the HTTP API pages at 50 when it is
+    /// omitted, the daemon socket not at all.
     #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
@@ -350,7 +350,7 @@ pub struct SingleRecordResponse {
 }
 
 /// What a record write left behind, in the shape every previewable operation
-/// answers with: whether it wrote, and the change as a record diff.
+/// answers with: whether it wrote, and on a dry run the change as a record diff.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct WriteRecordResponse {
     /// Whether this call wrote; a dry run answers `false`.
@@ -359,7 +359,7 @@ pub struct WriteRecordResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     pub record: RecordResponse,
-    /// The write as a record diff, for previewing it.
+    /// The write as a record diff on a dry run; empty once applied.
     pub diff: RecordDiffResponse,
 }
 
@@ -387,11 +387,11 @@ pub enum ServedRecordType {
 }
 
 impl ServedRecordType {
-    /// Render the canonical API mnemonic.
-    pub fn to_text(self) -> String {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
         match self {
-            Self::User(record_type) => record_type.to_string(),
-            Self::Derived(record_type) => record_type.to_string(),
+            Self::User(record_type) => record_type.as_str(),
+            Self::Derived(record_type) => record_type.as_str(),
         }
     }
 }
@@ -399,7 +399,7 @@ impl ServedRecordType {
 impl fmt::Display for ServedRecordType {
     /// Write the canonical DNS mnemonic.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad(&self.to_text())
+        f.pad(self.as_str())
     }
 }
 
@@ -423,7 +423,7 @@ mod tests {
 
     use super::*;
 
-    /// Verify that `ServedRecordType` has one spelling across `to_text`, `Display`, and serde.
+    /// Verify that `ServedRecordType` has one spelling across `as_str`, `Display`, and serde.
     #[test]
     fn served_record_type_spells_itself_once() {
         for (value, expected) in [
@@ -453,7 +453,7 @@ mod tests {
             (ServedRecordType::from(DnssecRecordType::Cds), "CDS"),
             (ServedRecordType::from(DnssecRecordType::Cdnskey), "CDNSKEY"),
         ] {
-            assert_eq!(value.to_text(), expected);
+            assert_eq!(value.as_str(), expected);
             assert_eq!(value.to_string(), expected);
             assert_eq!(serde_json::to_value(value).unwrap(), json!(expected));
             assert_eq!(

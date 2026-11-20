@@ -207,7 +207,7 @@ Three logs say what happened, and nothing decides on them. Each is read with
 
 | Log | What it holds | Kept |
 | --- | --- | --- |
-| `audit` | Management changes: who changed a token, role, grant, key, secondary, or policy, or deleted a zone | `audit_log.max_days`, 365 days |
+| `audit` | Management changes: who changed a token, role, grant, key, secondary, policy or zone's DNSSEC settings, or deleted a zone | `audit_log.max_days`, 365 days |
 | `access` | Management API requests and nsupdates: who asked what, from where, and how it ended | `access_log.max_days`, 30 days |
 | `transfer` | Zone transfers answered, refused, or failed — see [Secondaries](secondaries.md#transfer-log) | `transfer_log.max_days`, 90 days |
 

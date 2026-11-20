@@ -5,10 +5,25 @@ use domain::base::iana::{Class, OptRcode, Rcode, TsigRcode};
 use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
 use domain::rdata::tsig::{Time48, Tsig};
 use ring::hmac;
+use thiserror::Error;
 
 use crate::dns::message::{Edns, ResponseLimit};
 use crate::dns::tsig::{TsigError, TsigSigningKey};
 use crate::dns::{LibraryError, message, tsig};
+
+/// Why a TSIG error response could not be composed for a request.
+#[derive(Debug, Error)]
+pub enum BuildErrorResponseError {
+    /// The request could not be read as a DNS message.
+    #[error("invalid DNS message: {0}")]
+    Malformed(#[source] LibraryError),
+    #[error("failed to build TSIG error response ({rcode}): {source}")]
+    Build {
+        rcode: TsigRcode,
+        #[source]
+        source: LibraryError,
+    },
+}
 
 /// Build the signed or unsigned validation error required by RFC 8945, Section 5.3.2.
 pub fn build_error_response(
@@ -17,9 +32,9 @@ pub fn build_error_response(
     rcode: TsigRcode,
     now: Time48,
     limit: ResponseLimit,
-) -> Result<Vec<u8>, TsigError> {
-    let message =
-        Message::from_octets(query_data).map_err(|error| TsigError::Malformed(Box::new(error)))?;
+) -> Result<Vec<u8>, BuildErrorResponseError> {
+    let message = Message::from_octets(query_data)
+        .map_err(|error| BuildErrorResponseError::Malformed(Box::new(error)))?;
 
     let build = |include_question| -> Result<Vec<u8>, LibraryError> {
         let response = match (rcode, key) {
@@ -53,7 +68,7 @@ pub fn build_error_response(
                 Err(error)
             }
         })
-        .map_err(|source| TsigError::BuildResponse { rcode, source })
+        .map_err(|source| BuildErrorResponseError::Build { rcode, source })
 }
 
 /// Echo the question when it fits; a compact UDP error retains the request header.

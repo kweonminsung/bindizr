@@ -11,8 +11,8 @@ use bindizr_service::Context;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
 
-use crate::api::AuthenticatedToken;
 use crate::api::error::ApiError;
+use crate::api::extract::AuthenticatedToken;
 
 /// Validate the request's Bearer token, rejecting unauthorized requests.
 pub(crate) async fn auth_middleware(

@@ -102,7 +102,7 @@ impl DnssecKey {
         format!(
             "{} {DNSKEY_PROTOCOL} {} {}",
             self.role.flags(),
-            self.algorithm.as_i32(),
+            self.algorithm.as_u8(),
             self.public_key
         )
     }
@@ -114,24 +114,16 @@ impl DnssecKey {
         apex: &WireName,
         digest_type: DsDigestType,
     ) -> Result<Rdata, EncodeKeyRdataError> {
-        let digest = self.ds_digest(apex, digest_type)?;
-        let ds = DsRecordValue::new(
-            self.key_tag,
-            self.algorithm.as_u8(),
-            digest_type.as_u8(),
-            digest,
-        );
-
-        Ok(ds.to_rdata()?)
+        Ok(self.to_ds(apex, digest_type)?.to_rdata()?)
     }
 
-    /// Return the digest a DS of this key carries in `digest_type` (RFC 4034,
-    /// Section 5.1.4).
-    pub fn ds_digest(
+    /// Build the DS of this key in `digest_type`, its digest over the apex and
+    /// the DNSKEY RDATA (RFC 4034, Section 5.1.4).
+    pub fn to_ds(
         &self,
         apex: &WireName,
         digest_type: DsDigestType,
-    ) -> Result<Vec<u8>, EncodeKeyRdataError> {
+    ) -> Result<DsRecordValue, EncodeKeyRdataError> {
         use domain::base::rdata::ComposeRecordData;
 
         let dnskey = self.to_dnskey()?;
@@ -142,6 +134,11 @@ impl DnssecKey {
         hasher.update(apex.as_slice());
         hasher.update(&dnskey_rdata);
 
-        Ok(hasher.finish().as_ref().to_vec())
+        Ok(DsRecordValue::new(
+            self.key_tag,
+            self.algorithm.as_u8(),
+            digest_type.as_u8(),
+            hasher.finish().as_ref().to_vec(),
+        ))
     }
 }

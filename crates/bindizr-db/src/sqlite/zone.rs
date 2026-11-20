@@ -18,8 +18,8 @@ pub(crate) async fn create_tx(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, enabled, description, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, enabled, description, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&zone.name)
@@ -31,7 +31,6 @@ pub(crate) async fn create_tx(
     .bind(zone.retry)
     .bind(zone.expire)
     .bind(zone.minimum_ttl)
-    .bind(&zone.parent_ns_addrs)
     .bind(zone.enabled)
     .bind(&zone.description)
     .bind(now)
@@ -109,7 +108,6 @@ pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<Zone>, DatabaseE
 /// List all zones in the current transaction.
 pub(crate) async fn list_all_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    _lock_level: LockLevel,
 ) -> Result<Vec<Zone>, DatabaseError> {
     let zones = sqlx::query_as::<_, Zone>(
         "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name",

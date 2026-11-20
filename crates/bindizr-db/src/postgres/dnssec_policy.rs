@@ -40,12 +40,10 @@ pub(crate) async fn create_tx(
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: PolicyId,
-    lock_level: LockLevel,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
-    let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
-        "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = $1{}",
-        lock_level.clause(),
-    )))
+    let policy = sqlx::query_as::<_, DnssecPolicy>(
+        "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = $1",
+    )
     .bind(id)
     .fetch_optional(&mut **tx)
     .await?;

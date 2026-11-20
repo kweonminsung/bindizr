@@ -1,4 +1,5 @@
-//! Decode, authenticate and answer DNS UPDATEs (RFC 2136); the service applies them.
+//! Decode and answer DNS UPDATEs (RFC 2136); the tsig module verifies their
+//! signatures and the service applies them.
 
 pub mod parser;
 

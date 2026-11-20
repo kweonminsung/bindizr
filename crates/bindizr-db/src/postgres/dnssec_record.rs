@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Transaction};
 
 use crate::dnssec_record::DnssecRecordFilter;
 use crate::error::DatabaseError;
-use crate::{LockLevel, sql};
+use crate::sql;
 
 /// Insert many derived records in one statement (chunked). Ids are not
 /// returned.
@@ -78,17 +78,15 @@ pub(crate) async fn list_signatures_covering_apex_soa_tx(
 pub(crate) async fn list_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
-    lock_level: LockLevel,
 ) -> Result<Vec<DnssecRecord>, DatabaseError> {
-    let records = sqlx::query_as::<_, DnssecRecord>(AssertSqlSafe(format!(
+    let records = sqlx::query_as::<_, DnssecRecord>(
         r#"
         SELECT id, zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest
         FROM dnssec_records
         WHERE zone_id = $1
-        ORDER BY id{}
+        ORDER BY id
         "#,
-        lock_level.clause(),
-    )))
+    )
     .bind(zone_id)
     .fetch_all(&mut **tx)
     .await?;

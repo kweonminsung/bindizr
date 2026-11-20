@@ -45,7 +45,7 @@ pub async fn export_keys(
                 .iter()
                 .map(|key| DnssecKeyMaterialResponse {
                     role: key.role,
-                    algorithm: key.algorithm.as_i32(),
+                    algorithm: key.algorithm.as_u8(),
                     key_tag: key.key_tag,
                     dnskey_record: format!(
                         "{}. IN DNSKEY {}",
@@ -88,7 +88,7 @@ pub async fn import_keys(
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
 
-        if !bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked)
+        if !bindizr_db::dnssec_key::list_tx(&mut tx, zone.id)
             .await?
             .is_empty()
         {

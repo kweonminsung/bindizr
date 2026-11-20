@@ -1,6 +1,7 @@
 use std::io;
 use std::sync::Arc;
 
+use bindizr_core::dns::Ttl;
 use bindizr_core::dns::dnssec::KeyTag;
 use bindizr_core::dns::message::Class;
 use bindizr_core::dns::query::DsRecord;
@@ -334,11 +335,11 @@ async fn probe_parent_ds_reports_each_server_apart() {
         [
             Some(DsRecordSet {
                 records: vec![parsed_ds_record(34217)],
-                ttl: 3600,
+                ttl: Ttl::from_secs(3600),
             }),
             Some(DsRecordSet {
                 records: vec![parsed_ds_record(2371), parsed_ds_record(34217)],
-                ttl: 3600,
+                ttl: Ttl::from_secs(3600),
             }),
         ]
     );
@@ -369,7 +370,7 @@ async fn query_ds_retries_a_truncated_response_over_tcp() {
         answers,
         [Some(DsRecordSet {
             records: vec![parsed_ds_record(34217)],
-            ttl: 3600,
+            ttl: Ttl::from_secs(3600),
         })]
     );
 }

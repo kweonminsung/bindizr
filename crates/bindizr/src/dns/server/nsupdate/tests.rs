@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use bindizr_core::config::Config;
-use bindizr_core::dns::message::{Name, Opcode, Rcode, Rtype};
+use bindizr_core::dns::message::{Opcode, Rcode, Rtype};
+use bindizr_core::dns::name::WireName;
 use bindizr_core::dns::query;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
@@ -60,7 +61,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         Opcode::UPDATE,
         false,
         false,
-        &Name::<Vec<u8>>::from_str("example.com").unwrap(),
+        &WireName::from_str("example.com").unwrap(),
         Rtype::SOA,
         None,
     );
@@ -132,7 +133,7 @@ async fn badvers_update_counts_as_badvers() {
         Opcode::UPDATE,
         false,
         false,
-        &Name::<Vec<u8>>::from_str("example.com").unwrap(),
+        &WireName::from_str("example.com").unwrap(),
         Rtype::SOA,
         None,
     );

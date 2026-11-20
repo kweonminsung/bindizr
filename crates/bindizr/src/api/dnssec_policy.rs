@@ -10,9 +10,8 @@ use bindizr_service::types::{
 };
 use bindizr_service::{Context, dnssec_policy};
 
-use crate::api::RequestCaller;
 use crate::api::error::ApiError;
-use crate::api::extract::{JsonBody, Path, Query};
+use crate::api::extract::{JsonBody, Path, Query, RequestCaller};
 use crate::api::params::NameParams;
 use crate::api::query::DEFAULT_PAGE_LIMIT;
 

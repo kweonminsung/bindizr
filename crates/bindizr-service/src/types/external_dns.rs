@@ -76,8 +76,8 @@ pub struct ListExternalDnsDomainsResponse {
     pub domains: Vec<String>,
 }
 
-/// Records of every ExternalDNS-managed zone, one per name and type, in a
-/// deterministic order.
+/// Records the calling token may read, of the supported types, one per name
+/// and type, in a deterministic order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ListExternalDnsRecordsResponse {
     pub records: Vec<ExternalDnsRecord>,

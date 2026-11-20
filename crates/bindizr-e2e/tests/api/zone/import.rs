@@ -1908,10 +1908,9 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     let versions = app.send_request(Method::GET, &versions_path, None).await;
 
     let catalog_serial = || {
-        let (_, response) =
+        let response =
             dns::exchange_dns_query(app.dns_port(), "catalog.bindizr", Rtype::SOA.to_int())
                 .unwrap();
-        let response = Message::from_octets(response).unwrap();
 
         response
             .answer()

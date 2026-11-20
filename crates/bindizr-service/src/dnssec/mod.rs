@@ -14,7 +14,7 @@ mod status;
 mod withdraw;
 
 use bindizr_core::dns::Serial;
-use bindizr_core::dns::dnssec::{SignedViewParams, SigningPass};
+use bindizr_core::dns::dnssec::{SignedViewDiff, SignedViewParams, SigningPass};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_key::DnssecKey;
 use bindizr_core::model::dnssec_policy::DnssecPolicy;
@@ -65,7 +65,7 @@ pub(crate) async fn sign_zone_tx(
     zone: &Zone,
     new_serial: Serial,
 ) -> Result<(), ServiceError> {
-    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id).await?;
 
     if keys.is_empty() {
         return Ok(());
@@ -114,7 +114,7 @@ async fn find_zone_policy_tx(
     let Some(policy_id) = zone.dnssec_policy_id else {
         return Ok(None);
     };
-    bindizr_db::dnssec_policy::get_tx(tx, policy_id, LockLevel::Unlocked)
+    bindizr_db::dnssec_policy::get_tx(tx, policy_id)
         .await?
         .map(Some)
         .ok_or_else(|| {
@@ -153,7 +153,7 @@ async fn get_signed_zone_tx(
         .reauthenticate_tx(tx)
         .await?
         .authorize_zone_action(action, &zone)?;
-    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id).await?;
 
     if keys.is_empty() {
         return Err(ServiceError::dnssec_not_enabled(&zone.name));
@@ -174,7 +174,7 @@ async fn find_signed_zone_by_id_tx(
     let Some(zone) = bindizr_db::zone::get_tx(tx, zone_id, lock_level).await? else {
         return Ok(None);
     };
-    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id).await?;
 
     if keys.is_empty() {
         return Ok(None);
@@ -196,14 +196,14 @@ async fn apply_signed_view_tx(
 ) -> Result<bool, ServiceError> {
     // Read both planes under the zone lock so the diff uses one consistent state.
     let records = bindizr_db::record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
-    let prev = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let prev = bindizr_db::dnssec_record::list_tx(tx, zone.id).await?;
 
     let withdraw_parent_ds = bindizr_db::dnssec_withdrawal::get_tx(tx, zone.id)
         .await?
         .is_some();
 
     let now = Utc::now();
-    let diff = SignedViewParams {
+    let diff = SignedViewDiff::compute(SignedViewParams {
         zone,
         new_serial,
         records: &records,
@@ -217,8 +217,7 @@ async fn apply_signed_view_tx(
         refresh_secs: policy.signature_refresh_secs(),
         pass,
         withdraw_parent_ds,
-    }
-    .compute()
+    })
     .map_err(ServiceError::dnssec_signing_failed)?;
 
     // Reused signatures and unchanged derived records need no storage writes.

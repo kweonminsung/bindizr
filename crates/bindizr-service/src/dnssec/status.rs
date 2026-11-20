@@ -36,7 +36,7 @@ pub async fn get_status(
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_zone_action(Action::DnssecRead, &zone)?;
-        let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id).await?;
         let policy = dnssec::find_zone_policy_tx(&mut tx, &zone).await?;
 
         lookup_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
@@ -79,7 +79,7 @@ pub(crate) async fn lookup_status_tx(
     keys: &[DnssecKey],
     serial: Serial,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id).await?;
     let earliest_signature_expires_at = derived.iter().filter_map(|record| record.expires_at).min();
 
     // Only RRSIG rows carry an expiration, so counting those counts signatures.
@@ -130,22 +130,15 @@ fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, S
     let apex = zone.name.to_wire_name().map_err(|error| {
         ServiceError::internal_with_source(format!("invalid zone apex: {error}"), error)
     })?;
-    let digest = hex::encode_upper(
-        key.ds_digest(&apex, DS_DIGEST_TYPE)
-            .map_err(ServiceError::dnssec_signing_failed)?,
-    );
+    let ds = key
+        .to_ds(&apex, DS_DIGEST_TYPE)
+        .map_err(ServiceError::dnssec_signing_failed)?;
 
     Ok(DnssecDsResponse {
         key_tag: key.key_tag,
         algorithm: key.algorithm.as_u8(),
         digest_type: DS_DIGEST_TYPE.as_u8(),
-        digest: digest.clone(),
-        presentation: format!(
-            "{} IN DS {} {} {} {digest}",
-            zone.name.to_fqdn(),
-            key.key_tag,
-            key.algorithm.as_i32(),
-            DS_DIGEST_TYPE.as_u8()
-        ),
+        digest: hex::encode_upper(ds.digest()),
+        presentation: format!("{} IN DS {}", zone.name.to_fqdn(), ds.canonical()),
     })
 }

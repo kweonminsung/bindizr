@@ -75,16 +75,18 @@ pub struct TransferLogResponse {
 impl From<&TransferLogWithZone> for TransferLogResponse {
     /// Build the payload of one saved transfer.
     fn from(transfer: &TransferLogWithZone) -> Self {
+        let log = &transfer.log;
+
         Self {
-            address: transfer.client_addr.clone(),
+            address: log.client_addr.clone(),
             zone_name: transfer.zone_name.to_string(),
-            kind: transfer.kind,
-            result: transfer.result,
-            transport: transfer.transport,
-            incremental: transfer.incremental,
-            serial: transfer.serial,
-            at: transfer.served_at,
-            error: transfer.error.clone(),
+            kind: log.kind,
+            result: log.result,
+            transport: log.transport,
+            incremental: log.incremental,
+            serial: log.serial,
+            at: log.served_at,
+            error: log.error.clone(),
         }
     }
 }

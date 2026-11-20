@@ -96,7 +96,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
             .unwrap();
     }
 
-    let records = extract_dns_records(7, &answer.finish()).unwrap();
+    let records = extract_dns_records(&Message::from_octets(answer.finish()).unwrap()).unwrap();
     let values: Vec<(u16, Option<Value>)> = records
         .into_iter()
         .map(|record| (record.record_type, record.value))
@@ -173,7 +173,8 @@ fn extract_dns_records_decodes_wks_service_bitmaps() {
         (vec![192, 0, 2, 1, 6, 0x81, 0x80], "192.0.2.1 6 0 7 8"),
         (highest_port, "192.0.2.1 255 65535"),
     ] {
-        let records = extract_dns_records(7, &build_wks_response(rdata)).unwrap();
+        let records =
+            extract_dns_records(&Message::from_octets(build_wks_response(rdata)).unwrap()).unwrap();
 
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].record_type, Rtype::WKS.to_int());
@@ -188,26 +189,10 @@ fn extract_dns_records_rejects_invalid_wks_rdata() {
         let response = build_wks_response(vec![0; length]);
 
         assert!(
-            extract_dns_records(7, &response).is_err(),
+            extract_dns_records(&Message::from_octets(response).unwrap()).is_err(),
             "accepted WKS rdata of length {length}"
         );
     }
-}
-
-/// Verify that a refused response names its RCODE in the error.
-#[test]
-fn extract_dns_records_names_refused_rcode_in_error() {
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(9);
-    builder.header_mut().set_qr(true);
-    builder.header_mut().set_rcode(Rcode::REFUSED);
-
-    let error = extract_dns_records(9, &builder.finish()).unwrap_err();
-
-    assert!(
-        error.contains("REFUSED RCODE (5)"),
-        "unexpected error: {error}"
-    );
 }
 
 /// Verify that `extract_dns_records` treats nxdomain as no records.
@@ -218,7 +203,7 @@ fn extract_dns_records_treats_nxdomain_as_no_records() {
     builder.header_mut().set_qr(true);
     builder.header_mut().set_rcode(Rcode::NXDOMAIN);
 
-    let records = extract_dns_records(9, &builder.finish()).unwrap();
+    let records = extract_dns_records(&Message::from_octets(builder.finish()).unwrap()).unwrap();
 
     assert!(records.is_empty());
 }

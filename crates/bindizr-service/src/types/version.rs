@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::error::ServiceError;
-use crate::types::record;
+use crate::types;
 use crate::types::record::RecordValue;
 
 /// One entry of a zone's serial history, with SOA metadata in API form
@@ -96,7 +96,7 @@ impl VersionRecordResponse {
             name: record.name.to_fqdn(zone_name),
             record_type: record.record_type,
             // Decode TXT out of its stored form, as the record endpoints do.
-            value: record::build_display_value(record.record_type, &record.value),
+            value: types::build_display_value(record.record_type, &record.value),
             ttl: record.ttl,
             priority: record.priority,
         }

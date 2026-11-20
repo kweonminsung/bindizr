@@ -28,7 +28,7 @@ impl DnsMessageBuilder {
                     .ok_or(EncodeMessageError::MissingRdata)?;
                 self.add_raw_rdata(
                     change.record_name.to_wire_name(zone_name)?,
-                    record_type.wire_type(),
+                    Rtype::from(*record_type),
                     change.record_ttl.as_secs(),
                     rdata,
                 )
@@ -57,7 +57,7 @@ impl DnsMessageBuilder {
         let rdata = zone.soa_rdata(serial)?;
         self.add_raw_rdata(
             zone.name.to_wire_name()?,
-            Rtype::SOA.to_int(),
+            Rtype::SOA,
             zone.default_ttl.as_secs(),
             rdata,
         )
@@ -80,7 +80,7 @@ impl DnsMessageBuilder {
         .to_rdata()?;
         self.add_raw_rdata(
             catalog_zone.name.to_wire_name()?,
-            Rtype::SOA.to_int(),
+            Rtype::SOA,
             catalog_zone.default_ttl.as_secs(),
             rdata,
         )
@@ -102,7 +102,7 @@ impl DnsMessageBuilder {
         // IXFR SOA owner is the transfer QNAME.
         self.add_raw_rdata(
             self.qname.clone(),
-            Rtype::SOA.to_int(),
+            Rtype::SOA,
             version.default_ttl.as_secs(),
             rdata,
         )
@@ -169,7 +169,7 @@ impl DnsMessageBuilder {
     }
 
     /// Add an answer from stored record columns (records and journal
-    /// rows share this shape). Unsupported types are skipped.
+    /// rows share this shape).
     pub fn add_record_parts(
         &mut self,
         owner: &OwnerName,
@@ -180,8 +180,12 @@ impl DnsMessageBuilder {
         priority: Option<i32>,
     ) -> Result<(), EncodeMessageError> {
         let rdata = Rdata::from_columns(record_type, value, priority)?;
-        let rtype = record_type.wire_type();
-        self.add_raw_rdata(owner.to_wire_name(zone_name)?, rtype, ttl.as_secs(), rdata)
+        self.add_raw_rdata(
+            owner.to_wire_name(zone_name)?,
+            Rtype::from(record_type),
+            ttl.as_secs(),
+            rdata,
+        )
     }
 
     /// Add a derived DNSSEC record; its RDATA is stored in wire form.
@@ -192,7 +196,7 @@ impl DnsMessageBuilder {
     ) -> Result<(), EncodeMessageError> {
         self.add_raw_rdata(
             record.name.to_wire_name(zone_name)?,
-            record.record_type.wire_type(),
+            Rtype::from(record.record_type),
             record.ttl.as_secs(),
             record.rdata.clone(),
         )

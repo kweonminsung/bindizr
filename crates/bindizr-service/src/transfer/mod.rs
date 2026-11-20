@@ -1,8 +1,6 @@
 //! The transfer log: each transfer, refusal, or failure a client was answered,
 //! kept across restarts and instances; reads require `log:read`.
 
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::net::IpAddr;
 
 use bindizr_core::config::SavedTransfers;
@@ -212,9 +210,13 @@ fn normalize_filter(
         .map(str::trim)
         .filter(|address| !address.is_empty())
         .map(|address| {
-            address.parse::<IpAddr>().map_err(|_| {
-                ServiceError::invalid_input(format!("address '{address}' is not an IP address"))
-            })
+            // Rows store an IPv4-mapped client as IPv4, so the key does too.
+            address
+                .parse::<IpAddr>()
+                .map(|ip| ip.to_canonical())
+                .map_err(|_| {
+                    ServiceError::invalid_input(format!("address '{address}' is not an IP address"))
+                })
         })
         .transpose()?;
 
@@ -240,35 +242,20 @@ fn normalize_filter(
 }
 
 /// List the latest transfer of each zone answered to any of `client_ips`,
-/// one row per zone, as `find_by_clients_and_zone_name` finds one zone's.
+/// one row per zone, by the order `find_by_clients_and_zone_name` reads.
 pub(crate) async fn list_latest_by_clients(
     cx: &Context,
     client_ips: &[IpAddr],
 ) -> Result<Vec<TransferLogWithZone>, ServiceError> {
-    let mut latest: HashMap<ZoneName, TransferLogWithZone> = HashMap::new();
+    let client_addrs: Vec<String> = client_ips.iter().map(IpAddr::to_string).collect();
 
-    for client_ip in client_ips {
-        let logs = bindizr_db::transfer_log::list_by_client_addr_with_zone_latest_per_zone(
+    Ok(
+        bindizr_db::transfer_log::list_by_client_addrs_with_zone_latest_per_zone(
             cx.db(),
-            &client_ip.to_string(),
+            &client_addrs,
         )
-        .await?;
-
-        // Each address has its own latest row; the newest across them wins.
-        for log in logs {
-            match latest.entry(log.zone_name.clone()) {
-                Entry::Occupied(mut entry) if log.served_at > entry.get().served_at => {
-                    entry.insert(log);
-                }
-                Entry::Occupied(_) => {}
-                Entry::Vacant(entry) => {
-                    entry.insert(log);
-                }
-            }
-        }
-    }
-
-    Ok(latest.into_values().collect())
+        .await?,
+    )
 }
 
 /// Find the latest transfer of `zone_name` answered to any of `client_ips`.

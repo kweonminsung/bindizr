@@ -118,9 +118,9 @@ pub(crate) async fn wait_for_dns_records(
 
 /// A response record, including referrals, in the harness comparison form.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DnsRecord {
-    pub(crate) record_type: u16,
-    pub(crate) value: Option<Value>,
+struct DnsRecord {
+    record_type: u16,
+    value: Option<Value>,
 }
 
 /// Compare response records with expected values for the record type.
@@ -178,28 +178,21 @@ pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: 
 /// Return the RCODE the DNS plane answers an SOA query for `zone_name` with:
 /// NOERROR for a zone it serves, NOTAUTH for one it does not.
 pub(crate) fn probe_zone_soa(port: u16, zone_name: &str) -> Result<Rcode, String> {
-    let (query_id, response) = exchange_dns_query(port, zone_name, Rtype::SOA.to_int())?;
-    let response = Message::from_octets(response.as_slice()).map_err(|error| error.to_string())?;
-
-    if response.header().id() != query_id {
-        return Err("DNS response query id mismatch".to_string());
-    }
+    let response = exchange_dns_query(port, zone_name, Rtype::SOA.to_int())?;
 
     Ok(response.header().rcode())
 }
 
 /// Query DNS and decode answer or referral records.
 fn query_dns_records(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsRecord>, String> {
-    let (query_id, response) = exchange_dns_query(port, name, record_type)?;
-    extract_dns_records(query_id, &response)
+    extract_dns_records(&exchange_dns_query(port, name, record_type)?)
 }
 
 /// Query DNS and count the returned answers.
 fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usize, String> {
-    let (query_id, response) = exchange_dns_query(port, name, record_type)?;
-    let response = Message::from_octets(response.as_slice()).map_err(|error| error.to_string())?;
+    let response = exchange_dns_query(port, name, record_type)?;
 
-    if !validate_response_header(query_id, &response)? {
+    if !validate_response_rcode(&response)? {
         return Ok(0);
     }
 
@@ -215,28 +208,25 @@ fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usi
     Ok(count)
 }
 
-/// Send a DNS query and return its ID and response bytes.
+/// Send a DNS query over UDP and return the response matched to it.
 pub(crate) fn exchange_dns_query(
     port: u16,
     name: &str,
     record_type: u16,
-) -> Result<(u16, Vec<u8>), String> {
-    let query_id = (process::id() as u16).wrapping_add(port);
-    let query = build_dns_query(query_id, name, record_type)?;
-    Ok((query_id, exchange_udp(port, &query)?))
-}
-
-/// Encode a DNS query for the requested owner and type.
-fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8>, String> {
+) -> Result<Message<Vec<u8>>, String> {
     let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(query_id);
+    builder
+        .header_mut()
+        .set_id((process::id() as u16).wrapping_add(port));
 
     let mut question = builder.question();
     question
         .push((&parse_name(name)?, Rtype::from_int(record_type)))
         .map_err(|error| error.to_string())?;
 
-    Ok(question.finish())
+    transport::exchange_request(question.additional(), None, |message| {
+        exchange_udp(port, message)
+    })
 }
 
 /// Parse a DNS name into its wire form, a bare or trailing dot reading as the root.
@@ -248,14 +238,9 @@ pub(crate) fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     Name::from_str(trimmed).map_err(|error| format!("invalid DNS name '{name}': {error}"))
 }
 
-/// Validate a DNS response and extract answer or referral records.
-pub(crate) fn extract_dns_records(
-    query_id: u16,
-    response: &[u8],
-) -> Result<Vec<DnsRecord>, String> {
-    let response = Message::from_octets(response).map_err(|error| error.to_string())?;
-
-    if !validate_response_header(query_id, &response)? {
+/// Extract the answer or referral records of a matched DNS response.
+fn extract_dns_records(response: &Message<Vec<u8>>) -> Result<Vec<DnsRecord>, String> {
+    if !validate_response_rcode(response)? {
         return Ok(Vec::new());
     }
 
@@ -289,19 +274,10 @@ pub(crate) fn extract_dns_records(
     Ok(records)
 }
 
-/// Validate the response's id, QR bit, and rcode; `false` is a well-formed
-/// NXDOMAIN, i.e. the name holds no records.
-fn validate_response_header(query_id: u16, message: &Message<&[u8]>) -> Result<bool, String> {
-    let header = message.header();
-
-    if header.id() != query_id {
-        return Err("DNS response query id mismatch".to_string());
-    }
-    if !header.qr() {
-        return Err("DNS response is not marked as a response".to_string());
-    }
-
-    match header.rcode() {
+/// Validate a matched response's RCODE: `false` is NXDOMAIN, i.e. the name
+/// holds no records, and any RCODE but NOERROR is an error.
+fn validate_response_rcode(response: &Message<Vec<u8>>) -> Result<bool, String> {
+    match response.header().rcode() {
         Rcode::NOERROR => Ok(true),
         Rcode::NXDOMAIN => Ok(false),
         rcode => Err(format!(

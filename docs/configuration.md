@@ -115,7 +115,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # max_days = 365              # Days kept; older versions are pruned by the scheduler pass (0 = forever)
 
 # The logs read with `bindizr log <subject>` and GET /logs/<subject>; [logging] below is Bindizr's own output
-[audit_log]                   # Who changed a token, role, grant, key, secondary, or policy, or deleted a zone
+[audit_log]                   # Who changed a token, role, grant, key, secondary, policy or zone's DNSSEC settings, or deleted a zone
 # max_days = 365              # Days kept (0 = forever)
 
 [access_log]                  # The API requests and nsupdates answered, denied, or failed

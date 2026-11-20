@@ -4,8 +4,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use bindizr_core::dns::address::AddressTarget;
-use bindizr_core::dns::message::{Name, Opcode, Rtype};
-use bindizr_core::dns::name::{EncodeWireNameError, ZoneName};
+use bindizr_core::dns::message::{Opcode, Rtype};
+use bindizr_core::dns::name::{EncodeWireNameError, WireName, ZoneName};
 use bindizr_core::dns::query::ParseResponseError;
 use bindizr_core::dns::{Serial, query};
 use thiserror::Error;
@@ -83,7 +83,7 @@ pub async fn probe_server(
 
 /// Query one address for the zone's authoritative SOA serial.
 async fn probe_address(
-    qname: &Name<Vec<u8>>,
+    qname: &WireName,
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<Serial, ProbeSoaError> {

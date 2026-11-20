@@ -271,7 +271,11 @@ async fn wait_for_compose_api(client: &Client) {
     eprintln!("Waiting for bindizr API at {COMPOSE_API_BASE_URL}...");
 
     for attempt in 1..=120 {
-        if let Ok(response) = client.get(COMPOSE_API_BASE_URL).send().await
+        // The probe route sits outside authentication and the access log.
+        if let Ok(response) = client
+            .get(format!("{COMPOSE_API_BASE_URL}/health"))
+            .send()
+            .await
             && response.status() == StatusCode::OK
         {
             eprintln!("bindizr API is ready.");

@@ -88,15 +88,19 @@ pub async fn list_managed_domains(
     Ok(domains.into_iter().collect())
 }
 
-/// List manageable ExternalDNS records grouped by name/type, with absolute
-/// owners and sorted presentation values.
+/// List the records of the supported types the caller may read, grouped by
+/// name/type, with absolute owners and sorted presentation values. A name
+/// lists only the rows of the zone apply would write it to, so a parent's rows
+/// below a child zone's apex, which no change reaches, stay out.
 pub async fn list_records(
     cx: &Context,
     caller: &Caller,
 ) -> Result<Vec<ExternalDnsRecord>, ServiceError> {
-    // One zone's rows of a name and type share a TTL, but an overlapping
-    // parent and child zone may not, so each record set splits by TTL.
-    let mut grouped: BTreeMap<RecordSetKey, BTreeMap<Ttl, Vec<String>>> = BTreeMap::new();
+    // Every zone, hidden ones included: a hidden child shadows a granted
+    // parent here as it does in apply.
+    let zones = bindizr_db::zone::list_all(cx.db()).await?;
+    // One zone answers for a name, and its rows of one type share a TTL.
+    let mut grouped: BTreeMap<RecordSetKey, (Ttl, Vec<String>)> = BTreeMap::new();
     let mut offset = 0u64;
 
     loop {
@@ -123,6 +127,13 @@ pub async fn list_records(
 
             let name =
                 policy::normalize_lookup_name(&record.name.to_fqdn(&record_with_zone.zone_name))?;
+
+            if policy::authoritative_zone(&zones, &name).map(|(zone, _)| zone.id)
+                != Some(record.zone_id)
+            {
+                continue;
+            }
+
             let value = record
                 .record_type
                 .presentation_rdata(&record.value, record.priority);
@@ -131,9 +142,8 @@ pub async fn list_records(
                     name,
                     record_type: record.record_type,
                 })
-                .or_default()
-                .entry(record.ttl)
-                .or_default()
+                .or_insert_with(|| (record.ttl, Vec::new()))
+                .1
                 .push(value);
         }
 
@@ -147,16 +157,14 @@ pub async fn list_records(
     // Sorted values so an unchanged state never reads as a diff.
     Ok(grouped
         .into_iter()
-        .flat_map(|(key, by_ttl)| {
-            by_ttl.into_iter().map(move |(ttl, mut values)| {
-                values.sort();
-                ExternalDnsRecord {
-                    name: key.name.clone(),
-                    record_type: key.record_type.to_string(),
-                    ttl: Some(i64::from(ttl)),
-                    values,
-                }
-            })
+        .map(|(key, (ttl, mut values))| {
+            values.sort();
+            ExternalDnsRecord {
+                name: key.name,
+                record_type: key.record_type.to_string(),
+                ttl: Some(i64::from(ttl)),
+                values,
+            }
         })
         .collect())
 }

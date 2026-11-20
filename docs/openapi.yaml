@@ -415,12 +415,12 @@ paths:
     get:
       tags:
       - ExternalDNS
-      summary: List the records of every ExternalDNS-managed zone
-      description: 'Records of all zones the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.'
+      summary: List the records ExternalDNS may read
+      description: 'Records the calling token may read, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.'
       operationId: list_external_dns_records
       responses:
         '200':
-          description: Records of the allowed zones
+          description: Records the token may read
           content:
             application/json:
               schema:
@@ -621,7 +621,7 @@ paths:
       tags:
       - Log
       summary: List the audit log
-      description: 'The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone''s versions instead. Kept for `audit_log.max_days`. Needs `log:read` in all zones.'
+      description: 'The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, a zone''s DNSSEC settings changed, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone''s versions instead. Kept for `audit_log.max_days`. Needs `log:read` in all zones.'
       operationId: list_audit_logs
       parameters:
       - name: entity
@@ -1001,8 +1001,8 @@ paths:
       - name: limit
         in: query
         description: |-
-          Records per page; defaults to 50 when omitted, 1000 is the largest
-          page accepted.
+          Records per page, 1 to 1000; the HTTP API pages at 50 when it is
+          omitted, the daemon socket not at all.
         required: false
         schema:
           type: integer
@@ -2711,8 +2711,8 @@ paths:
       - name: limit
         in: query
         description: |-
-          Zones per page; defaults to 50 when omitted, 1000 is the largest page
-          accepted.
+          Zones per page, 1 to 1000; the HTTP API pages at 50 when it is
+          omitted, the daemon socket not at all.
         required: false
         schema:
           type: integer
@@ -3384,7 +3384,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: DNSSEC is not enabled for the zone, no rollover is in progress, the parent does not serve the new DS yet, or the parent could not be asked
+          description: DNSSEC is not enabled for the zone, no published key awaits promotion, the parent does not serve the new DS yet, or the parent could not be asked
           content:
             application/json:
               schema:
@@ -4584,7 +4584,7 @@ components:
           - 'null'
           description: |-
             Name of an existing zone; omit to cover all zones, including later ones.
-            `zone:create`, `secondary:*` and `access:manage` need all zones.
+            Actions marked "all zones only" in `Action` need it omitted.
           example: example.com
       additionalProperties: false
     CreateRoleRequest:
@@ -4802,7 +4802,7 @@ components:
           minimum: 0
         diff:
           $ref: '#/components/schemas/RecordDiffResponse'
-          description: The removal as a record diff, for previewing the change.
+          description: The removal as a record diff on a dry run; empty once applied.
         dry_run:
           type: boolean
           example: false
@@ -4943,15 +4943,17 @@ components:
         ds_state:
           $ref: '#/components/schemas/DsState'
         ds_ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: |-
             TTL of the parent's DS records: how long caches may keep serving
             them once removed.
-          example: 86400
-          minimum: 0
         keys:
           type: array
           items:
@@ -5202,8 +5204,10 @@ components:
           - type: 'null'
         serial:
           type: integer
-          format: int32
-          example: 7
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
         signatures:
           type: integer
@@ -5448,7 +5452,7 @@ components:
           example: true
         diff:
           $ref: '#/components/schemas/RecordDiffResponse'
-          description: The reconcile as a record diff, for previewing the change.
+          description: The reconcile as a record diff on a dry run; empty once applied.
         dry_run:
           type: boolean
           example: false
@@ -5627,8 +5631,8 @@ components:
     ListExternalDnsRecordsResponse:
       type: object
       description: |-
-        Records of every ExternalDNS-managed zone, one per name and type, in a
-        deterministic order.
+        Records the calling token may read, of the supported types, one per name
+        and type, in a deterministic order.
       required:
       - records
       properties:
@@ -7328,7 +7332,7 @@ components:
       type: object
       description: |-
         What a record write left behind, in the shape every previewable operation
-        answers with: whether it wrote, and the change as a record diff.
+        answers with: whether it wrote, and on a dry run the change as a record diff.
       required:
       - applied
       - dry_run
@@ -7341,7 +7345,7 @@ components:
           example: true
         diff:
           $ref: '#/components/schemas/RecordDiffResponse'
-          description: The write as a record diff, for previewing it.
+          description: The write as a record diff on a dry run; empty once applied.
         dry_run:
           type: boolean
           example: false

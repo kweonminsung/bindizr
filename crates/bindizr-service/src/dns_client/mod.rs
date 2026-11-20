@@ -214,7 +214,8 @@ pub async fn resolve_address_entry(
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::dns::message::{Name, Opcode, OptRcode, ParsedQuery, Rtype};
+    use bindizr_core::dns::message::{Opcode, OptRcode, ParsedQuery, Rtype};
+    use bindizr_core::dns::name::WireName;
 
     use super::*;
 
@@ -231,7 +232,7 @@ mod tests {
                 Opcode::QUERY,
                 false,
                 false,
-                &Name::from_str("example.com").unwrap(),
+                &WireName::from_str("example.com").unwrap(),
                 Rtype::SOA,
                 advertised,
             );

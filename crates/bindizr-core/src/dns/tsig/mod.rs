@@ -13,7 +13,7 @@ use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, ToName};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::{Algorithm, ClientTransaction, Key, KeyName, ValidationError};
-pub use response::build_error_response;
+pub use response::{BuildErrorResponseError, build_error_response};
 use ring::hmac;
 pub use signer::{ResponseSigner, SignResponseError, TransferSigner};
 use thiserror::Error;
@@ -29,7 +29,8 @@ use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 pub(crate) const MAX_TSIG_RECORD: usize =
     MAX_WIRE_NAME_LEN + RECORD_FIELDS_LEN + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
 
-/// Why a TSIG-signed request could not be accepted.
+/// Why a TSIG key could not be decoded, or a TSIG-signed request could not be
+/// accepted.
 #[derive(Debug, Error)]
 pub enum TsigError {
     /// The request could not be read as a DNS message.
@@ -54,12 +55,6 @@ pub enum TsigError {
     /// The caller checked for a TSIG record, so `domain` must find one too.
     #[error("TSIG record not found during validation")]
     RecordMissing,
-    #[error("failed to build TSIG error response ({rcode}): {source}")]
-    BuildResponse {
-        rcode: TsigRcode,
-        #[source]
-        source: LibraryError,
-    },
     /// Validation failed; authenticated errors retain the key and server time for the encoder.
     #[error("TSIG validation failed: {rcode}")]
     Rejected {
@@ -252,23 +247,13 @@ impl TsigKey {
     }
 }
 
-/// Verify a request's TSIG and return its signer or validation error.
+/// Verify a request's TSIG under `key` and return its signer or validation error.
 /// Accept reordered requests without a time cache (RFC 8945, Section 5.2.3 SHOULD exception).
-pub fn verify_tsig(
-    query_data: &[u8],
-    key: Option<TsigSigningKey>,
-) -> Result<ResponseSigner, TsigError> {
+pub fn verify_tsig(query_data: &[u8], key: TsigSigningKey) -> Result<ResponseSigner, TsigError> {
     let message =
         Message::from_octets(query_data).map_err(|error| TsigError::Malformed(Box::new(error)))?;
-    let malformed = || TsigError::Malformed(Box::new(ValidationError::FormErr));
-    let tsig = ParsedTsig::parse(&message)
-        .map_err(|error| TsigError::Malformed(Box::new(error)))?
-        .ok_or(TsigError::RecordMissing)?;
+    let tsig = parse_request_tsig(&message)?;
     let data = tsig.record.data();
-
-    if !is_request_tsig_valid(data) {
-        return Err(malformed());
-    }
 
     let now = Time48::now();
     let rejected = |rcode, key: Option<TsigSigningKey>| TsigError::Rejected {
@@ -276,11 +261,11 @@ pub fn verify_tsig(
         key: key.map(Box::new),
         time: now,
     };
-    let Some(key) = key.filter(|key| tsig.matches_key(key)) else {
-        return Err(rejected(TsigRcode::BADKEY, None));
-    };
 
     // RFC 8945, Section 5.2: key, MAC, time, then local truncation policy.
+    if !tsig.matches_key(&key) {
+        return Err(rejected(TsigRcode::BADKEY, None));
+    }
     if tsig.verify_mac(&key, &message, None).is_err() {
         return Err(rejected(TsigRcode::BADSIG, None));
     }
@@ -295,6 +280,39 @@ pub fn verify_tsig(
         key,
         request_mac: data.mac().to_vec(),
     })
+}
+
+/// Return the error a request signed by a key no row holds is answered with:
+/// BADKEY once its TSIG reads, the malformed record's error before that
+/// (RFC 8945, Section 5.2).
+pub fn reject_unknown_key(query_data: &[u8]) -> TsigError {
+    let message = match Message::from_octets(query_data) {
+        Ok(message) => message,
+        Err(error) => return TsigError::Malformed(Box::new(error)),
+    };
+
+    match parse_request_tsig(&message) {
+        Ok(_) => TsigError::Rejected {
+            rcode: TsigRcode::BADKEY,
+            key: None,
+            time: Time48::now(),
+        },
+        Err(error) => error,
+    }
+}
+
+/// Read a request's final TSIG, refusing a missing, misplaced or
+/// impossible one before any key is consulted.
+fn parse_request_tsig<'a>(message: &Message<&'a [u8]>) -> Result<ParsedTsig<'a>, TsigError> {
+    let tsig = ParsedTsig::parse(message)
+        .map_err(|error| TsigError::Malformed(Box::new(error)))?
+        .ok_or(TsigError::RecordMissing)?;
+
+    if !is_request_tsig_valid(tsig.record.data()) {
+        return Err(TsigError::Malformed(Box::new(ValidationError::FormErr)));
+    }
+
+    Ok(tsig)
 }
 
 /// How a request presents itself for authorization.

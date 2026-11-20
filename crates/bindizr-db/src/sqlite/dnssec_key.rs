@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use sqlx::{Pool, Sqlite, Transaction};
 
 use crate::error::DatabaseError;
-use crate::{LockLevel, sqlite};
+use crate::sqlite;
 
 /// Insert a DNSSEC key in the current transaction.
 pub(crate) async fn create_tx(
@@ -44,7 +44,6 @@ pub(crate) async fn create_tx(
 pub(crate) async fn list_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
-    _lock_level: LockLevel,
 ) -> Result<Vec<DnssecKey>, DatabaseError> {
     let keys = sqlx::query_as::<_, DnssecKey>(
         r#"

@@ -91,7 +91,47 @@ impl TestApp {
             }
         }
 
-        // BIND9 requires an apex NS; Bindizr leaves its creation to the operator.
+        // The catalog lists the enabled zones alone, so only they are served.
+        let mut enabled_zone_names = HashSet::new();
+        let mut offset = 0u64;
+
+        loop {
+            let (status, body) = self
+                .send_http(
+                    Method::GET,
+                    &format!(
+                        "/zones?enabled=true&search={}&limit={RECORD_PAGE_LIMIT}&offset={offset}",
+                        self.namespace
+                    ),
+                    None,
+                )
+                .await;
+
+            assert_eq!(
+                status,
+                StatusCode::OK,
+                "failed to list zones for DNS verification: {body}"
+            );
+            let page = body["items"]
+                .as_array()
+                .expect("zone list response did not contain items");
+            let read = page.len();
+            enabled_zone_names.extend(
+                page.iter()
+                    .filter_map(|zone| zone["name"].as_str().map(str::to_string)),
+            );
+            let total = body["pagination"]["total"]
+                .as_u64()
+                .expect("zone list response did not contain a total");
+            offset += read as u64;
+
+            if read == 0 || offset >= total {
+                break;
+            }
+        }
+
+        // An enabled zone is served only with an apex NS: BIND9 will not load
+        // a catalog member without one, which a zone stripped of it lacks.
         // Listed record names are absolute, while zone names are bare.
         let is_apex = |record: &Value| {
             record["name"]
@@ -103,6 +143,7 @@ impl TestApp {
             .iter()
             .filter(|record| record["type"] == "NS" && is_apex(record))
             .filter_map(|record| record["zone_name"].as_str().map(str::to_string))
+            .filter(|zone_name| enabled_zone_names.contains(zone_name))
             .collect();
 
         let mut expected: HashMap<(String, u16), Vec<Value>> = HashMap::new();

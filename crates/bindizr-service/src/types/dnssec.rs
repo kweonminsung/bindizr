@@ -1,7 +1,7 @@
 //! DNSSEC management payloads.
 
-use bindizr_core::dns::Serial;
 use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::dns::{Serial, Ttl};
 use bindizr_core::model::dnssec_key::{
     DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
 };
@@ -152,8 +152,8 @@ pub struct DnssecDelegationResponse {
     pub keys: Vec<DnssecDelegationKeyResponse>,
     /// TTL of the parent's DS records: how long caches may keep serving
     /// them once removed.
-    #[schema(example = 86400)]
-    pub ds_ttl: Option<u32>,
+    #[schema(example = 86400, value_type = Option<Ttl>, inline)]
+    pub ds_ttl: Option<Ttl>,
     pub checked_at: DateTime<Utc>,
 }
 
@@ -262,7 +262,7 @@ pub struct DnssecStatusResponse {
     pub expired_signatures: u64,
     /// When the re-signer next has work; absent for an unsigned zone.
     pub next_resign_at: Option<DateTime<Utc>>,
-    #[schema(example = 7, value_type = u32)]
+    #[schema(inline)]
     pub serial: Serial,
 }
 
@@ -272,7 +272,7 @@ pub struct DnssecStatusResponse {
 pub struct DnssecKeyMaterialResponse {
     pub role: DnssecKeyRole,
     /// IANA algorithm number.
-    pub algorithm: i32,
+    pub algorithm: u8,
     pub key_tag: KeyTag,
     /// `K*.key` contents: the DNSKEY record line.
     pub dnskey_record: String,

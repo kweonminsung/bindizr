@@ -53,7 +53,7 @@ pub struct SingleRoleResponse {
 #[serde(deny_unknown_fields)]
 pub struct CreateRoleGrantRequest {
     /// Name of an existing zone; omit to cover all zones, including later ones.
-    /// `zone:create`, `secondary:*` and `access:manage` need all zones.
+    /// Actions marked "all zones only" in `Action` need it omitted.
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
     /// The actions the grant permits, as `<resource>:<action>`.
