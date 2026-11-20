@@ -45,18 +45,25 @@ pub async fn create(
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_action(Action::ZoneCreate)?;
 
+        // The NS type owns its row form, so the seeded value is encoded as any NS is.
+        let apex_ns_value = request
+            .apex_ns
+            .then(|| RecordType::Ns.encoded_value(&candidate.mname, None))
+            .transpose()
+            .map_err(ServiceError::invalid_record_value)?;
+
         if request.dry_run {
             return Ok(candidate);
         }
 
         let created_zone = create_tx(&mut tx, candidate).await?;
 
-        if request.apex_ns {
+        if let Some(apex_ns_value) = apex_ns_value {
             let apex_ns = Record {
                 id: RecordId::UNWRITTEN,
                 name: OwnerName::apex(),
                 record_type: RecordType::Ns,
-                value: created_zone.mname.clone(),
+                value: apex_ns_value,
                 ttl: created_zone.default_ttl,
                 priority: None,
                 zone_id: created_zone.id,
@@ -156,4 +163,62 @@ pub(crate) async fn create_tx(
                 ServiceError::internal_with_source("failed to create zone", error)
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use bindizr_core::config::Config;
+    use bindizr_core::metrics::Metrics;
+    use bindizr_db::Db;
+    use bindizr_db::record::RecordFilter;
+    use tokio::sync::{mpsc, watch};
+
+    use super::*;
+
+    /// Verify that the seeded apex NS is stored as any NS is, a trailing-dot
+    /// FQDN, not the mname's bare zone-name spelling.
+    #[tokio::test]
+    async fn create_seeds_the_apex_ns_in_the_ns_row_form() {
+        let mut config: Config = serde_json::from_str("{}").unwrap();
+        config.database.sqlite.file_path = "sqlite::memory:".to_string();
+        let db = Db::connect(&config.database).await.unwrap();
+        let cx = Context::new(
+            config,
+            String::new(),
+            db,
+            Metrics::new().unwrap(),
+            mpsc::unbounded_channel().0,
+            mpsc::channel(1).0,
+            watch::channel(0).0,
+        );
+
+        create(
+            &cx,
+            &Caller::socket(),
+            &CreateZoneRequest {
+                name: "example.com".to_string(),
+                mname: "NS1.Example.com".to_string(),
+                rname: "hostmaster@example.com".to_string(),
+                default_ttl: None,
+                serial: None,
+                refresh: None,
+                retry: None,
+                expire: None,
+                minimum_ttl: None,
+                description: None,
+                apex_ns: true,
+                dry_run: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        let records =
+            bindizr_db::record::list_by_filter_with_zone(cx.db(), &RecordFilter::default())
+                .await
+                .unwrap();
+
+        assert_eq!(records.len(), 1, "{records:?}");
+        assert_eq!(records[0].record().value, "ns1.example.com.");
+    }
 }
