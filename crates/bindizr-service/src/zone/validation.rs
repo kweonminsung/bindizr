@@ -1,40 +1,20 @@
 use std::collections::HashSet;
 
+use bindizr_core::dns::name;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::{SoaMailbox, SrvRecordValue};
-use bindizr_core::dns::{Ttl, name};
 use bindizr_core::model::record::{Record, RecordType};
 use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
 
 use crate::error::ServiceError;
-use crate::{Context, Transaction, ttl};
+use crate::{Context, Transaction};
 
 /// Longest SOA mailbox address accepted, in bytes.
 const MAX_EMAIL_LEN: usize = 254;
 
 /// Longest SOA mailbox local part accepted, in bytes.
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
-
-/// Validated SOA names and TTL, shared by API and DNS zone writes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NormalizedSoa {
-    pub(crate) mname: String,
-    pub(crate) rname: String,
-    pub(crate) ttl: Ttl,
-}
-
-/// Apply the zone policy to SOA names, mailbox encoding and default TTL.
-pub(crate) fn normalize_soa(
-    mname: &str,
-    rname: &str,
-    ttl: i64,
-) -> Result<NormalizedSoa, ServiceError> {
-    let mname = normalize_mname(mname)?;
-    let rname = normalize_rname(rname)?;
-    let ttl = ttl::validate_default_ttl(ttl)?;
-    Ok(NormalizedSoa { mname, rname, ttl })
-}
 
 /// Refuse storing a zone at the virtual catalog name, which shadows SOA and transfer queries
 /// and is excluded from catalog membership. Lookups remain allowed.

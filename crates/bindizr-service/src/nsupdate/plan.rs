@@ -82,13 +82,12 @@ fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Z
     let rname = SoaMailbox::from_encoded(value.rname)
         .to_email()
         .map_err(ServiceError::invalid_zone_field)?;
-    let normalized = zone::normalize_soa(&value.mname, &rname, i64::from(ttl))?;
 
     Ok(Zone {
         serial,
-        mname: normalized.mname,
-        rname: normalized.rname,
-        default_ttl: normalized.ttl,
+        mname: zone::normalize_mname(&value.mname)?,
+        rname: zone::normalize_rname(&rname)?,
+        default_ttl: ttl::validate_default_ttl(i64::from(ttl))?,
         refresh: ttl::validate_soa_interval(interval(value.refresh)?, "refresh")?,
         retry: ttl::validate_soa_interval(interval(value.retry)?, "retry")?,
         expire: ttl::validate_soa_interval(interval(value.expire)?, "expire")?,

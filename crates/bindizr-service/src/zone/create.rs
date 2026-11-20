@@ -117,17 +117,16 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
     let zone_name = zone::normalize_name(&request.name)?;
     zone::reject_catalog_zone_name(cx, &zone_name)?;
     let defaults = &cx.config().dns.zone_defaults;
-    let soa = zone::normalize_soa(
-        &request.mname,
-        &request.rname,
-        request.default_ttl.unwrap_or(i64::from(defaults.ttl)),
-    )?;
+    let mname = zone::normalize_mname(&request.mname)?;
+    let rname = zone::normalize_rname(&request.rname)?;
+    let default_ttl =
+        ttl::validate_default_ttl(request.default_ttl.unwrap_or(i64::from(defaults.ttl)))?;
 
     Ok(Zone {
         id: ZoneId::UNWRITTEN,
         name: zone_name,
-        mname: soa.mname,
-        rname: soa.rname,
+        mname,
+        rname,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: request.apex_ns,
@@ -135,7 +134,7 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
             request.description.as_deref(),
             ServiceError::invalid_zone_field,
         )?,
-        default_ttl: soa.ttl,
+        default_ttl,
         serial: request
             .serial
             .unwrap_or_else(|| serial::generate_serial(None)),

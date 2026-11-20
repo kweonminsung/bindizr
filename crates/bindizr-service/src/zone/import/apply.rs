@@ -35,14 +35,13 @@ fn prepare_zone(
         .map_err(|error| {
             ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {error}"))
         })?;
-    let normalized = zone::normalize_soa(&soa.mname, &rname, i64::from(default_ttl))?;
 
     Ok(Zone {
         id: ZoneId::UNWRITTEN,
         name: zone_name.clone(),
-        mname: normalized.mname,
-        rname: normalized.rname,
-        default_ttl: normalized.ttl,
+        mname: zone::normalize_mname(&soa.mname)?,
+        rname: zone::normalize_rname(&rname)?,
+        default_ttl: ttl::validate_default_ttl(i64::from(default_ttl))?,
         serial: soa.serial,
         refresh: ttl::validate_soa_interval(i32::from(soa.refresh), "refresh")?,
         retry: ttl::validate_soa_interval(i32::from(soa.retry), "retry")?,
