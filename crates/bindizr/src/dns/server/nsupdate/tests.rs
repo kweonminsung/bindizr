@@ -108,3 +108,50 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"formerr\"} 1\n"));
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"servfail\"} 2\n"));
 }
+
+/// Verify that an UPDATE refused with BADVERS counts as `badvers`, not as the
+/// NOERROR its four header bits read as (RFC 6891, Section 6.1.3).
+#[tokio::test]
+async fn badvers_update_counts_as_badvers() {
+    use std::str::FromStr;
+
+    let mut config: Config = serde_json::from_str("{}").unwrap();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
+    let db = Db::connect(&config.database).await.unwrap();
+    let cx = Arc::new(Context::new(
+        config,
+        String::new(),
+        db,
+        Metrics::new().unwrap(),
+        mpsc::unbounded_channel().0,
+        mpsc::channel(1).0,
+        watch::channel(0).0,
+    ));
+
+    let (_, mut request) = query::build_question(
+        Opcode::UPDATE,
+        false,
+        false,
+        &Name::<Vec<u8>>::from_str("example.com").unwrap(),
+        Rtype::SOA,
+        None,
+    );
+    request
+        .opt(|opt| {
+            opt.set_version(1);
+            Ok(())
+        })
+        .unwrap();
+    let query_data = request.finish();
+    let dns_cx = DnsContext::new(cx.clone());
+    let client_addr = "127.0.0.1:2136".parse::<SocketAddr>().unwrap();
+
+    handle_nsupdate_request(&dns_cx, client_addr, &query_data, ResponseLimit::UDP)
+        .await
+        .unwrap();
+
+    let metrics = cx.metrics().encode();
+
+    assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"badvers\"} 1\n"));
+    assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"noerror\"} 0\n"));
+}

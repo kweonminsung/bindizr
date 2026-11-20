@@ -151,7 +151,7 @@ async fn handle_nsupdate_request(
             };
 
             cx.metrics()
-                .track_nsupdate(NsupdateResult::Rcode(response_rcode.rcode()));
+                .track_nsupdate(NsupdateResult::Rcode(response_rcode));
 
             let response =
                 nsupdate::build_response(query_data, response_rcode, None, signer, fudge, limit);
@@ -243,8 +243,7 @@ async fn handle_nsupdate_request(
         }
     };
 
-    cx.metrics()
-        .track_nsupdate(NsupdateResult::Rcode(rcode.rcode()));
+    cx.metrics().track_nsupdate(NsupdateResult::Rcode(rcode));
 
     let response = nsupdate::build_response(query_data, rcode, ede, signer, fudge, limit);
     save_answered(cx, access_log, rcode, response.is_ok());
