@@ -1,3 +1,4 @@
+use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_record::{
     DnssecRecord, DnssecRecordId, DnssecRecordType, DnssecRecordWithZone,
@@ -18,9 +19,9 @@ pub struct DnssecRecordFilter {
     pub zone_name: Option<ZoneName>,
     pub name: Option<String>,
     pub record_type: Option<DnssecRecordType>,
-    pub ttl: Option<i64>,
-    pub min_ttl: Option<i64>,
-    pub max_ttl: Option<i64>,
+    pub ttl: Option<Ttl>,
+    pub min_ttl: Option<Ttl>,
+    pub max_ttl: Option<Ttl>,
     /// Partial match against the zone name, the owner name, and the FQDN —
     /// the name forms a derived row shares with a user one.
     pub search: Option<String>,

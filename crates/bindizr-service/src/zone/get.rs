@@ -81,16 +81,18 @@ pub async fn list_by_filter(
     caller: &Caller,
     filter: &ZoneFilter,
 ) -> Result<PaginatedResponse<ZoneResponse>, ServiceError> {
-    for ttl in [
-        filter.default_ttl,
-        filter.min_default_ttl,
-        filter.max_default_ttl,
-    ]
-    .into_iter()
-    .flatten()
-    {
-        ttl::validate_record_ttl(ttl)?;
-    }
+    let default_ttl = filter
+        .default_ttl
+        .map(ttl::validate_record_ttl)
+        .transpose()?;
+    let min_default_ttl = filter
+        .min_default_ttl
+        .map(ttl::validate_record_ttl)
+        .transpose()?;
+    let max_default_ttl = filter
+        .max_default_ttl
+        .map(ttl::validate_record_ttl)
+        .transpose()?;
 
     let scope_role_id = caller.scope_role_id();
     pagination::validate_page_limit(filter.limit)?;
@@ -106,9 +108,9 @@ pub async fn list_by_filter(
         id: filter.id,
         mname: filter.mname.clone(),
         rname: filter.rname.clone(),
-        default_ttl: filter.default_ttl,
-        min_default_ttl: filter.min_default_ttl,
-        max_default_ttl: filter.max_default_ttl,
+        default_ttl,
+        min_default_ttl,
+        max_default_ttl,
         serial: filter.serial,
         min_serial: filter.min_serial,
         max_serial: filter.max_serial,

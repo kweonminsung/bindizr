@@ -56,12 +56,9 @@ pub async fn list_by_filter_with_zone(
     caller: &Caller,
     filter: &RecordFilter,
 ) -> Result<PaginatedResponse<RecordResponse>, ServiceError> {
-    for ttl in [filter.ttl, filter.min_ttl, filter.max_ttl]
-        .into_iter()
-        .flatten()
-    {
-        ttl::validate_record_ttl(ttl)?;
-    }
+    let ttl = filter.ttl.map(ttl::validate_record_ttl).transpose()?;
+    let min_ttl = filter.min_ttl.map(ttl::validate_record_ttl).transpose()?;
+    let max_ttl = filter.max_ttl.map(ttl::validate_record_ttl).transpose()?;
 
     let scope_role_id = caller.scope_role_id();
     let zone_name = filter
@@ -111,9 +108,9 @@ pub async fn list_by_filter_with_zone(
             _ => None,
         },
         value: filter.value.clone(),
-        ttl: filter.ttl,
-        min_ttl: filter.min_ttl,
-        max_ttl: filter.max_ttl,
+        ttl,
+        min_ttl,
+        max_ttl,
         priority: filter.priority,
         min_priority: filter.min_priority,
         max_priority: filter.max_priority,
@@ -131,9 +128,9 @@ pub async fn list_by_filter_with_zone(
             TypeFilter::Derived(record_type) => Some(record_type),
             _ => None,
         },
-        ttl: filter.ttl,
-        min_ttl: filter.min_ttl,
-        max_ttl: filter.max_ttl,
+        ttl,
+        min_ttl,
+        max_ttl,
         search: filter.search.clone(),
         scope_role_id,
         limit: None,
