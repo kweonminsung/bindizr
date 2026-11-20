@@ -6,6 +6,7 @@ mod owner_name;
 mod zone_name;
 
 pub use error::{EncodeNameError, ParseNameError};
+pub(crate) use owner_name::decode_preserved_labels;
 pub use owner_name::{OwnerName, decode_name_labels, is_label_suffix};
 pub use zone_name::ZoneName;
 

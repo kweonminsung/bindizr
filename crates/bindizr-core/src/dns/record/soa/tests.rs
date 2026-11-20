@@ -7,7 +7,7 @@ fn from_email_escapes_local_part() {
         SoaMailbox::from_email(r"host.master\ops@example.com")
             .unwrap()
             .as_str(),
-        r"host\.master\\ops.example.com."
+        r"host\046master\\ops.example.com."
     );
     assert!(SoaMailbox::from_email("hostmaster.example.com").is_err());
     assert!(SoaMailbox::from_email("host@@example.com").is_err());

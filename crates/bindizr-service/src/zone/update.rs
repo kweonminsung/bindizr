@@ -33,10 +33,10 @@ pub(crate) fn soa_replacement_changes(
             operation,
             record_name: OwnerName::apex(),
             record_type: JournalRecordType::Soa,
-            record_value: Some(
-                zone.soa_presentation_rdata()
-                    .map_err(ServiceError::invalid_zone_field)?,
-            ),
+            // The rname was validated where it entered, so a failure is the row's.
+            record_value: Some(zone.soa_presentation_rdata().map_err(|error| {
+                ServiceError::internal_with_source("failed to encode the SOA mailbox", error)
+            })?),
             record_rdata: None,
             record_ttl: zone.default_ttl,
             record_priority: None,

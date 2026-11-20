@@ -49,7 +49,7 @@ pub async fn export(
     out.push_str(&format!("$TTL {}\n", zone.default_ttl));
 
     // SOA carries names as absolute FQDNs so they are not read as relative
-    // to $ORIGIN. `soa_mailbox` already escapes the local part per RFC 1035.
+    // to $ORIGIN; a mailbox is one already, its local part escaped by the name codec.
     let mailbox = zone.soa_mailbox().map_err(|error| {
         ServiceError::internal_with_source(format!("failed to render SOA mailbox: {error}"), error)
     })?;
@@ -57,7 +57,7 @@ pub async fn export(
         "@\t{}\tIN\tSOA\t{} {} {} {} {} {} {}\n",
         zone.default_ttl,
         name::to_fqdn(&zone.mname),
-        name::to_fqdn(mailbox.as_str()),
+        mailbox,
         zone.serial,
         zone.refresh,
         zone.retry,

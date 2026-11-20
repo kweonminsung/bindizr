@@ -42,9 +42,13 @@ pub(crate) async fn save_version_tx(
             zone_id: zone.id,
             serial,
             mname: zone.mname.clone(),
+            // The rname was validated where it entered; failing here means a
+            // damaged stored row, not a bad request.
             rname: zone
                 .soa_mailbox()
-                .map_err(ServiceError::invalid_zone_field)?
+                .map_err(|error| {
+                    ServiceError::internal_with_source("failed to encode the SOA mailbox", error)
+                })?
                 .into_encoded(),
             default_ttl: zone.default_ttl,
             refresh: zone.refresh,
