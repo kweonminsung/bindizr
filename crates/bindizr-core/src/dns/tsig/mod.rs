@@ -204,11 +204,6 @@ pub fn verify_response(
     Ok(())
 }
 
-/// Return the bytes a signed message must leave for its TSIG record.
-pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
-    usize::from(signer.key().compose_len())
-}
-
 impl TsigKey {
     /// Decode and validate this stored key for TSIG signing and verification.
     pub fn to_signing_key(&self) -> Result<TsigSigningKey, TsigError> {

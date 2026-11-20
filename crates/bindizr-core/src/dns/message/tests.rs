@@ -11,7 +11,7 @@ use crate::dns::name::{OwnerName, ZoneName};
 use crate::dns::query::TransferMessagePosition;
 use crate::dns::record::{MAX_RECORD_RDATA, TxtRecordValue};
 use crate::dns::tsig::TsigSigningKey;
-use crate::dns::{CatalogZone, DNS_TCP_MAX_SIZE, Serial, SoaInterval, Ttl, query};
+use crate::dns::{CatalogZone, DNS_TCP_MAX_SIZE, Serial, SoaInterval, Ttl, query, tsig};
 use crate::model::record::RecordType;
 use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 

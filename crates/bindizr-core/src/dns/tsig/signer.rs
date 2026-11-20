@@ -4,7 +4,6 @@ use domain::base::iana::{Class, TsigRcode};
 use domain::base::message_builder::{AdditionalBuilder, PushError};
 use domain::base::wire::Composer;
 use domain::rdata::tsig::{Time48, Tsig};
-use domain::tsig::Key;
 use ring::hmac;
 use thiserror::Error;
 
@@ -24,15 +23,6 @@ pub struct ResponseSigner {
 }
 
 impl ResponseSigner {
-    /// Sign one response with the suggested TSIG fudge (RFC 8945, Section 10).
-    pub fn sign_response<T: Composer>(
-        self,
-        additional: &mut AdditionalBuilder<T>,
-        now: Time48,
-    ) -> Result<(), SignResponseError> {
-        self.sign_response_with_fudge(additional, now, DEFAULT_FUDGE)
-    }
-
     /// Sign one response with the caller's accepted clock tolerance.
     pub fn sign_response_with_fudge<T: Composer>(
         self,
@@ -41,11 +31,6 @@ impl ResponseSigner {
         fudge: u16,
     ) -> Result<(), SignResponseError> {
         TransferSigner::from(self).sign_response_with_fudge(additional, now, fudge)
-    }
-
-    /// Return the key whose name and algorithm the response carries.
-    pub fn key(&self) -> &Key {
-        self.key.as_ref()
     }
 }
 
@@ -119,9 +104,9 @@ impl TransferSigner {
         Ok(())
     }
 
-    /// Return the key used to size and identify the next signature.
-    pub fn key(&self) -> &Key {
-        self.key.as_ref()
+    /// Return the bytes a signed message must leave for its TSIG record.
+    pub(crate) fn signature_len(&self) -> usize {
+        usize::from(self.key.as_ref().compose_len())
     }
 }
 

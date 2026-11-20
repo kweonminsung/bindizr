@@ -28,7 +28,7 @@ use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 use crate::dns::name::EncodeNameError;
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::tsig::TransferSigner;
-use crate::dns::{ConvertSerialError, LibraryError, tsig};
+use crate::dns::{ConvertSerialError, LibraryError};
 
 /// Fixed DNS message header length (RFC 1035, Section 4.1.1).
 pub(crate) const DNS_HEADER_LEN: usize = 12;
@@ -193,7 +193,10 @@ impl DnsMessageBuilder {
     /// Calculate the response size including the question, the OPT an EDNS
     /// query is owed, and the optional TSIG.
     fn message_len(&self) -> usize {
-        let signature = self.signer.as_ref().map_or(0, tsig::signature_len);
+        let signature = self
+            .signer
+            .as_ref()
+            .map_or(0, TransferSigner::signature_len);
         let opt = if self.edns == Edns::Absent {
             0
         } else {

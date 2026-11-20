@@ -40,7 +40,9 @@ fn verify_response_rejects_invalid_class_and_ttl() {
         .start_answer(&query, Rcode::NOERROR)
         .unwrap()
         .additional();
-    server.sign_response(&mut response, Time48::now()).unwrap();
+    TransferSigner::from(server)
+        .sign_response(&mut response, Time48::now())
+        .unwrap();
     let response = response.finish();
     verify_response(&verifier, &response).unwrap();
     let start = Message::from_octets(response.as_slice())
@@ -132,7 +134,9 @@ fn verify_tsig_authenticates_original_other_data() {
                 .start_answer(&message, Rcode::NOERROR)
                 .unwrap()
                 .additional();
-            signer.sign_response(&mut response, Time48::now()).unwrap();
+            TransferSigner::from(signer)
+                .sign_response(&mut response, Time48::now())
+                .unwrap();
             assert_response_mac(&query_data, &response.finish(), algorithm);
             let mut tampered = query_data;
             *tampered.last_mut().unwrap() ^= 1;
