@@ -13,7 +13,7 @@ use super::*;
 use crate::dns::dnssec::KeyTag;
 use crate::dns::message::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::name::WireName;
-use crate::dns::{Serial, Ttl};
+use crate::dns::{Serial, Ttl, name};
 
 /// Parse a DNS wire-format name for the test.
 fn name(value: &str) -> WireName {
@@ -734,18 +734,18 @@ fn build_flagged_soa_response(
     buffer.extend_from_slice(&0u16.to_be_bytes());
     buffer.extend_from_slice(&0u16.to_be_bytes());
 
-    buffer.extend_from_slice(&crate::dns::name::encode_name(qname).unwrap());
+    buffer.extend_from_slice(&name::encode_name(qname).unwrap());
     buffer.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
     buffer.extend_from_slice(&Class::IN.to_int().to_be_bytes());
 
     if with_answer {
-        buffer.extend_from_slice(&crate::dns::name::encode_name(qname).unwrap());
+        buffer.extend_from_slice(&name::encode_name(qname).unwrap());
         buffer.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
         buffer.extend_from_slice(&Class::IN.to_int().to_be_bytes());
         buffer.extend_from_slice(&3600u32.to_be_bytes());
 
-        let mut rdata = crate::dns::name::encode_name("ns1.example.com").unwrap();
-        rdata.extend_from_slice(&crate::dns::name::encode_name("admin.example.com").unwrap());
+        let mut rdata = name::encode_name("ns1.example.com").unwrap();
+        rdata.extend_from_slice(&name::encode_name("admin.example.com").unwrap());
         rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&7200u32.to_be_bytes());
         rdata.extend_from_slice(&3600u32.to_be_bytes());
@@ -768,7 +768,7 @@ fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
     response.extend_from_slice(&0u16.to_be_bytes());
     response.extend_from_slice(&0u16.to_be_bytes());
     response.extend_from_slice(&0u16.to_be_bytes());
-    response.extend_from_slice(&crate::dns::name::encode_name(qname).unwrap());
+    response.extend_from_slice(&name::encode_name(qname).unwrap());
     response.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
     response.extend_from_slice(&Class::IN.to_int().to_be_bytes());
 

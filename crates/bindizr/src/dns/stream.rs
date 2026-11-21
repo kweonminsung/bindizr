@@ -7,8 +7,9 @@ use std::{io, task};
 use bindizr_core::dns::message;
 use bindizr_core::dns::message::{DnsMessageBuilder, EncodeMessageError};
 use bindizr_core::model::transfer::TransferTransport;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, ReadHalf, WriteHalf};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, ReadBuf, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
+use tokio::sync::watch::Sender;
 use tokio::sync::{Mutex, watch};
 use tokio_rustls::server::TlsStream;
 
@@ -104,7 +105,7 @@ impl AsyncWrite for DnsStream {
 pub(crate) struct ResponseWriter {
     writer: Mutex<WriteHalf<DnsStream>>,
     transport: TransferTransport,
-    failure: watch::Sender<bool>,
+    failure: Sender<bool>,
 }
 
 impl ResponseWriter {
@@ -199,8 +200,6 @@ impl ResponseWriter {
 
     /// Close healthy transports; suppress TLS close_notify after failure.
     pub(crate) async fn shutdown(&self) -> io::Result<()> {
-        use tokio::io::AsyncWriteExt as _;
-
         let mut writer = self.writer.lock().await;
 
         if *self.failure.borrow() {

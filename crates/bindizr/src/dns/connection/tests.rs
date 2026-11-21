@@ -12,7 +12,7 @@ use rustls::{ServerConfig, version};
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
-use tokio::task;
+use tokio::{net, task};
 
 use super::*;
 use crate::dns::udp::UdpSocket;
@@ -69,7 +69,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         };
 
         zone::create(&cx, &caller, &request).await.unwrap();
-        let secondary_socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let secondary_socket = net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let request = CreateSecondaryRequest {
             name: "ack-gate".to_string(),
             address: secondary_socket.local_addr().unwrap().to_string(),
@@ -94,10 +94,10 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
 
             tokio::spawn(async move { tcp::run_tcp_server(dns_cx, listener, stop).await.unwrap() })
         } else {
-            let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let socket = net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr = socket.local_addr().unwrap();
 
-            let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let client = net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
             client.connect(addr).await.unwrap();
 
             udp_client = Some(client);

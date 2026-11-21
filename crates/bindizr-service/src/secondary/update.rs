@@ -25,7 +25,7 @@ pub async fn update(
     let address = request
         .address
         .as_deref()
-        .map(crate::secondary::normalize_address)
+        .map(secondary::normalize_address)
         .transpose()?;
 
     if address.is_none() && request.enabled.is_none() && request.notify_key_name.is_none() {

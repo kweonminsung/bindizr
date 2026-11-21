@@ -30,13 +30,16 @@ pub(crate) async fn create_tx(
 }
 
 /// Get a role by ID.
-pub(crate) async fn get(pool: &Pool<MySql>, id: RoleId) -> Result<Option<Role>, DatabaseError> {
+pub(crate) async fn get(
+    pool: &Pool<MySql>,
+    role_id: RoleId,
+) -> Result<Option<Role>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let role = sqlx::query_as::<_, Role>(
         "SELECT id, name, description, created_at FROM roles WHERE id = ?",
     )
-    .bind(id)
+    .bind(role_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -64,10 +67,10 @@ pub(crate) async fn get_by_name(
 /// the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: RoleId,
+    role_id: RoleId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM roles WHERE id = ?")
-        .bind(id)
+        .bind(role_id)
         .execute(&mut **tx)
         .await?;
 
@@ -81,7 +84,8 @@ pub(crate) async fn list_all_with_counts(
     offset: Option<u64>,
 ) -> Result<Vec<RoleWithCounts>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, RoleWithCounts>(
+
+    let roles = sqlx::query_as::<_, RoleWithCounts>(
         r#"
         SELECT r.id, r.name, r.description, r.created_at,
                (SELECT COUNT(*) FROM role_grants g WHERE g.role_id = r.id) AS grant_count,
@@ -97,7 +101,8 @@ pub(crate) async fn list_all_with_counts(
     .bind(offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
     .fetch_all(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(roles)
 }
 
 /// Get a role by name with its grant and credential counts.
@@ -106,7 +111,8 @@ pub(crate) async fn get_by_name_with_counts(
     name: &str,
 ) -> Result<Option<RoleWithCounts>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, RoleWithCounts>(
+
+    let role = sqlx::query_as::<_, RoleWithCounts>(
         r#"
         SELECT r.id, r.name, r.description, r.created_at,
                (SELECT COUNT(*) FROM role_grants g WHERE g.role_id = r.id) AS grant_count,
@@ -119,14 +125,17 @@ pub(crate) async fn get_by_name_with_counts(
     .bind(name)
     .fetch_optional(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(role)
 }
 
 /// Count all roles.
 pub(crate) async fn count_all(pool: &Pool<MySql>) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM roles"#)
+
+    let count = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM roles"#)
         .fetch_one(&mut *connection)
         .await?;
-    Ok(result as u64)
+
+    Ok(count as u64)
 }

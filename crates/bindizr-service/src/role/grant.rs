@@ -94,7 +94,9 @@ pub async fn create(
             if !error.is_foreign_key_violation() {
                 error.into()
             } else if zone.is_some() {
-                ServiceError::ZoneNotFound("zone or role no longer exists".to_string())
+                ServiceError::ZoneNotFound {
+                    message: "zone or role no longer exists".to_string(),
+                }
             } else {
                 ServiceError::role_not_found(&role.name)
             }
@@ -232,7 +234,7 @@ async fn list_by_role(
     page: PageRequest,
 ) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
     let total = bindizr_db::role_grant::count_by_role_id(cx.db(), role.id).await?;
-    let rows = bindizr_db::role_grant::list_by_role_id_with_zone(
+    let grants = bindizr_db::role_grant::list_by_role_id_with_zone(
         cx.db(),
         role.id,
         page.limit,
@@ -240,9 +242,10 @@ async fn list_by_role(
     )
     .await?;
     Ok(pagination::build_paginated_response(
-        rows.iter()
-            .map(|row| {
-                RoleGrantResponse::from_grant(&row.grant, &role.name, row.zone_name.as_ref())
+        grants
+            .iter()
+            .map(|grant| {
+                RoleGrantResponse::from_grant(&grant.grant, &role.name, grant.zone_name.as_ref())
             })
             .collect(),
         page.limit,

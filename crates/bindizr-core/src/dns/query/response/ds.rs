@@ -1,6 +1,7 @@
 //! Decode parent DS answers and validate their negative-answer authority.
 
 use domain::base::iana::{Class, OptRcode, Rtype};
+use domain::base::rdata::ComposeRecordData;
 use domain::base::{Message, ToName};
 use domain::rdata::{Ds, Soa};
 
@@ -44,8 +45,6 @@ pub fn extract_ds_record_set(
     qname: &WireName,
     response: &[u8],
 ) -> Result<Option<DsRecordSet>, ParseResponseError> {
-    use domain::base::rdata::ComposeRecordData;
-
     let message = response::parse_authoritative_response(query_id, qname, Rtype::DS, response)?;
 
     match response::response_rcode(&message)? {

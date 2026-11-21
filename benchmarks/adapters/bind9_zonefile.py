@@ -13,10 +13,10 @@ class Bind9ZoneFileAdapter(ZoneFileAdapter):
 
     server_name = "BIND9"
 
-    def __init__(self, config: dict, project: str, endpoint: Endpoint, zone: str,
+    def __init__(self, config: dict, project: str, endpoint: Endpoint, zone_name: str,
                  zone_path: str):
         """Initialize the primary endpoint, zone file, and record state."""
-        super().__init__(config, project, endpoint, zone)
+        super().__init__(config, project, endpoint, zone_name)
         self._zone_path = zone_path
         self.serial = 2
         self.cid: str | None = None
@@ -31,7 +31,7 @@ class Bind9ZoneFileAdapter(ZoneFileAdapter):
     async def _flush_and_reload(self, records: dict[str, dict]) -> bool:
         """Write a candidate snapshot and accept it after the RNDC reload succeeds."""
         self.serial += 1
-        text = zonefile.build_zone_file(self._zone, self.serial, records.values())
+        text = zonefile.build_zone_file(self._zone_name, self.serial, records.values())
 
         # Write inside the container so BIND sees each file modification time.
         ok = await self._run("docker", "exec", "-i", self.cid, "tee", self._zone_path,
@@ -40,6 +40,6 @@ class Bind9ZoneFileAdapter(ZoneFileAdapter):
         if not ok:
             return False
 
-        if not await self._run("docker", "exec", self.cid, "rndc", "reload", self._zone):
+        if not await self._run("docker", "exec", self.cid, "rndc", "reload", self._zone_name):
             return False
         return True

@@ -78,8 +78,8 @@ pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<IdParams>,
 ) -> Result<Response, ApiError> {
-    let record = record::get(&cx, &caller, params.id).await?;
-    let response = SingleRecordResponse { record };
+    let response = record::get(&cx, &caller, params.id).await?;
+    let response = SingleRecordResponse { record: response };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

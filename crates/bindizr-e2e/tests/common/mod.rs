@@ -337,7 +337,7 @@ impl TestApp {
         let (status, body) = self.send_request(Method::GET, "/metrics", None).await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
-        let text = body.as_str().unwrap();
+        let text = body.as_str().expect("metrics response is text");
 
         text.lines()
             .filter(|line| line.starts_with(&format!("{name}{{")))

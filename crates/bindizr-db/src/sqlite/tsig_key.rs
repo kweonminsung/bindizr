@@ -37,14 +37,14 @@ pub(crate) async fn create_tx(
 /// Get a TSIG key by ID.
 pub(crate) async fn get(
     pool: &Pool<Sqlite>,
-    id: TsigKeyId,
+    tsig_key_id: TsigKeyId,
 ) -> Result<Option<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let tsig_key = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = ?",
     )
-    .bind(id)
+    .bind(tsig_key_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -54,13 +54,13 @@ pub(crate) async fn get(
 /// Get a TSIG key by ID in the current transaction, locked at `lock_level`.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: TsigKeyId,
+    tsig_key_id: TsigKeyId,
     _lock_level: LockLevel,
 ) -> Result<Option<TsigKey>, DatabaseError> {
     let tsig_key = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = ?",
     )
-    .bind(id)
+    .bind(tsig_key_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -88,10 +88,10 @@ pub(crate) async fn get_by_name(
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: TsigKeyId,
+    tsig_key_id: TsigKeyId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM tsig_keys WHERE id = ?")
-        .bind(id)
+        .bind(tsig_key_id)
         .execute(&mut **tx)
         .await?;
 
@@ -121,7 +121,8 @@ pub(crate) async fn list_by_filter_with_role(
     filter: &TsigKeyFilter,
 ) -> Result<Vec<TsigKeyMetadata>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, TsigKeyMetadata>(
+
+    let tsig_keys = sqlx::query_as::<_, TsigKeyMetadata>(
         r#"
         SELECT t.id, t.name, t.algorithm, r.name AS role_name, t.created_at
         FROM tsig_keys t
@@ -142,7 +143,8 @@ pub(crate) async fn list_by_filter_with_role(
     )
     .fetch_all(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(tsig_keys)
 }
 
 /// Count credentials matching the role filter, ignoring its page window.
@@ -151,7 +153,8 @@ pub(crate) async fn count_by_filter(
     filter: &TsigKeyFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_scalar::<_, i64>(
+
+    let count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
         FROM tsig_keys t
@@ -163,5 +166,6 @@ pub(crate) async fn count_by_filter(
     .bind(filter.role_id)
     .fetch_one(&mut *connection)
     .await?;
-    Ok(result as u64)
+
+    Ok(count as u64)
 }

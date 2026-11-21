@@ -60,10 +60,10 @@ pub async fn list_versions(
     let total = bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, filter).await?;
     let versions =
         bindizr_db::zone_version::list_by_filter(cx.db(), zone.id, filter, limit, offset).await?;
-    let items = versions
+    let items: Vec<_> = versions
         .iter()
         .map(ZoneVersionResponse::try_from)
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<_, _>>()?;
 
     Ok(pagination::build_paginated_response(
         items, limit, offset, total,

@@ -29,8 +29,8 @@ async def measure(adapter, prepop: int) -> dict:
 
     pool = generate(prepop, 1337)
 
-    for i, record in enumerate(pool):
-        record["name"] = f"pool{i:07d}"
+    for index, record in enumerate(pool):
+        record["name"] = f"pool{index:07d}"
 
     await adapter.import_records(ZONE, pool)
     if adapter.bulk_errors:

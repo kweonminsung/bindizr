@@ -45,7 +45,7 @@ pub async fn create_bulk(
 
     // Validate types and values up front so a malformed record fails fast.
     let started = Instant::now();
-    let prepared = records
+    let prepared: Vec<_> = records
         .iter()
         .map(|record| {
             record::parse_record_fields(
@@ -55,7 +55,7 @@ pub async fn create_bulk(
                 record.priority,
             )
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<_, _>>()?;
     let owners: Vec<_> = records
         .iter()
         .map(|record| record::normalize_record_owner_name(&record.name, &zone_name))
@@ -165,8 +165,11 @@ pub async fn create_bulk(
         let (created_records, diff) = if request.dry_run {
             // `after` = existing plus the inserts, so an insert into an
             // existing record set reads as `changed`, not a bare `added`.
-            let before =
-                caller.readable_records(zone.id, before_records.into_iter().map(RecordData::from));
+            let before = caller.readable_records(
+                before_records
+                    .into_iter()
+                    .map(|record| (zone.id, RecordData::from(record))),
+            );
             let mut after = before.clone();
 
             for record in &to_insert {

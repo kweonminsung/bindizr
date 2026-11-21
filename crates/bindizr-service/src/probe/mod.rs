@@ -70,24 +70,24 @@ pub async fn probe_secondaries(
 pub(crate) async fn probe_targets(
     cx: &Context,
     zone_name: &ZoneName,
-    secondaries: &[SecondaryTarget],
+    targets: &[SecondaryTarget],
     expected_serial: Option<Serial>,
 ) -> Result<Vec<SecondaryStatusResponse>, ServiceError> {
-    if secondaries.is_empty() {
+    if targets.is_empty() {
         return Ok(Vec::new());
     }
 
     let timeout = cx.config().dns.notify.timeout();
 
     let mut tasks = JoinSet::new();
-    let mut targets = HashMap::new();
+    let mut task_targets = HashMap::new();
 
-    for (index, target) in secondaries.iter().cloned().enumerate() {
+    for (index, target) in targets.iter().cloned().enumerate() {
         let zone_name = zone_name.clone();
         let address = target.secondary.address.to_string();
 
         let task = tasks.spawn(async move { probe_resolved(&zone_name, &target, timeout).await });
-        targets.insert(task.id(), (index, address));
+        task_targets.insert(task.id(), (index, address));
     }
 
     let mut statuses = Vec::new();
@@ -99,7 +99,7 @@ pub(crate) async fn probe_targets(
             Err(error) => error.id(),
         };
         // Every id belongs to this set and was registered before joining.
-        let (index, address) = &targets[&id];
+        let (index, address) = &task_targets[&id];
         let status = match result {
             Ok((_, Ok(probe))) => {
                 let status = build_secondary_status(probe.address, expected_serial, probe.serial);
@@ -140,9 +140,9 @@ pub(crate) async fn probe_target(
     target: &SecondaryTarget,
     expected_serial: Option<Serial>,
 ) -> Result<SecondaryStatusResponse, ServiceError> {
-    let result = probe_resolved(zone_name, target, cx.config().dns.notify.timeout()).await?;
-    let status = build_secondary_status(result.address, expected_serial, result.serial);
-    attach_last_transfer(cx, zone_name, status, &result.clients).await
+    let probe = probe_resolved(zone_name, target, cx.config().dns.notify.timeout()).await?;
+    let status = build_secondary_status(probe.address, expected_serial, probe.serial);
+    attach_last_transfer(cx, zone_name, status, &probe.clients).await
 }
 
 /// Probe the request's addresses or report its original resolution failure.

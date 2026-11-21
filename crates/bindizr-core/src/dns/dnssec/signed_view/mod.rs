@@ -151,11 +151,11 @@ impl SignedViewDiff {
         let zone = params.zone;
         let apex = zone.name.to_wire_name()?;
 
-        let signers = params
+        let signers: Vec<_> = params
             .keys
             .iter()
             .map(|key| Signer::new(&apex, key))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<_, _>>()?;
         let key_signers: Vec<&Signer<'_>> = signers
             .iter()
             .filter(|signer| signer.key.signs_key_record_sets())

@@ -14,11 +14,11 @@ pub async fn create_tx(tx: &mut Transaction<'_>, role: Role) -> Result<Role, Dat
 }
 
 /// Get a role by ID.
-pub async fn get(db: &Db, id: RoleId) -> Result<Option<Role>, DatabaseError> {
+pub async fn get(db: &Db, role_id: RoleId) -> Result<Option<Role>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::role::get(pool, id).await,
-        Backend::Postgres(pool) => postgres::role::get(pool, id).await,
-        Backend::Sqlite(pool) => sqlite::role::get(pool, id).await,
+        Backend::MySql(pool) => mysql::role::get(pool, role_id).await,
+        Backend::Postgres(pool) => postgres::role::get(pool, role_id).await,
+        Backend::Sqlite(pool) => sqlite::role::get(pool, role_id).await,
     }
 }
 
@@ -33,11 +33,11 @@ pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<Role>, DatabaseEr
 
 /// Delete a role by ID; its grants go with it. Reports `false` when no row had
 /// the id.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: RoleId) -> Result<bool, DatabaseError> {
+pub async fn delete_tx(tx: &mut Transaction<'_>, role_id: RoleId) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::role::delete_tx(tx, id).await,
-        TransactionKind::Postgres(tx) => postgres::role::delete_tx(tx, id).await,
-        TransactionKind::Sqlite(tx) => sqlite::role::delete_tx(tx, id).await,
+        TransactionKind::MySql(tx) => mysql::role::delete_tx(tx, role_id).await,
+        TransactionKind::Postgres(tx) => postgres::role::delete_tx(tx, role_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::role::delete_tx(tx, role_id).await,
     }
 }
 

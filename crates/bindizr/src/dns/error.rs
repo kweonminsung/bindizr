@@ -47,3 +47,26 @@ pub(crate) enum DnsError {
     #[error("failed to build NSUPDATE response: {0}")]
     BuildNsupdateResponse(#[from] BuildResponseError),
 }
+
+impl DnsError {
+    /// Return a fixed log classification without record values or peer input.
+    pub(crate) fn to_log_code(&self) -> String {
+        match self {
+            Self::NotAuth { .. } => "NOTAUTH",
+            Self::Refused { .. } => "REFUSED",
+            Self::Service(error) => error.code().as_str(),
+            Self::Io(_) => "IO_FAILED",
+            Self::Protocol(_) => "DNS_ENCODING_FAILED",
+            Self::TsigResponse(_) => "TSIG_RESPONSE_ENCODING_FAILED",
+            Self::PeerClosed => "PEER_CLOSED",
+            Self::ConnectionSlotsClosed(_) => "CONNECTION_SLOTS_CLOSED",
+            Self::WriteTimeout { .. } => "WRITE_TIMEOUT",
+            Self::IncompletePrefix => "INCOMPLETE_PREFIX",
+            Self::IncompleteMessage { .. } => "INCOMPLETE_MESSAGE",
+            Self::MissingVersion { .. } => "IXFR_VERSION_MISSING",
+            Self::InvalidQuery { .. } => "INVALID_QUERY",
+            Self::BuildNsupdateResponse(_) => "UPDATE_RESPONSE_ENCODING_FAILED",
+        }
+        .to_string()
+    }
+}

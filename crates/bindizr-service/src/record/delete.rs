@@ -24,44 +24,28 @@ pub async fn delete(
 ) -> Result<DeleteRecordsResponse, ServiceError> {
     // Resolve zone_id with a non-locking read so the tx locks zone before
     // record (the create/bulk/import order); the reverse can deadlock.
-    let zone_id = match bindizr_db::record::get(cx.db(), record_id).await {
-        Ok(Some(record)) => record.zone_id,
-        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-        Err(error) => {
-            return Err(ServiceError::internal_with_source(
-                "failed to fetch record",
-                error,
-            ));
-        }
-    };
+    let zone_id = bindizr_db::record::get(cx.db(), record_id)
+        .await
+        .map_err(|error| ServiceError::internal_with_source("failed to fetch record", error))?
+        .ok_or_else(|| ServiceError::record_not_found(record_id))?
+        .zone_id;
 
     let mut tx = transaction::begin_tx(cx, "failed to delete record").await?;
 
     let apply_result: Result<_, ServiceError> = async {
-        let zone = match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
-            Ok(Some(zone)) => zone,
+        let zone = bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive)
+            .await
+            .map_err(|error| ServiceError::internal_with_source("failed to fetch zone", error))?
             // The zone went with the record the request named.
-            Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-            Err(error) => {
-                return Err(ServiceError::internal_with_source(
-                    "failed to fetch zone",
-                    error,
-                ));
-            }
-        };
+            .ok_or_else(|| ServiceError::record_not_found(record_id))?;
 
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        let existing_record = match bindizr_db::record::get_tx(&mut tx, record_id).await {
-            Ok(Some(record)) if record.zone_id == zone.id => record,
-            Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
-            Err(error) => {
-                return Err(ServiceError::internal_with_source(
-                    "failed to fetch record",
-                    error,
-                ));
-            }
-        };
+        let existing_record = bindizr_db::record::get_tx(&mut tx, record_id)
+            .await
+            .map_err(|error| ServiceError::internal_with_source("failed to fetch record", error))?
+            .filter(|record| record.zone_id == zone.id)
+            .ok_or_else(|| ServiceError::record_not_found(record_id))?;
 
         // A record the caller may neither read nor delete reads as 404, as
         // it does on GET, so ids cannot be probed.
@@ -89,16 +73,17 @@ pub async fn delete(
                 bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &existing_record.name)
                     .await?;
             let before = caller.readable_records(
-                zone.id,
-                records_at_name.iter().cloned().map(RecordData::from),
+                records_at_name
+                    .iter()
+                    .cloned()
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
             let after = caller.readable_records(
-                zone.id,
                 records_at_name
                     .iter()
                     .filter(|record| record.id != existing_record.id)
                     .cloned()
-                    .map(RecordData::from),
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
 
             diff::build_record_diff(&zone, &before, &after)
@@ -112,7 +97,7 @@ pub async fn delete(
             deleted: 1,
             // Only what the caller may read is listed back.
             records: caller
-                .readable_records(zone.id, [existing_record.clone()])
+                .readable_records([(zone.id, existing_record.clone())])
                 .as_slice()
                 .iter()
                 .map(|record| {
@@ -224,17 +209,18 @@ pub async fn delete_matching(
         // runs and empty matches return before any records or serials are written.
         let diff = if request.dry_run {
             let before = caller.readable_records(
-                zone.id,
-                records_at_name.iter().cloned().map(RecordData::from),
+                records_at_name
+                    .iter()
+                    .cloned()
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
             let deleted_ids: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
             let after = caller.readable_records(
-                zone.id,
                 records_at_name
                     .iter()
                     .filter(|record| !deleted_ids.contains(&record.id))
                     .cloned()
-                    .map(RecordData::from),
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
 
             diff::build_record_diff(&zone, &before, &after)
@@ -247,7 +233,7 @@ pub async fn delete_matching(
             dry_run: request.dry_run,
             deleted: matched.len() as u64,
             records: caller
-                .readable_records(zone.id, matched.iter().cloned())
+                .readable_records(matched.iter().cloned().map(|record| (zone.id, record)))
                 .as_slice()
                 .iter()
                 .map(|record| {

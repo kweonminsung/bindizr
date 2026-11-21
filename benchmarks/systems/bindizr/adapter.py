@@ -135,13 +135,13 @@ class BindizrAdapter(DnsAdapter):
             await self.session.close()
         self.compose.down()
 
-    async def create_zone(self, zone: str) -> None:
+    async def create_zone(self, zone_name: str) -> None:
         """Create the zone used by the benchmark, with the NS records its secondary needs."""
-        zone_name = zone.rstrip(".")
+        stripped_zone_name = zone_name.rstrip(".")
         body = {
-            "name": zone_name,
-            "mname": f"ns1.{zone_name}.",
-            "rname": f"admin@{zone_name}",
+            "name": stripped_zone_name,
+            "mname": f"ns1.{stripped_zone_name}.",
+            "rname": f"admin@{stripped_zone_name}",
             "default_ttl": 3600,
         }
 
@@ -150,45 +150,45 @@ class BindizrAdapter(DnsAdapter):
                 raise RuntimeError(f"create_zone failed: {response.status} {await response.text()}")
 
         # Ensure the apex NS and glue BIND9 needs, matching other seed zones.
-        for record in ({"name": "@", "type": "NS", "value": f"ns1.{zone_name}."},
+        for record in ({"name": "@", "type": "NS", "value": f"ns1.{stripped_zone_name}."},
                     {"name": "ns1", "type": "A", "value": "127.0.0.1"}):
-            body = {**record, "zone_name": zone_name, "ttl": 3600}
+            body = {**record, "zone_name": stripped_zone_name, "ttl": 3600}
             async with self.session.post(self.base + "/records", json=body) as response:
                 if response.status not in (200, 201, 409):
                     raise RuntimeError(
                         f"create_zone {record['type']} failed: {response.status} {await response.text()}")
 
-    async def delete_zone(self, zone: str) -> None:
+    async def delete_zone(self, zone_name: str) -> None:
         """Remove the benchmark zone and its records."""
-        async with self.session.delete(self.base + f"/zones/{zone.rstrip('.')}") as response:
+        async with self.session.delete(self.base + f"/zones/{zone_name.rstrip('.')}") as response:
             await response.read()
 
-    def _build_record_request(self, zone: str, record: dict) -> dict:
+    def _build_record_request(self, zone_name: str, record: dict) -> dict:
         """Build a bindizr record request from a benchmark record."""
-        return {**self._build_record_fields(record), "zone_name": zone.rstrip(".")}
+        return {**self._build_record_fields(record), "zone_name": zone_name.rstrip(".")}
 
-    async def create_record(self, zone: str, record: dict) -> str:
+    async def create_record(self, zone_name: str, record: dict) -> str:
         """Create a record and return its adapter-specific handle."""
-        async with self.session.post(self.base + "/records", json=self._build_record_request(zone, record)) as response:
+        async with self.session.post(self.base + "/records", json=self._build_record_request(zone_name, record)) as response:
             if response.status not in (200, 201):
                 raise RuntimeError(f"create_record {response.status}: {await response.text()}")
             data = await response.json()
             return str(data["record"]["id"])
 
-    async def get_record(self, zone: str, handle: str) -> bool:
+    async def get_record(self, zone_name: str, handle: str) -> bool:
         """Check whether the record identified by the handle is present."""
         async with self.session.get(self.base + f"/records/{handle}") as response:
             await response.read()
             return response.status == 200
 
-    async def update_record(self, zone: str, handle: str, record: dict) -> bool:
+    async def update_record(self, zone_name: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
         body = self._build_record_fields(record)
         async with self.session.put(self.base + f"/records/{handle}", json=body) as response:
             await response.read()
             return response.status == 200
 
-    async def delete_record(self, zone: str, handle: str) -> bool:
+    async def delete_record(self, zone_name: str, handle: str) -> bool:
         """Delete the record identified by the handle."""
         async with self.session.delete(self.base + f"/records/{handle}") as response:
             await response.read()
@@ -228,7 +228,7 @@ class BindizrAdapter(DnsAdapter):
 
         return None
 
-    async def import_records(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone_name: str, records: list[dict]) -> None:
         """Bulk-insert via Bindizr's `/records/bulk` API in single-transaction
         chunks (each chunk bumps the serial once and sends one NOTIFY)."""
         self.bulk_errors = 0
@@ -236,16 +236,16 @@ class BindizrAdapter(DnsAdapter):
 
         for start in range(0, len(records), self.bulk_chunk):
             chunk = records[start:start + self.bulk_chunk]
-            body = {"zone_name": zone.rstrip("."),
+            body = {"zone_name": zone_name.rstrip("."),
                     "records": [self._build_record_fields(record) for record in chunk]}
             if await self._post_json_with_retry(url, body) is None:
                 self.bulk_errors += len(chunk)
 
-    async def import_zone_file(self, zone: str, records: list[dict]) -> None:
+    async def import_zone_file(self, zone_name: str, records: list[dict]) -> None:
         """Import records as BIND zone-file text via `/zones/{name}/import`
         (append mode), chunked so large sets don't build one giant request."""
         self.import_errors = 0
-        url = self.base + f"/zones/{zone.rstrip('.')}/import"
+        url = self.base + f"/zones/{zone_name.rstrip('.')}/import"
 
         for start in range(0, len(records), self.import_chunk):
             chunk = records[start:start + self.import_chunk]

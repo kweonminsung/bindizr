@@ -362,14 +362,14 @@ fn add_enforces_one_ttl_per_record_set() {
 
 /// Build a record fixture with the requested fields.
 fn test_record(
-    id: i32,
+    record_id: i32,
     name: &str,
     record_type: RecordType,
     value: &str,
     priority: Option<i32>,
 ) -> Record {
     Record {
-        id: RecordId::from(id),
+        id: RecordId::from(record_id),
         name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),

@@ -11,7 +11,7 @@ from ab import largezone_sweep
 
 class SweepTests(IsolatedAsyncioTestCase):
     async def test_partial_and_total_prepopulation_failure_stop_before_measurement(self):
-        """Do not label an undersized zone with the requested prepopulation count."""
+        """Verify that an undersized zone never receives the requested prepopulation label."""
         for errors in (1, 3):
             adapter = SimpleNamespace(delete_zone=AsyncMock(), create_zone=AsyncMock(),
                                       import_records=AsyncMock(), bulk_errors=errors)
@@ -23,7 +23,7 @@ class SweepTests(IsolatedAsyncioTestCase):
                 workload.assert_not_awaited()
 
     async def test_successful_prepopulation_keeps_the_measured_result(self):
-        """Run the existing creation workload when the prepared zone is complete."""
+        """Verify that a complete prepared zone reaches the measured creation workload."""
         adapter = SimpleNamespace(delete_zone=AsyncMock(), create_zone=AsyncMock(),
                                   import_records=AsyncMock(), bulk_errors=0)
         recorder = SimpleNamespace(errors=2, summary=lambda: dict(tps=10, p95_ms=3, p99_ms=4))

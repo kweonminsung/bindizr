@@ -245,7 +245,7 @@ pub(crate) async fn handle_tcp_xfr(
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),
                 transport,
-                error.to_string(),
+                error.to_log_code(),
             )
             .await;
 
@@ -274,7 +274,7 @@ pub(crate) async fn handle_tcp_xfr(
     }
 }
 
-/// Send a stream refusal, then record its final outcome and diagnostic reason.
+/// Send a stream refusal, then save its final outcome and fixed error classification.
 async fn refuse_tcp_xfr(
     dns_cx: &DnsContext,
     writer: &ResponseWriter,
@@ -290,10 +290,12 @@ async fn refuse_tcp_xfr(
         _ if refusal.is_failure() => XfrResult::Failed,
         _ => XfrResult::Refused,
     };
+    let mut error_code = refusal.to_log_code();
     let mut reason = refusal.to_string();
     let response = match refusal.into_response(&QueryMetadata::from(query), query_data) {
         Err(DnsError::TsigResponse(error)) => {
             outcome = XfrResult::Failed;
+            error_code = "TSIG_RESPONSE_ENCODING_FAILED".to_string();
             reason = error.to_string();
             query
                 .build_signed_error_response(OptRcode::SERVFAIL, None, None)
@@ -310,6 +312,7 @@ async fn refuse_tcp_xfr(
 
     if let Err(error) = &sent {
         outcome = XfrResult::Failed;
+        error_code = error.to_log_code();
         reason = error.to_string();
     }
 
@@ -325,7 +328,7 @@ async fn refuse_tcp_xfr(
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),
                 transport,
-                reason,
+                error_code,
             )
             .await;
         }
@@ -336,7 +339,7 @@ async fn refuse_tcp_xfr(
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),
                 transport,
-                reason,
+                error_code,
             )
             .await;
         }
@@ -419,3 +422,6 @@ pub(crate) async fn handle_udp_xfr(
 
     sent
 }
+
+#[cfg(test)]
+mod tests;

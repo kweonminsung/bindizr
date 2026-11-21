@@ -4420,8 +4420,11 @@ components:
           type:
           - string
           - 'null'
-          description: The error the request was answered with; never a token or secret.
-          example: role does not permit 'zone:delete' in zone 'example.com'
+          description: |-
+            A fixed error classification: an API error code, DNS/TSIG RCODE, or
+            transport failure code. Null on success; excludes rejected input and
+            detailed client diagnostics.
+          example: FORBIDDEN
         method:
           type: string
           description: The HTTP method, or `UPDATE` for an nsupdate.
@@ -6062,8 +6065,11 @@ components:
                 type:
                 - string
                 - 'null'
-                description: The error the request was answered with; never a token or secret.
-                example: role does not permit 'zone:delete' in zone 'example.com'
+                description: |-
+                  A fixed error classification: an API error code, DNS/TSIG RCODE, or
+                  transport failure code. Null on success; excludes rejected input and
+                  detailed client diagnostics.
+                example: FORBIDDEN
               method:
                 type: string
                 description: The HTTP method, or `UPDATE` for an nsupdate.
@@ -6500,7 +6506,10 @@ components:
                 type:
                 - string
                 - 'null'
-                description: Why the transfer was refused or failed.
+                description: |-
+                  A fixed error classification, excluding record values and detailed
+                  diagnostics; null when the transfer succeeded.
+                example: DNS_ENCODING_FAILED
               incremental:
                 type: boolean
                 description: |-
@@ -7355,7 +7364,10 @@ components:
           type:
           - string
           - 'null'
-          description: Why the transfer was refused or failed.
+          description: |-
+            A fixed error classification, excluding record values and detailed
+            diagnostics; null when the transfer succeeded.
+          example: DNS_ENCODING_FAILED
         incremental:
           type: boolean
           description: |-

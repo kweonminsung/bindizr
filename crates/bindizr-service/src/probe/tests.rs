@@ -1,9 +1,11 @@
-use std::io;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{io, ptr};
 
 use bindizr_core::config::Config;
+use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
 use bindizr_core::metrics::Metrics;
+use bindizr_core::model::tsig_key::TsigKeyId;
 use bindizr_db::Db;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::{mpsc, watch};
@@ -11,7 +13,9 @@ use tokio::time;
 
 use super::*;
 use crate::authorization::Caller;
-use crate::types::CreateSecondaryRequest;
+use crate::dns_client::ResolveAddressError;
+use crate::notify;
+use crate::types::{CreateSecondaryRequest, UpdateSecondaryRequest};
 
 /// Build isolated SQLite state with a bounded probe timeout and no workers.
 async fn context() -> Arc<Context> {
@@ -167,17 +171,12 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
     );
 }
 
-/// A diagnostic keeps its selected peer through probing and NOTIFY; a later selection refreshes it.
+/// Verify that a diagnostic keeps its selected peer and a later selection refreshes it.
 #[tokio::test]
 async fn diagnostic_reuses_resolved_target_after_secondary_changes() {
-    use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
-
-    use crate::notify;
-    use crate::types::UpdateSecondaryRequest;
-
     let cx = context().await;
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let resolved = socket.local_addr().unwrap();
+    let addr = socket.local_addr().unwrap();
     secondary::create(
         &cx,
         &Caller::socket(),
@@ -191,7 +190,7 @@ async fn diagnostic_reuses_resolved_target_after_secondary_changes() {
     .unwrap();
     let target = SecondaryTarget {
         secondary: secondary::lookup_by_name(&cx, "selected").await.unwrap(),
-        addresses: Ok(vec![resolved]),
+        addresses: Ok(vec![addr]),
     };
     secondary::update(
         &cx,
@@ -219,18 +218,18 @@ async fn diagnostic_reuses_resolved_target_after_secondary_changes() {
             socket.send_to(&response, peer).await.unwrap();
         }
     });
-    let zone = cx.config().dns.catalog_zone_name.clone();
-    let status = probe_target(&cx, &zone, &target, None).await.unwrap();
-    assert_eq!(status.address, resolved.to_string());
+    let zone_name = cx.config().dns.catalog_zone_name.clone();
+    let status = probe_target(&cx, &zone_name, &target, None).await.unwrap();
+    assert_eq!(status.address, addr.to_string());
     assert_eq!(status.status, SecondaryStatus::Unreachable);
     assert!(status.error.unwrap().contains("RCODE 5"));
-    let reports = notify::send_notify_to_targets(&cx, &zone, [&target])
+    let reports = notify::send_notify_to_targets(&cx, &zone_name, [&target])
         .await
         .unwrap();
     assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].address, resolved.to_string());
+    assert_eq!(reports[0].address, addr.to_string());
     assert!(reports[0].error.is_none());
-    assert_eq!(target.client_ips(), vec![resolved.ip()]);
+    assert_eq!(target.client_ips(), vec![addr.ip()]);
     server.await.unwrap();
 
     assert!(secondary::resolve_enabled(&cx).await.unwrap().is_empty());
@@ -245,12 +244,9 @@ async fn diagnostic_reuses_resolved_target_after_secondary_changes() {
     );
 }
 
-/// Every stage reports the same failed resolution without retrying the configured literal address.
+/// Verify that each stage reports the same resolution failure without retrying the address.
 #[tokio::test]
 async fn diagnostic_reuses_resolution_failure_for_probe_and_notify() {
-    use crate::dns_client::ResolveAddressError;
-    use crate::notify;
-
     let cx = context().await;
     secondary::create(
         &cx,
@@ -273,14 +269,14 @@ async fn diagnostic_reuses_resolution_failure_for_probe_and_notify() {
         secondary: secondary::lookup_by_name(&cx, "failed").await.unwrap(),
         addresses: Err(error.clone()),
     };
-    let zone = &cx.config().dns.catalog_zone_name;
-    let result = probe_resolved(zone, &target, Duration::from_secs(1))
+    let zone_name = &cx.config().dns.catalog_zone_name;
+    let probe = probe_resolved(zone_name, &target, Duration::from_secs(1))
         .await
         .unwrap();
-    let Err(ProbeSoaError::Resolve(probe_error)) = result.serial else {
+    let Err(ProbeSoaError::Resolve(probe_error)) = probe.serial else {
         panic!("the original resolution failure was lost");
     };
-    assert!(std::ptr::eq(
+    assert!(ptr::eq(
         std::error::Error::source(&probe_error)
             .unwrap()
             .downcast_ref::<ResolveAddressError>()
@@ -288,8 +284,8 @@ async fn diagnostic_reuses_resolution_failure_for_probe_and_notify() {
         error.as_ref()
     ));
     assert!(target.client_ips().is_empty());
-    let status = probe_target(&cx, zone, &target, None).await.unwrap();
-    let reports = notify::send_notify_to_targets(&cx, zone, [&target])
+    let status = probe_target(&cx, zone_name, &target, None).await.unwrap();
+    let reports = notify::send_notify_to_targets(&cx, zone_name, [&target])
         .await
         .unwrap();
     assert_eq!(reports.len(), 1);
@@ -298,22 +294,18 @@ async fn diagnostic_reuses_resolution_failure_for_probe_and_notify() {
     assert_eq!(status.status, SecondaryStatus::Unreachable);
 }
 
-/// A later missing key aborts preparation before an earlier target can receive NOTIFY.
+/// Verify that a later missing key aborts preparation before any target receives NOTIFY.
 #[tokio::test]
 async fn diagnostic_loads_all_keys_before_sending_any_notify() {
-    use bindizr_core::model::tsig_key::TsigKeyId;
-
-    use crate::notify;
-
     let cx = context().await;
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let address = socket.local_addr().unwrap();
+    let addr = socket.local_addr().unwrap();
     secondary::create(
         &cx,
         &Caller::socket(),
         &CreateSecondaryRequest {
             name: "selected".to_string(),
-            address: address.to_string(),
+            address: addr.to_string(),
             notify_key_name: None,
         },
     )
@@ -321,7 +313,7 @@ async fn diagnostic_loads_all_keys_before_sending_any_notify() {
     .unwrap();
     let first = SecondaryTarget {
         secondary: secondary::lookup_by_name(&cx, "selected").await.unwrap(),
-        addresses: Ok(vec![address]),
+        addresses: Ok(vec![addr]),
     };
     // A request-owned row can outlive its referenced key; resolution still succeeded.
     let mut second = first.clone();

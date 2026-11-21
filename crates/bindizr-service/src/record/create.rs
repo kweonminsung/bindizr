@@ -90,8 +90,10 @@ pub async fn create(
         // with its preview; the owner's rows frame the diff.
         if request.dry_run {
             let before = caller.readable_records(
-                zone.id,
-                records_at_name.iter().cloned().map(RecordData::from),
+                records_at_name
+                    .iter()
+                    .cloned()
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
             let mut after = before.clone();
             after.push_written(RecordData::from(candidate.clone()));

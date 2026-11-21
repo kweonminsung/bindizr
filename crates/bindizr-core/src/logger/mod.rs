@@ -1,4 +1,5 @@
 use std::io;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use chrono::Local;
@@ -66,8 +67,6 @@ impl Log for Logger {
 
     /// Flush buffered stderr output.
     fn flush(&self) {
-        use std::io::Write;
-
         let _ = io::stderr().flush();
     }
 }

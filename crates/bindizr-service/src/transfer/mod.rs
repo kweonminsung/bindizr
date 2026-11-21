@@ -56,14 +56,14 @@ pub async fn save_ok(
     }
 }
 
-/// Save a refusal for the zone `zone_name` names.
+/// Save a refusal's fixed error code for the zone `zone_name` names.
 pub async fn save_refused(
     cx: &Context,
     client_ip: IpAddr,
     zone_name: &str,
     kind: TransferKind,
     transport: TransferTransport,
-    reason: String,
+    error_code: String,
 ) {
     save_unserved(
         cx,
@@ -72,20 +72,20 @@ pub async fn save_refused(
         kind,
         transport,
         TransferResult::Refused,
-        reason,
+        error_code,
     )
     .await;
 }
 
 /// Save a transfer of the zone `zone_name` names that was allowed and
-/// then broke off.
+/// then broke off, keeping its fixed error code without client diagnostics.
 pub async fn save_failed(
     cx: &Context,
     client_ip: IpAddr,
     zone_name: &str,
     kind: TransferKind,
     transport: TransferTransport,
-    error: String,
+    error_code: String,
 ) {
     save_unserved(
         cx,
@@ -94,7 +94,7 @@ pub async fn save_failed(
         kind,
         transport,
         TransferResult::Failed,
-        error,
+        error_code,
     )
     .await;
 }
@@ -108,7 +108,7 @@ async fn save_unserved(
     kind: TransferKind,
     transport: TransferTransport,
     result: TransferResult,
-    error: String,
+    error_code: String,
 ) {
     if cx.config().transfer_log.save == SavedTransfers::None {
         return;
@@ -137,7 +137,7 @@ async fn save_unserved(
             incremental: false,
             serial: None,
             served_at: Utc::now(),
-            error: Some(error),
+            error: Some(error_code),
         },
     )
     .await;

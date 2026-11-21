@@ -1,8 +1,8 @@
 //! Compose TSIG failures separately from request authentication.
 
-use domain::base::Message;
 use domain::base::iana::{Class, OptRcode, Rcode, TsigRcode};
 use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
+use domain::base::{Message, ToName};
 use domain::rdata::tsig::{Time48, Tsig};
 use ring::hmac;
 use thiserror::Error;
@@ -25,6 +25,13 @@ pub enum BuildErrorResponseError {
     },
 }
 
+/// Whether a TSIG error echoes the question or omits it to fit a UDP reply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuestionSection {
+    Echo,
+    Omit,
+}
+
 /// Build the signed or unsigned validation error required by RFC 8945, Section 5.3.2.
 pub fn build_error_response(
     query_data: &[u8],
@@ -36,23 +43,23 @@ pub fn build_error_response(
     let message = Message::from_octets(query_data)
         .map_err(|error| BuildErrorResponseError::Malformed(Box::new(error)))?;
 
-    let build = |include_question| -> Result<Vec<u8>, LibraryError> {
+    let build = |question| -> Result<Vec<u8>, LibraryError> {
         let response = match (rcode, key) {
             (TsigRcode::BADTIME, Some(key)) => build_signed_error_response(
                 &message,
                 key,
                 AuthenticatedError::BadTime,
                 now,
-                include_question,
+                question,
             )?,
             (TsigRcode::BADTRUNC, Some(key)) => build_signed_error_response(
                 &message,
                 key,
                 AuthenticatedError::BadTrunc,
                 now,
-                include_question,
+                question,
             )?,
-            _ => build_unsigned_error_response(&message, rcode, include_question)?,
+            _ => build_unsigned_error_response(&message, rcode, question)?,
         };
         limit.validate_len(response.len())?;
         Ok(response)
@@ -60,10 +67,10 @@ pub fn build_error_response(
 
     // Keep stream questions (RFC 5936, Section 2.2.2); only oversized UDP errors omit them.
     // Re-sign without changing BADTIME's error or client time (RFC 8945, Section 5.2.3).
-    build(true)
+    build(QuestionSection::Echo)
         .or_else(|error| {
             if limit.is_udp() {
-                build(false)
+                build(QuestionSection::Omit)
             } else {
                 Err(error)
             }
@@ -74,11 +81,11 @@ pub fn build_error_response(
 /// Echo the question when it fits; a compact UDP error retains the request header.
 fn build_error_header(
     message: &Message<&[u8]>,
-    include_question: bool,
+    question: QuestionSection,
 ) -> Result<AdditionalBuilder<TreeCompressor<Vec<u8>>>, LibraryError> {
     let mut builder = message::build_response();
 
-    if include_question {
+    if question == QuestionSection::Echo {
         return Ok(builder.start_answer(message, Rcode::NOTAUTH)?.additional());
     }
 
@@ -105,17 +112,15 @@ fn build_signed_error_response(
     key: &TsigSigningKey,
     error: AuthenticatedError,
     now: Time48,
-    include_question: bool,
+    question: QuestionSection,
 ) -> Result<Vec<u8>, LibraryError> {
-    use domain::base::ToName;
-
     let request_tsig = message
         .additional()?
         .limit_to::<Tsig<_, _>>()
         .last()
         .ok_or(TsigError::RecordMissing)??;
     let data = request_tsig.data();
-    let mut additional = build_error_header(message, include_question)?;
+    let mut additional = build_error_header(message, question)?;
     Edns::from_message(message).push_response_opt(&mut additional, OptRcode::NOTAUTH, None, None);
 
     // domain 0.12.3 omits OPT and hashes eight Other Data bytes; RFC 8945,
@@ -169,7 +174,7 @@ fn build_signed_error_response(
 fn build_unsigned_error_response(
     message: &Message<&[u8]>,
     rcode: TsigRcode,
-    include_question: bool,
+    question: QuestionSection,
 ) -> Result<Vec<u8>, LibraryError> {
     let request_tsig = message
         .additional()?
@@ -177,7 +182,7 @@ fn build_unsigned_error_response(
         .last()
         .ok_or(TsigError::RecordMissing)??;
 
-    let mut additional = build_error_header(message, include_question)?;
+    let mut additional = build_error_header(message, question)?;
     Edns::from_message(message).push_response_opt(&mut additional, OptRcode::NOTAUTH, None, None);
     additional.push((
         request_tsig.owner(),

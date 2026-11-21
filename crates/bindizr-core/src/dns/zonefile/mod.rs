@@ -7,7 +7,7 @@ use std::{fmt, str};
 use domain::base::ToName;
 use domain::base::iana::{Class, Rtype};
 use domain::base::name::ParsedName;
-use domain::base::rdata::ParseRecordData;
+use domain::base::rdata::{ComposeRecordData, ParseRecordData};
 use domain::dep::octseq::parse::Parser;
 use domain::rdata::{Soa, ZoneRecordData};
 use domain::zonefile::inplace;
@@ -246,8 +246,6 @@ impl ParsedZoneFile {
         ttl: Ttl,
         data: &ZoneRecordData<Octs, N>,
     ) {
-        use domain::base::rdata::ComposeRecordData;
-
         // RFC 3597, Section 5: generic `\#` RDATA of a known type is that type, so
         // decode the octets `domain` kept; WKS, which `domain` never types, reads them below.
         if let ZoneRecordData::Unknown(unknown) = data

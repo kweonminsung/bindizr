@@ -417,12 +417,12 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         }
         // clap holds the two selectors apart.
         RecordCommand::Get {
-            id: Some(id),
+            id: Some(record_id),
             output,
             ..
         } => {
             let response = client::send_command::<SingleRecordResponse>(DaemonCommand::GetRecord {
-                id: RecordId::from(id),
+                id: RecordId::from(record_id),
             })
             .await?;
             output::print_response(&response.data, output, |response| {
@@ -453,7 +453,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ));
         }
         RecordCommand::Update {
-            id: Some(id),
+            id: Some(record_id),
             new_name,
             record_type,
             value,
@@ -465,7 +465,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let response =
                 client::send_command::<WriteRecordResponse>(DaemonCommand::UpdateRecord {
-                    id: RecordId::from(id),
+                    id: RecordId::from(record_id),
                     request: UpdateRecordRequest {
                         name: new_name,
                         record_type,
@@ -516,14 +516,14 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ));
         }
         RecordCommand::Delete {
-            id: Some(id),
+            id: Some(record_id),
             dry_run,
             output,
             ..
         } => {
             let response =
                 client::send_command::<DeleteRecordsResponse>(DaemonCommand::DeleteRecord {
-                    id: RecordId::from(id),
+                    id: RecordId::from(record_id),
                     run: Run::from_dry_run(dry_run),
                 })
                 .await?;

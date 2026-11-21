@@ -19,9 +19,9 @@ CHANGE_SIZES = [1, 10, 100, 1000, 10000]
 BASELINE = 1000
 
 
-async def _query_serial(zone, host, port):
+async def _query_serial(zone_name, host, port):
     """Query a zone's SOA serial from the transfer endpoint."""
-    ok, _, output = await dig.query(zone, "SOA", host, port)
+    ok, _, output = await dig.query(zone_name, "SOA", host, port)
 
     if ok and len(output.split()) >= 3:
         try:
@@ -34,14 +34,14 @@ async def _query_serial(zone, host, port):
 
 async def run(adapter, config, context) -> list:
     """Measure incremental transfers after each configured change batch propagates."""
-    zone = context["zone"]
+    zone_name = context["zone"]
     endpoint = adapter.xfr_endpoint()
     change_sizes = config.get("ixfr_change_sizes", CHANGE_SIZES)
     baseline = config.get("ixfr_baseline", BASELINE)
 
-    await adapter.delete_zone(zone)
-    await adapter.create_zone(zone)
-    await adapter.import_records(zone, generate(baseline, config["seed"], zone))
+    await adapter.delete_zone(zone_name)
+    await adapter.create_zone(zone_name)
+    await adapter.import_records(zone_name, generate(baseline, config["seed"], zone_name))
     if adapter.bulk_errors:
         raise RuntimeError(f"preparing the IXFR baseline failed for {adapter.bulk_errors} records")
 
@@ -53,7 +53,7 @@ async def run(adapter, config, context) -> list:
     propagated = False
 
     while time.monotonic() < deadline:
-        count = await dig.count_axfr_records(zone, endpoint.host, endpoint.port)
+        count = await dig.count_axfr_records(zone_name, endpoint.host, endpoint.port)
         if count is not None and count >= baseline and count == prev:
             propagated = True
             break
@@ -71,7 +71,7 @@ async def run(adapter, config, context) -> list:
         } for change_count in change_sizes]
 
     rows = []
-    change_pool = generate(sum(change_sizes) + baseline, config["seed"] + 50, zone)
+    change_pool = generate(sum(change_sizes) + baseline, config["seed"] + 50, zone_name)
     change_index = 0
 
     for change_count in change_sizes:
@@ -80,7 +80,7 @@ async def run(adapter, config, context) -> list:
         base_serial = None
 
         for _ in range(10):
-            base_serial = await _query_serial(zone, endpoint.host, endpoint.port)
+            base_serial = await _query_serial(zone_name, endpoint.host, endpoint.port)
             if base_serial is not None:
                 break
             await asyncio.sleep(0.5)
@@ -97,7 +97,7 @@ async def run(adapter, config, context) -> list:
             batch.append(record)
             change_index += 1
 
-        await adapter.import_records(zone, batch)
+        await adapter.import_records(zone_name, batch)
         if adapter.bulk_errors:
             raise RuntimeError(f"preparing the IXFR change batch failed for {adapter.bulk_errors} records")
 
@@ -109,8 +109,8 @@ async def run(adapter, config, context) -> list:
         prev = None
 
         while time.monotonic() < deadline:
-            current_serial = await _query_serial(zone, endpoint.host, endpoint.port)
-            count = await dig.count_axfr_records(zone, endpoint.host, endpoint.port)
+            current_serial = await _query_serial(zone_name, endpoint.host, endpoint.port)
+            count = await dig.count_axfr_records(zone_name, endpoint.host, endpoint.port)
 
             if (current_serial is not None and current_serial > base_serial
                     and count is not None and (current_serial, count) == prev):
@@ -132,7 +132,7 @@ async def run(adapter, config, context) -> list:
 
             continue
 
-        secs, lines, nbytes = await dig.ixfr(zone, endpoint.host, endpoint.port, base_serial)
+        secs, lines, nbytes = await dig.ixfr(zone_name, endpoint.host, endpoint.port, base_serial)
 
         rows.append({
             "system": context["label"],

@@ -2,7 +2,7 @@
 
 use domain::base::iana::{Opcode, OptRcode, Rtype};
 use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
-use domain::base::{Message, Question};
+use domain::base::{Message, Question, ToName};
 use domain::rdata::tsig::Time48;
 
 use crate::dns::message;
@@ -34,8 +34,6 @@ impl QueryMetadata {
 
     /// Retain response metadata from sections with readable DNS framing.
     pub(crate) fn from_message(message: &Message<&[u8]>, keepalive: Keepalive) -> Self {
-        use domain::base::ToName;
-
         let readable = has_readable_sections(message.as_slice());
         Self {
             query_id: message.header().id(),

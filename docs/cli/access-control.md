@@ -251,13 +251,15 @@ same is `GET /logs/audit`, with the same `entity`, `entity_name`, `sort`, and
 Every management API request and every nsupdate leaves an entry once it is
 answered: the source (`api` or `nsupdate`), the client address, the method
 and path (`GET /zones/example.com`) or `UPDATE` and the zone, the HTTP status
-or RCODE, the token or TSIG key that verified, and the error it was answered
-with. The result is `ok`, `denied` — HTTP 401 or 403, or an nsupdate whose
+or RCODE, the token or TSIG key that verified, and a fixed error classification
+(`FORBIDDEN`, `REFUSED`, or a transport failure code). The result is `ok`,
+`denied` — HTTP 401 or 403, or an nsupdate whose
 TSIG was rejected or that was `REFUSED` — or `failed` for any other error.
 A zone a role may not see answers 404 and is `failed` like any other, so the
 log tells a scope no more than the response did.
 
-No query string, body, token, or secret is kept, and a token that did not
+No query string, body, record value, or detailed client diagnostic is kept;
+rejected input stays out of the error classification too. A token that did not
 verify names no caller. The client address is the connection's peer: behind a
 proxy, the proxy's. `/health`, `/metrics`, the OpenAPI document, and daemon
 socket commands are not logged.

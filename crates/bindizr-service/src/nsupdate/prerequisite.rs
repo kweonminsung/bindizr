@@ -82,32 +82,34 @@ pub(crate) fn evaluate_prerequisite(
     match prerequisite {
         Prerequisite::NameExists { .. } => {
             if !served.keys().any(|(served_owner, _)| served_owner == owner) {
-                return Err(NsupdateError::NxDomain(format!(
-                    "owner '{owner}' does not exist"
-                )));
+                return Err(NsupdateError::NxDomain {
+                    message: format!("owner '{owner}' does not exist"),
+                });
             }
         }
         Prerequisite::NameAbsent { .. } => {
             if served.keys().any(|(served_owner, _)| served_owner == owner) {
-                return Err(NsupdateError::YxDomain(format!("owner '{owner}' exists")));
+                return Err(NsupdateError::YxDomain {
+                    message: format!("owner '{owner}' exists"),
+                });
             }
         }
         Prerequisite::RecordSetExists {
             record_type: rtype, ..
         } => {
             if !served.contains_key(&(owner.clone(), *rtype)) {
-                return Err(NsupdateError::NxRrset(format!(
-                    "no {rtype} records at {owner}"
-                )));
+                return Err(NsupdateError::NxRrset {
+                    message: format!("no {rtype} records at {owner}"),
+                });
             }
         }
         Prerequisite::RecordSetAbsent {
             record_type: rtype, ..
         } => {
             if served.contains_key(&(owner.clone(), *rtype)) {
-                return Err(NsupdateError::YxRrset(format!(
-                    "{rtype} records at {owner} exist"
-                )));
+                return Err(NsupdateError::YxRrset {
+                    message: format!("{rtype} records at {owner} exist"),
+                });
             }
         }
         Prerequisite::RecordValueMatches {
@@ -133,10 +135,12 @@ pub(crate) fn evaluate_record_set_prerequisites(
 ) -> Result<(), NsupdateError> {
     for (key, values) in wanted {
         if served.get(key) != Some(values) {
-            return Err(NsupdateError::NxRrset(format!(
-                "{} records at {} are not the ones the prerequisite names",
-                key.1, key.0
-            )));
+            return Err(NsupdateError::NxRrset {
+                message: format!(
+                    "{} records at {} are not the ones the prerequisite names",
+                    key.1, key.0
+                ),
+            });
         }
     }
 

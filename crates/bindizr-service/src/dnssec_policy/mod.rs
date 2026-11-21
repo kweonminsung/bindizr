@@ -135,10 +135,12 @@ pub async fn list(
 ) -> Result<PaginatedResponse<DnssecPolicyResponse>, ServiceError> {
     caller.authorize_action(Action::DnssecRead)?;
     pagination::validate_page_limit(page.limit)?;
+
     let total = bindizr_db::dnssec_policy::count_all(cx.db()).await?;
-    let rows = bindizr_db::dnssec_policy::list_all(cx.db(), page.limit, page.offset).await?;
+    let policies = bindizr_db::dnssec_policy::list_all(cx.db(), page.limit, page.offset).await?;
+
     Ok(pagination::build_paginated_response(
-        rows.iter().map(DnssecPolicyResponse::from).collect(),
+        policies.iter().map(DnssecPolicyResponse::from).collect(),
         page.limit,
         page.offset,
         total,
@@ -289,9 +291,9 @@ pub async fn delete(
                 // A zone enabled between the count above and this delete trips
                 // the FK; it reads as the in-use conflict.
                 if error.is_foreign_key_violation() {
-                    ServiceError::DnssecPolicyInUse(
-                        "DNSSEC policy is still used by signed zones".to_string(),
-                    )
+                    ServiceError::DnssecPolicyInUse {
+                        message: "DNSSEC policy is still used by signed zones".to_string(),
+                    }
                 } else {
                     error.into()
                 }

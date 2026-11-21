@@ -11,7 +11,7 @@ from lib import loadgen
 
 class LoadgenTests(IsolatedAsyncioTestCase):
     async def test_warmup_started_requests_are_excluded_for_success_and_failure(self):
-        """Exclude a request started before warmup ends even when it finishes during measurement."""
+        """Verify that warmup-started requests stay excluded even when they finish during measurement."""
         for ok in (True, False):
             now = 0.0
 
@@ -27,7 +27,7 @@ class LoadgenTests(IsolatedAsyncioTestCase):
             self.assertEqual(recorder.total, 0)
 
     async def test_boundary_started_request_is_measured_and_drained_after_deadline(self):
-        """Measure a request starting exactly at the boundary and wait for its late completion."""
+        """Verify that a boundary-started request is measured and drained after the deadline."""
         now = 0.0
         starts = []
 

@@ -72,11 +72,11 @@ class KnotAdapter(NsupdateAdapter):
 
         return proc.returncode == 0
 
-    async def create_zone(self, zone: str) -> None:
+    async def create_zone(self, zone_name: str) -> None:
         """Create the zone used by the benchmark."""
         return  # the zone is declared in knot.conf
 
-    async def delete_zone(self, zone: str) -> None:
+    async def delete_zone(self, zone_name: str) -> None:
         """Purge zone contents and reload the seed file; DDNS cannot remove the configured zone.
 
         Omit `+zonefile`: `zonefile-sync: -1` preserves the seed for restoring the apex."""
@@ -87,7 +87,7 @@ class KnotAdapter(NsupdateAdapter):
         await self._knotc("zone-reload", ZONE)
         await self._wait_dns()
 
-    async def import_records(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone_name: str, records: list[dict]) -> None:
         """Batch adds into as few UPDATE transactions as the message size allows."""
         self.bulk_errors = 0
 

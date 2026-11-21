@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
 from lib import dig  # noqa: E402
-from lib.resources import sampler_for  # noqa: E402
+from lib.resources import load_sampler  # noqa: E402
 
 # Sampled around the measured phase below, not by the orchestrator.
 SELF_SAMPLES = True
@@ -25,14 +25,14 @@ APEX_LINES = 10
 
 async def run(adapter, config, context) -> list:
     """Measure large-zone creation, import, transfer, deletion, and resource use."""
-    zone = context["zone"]
+    zone_name = context["zone"]
     endpoint = adapter.xfr_endpoint()
     rows = []
 
     for size in config["sizes"]:
-        sampler = sampler_for(adapter, config)
+        sampler = load_sampler(adapter, config)
         with sampler:
-            await adapter.delete_zone(zone)
+            await adapter.delete_zone(zone_name)
 
             # Wait for the delete to reach the XFR endpoint before recreating: the
             # secondary drops the zone via the catalog seconds later, and the new
@@ -41,7 +41,7 @@ async def run(adapter, config, context) -> list:
             dropped = False
 
             while time.monotonic() < drop_deadline:
-                if await dig.zone_is_cleared(zone, endpoint.host, endpoint.port, APEX_LINES):
+                if await dig.zone_is_cleared(zone_name, endpoint.host, endpoint.port, APEX_LINES):
                     dropped = True
                     break
                 await asyncio.sleep(1.0)
@@ -62,14 +62,14 @@ async def run(adapter, config, context) -> list:
 
             started = time.monotonic()
 
-            await adapter.create_zone(zone)
+            await adapter.create_zone(zone_name)
 
             create_secs = time.monotonic() - started
 
-            records = generate(size, config["seed"], zone)
+            records = generate(size, config["seed"], zone_name)
             started = time.monotonic()
 
-            await adapter.import_records(zone, records)
+            await adapter.import_records(zone_name, records)
             if adapter.bulk_errors:
                 raise RuntimeError(f"populating the large zone failed for {adapter.bulk_errors} records")
 
@@ -83,7 +83,7 @@ async def run(adapter, config, context) -> list:
             propagated = False
 
             while time.monotonic() < deadline:
-                count = await dig.count_axfr_records(zone, endpoint.host, endpoint.port)
+                count = await dig.count_axfr_records(zone_name, endpoint.host, endpoint.port)
                 if count is not None and count >= size and count == prev:
                     propagated = True
                     break
@@ -104,11 +104,11 @@ async def run(adapter, config, context) -> list:
 
                 continue
 
-            export_secs, _, export_bytes = await dig.axfr(zone, endpoint.host, endpoint.port)
+            export_secs, _, export_bytes = await dig.axfr(zone_name, endpoint.host, endpoint.port)
 
             started = time.monotonic()
 
-            await adapter.delete_zone(zone)
+            await adapter.delete_zone(zone_name)
 
             delete_secs = time.monotonic() - started
         resource_usage = sampler.summary()

@@ -80,12 +80,14 @@ pub async fn list_tx(
 /// allows.
 pub async fn delete_many_tx(
     tx: &mut Transaction<'_>,
-    ids: &[DnssecRecordId],
+    record_ids: &[DnssecRecordId],
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::dnssec_record::delete_many_tx(tx, ids).await,
-        TransactionKind::Postgres(tx) => postgres::dnssec_record::delete_many_tx(tx, ids).await,
-        TransactionKind::Sqlite(tx) => sqlite::dnssec_record::delete_many_tx(tx, ids).await,
+        TransactionKind::MySql(tx) => mysql::dnssec_record::delete_many_tx(tx, record_ids).await,
+        TransactionKind::Postgres(tx) => {
+            postgres::dnssec_record::delete_many_tx(tx, record_ids).await
+        }
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_record::delete_many_tx(tx, record_ids).await,
     }
 }
 

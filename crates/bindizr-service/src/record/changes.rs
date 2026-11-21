@@ -80,9 +80,9 @@ pub(crate) async fn delete_with_changes_tx(
         return Ok(());
     }
 
-    let ids: Vec<RecordId> = records.iter().map(|record| record.id).collect();
+    let record_ids: Vec<RecordId> = records.iter().map(|record| record.id).collect();
 
-    bindizr_db::record::delete_many_tx(tx, &ids).await?;
+    bindizr_db::record::delete_many_tx(tx, &record_ids).await?;
 
     let changes: Vec<ZoneChange> = records
         .iter()

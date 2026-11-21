@@ -16,9 +16,7 @@ pub(crate) async fn create_many_tx(
     const CHUNK: usize = 500;
 
     for chunk in records.chunks(CHUNK) {
-        let mut sql = String::from(
-            "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest) VALUES ",
-        );
+        let mut sql = "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest) VALUES ".to_string();
         let mut bind_index = 1;
 
         for i in 0..chunk.len() {
@@ -98,14 +96,14 @@ pub(crate) async fn list_tx(
 /// allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Postgres>,
-    ids: &[DnssecRecordId],
+    record_ids: &[DnssecRecordId],
 ) -> Result<(), DatabaseError> {
-    if ids.is_empty() {
+    if record_ids.is_empty() {
         return Ok(());
     }
 
     sqlx::query("DELETE FROM dnssec_records WHERE id = ANY($1)")
-        .bind(ids)
+        .bind(record_ids)
         .execute(&mut **tx)
         .await?;
 

@@ -18,7 +18,7 @@ class PreparationTests(IsolatedAsyncioTestCase):
     context = dict(zone="bench.example.", label="test")
 
     async def test_partial_and_total_preparation_failure_prevent_measurement(self):
-        """Even queryable samples or complete XFR probes cannot repair a rejected import."""
+        """Verify that queryable samples and complete XFR probes cannot repair a rejected import."""
         for module in (b04_axfr, b05_ixfr, b06_large_zone, b08_query_perf, b09_resource_usage):
             for errors in (1, 5):
                 adapter = SimpleNamespace(
@@ -32,8 +32,8 @@ class PreparationTests(IsolatedAsyncioTestCase):
                     ixfr = stack.enter_context(patch.object(dig, "ixfr", AsyncMock()))
                     visible = stack.enter_context(patch.object(dig, "first_unqueryable", AsyncMock(return_value=None)))
                     query = stack.enter_context(patch.object(b08_query_perf.dnsquery, "query_load", AsyncMock()))
-                    stack.enter_context(patch.object(b06_large_zone, "sampler_for", return_value=sampler))
-                    resource_sampler = stack.enter_context(patch.object(b09_resource_usage, "sampler_for"))
+                    stack.enter_context(patch.object(b06_large_zone, "load_sampler", return_value=sampler))
+                    resource_sampler = stack.enter_context(patch.object(b09_resource_usage, "load_sampler"))
                     with self.assertRaisesRegex(RuntimeError, f"failed for {errors} records"):
                         await module.run(adapter, self.config, self.context)
                     adapter.import_records.assert_awaited_once()
@@ -47,7 +47,7 @@ class PreparationTests(IsolatedAsyncioTestCase):
                         sampler.__exit__.assert_called_once()
 
     async def test_failed_ixfr_change_batch_stops_before_propagation_or_transfer(self):
-        """A successful baseline cannot make a partially applied change batch valid."""
+        """Verify that a successful baseline cannot make a partially applied change batch valid."""
         for errors in (1, 5):
             adapter = SimpleNamespace(
                 delete_zone=AsyncMock(), create_zone=AsyncMock(), bulk_errors=0,

@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use bindizr_service::Context;
 use thiserror::Error;
+use tokio::net;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
@@ -76,14 +77,15 @@ pub(crate) async fn start(
                 setting: "dns.listen_port",
                 source,
             })?;
-    let udp_socket = tokio::net::UdpSocket::bind(listen_addr)
-        .await
-        .map_err(|source| StartDnsError::Bind {
-            socket: "UDP socket",
-            addr: listen_addr,
-            setting: "dns.listen_port",
-            source,
-        })?;
+    let udp_socket =
+        net::UdpSocket::bind(listen_addr)
+            .await
+            .map_err(|source| StartDnsError::Bind {
+                socket: "UDP socket",
+                addr: listen_addr,
+                setting: "dns.listen_port",
+                source,
+            })?;
     let udp_socket = UdpSocket::new(udp_socket).map_err(StartDnsError::UdpPacketInfo)?;
 
     // Bound before anything serves, so a failure exits the start.

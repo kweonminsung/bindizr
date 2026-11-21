@@ -232,8 +232,8 @@ fn sees_record_requires_matching_record_read_grant() {
         Some(RecordType::Cname)
     ));
 
-    // The derived DNSSEC plane carries no type of the grant's vocabulary, so
-    // it reaches only a grant restricting neither name nor type.
+    // Derived DNSSEC types are outside the grant vocabulary, so a type
+    // constraint excludes them; the owner name still follows its grant pattern.
     assert!(!is_record_visible(&caller, "host.dyn", None));
     let whole = token(vec![grant(&[Action::RecordRead], "*", "*")]);
 

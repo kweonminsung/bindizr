@@ -5,6 +5,7 @@ use domain::base::name::ParsedName;
 use domain::base::{Message, Record, ToName};
 use domain::rdata::tsig::Tsig;
 use ring::hmac;
+use subtle::ConstantTimeEq;
 use thiserror::Error;
 
 use crate::dns::message::DNS_HEADER_LEN;
@@ -101,8 +102,6 @@ impl<'a> ParsedTsig<'a> {
         message: &Message<&[u8]>,
         request_mac: Option<&[u8]>,
     ) -> Result<(), VerifyMacError> {
-        use subtle::ConstantTimeEq;
-
         let data = self.record.data();
         let mut digest = hmac::Context::with_key(&key.hmac);
 

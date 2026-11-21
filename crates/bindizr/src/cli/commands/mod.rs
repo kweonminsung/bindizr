@@ -13,6 +13,7 @@ pub(crate) mod token;
 pub(crate) mod tsig_key;
 pub(crate) mod zone;
 
+use std::io::Read;
 use std::time::Duration;
 use std::{fs, io};
 
@@ -52,8 +53,6 @@ pub(crate) enum ReadInputError {
 
 /// Read command input from a file path, or from stdin when the path is `-`.
 pub(crate) fn read_input(path: &str) -> Result<String, ReadInputError> {
-    use std::io::Read;
-
     if path == "-" {
         let mut buffer = String::new();
         io::stdin()

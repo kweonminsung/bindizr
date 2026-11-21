@@ -154,7 +154,7 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     }
 }
 
-/// Sharing a failed resolution retains the resolver's type in the error chain.
+/// Verify that sharing a failed resolution retains the resolver's type in the error chain.
 #[test]
 fn notify_resolution_error_exposes_original_cause() {
     let error =

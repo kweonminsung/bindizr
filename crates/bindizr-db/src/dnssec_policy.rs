@@ -19,12 +19,12 @@ pub async fn create_tx(
 /// Get a DNSSEC policy by ID in the current transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
-    id: PolicyId,
+    policy_id: PolicyId,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::dnssec_policy::get_tx(tx, id).await,
-        TransactionKind::Postgres(tx) => postgres::dnssec_policy::get_tx(tx, id).await,
-        TransactionKind::Sqlite(tx) => sqlite::dnssec_policy::get_tx(tx, id).await,
+        TransactionKind::MySql(tx) => mysql::dnssec_policy::get_tx(tx, policy_id).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_policy::get_tx(tx, policy_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_policy::get_tx(tx, policy_id).await,
     }
 }
 
@@ -71,11 +71,14 @@ pub async fn update_tx(
 
 /// Delete a DNSSEC policy by ID.
 /// Reports `false` when no row had the id.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: PolicyId) -> Result<bool, DatabaseError> {
+pub async fn delete_tx(
+    tx: &mut Transaction<'_>,
+    policy_id: PolicyId,
+) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::dnssec_policy::delete_tx(tx, id).await,
-        TransactionKind::Postgres(tx) => postgres::dnssec_policy::delete_tx(tx, id).await,
-        TransactionKind::Sqlite(tx) => sqlite::dnssec_policy::delete_tx(tx, id).await,
+        TransactionKind::MySql(tx) => mysql::dnssec_policy::delete_tx(tx, policy_id).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_policy::delete_tx(tx, policy_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_policy::delete_tx(tx, policy_id).await,
     }
 }
 

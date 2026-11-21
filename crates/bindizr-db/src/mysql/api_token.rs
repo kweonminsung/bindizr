@@ -37,12 +37,12 @@ pub(crate) async fn create_tx(
 /// Get an API token by ID in the current transaction, share-locked.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: TokenId,
+    token_id: TokenId,
 ) -> Result<Option<ApiToken>, DatabaseError> {
     let token = sqlx::query_as::<_, ApiToken>(
         "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ? FOR SHARE",
     )
-    .bind(id)
+    .bind(token_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -99,7 +99,7 @@ pub(crate) async fn count_all(pool: &Pool<MySql>) -> Result<u64, DatabaseError> 
 /// subquery on the updated table, so the row is claimed first.
 pub(crate) async fn update_last_used_at(
     pool: &Pool<MySql>,
-    id: TokenId,
+    token_id: TokenId,
     last_used_at: DateTime<Utc>,
 ) -> Result<bool, DatabaseError> {
     let mut tx = pool.begin().await?;
@@ -107,14 +107,14 @@ pub(crate) async fn update_last_used_at(
     let claimed = sqlx::query_scalar::<_, i64>(
         "SELECT id FROM api_tokens WHERE id = ? FOR UPDATE SKIP LOCKED",
     )
-    .bind(id)
+    .bind(token_id)
     .fetch_optional(&mut *tx)
     .await?;
 
     if claimed.is_some() {
         sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
             .bind(last_used_at)
-            .bind(id)
+            .bind(token_id)
             .execute(&mut *tx)
             .await?;
     }
@@ -128,10 +128,10 @@ pub(crate) async fn update_last_used_at(
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: TokenId,
+    token_id: TokenId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM api_tokens WHERE id = ?")
-        .bind(id)
+        .bind(token_id)
         .execute(&mut **tx)
         .await?;
 
@@ -161,7 +161,8 @@ pub(crate) async fn list_by_filter_with_role(
     filter: &ApiTokenFilter,
 ) -> Result<Vec<ApiTokenMetadata>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, ApiTokenMetadata>(
+
+    let tokens = sqlx::query_as::<_, ApiTokenMetadata>(
         r#"
         SELECT t.id, t.name, t.description, r.name AS role_name, t.created_at, t.expires_at, t.last_used_at
         FROM api_tokens t
@@ -178,7 +179,8 @@ pub(crate) async fn list_by_filter_with_role(
     .bind(filter.offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
     .fetch_all(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(tokens)
 }
 
 /// Count credentials matching the role filter, ignoring its page window.
@@ -187,7 +189,8 @@ pub(crate) async fn count_by_filter(
     filter: &ApiTokenFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_scalar::<_, i64>(
+
+    let count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
         FROM api_tokens t
@@ -199,5 +202,6 @@ pub(crate) async fn count_by_filter(
     .bind(filter.role_id)
     .fetch_one(&mut *connection)
     .await?;
-    Ok(result as u64)
+
+    Ok(count as u64)
 }

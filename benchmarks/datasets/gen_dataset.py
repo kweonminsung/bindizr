@@ -20,7 +20,7 @@ def _generate_ipv6(rng: random.Random) -> str:
     return "2001:db8::" + ":".join(f"{rng.randint(0, 0xffff):x}" for _ in range(3))
 
 
-def generate(count: int, seed: int, zone: str = ZONE) -> list[dict]:
+def generate(count: int, seed: int, zone_name: str = ZONE) -> list[dict]:
     """Generate a reproducible list of benchmark records."""
     rng = random.Random(seed)
     records = []
@@ -34,12 +34,12 @@ def generate(count: int, seed: int, zone: str = ZONE) -> list[dict]:
         elif roll < 0.80:
             record = {"name": name, "type": "AAAA", "value": _generate_ipv6(rng), "ttl": 3600}
         elif roll < 0.90:
-            target = f"host{rng.randint(0, max(i, 1)):06d}.{zone}"
+            target = f"host{rng.randint(0, max(i, 1)):06d}.{zone_name}"
             record = {"name": name, "type": "CNAME", "value": target, "ttl": 3600}
         elif roll < 0.97:
             record = {"name": name, "type": "TXT", "value": f"v=bench{i}", "ttl": 3600}
         else:
-            record = {"name": name, "type": "MX", "value": f"mail{i % 5}.{zone}",
+            record = {"name": name, "type": "MX", "value": f"mail{i % 5}.{zone_name}",
                    "ttl": 3600, "priority": 10}
 
         records.append(record)

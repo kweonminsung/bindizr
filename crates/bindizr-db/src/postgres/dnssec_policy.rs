@@ -39,12 +39,12 @@ pub(crate) async fn create_tx(
 /// Get a DNSSEC policy by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
-    id: PolicyId,
+    policy_id: PolicyId,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(
         "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = $1",
     )
-    .bind(id)
+    .bind(policy_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -112,10 +112,10 @@ pub(crate) async fn update_tx(
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Postgres>,
-    id: PolicyId,
+    policy_id: PolicyId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM dnssec_policies WHERE id = $1")
-        .bind(id)
+        .bind(policy_id)
         .execute(&mut **tx)
         .await?;
 
@@ -129,7 +129,8 @@ pub(crate) async fn list_all(
     offset: Option<u64>,
 ) -> Result<Vec<DnssecPolicy>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, DnssecPolicy>(
+
+    let policies = sqlx::query_as::<_, DnssecPolicy>(
         r#"
         SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at
         FROM dnssec_policies
@@ -142,14 +143,17 @@ pub(crate) async fn list_all(
     .bind(offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
     .fetch_all(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(policies)
 }
 
 /// Count all DNSSEC policies.
 pub(crate) async fn count_all(pool: &Pool<Postgres>) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM dnssec_policies"#)
+
+    let count = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM dnssec_policies"#)
         .fetch_one(&mut *connection)
         .await?;
-    Ok(result as u64)
+
+    Ok(count as u64)
 }

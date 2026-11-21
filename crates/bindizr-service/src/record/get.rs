@@ -180,13 +180,13 @@ pub async fn list_by_filter_with_zone(
         );
     }
 
-    let records = records
-        .iter()
-        .map(|record| record::build_record_response(caller, record))
-        .collect();
+    // SQL still owns grant-aware paging; the response also carries the
+    // caller's proof for each zone and for both record planes.
+    let records =
+        caller.readable_records(records.into_iter().map(|record| (record.zone_id(), record)));
 
     Ok(pagination::build_paginated_response(
-        records,
+        record::build_record_responses(caller, &records),
         limit,
         offset,
         user_total + derived_total,
@@ -200,29 +200,15 @@ pub async fn get(
     caller: &Caller,
     record_id: RecordId,
 ) -> Result<RecordResponse, ServiceError> {
-    let record = match bindizr_db::record::get_with_zone(cx.db(), record_id).await {
-        Ok(Some(record)) => record,
-        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-        Err(error) => {
-            return Err(ServiceError::internal_with_source(
-                "failed to fetch record",
-                error,
-            ));
-        }
-    };
+    let record = bindizr_db::record::get_with_zone(cx.db(), record_id)
+        .await
+        .map_err(|error| ServiceError::internal_with_source("failed to fetch record", error))?
+        .ok_or_else(|| ServiceError::record_not_found(record_id))?;
 
-    if !caller.sees_record(
-        record.record.zone_id,
-        &record.record.name,
-        Some(record.record.record_type),
-    ) {
-        return Err(ServiceError::record_not_found(record_id));
-    }
-
-    Ok(record::build_record_response(
-        caller,
-        &ServedRecord::User(record),
-    ))
+    let records = caller.readable_records([(record.record.zone_id, ServedRecord::User(record))]);
+    record::build_record_responses(caller, &records)
+        .pop()
+        .ok_or_else(|| ServiceError::record_not_found(record_id))
 }
 
 /// Normalize a name filter for stored-owner and FQDN comparisons.

@@ -735,10 +735,7 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
 
     assert_eq!(refused["result"], "refused", "{body}");
     assert_eq!(refused["transport"], "tcp", "{body}");
-    assert!(
-        refused["error"].as_str().unwrap().contains("require TLS"),
-        "{body}"
-    );
+    assert_eq!(refused["error"], "REFUSED", "{body}");
 
     let outcome = dns::fetch_axfr_tls(
         app.dns_tls_port(),

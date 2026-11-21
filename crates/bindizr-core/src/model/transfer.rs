@@ -212,7 +212,7 @@ impl TryFrom<String> for TransferTransport {
 }
 
 /// One transfer answered to a client address for a zone, as it is written; a
-/// refusal or failure keeps its reason and no serial.
+/// refusal or failure keeps a fixed error classification and no serial.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct TransferLog {
     pub client_addr: String,
@@ -231,7 +231,7 @@ pub struct TransferLog {
     /// The serial the answer reached; absent when nothing was transferred.
     pub serial: Option<Serial>,
     pub served_at: DateTime<Utc>,
-    /// Why the transfer was refused or failed.
+    /// A fixed failure classification without record values or detailed diagnostics.
     pub error: Option<String>,
 }
 

@@ -15,12 +15,12 @@ from lib.metrics import LatencyRecorder  # noqa: E402
 
 async def run(adapter, config, context) -> dict:
     """Measure the delay from a record mutation to a visible DNS answer."""
-    zone = context["zone"]
+    zone_name = context["zone"]
     endpoint = adapter.dns_endpoint()
     propagation_config = config["propagation"]
     samples = propagation_config["samples"]
 
-    await adapter.create_zone(zone)
+    await adapter.create_zone(zone_name)
 
     # Warm up: the first record in a fresh zone pays a one-time secondary
     # bootstrap (for Bindizr: catalog discovery + initial AXFR), so do one
@@ -28,9 +28,9 @@ async def run(adapter, config, context) -> dict:
     warm = {"name": "warmup", "type": "A", "value": "10.0.0.1", "ttl": 60}
 
     try:
-        await adapter.create_record(zone, warm)
+        await adapter.create_record(zone_name, warm)
         await dig.poll_until_visible(
-            f"warmup.{zone.rstrip('.')}", "A", "10.0.0.1", endpoint.host, endpoint.port,
+            f"warmup.{zone_name.rstrip('.')}", "A", "10.0.0.1", endpoint.host, endpoint.port,
             propagation_config["poll_interval_ms"], propagation_config["timeout_secs"])
     except Exception:
         pass
@@ -44,12 +44,12 @@ async def run(adapter, config, context) -> dict:
         name = f"prop{i:05d}"
         ip = f"10.9.{i // 256 % 256}.{i % 256}"
         record = {"name": name, "type": "A", "value": ip, "ttl": 60}
-        fqdn = f"{name}.{zone.rstrip('.')}"
+        fqdn = f"{name}.{zone_name.rstrip('.')}"
 
         started = time.monotonic()
 
         try:
-            await adapter.create_record(zone, record)
+            await adapter.create_record(zone_name, record)
             api_recorder.track_latency(time.monotonic() - started, ok=True)
         except Exception:
             api_recorder.track_latency(time.monotonic() - started, ok=False)

@@ -55,6 +55,6 @@ class Bind9NativeAdapter(Bind9ZoneFileAdapter):
         """Stop the benchmark system and release its resources."""
         self.compose.down()
 
-    async def create_zone(self, zone: str) -> None:
+    async def create_zone(self, zone_name: str) -> None:
         """Create the zone used by the benchmark."""
         return

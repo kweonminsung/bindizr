@@ -6,13 +6,18 @@ use chrono::Duration;
 use super::*;
 
 /// Build a DNSSEC key fixture in the requested lifecycle state.
-fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible: DateTime<Utc>) -> DnssecKey {
+fn key(
+    key_id: i32,
+    role: DnssecKeyRole,
+    state: DnssecKeyState,
+    eligible: DateTime<Utc>,
+) -> DnssecKey {
     DnssecKey {
-        id: DnssecKeyId::from(id),
+        id: DnssecKeyId::from(key_id),
         zone_id: ZoneId::from(1),
         role,
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
-        key_tag: KeyTag::try_from(id).unwrap(),
+        key_tag: KeyTag::try_from(key_id).unwrap(),
         public_key: String::new(),
         private_key: String::new(),
         state,

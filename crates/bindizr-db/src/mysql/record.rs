@@ -28,9 +28,7 @@ pub(crate) async fn create_many_tx(
     let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
-        let mut sql = String::from(
-            "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
-        );
+        let mut sql = "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ".to_string();
 
         for i in 0..chunk.len() {
             if i > 0 {
@@ -60,9 +58,9 @@ pub(crate) async fn create_many_tx(
         // by `increment` under every innodb_autoinc_lock_mode.
         let first = result.last_insert_id() as i32;
 
-        for (offset, record) in chunk.iter().enumerate() {
+        for (index, record) in chunk.iter().enumerate() {
             let mut created_record = record.clone();
-            created_record.id = RecordId::from(first + offset as i32 * increment);
+            created_record.id = RecordId::from(first + index as i32 * increment);
             created_record.created_at = now;
             created_records.push(created_record);
         }
@@ -72,13 +70,16 @@ pub(crate) async fn create_many_tx(
 }
 
 /// Get a record by ID.
-pub(crate) async fn get(pool: &Pool<MySql>, id: RecordId) -> Result<Option<Record>, DatabaseError> {
+pub(crate) async fn get(
+    pool: &Pool<MySql>,
+    record_id: RecordId,
+) -> Result<Option<Record>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let record = sqlx::query_as::<_, Record>(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?",
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -88,7 +89,7 @@ pub(crate) async fn get(pool: &Pool<MySql>, id: RecordId) -> Result<Option<Recor
 /// Get a record with its zone metadata.
 pub(crate) async fn get_with_zone(
     pool: &Pool<MySql>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<RecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -101,7 +102,7 @@ pub(crate) async fn get_with_zone(
         WHERE r.id = ?
         "#,
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -111,12 +112,12 @@ pub(crate) async fn get_with_zone(
 /// Get a record by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
     let record = sqlx::query_as::<_, Record>(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ? FOR UPDATE",
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -170,9 +171,7 @@ pub(crate) async fn list_by_record_types_tx(
         return Ok(Vec::new());
     }
 
-    let mut sql = String::from(
-        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND record_type IN (",
-    );
+    let mut sql = "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND record_type IN (".to_string();
 
     sql.push_str(&sql::placeholders(record_types.len()));
 
@@ -218,9 +217,7 @@ pub(crate) async fn list_by_names_tx(
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
-        let mut sql = String::from(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name IN (",
-        );
+        let mut sql = "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name IN (".to_string();
 
         sql.push_str(&sql::placeholders(chunk.len()));
 
@@ -469,11 +466,11 @@ pub(crate) async fn update_tx(
 /// Delete many records in as few statements as the backend's bind limit allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, MySql>,
-    ids: &[RecordId],
+    record_ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
     const CHUNK: usize = 2000;
 
-    for chunk in ids.chunks(CHUNK) {
+    for chunk in record_ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM records WHERE id IN (".to_string();
 
         sql.push_str(&sql::placeholders(chunk.len()));
@@ -482,8 +479,8 @@ pub(crate) async fn delete_many_tx(
 
         let mut query = sqlx::query(AssertSqlSafe(sql));
 
-        for id in chunk {
-            query = query.bind(id);
+        for record_id in chunk {
+            query = query.bind(record_id);
         }
 
         query.execute(&mut **tx).await?;

@@ -24,14 +24,14 @@ AXFRS = 8
 QUERY_TIME = re.compile(r";; Query time: (\d+) msec")
 
 
-async def create_transfer_key(adapter, zone: str) -> str:
+async def create_transfer_key(adapter, zone_name: str) -> str:
     """Create this zone's transfer role and key, returned in dig's `-y` form."""
     role_name = "bench-axfr"
     async with adapter.session.post(adapter.base + "/roles", json={"name": role_name}) as response:
         if response.status != 201:
             raise RuntimeError(f"creating the transfer role failed: {response.status} {await response.text()}")
 
-    grant = {"zone_name": zone.rstrip("."), "actions": ["zone:transfer"]}
+    grant = {"zone_name": zone_name.rstrip("."), "actions": ["zone:transfer"]}
     async with adapter.session.post(adapter.base + f"/roles/{role_name}/grants", json=grant) as response:
         if response.status != 201:
             raise RuntimeError(f"granting zone transfer failed: {response.status} {await response.text()}")

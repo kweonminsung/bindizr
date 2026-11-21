@@ -19,7 +19,7 @@ use crate::{Context, pagination};
 /// How many rows wait for the writer before new ones are dropped. A request
 /// never waits on its row: the SQLite writer reservation would otherwise hold
 /// every answer behind a long write.
-const QUEUE_CAPACITY: usize = 10_000;
+const QUEUE_CAPACITY: usize = 10000;
 
 /// Create the queue between the front ends and the writer; the context holds
 /// the sender, and `spawn` takes the receiver.

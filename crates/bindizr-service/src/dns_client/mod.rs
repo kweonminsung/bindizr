@@ -15,6 +15,7 @@ use bindizr_core::dns::address::{AddressTarget, DEFAULT_DNS_PORT};
 use bindizr_core::dns::message::{EncodeMessageError, Keepalive, ParseQueryError, QueryMetadata};
 use bindizr_core::dns::{message, query};
 use thiserror::Error;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::{net, time};
 
@@ -64,19 +65,21 @@ pub enum ResolveAddressError {
 pub struct SharedResolveAddressError(Arc<ResolveAddressError>);
 
 impl From<Arc<ResolveAddressError>> for SharedResolveAddressError {
+    /// Share a resolver failure while retaining its original cause.
     fn from(error: Arc<ResolveAddressError>) -> Self {
         Self(error)
     }
 }
 
 impl fmt::Display for SharedResolveAddressError {
+    /// Format the shared resolver failure for a diagnostic.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "failed to resolve: {}", self.0)
     }
 }
 
 impl std::error::Error for SharedResolveAddressError {
-    /// A transparent error variant delegates here, exposing the resolver rather than its Arc.
+    /// Return the original resolver cause for transparent error variants.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(self.0.as_ref())
     }
@@ -105,8 +108,6 @@ pub(crate) async fn exchange_over_tcp(
     request: &[u8],
     what: &'static str,
 ) -> Result<Vec<u8>, ExchangeMessageError> {
-    use tokio::io::AsyncWriteExt;
-
     let frame = message::encode_tcp_message(request)?;
 
     let exchange = async {
@@ -122,8 +123,6 @@ pub(crate) async fn exchange_over_tcp(
 
 /// Read one length-prefixed DNS message (RFC 1035, Section 4.2.2).
 pub(crate) async fn read_tcp_message(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
-    use tokio::io::AsyncReadExt;
-
     let mut prefix = [0; 2];
     stream.read_exact(&mut prefix).await?;
     let mut message = vec![0; usize::from(u16::from_be_bytes(prefix))];

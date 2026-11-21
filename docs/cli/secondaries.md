@@ -116,12 +116,14 @@ $ bindizr log transfer --secondary ns2
 ZONE            TRANSFER     TRANSPORT  SERIAL  ADDRESS     AT                    ERROR
 example.com     IXFR delta   TLS        42      10.0.0.14   2026-09-28T09:41:05Z  -
 example.net     AXFR         TLS        7       10.0.0.14   2026-09-28T09:40:58Z  -
-internal.test   refused      TCP        -       10.0.0.14   2026-09-28T09:40:58Z  role does not permit 'zone:transfer' in zone 'internal.test'
+internal.test   refused      TCP        -       10.0.0.14   2026-09-28T09:40:58Z  REFUSED
 example.com     IXFR delta   TLS        41      10.0.0.14   2026-09-28T09:12:31Z  -
 ```
 
 `IXFR full` is an IXFR answered with the whole zone; `refused` and `failed`
-carry the reason in `ERROR`.
+carry a fixed classification in `ERROR`, such as `REFUSED` or
+`DNS_ENCODING_FAILED`. Stored entries exclude record values and detailed
+diagnostics; the process log retains failure details for troubleshooting.
 An equal- or newer-serial IXFR receives only the current SOA, including for
 catalogs (RFC 1995, Section 2).
 UDP IXFRs return the current SOA. Serial comparisons follow RFC 1982, Section 3.2.

@@ -9,7 +9,7 @@ from lib import zonefile
 
 class ZoneFileTests(TestCase):
     def test_txt_quotes_backslashes_and_line_breaks_stay_inside_one_record(self):
-        """Keep TXT quotes, backslashes and line breaks in one record line."""
+        """Verify that TXT quotes, backslashes and line breaks stay within one record line."""
         record = {"name": "txt", "type": "TXT", "value": 'quote"slash\\line\nnext\r'}
         expected = 'txt 3600 IN TXT "quote\\"slash\\\\line\\010next\\013"'
         self.assertEqual(zonefile.build_record_line(record), expected)
@@ -17,7 +17,7 @@ class ZoneFileTests(TestCase):
         self.assertEqual(rendered.splitlines()[-1], expected)
 
     def test_mail_and_alias_targets_are_absolute_and_priority_is_retained(self):
-        """Render absolute MX/CNAME targets while retaining MX priority."""
+        """Verify that MX and CNAME targets remain absolute and MX priority is retained."""
         for value in ("mail.example", "mail.example."):
             self.assertEqual(zonefile.build_record_data(
                 {"type": "MX", "value": value, "priority": 20}), "20 mail.example.")

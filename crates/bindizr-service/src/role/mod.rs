@@ -99,10 +99,12 @@ pub async fn list(
 ) -> Result<PaginatedResponse<RoleResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(page.limit)?;
+
     let total = bindizr_db::role::count_all(cx.db()).await?;
-    let rows = bindizr_db::role::list_all_with_counts(cx.db(), page.limit, page.offset).await?;
+    let roles = bindizr_db::role::list_all_with_counts(cx.db(), page.limit, page.offset).await?;
+
     Ok(pagination::build_paginated_response(
-        rows.iter().map(RoleResponse::from).collect(),
+        roles.iter().map(RoleResponse::from).collect(),
         page.limit,
         page.offset,
         total,
@@ -113,10 +115,12 @@ pub async fn list(
 pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<RoleResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     let name = normalize_name(name)?;
-    let row = bindizr_db::role::get_by_name_with_counts(cx.db(), &name)
+
+    let role = bindizr_db::role::get_by_name_with_counts(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(&name))?;
-    Ok(RoleResponse::from(&row))
+
+    Ok(RoleResponse::from(&role))
 }
 
 /// Delete a role and its grants; refused for the built-in role and while a credential holds it.
@@ -163,10 +167,12 @@ pub async fn delete(
                 // A credential that took the role between the counts above and
                 // this delete trips the FK: the same in-use conflict.
                 if error.is_foreign_key_violation() {
-                    ServiceError::RoleInUse(format!(
-                        "role '{}' is still held by an API token or TSIG key",
-                        role.name
-                    ))
+                    ServiceError::RoleInUse {
+                        message: format!(
+                            "role '{}' is still held by an API token or TSIG key",
+                            role.name
+                        ),
+                    }
                 } else {
                     error.into()
                 }
@@ -209,7 +215,9 @@ pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<Role, Ser
 pub(crate) async fn lookup(cx: &Context, role_id: RoleId) -> Result<Role, ServiceError> {
     bindizr_db::role::get(cx.db(), role_id)
         .await?
-        .ok_or_else(|| ServiceError::RoleNotFound(format!("role with id '{role_id}' not found")))
+        .ok_or_else(|| ServiceError::RoleNotFound {
+            message: format!("role with id '{role_id}' not found"),
+        })
 }
 
 /// Refuse a change to the built-in role.

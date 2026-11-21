@@ -115,9 +115,10 @@ where
     /// Extract the authenticated API token from request extensions.
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
         parts.extensions.get::<Self>().cloned().ok_or_else(|| {
-            ApiError(ServiceError::TokenNotFound(
-                "the request presents no API token: authentication is disabled".to_string(),
-            ))
+            ApiError(ServiceError::TokenNotFound {
+                message: "the request presents no API token: authentication is disabled"
+                    .to_string(),
+            })
         })
     }
 }

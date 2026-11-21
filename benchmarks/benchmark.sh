@@ -23,7 +23,10 @@ SYSTEMS=""
 BENCHES=""
 
 # Print benchmark usage information and exit.
-print_usage() { sed -n '2,20p' "$0"; exit 0; }
+print_usage() {
+  sed -n '2,20p' "${0##*/}"
+  exit 0
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -54,12 +57,12 @@ cleanup() {
   # Preserve the script's real exit status: on a clean run the `grep` below finds
   # no leftover stacks and returns 1, which would otherwise become the script's
   # exit code (a spurious failure) since this runs from the EXIT trap.
-  local rc=$?
+  local exit_status=$?
   echo ">>> tearing down any leftover benchmark stacks..."
-  for p in $(docker compose ls -q 2>/dev/null | grep '^bench-' || true); do
-    docker compose -p "$p" down -v --remove-orphans >/dev/null 2>&1 || true
+  for project in $(docker compose ls -q 2>/dev/null | grep '^bench-' || true); do
+    docker compose -p "$project" down -v --remove-orphans >/dev/null 2>&1 || true
   done
-  return $rc
+  return $exit_status
 }
 trap cleanup EXIT INT TERM
 

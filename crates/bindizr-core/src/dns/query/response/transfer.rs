@@ -1,6 +1,7 @@
 //! Decode AXFR answer records with the transfer's question and flag rules.
 
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
+use domain::base::rdata::ComposeRecordData;
 use domain::rdata::AllRecordData;
 
 use crate::dns::Ttl;
@@ -27,8 +28,6 @@ pub fn extract_transfer_records(
     position: TransferMessagePosition,
     response: &[u8],
 ) -> Result<Vec<TransferRecord>, ParseResponseError> {
-    use domain::base::rdata::ComposeRecordData;
-
     let message = response::parse_response_header(query_id, Opcode::QUERY, response)?;
 
     if position == TransferMessagePosition::First || message.header_counts().qdcount() != 0 {

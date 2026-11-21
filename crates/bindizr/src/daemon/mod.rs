@@ -3,6 +3,7 @@
 pub(crate) mod db_probe;
 
 use std::ffi::OsString;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
@@ -372,8 +373,6 @@ async fn drain(
 /// Re-exec the original command in place, preserving PID, supervision and terminal attachment.
 /// Return only if exec fails.
 fn reexec(daemon_exe: Option<PathBuf>) -> DaemonError {
-    use std::os::unix::process::CommandExt;
-
     let Some(exe) = daemon_exe else {
         return DaemonError::ExecutableUnknown;
     };

@@ -77,10 +77,9 @@ pub async fn apply_changes(
                 .find(&record_set.name)
                 .filter(|(zone, _)| caller.sees_zone(zone.id))
             else {
-                return Err(ServiceError::ZoneNotFound(format!(
-                    "no zone is authoritative for '{}'",
-                    record_set.name
-                )));
+                return Err(ServiceError::ZoneNotFound {
+                    message: format!("no zone is authoritative for '{}'", record_set.name),
+                });
             };
 
             let (_, entry) = zone_operations

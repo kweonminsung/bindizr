@@ -46,14 +46,14 @@ pub(crate) async fn create_tx(
 /// Get a zone by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: ZoneId,
+    zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
     let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
         "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE id = ?{}",
         lock_level.clause(),
     )))
-    .bind(id)
+    .bind(zone_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -337,12 +337,12 @@ pub(crate) async fn update_tx(
 /// `None` marks the zone unsigned.
 pub(crate) async fn update_dnssec_policy_id_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: ZoneId,
+    zone_id: ZoneId,
     dnssec_policy_id: Option<PolicyId>,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET dnssec_policy_id = ? WHERE id = ?")
         .bind(dnssec_policy_id)
-        .bind(id)
+        .bind(zone_id)
         .execute(&mut **tx)
         .await?;
 
@@ -353,12 +353,12 @@ pub(crate) async fn update_dnssec_policy_id_tx(
 /// `None` clears the configured parent servers.
 pub(crate) async fn update_parent_ns_addrs_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: ZoneId,
+    zone_id: ZoneId,
     parent_ns_addrs: Option<&str>,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET parent_ns_addrs = ? WHERE id = ?")
         .bind(parent_ns_addrs)
-        .bind(id)
+        .bind(zone_id)
         .execute(&mut **tx)
         .await?;
 
@@ -384,12 +384,12 @@ pub(crate) async fn count_by_dnssec_policy_id(
 /// Bump only the serial, leaving the zone's other columns untouched.
 pub(crate) async fn update_serial_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: ZoneId,
+    zone_id: ZoneId,
     serial: Serial,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET serial = ? WHERE id = ?")
         .bind(serial)
-        .bind(id)
+        .bind(zone_id)
         .execute(&mut **tx)
         .await?;
 
@@ -399,10 +399,10 @@ pub(crate) async fn update_serial_tx(
 /// Delete a zone by ID in the current transaction.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: ZoneId,
+    zone_id: ZoneId,
 ) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM zones WHERE id = ?")
-        .bind(id)
+        .bind(zone_id)
         .execute(&mut **tx)
         .await?;
 

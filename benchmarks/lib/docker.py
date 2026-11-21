@@ -21,7 +21,7 @@ def run(cmd: list[str], check: bool = True, capture: bool = True,
 
 
 def is_arm_override_enabled() -> bool:
-    """Whether BENCH_ARM asks for each system's `compose.arm.yml`."""
+    """Return whether BENCH_ARM asks for each system's `compose.arm.yml`."""
     return os.environ.get("BENCH_ARM", "").lower() in ("1", "true", "yes")
 
 
@@ -89,7 +89,7 @@ STATS_TIMEOUT_SECS = 3.0
 
 
 def read_stats(container_ids: list[str]) -> list[dict]:
-    """One-shot snapshot; a stalled Docker CLI cannot hold the sampler indefinitely."""
+    """Read one bounded snapshot so a stalled Docker CLI cannot hold the sampler."""
     if not container_ids:
         return []
 

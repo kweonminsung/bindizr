@@ -122,90 +122,90 @@ pub enum ServiceError {
         #[source]
         source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
-    #[error("{0}")]
-    InvalidZoneField(String),
-    #[error("{0}")]
-    InvalidRecordName(String),
-    #[error("{0}")]
-    InvalidRecordValue(String),
-    #[error("{0}")]
-    InvalidJsonBody(String),
-    #[error("{0}")]
-    ZoneConflict(String),
-    #[error("{0}")]
-    RecordConflict(String),
-    #[error("{0}")]
-    TokenConflict(String),
-    #[error("{0}")]
-    EndpointNotFound(String),
-    #[error("{0}")]
-    MethodNotAllowed(String),
-    #[error("{0}")]
-    ZoneNotFound(String),
-    #[error("{0}")]
-    RecordNotFound(String),
-    #[error("{0}")]
-    TokenNotFound(String),
-    #[error("{0}")]
-    VersionNotFound(String),
-    #[error("{0}")]
-    SecondaryNotFound(String),
-    #[error("{0}")]
-    SecondaryConflict(String),
-    #[error("{0}")]
-    TsigKeyNotFound(String),
-    #[error("{0}")]
-    TsigKeyConflict(String),
-    #[error("{0}")]
-    TsigKeyInUse(String),
-    #[error("{0}")]
-    RoleNotFound(String),
-    #[error("{0}")]
-    RoleConflict(String),
-    #[error("{0}")]
-    RoleInUse(String),
-    #[error("{0}")]
-    RoleGrantNotFound(String),
-    #[error("{0}")]
-    DnssecAlreadyEnabled(String),
-    #[error("{0}")]
-    DnssecNotEnabled(String),
-    #[error("{0}")]
-    DnssecRolloverInProgress(String),
-    #[error("{0}")]
-    DnssecNoRolloverInProgress(String),
-    #[error("{0}")]
-    DnssecDsPublished(String),
-    #[error("{0}")]
-    DnssecDsNotPublished(String),
+    #[error("{message}")]
+    InvalidZoneField { message: String },
+    #[error("{message}")]
+    InvalidRecordName { message: String },
+    #[error("{message}")]
+    InvalidRecordValue { message: String },
+    #[error("{message}")]
+    InvalidJsonBody { message: String },
+    #[error("{message}")]
+    ZoneConflict { message: String },
+    #[error("{message}")]
+    RecordConflict { message: String },
+    #[error("{message}")]
+    TokenConflict { message: String },
+    #[error("{message}")]
+    EndpointNotFound { message: String },
+    #[error("{message}")]
+    MethodNotAllowed { message: String },
+    #[error("{message}")]
+    ZoneNotFound { message: String },
+    #[error("{message}")]
+    RecordNotFound { message: String },
+    #[error("{message}")]
+    TokenNotFound { message: String },
+    #[error("{message}")]
+    VersionNotFound { message: String },
+    #[error("{message}")]
+    SecondaryNotFound { message: String },
+    #[error("{message}")]
+    SecondaryConflict { message: String },
+    #[error("{message}")]
+    TsigKeyNotFound { message: String },
+    #[error("{message}")]
+    TsigKeyConflict { message: String },
+    #[error("{message}")]
+    TsigKeyInUse { message: String },
+    #[error("{message}")]
+    RoleNotFound { message: String },
+    #[error("{message}")]
+    RoleConflict { message: String },
+    #[error("{message}")]
+    RoleInUse { message: String },
+    #[error("{message}")]
+    RoleGrantNotFound { message: String },
+    #[error("{message}")]
+    DnssecAlreadyEnabled { message: String },
+    #[error("{message}")]
+    DnssecNotEnabled { message: String },
+    #[error("{message}")]
+    DnssecRolloverInProgress { message: String },
+    #[error("{message}")]
+    DnssecNoRolloverInProgress { message: String },
+    #[error("{message}")]
+    DnssecDsPublished { message: String },
+    #[error("{message}")]
+    DnssecDsNotPublished { message: String },
     #[error("{message}")]
     DnssecDsUnverified {
         message: String,
         #[source]
         source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
-    #[error("{0}")]
-    DnssecPolicyNotFound(String),
-    #[error("{0}")]
-    DnssecPolicyConflict(String),
-    #[error("{0}")]
-    DnssecPolicyInUse(String),
+    #[error("{message}")]
+    DnssecPolicyNotFound { message: String },
+    #[error("{message}")]
+    DnssecPolicyConflict { message: String },
+    #[error("{message}")]
+    DnssecPolicyInUse { message: String },
     /// A server fault named for alerting; the signer's error is its source.
     #[error("DNSSEC signing failed: {source}")]
     DnssecSigningFailed {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
-    #[error("{0}")]
-    Unauthorized(String),
-    #[error("{0}")]
-    InvalidToken(String),
-    #[error("{0}")]
-    Forbidden(String),
-    #[error("{0}")]
-    PayloadTooLarge(String),
-    #[error("{0}")]
-    UnsupportedMediaType(String),
+    #[error("{message}")]
+    Unauthorized { message: String },
+    #[error("{message}")]
+    InvalidToken { message: String },
+    #[error("{message}")]
+    Forbidden { message: String },
+    #[error("{message}")]
+    PayloadTooLarge { message: String },
+    #[error("{message}")]
+    UnsupportedMediaType { message: String },
     /// A server fault; the failure beneath it, when one was typed, is its
     /// source so a log can follow the chain.
     #[error("{message}")]
@@ -221,44 +221,44 @@ impl ServiceError {
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::InvalidInput { .. } => ErrorCode::InvalidInput,
-            Self::InvalidZoneField(_) => ErrorCode::InvalidZoneField,
-            Self::InvalidRecordName(_) => ErrorCode::InvalidRecordName,
-            Self::InvalidRecordValue(_) => ErrorCode::InvalidRecordValue,
-            Self::InvalidJsonBody(_) => ErrorCode::InvalidJsonBody,
-            Self::ZoneConflict(_) => ErrorCode::ZoneConflict,
-            Self::RecordConflict(_) => ErrorCode::RecordConflict,
-            Self::TokenConflict(_) => ErrorCode::TokenConflict,
-            Self::EndpointNotFound(_) => ErrorCode::EndpointNotFound,
-            Self::MethodNotAllowed(_) => ErrorCode::MethodNotAllowed,
-            Self::ZoneNotFound(_) => ErrorCode::ZoneNotFound,
-            Self::RecordNotFound(_) => ErrorCode::RecordNotFound,
-            Self::TokenNotFound(_) => ErrorCode::TokenNotFound,
-            Self::VersionNotFound(_) => ErrorCode::VersionNotFound,
-            Self::SecondaryNotFound(_) => ErrorCode::SecondaryNotFound,
-            Self::SecondaryConflict(_) => ErrorCode::SecondaryConflict,
-            Self::TsigKeyNotFound(_) => ErrorCode::TsigKeyNotFound,
-            Self::TsigKeyConflict(_) => ErrorCode::TsigKeyConflict,
-            Self::TsigKeyInUse(_) => ErrorCode::TsigKeyInUse,
-            Self::RoleNotFound(_) => ErrorCode::RoleNotFound,
-            Self::RoleConflict(_) => ErrorCode::RoleConflict,
-            Self::RoleInUse(_) => ErrorCode::RoleInUse,
-            Self::RoleGrantNotFound(_) => ErrorCode::RoleGrantNotFound,
-            Self::DnssecAlreadyEnabled(_) => ErrorCode::DnssecAlreadyEnabled,
-            Self::DnssecNotEnabled(_) => ErrorCode::DnssecNotEnabled,
-            Self::DnssecRolloverInProgress(_) => ErrorCode::DnssecRolloverInProgress,
-            Self::DnssecNoRolloverInProgress(_) => ErrorCode::DnssecNoRolloverInProgress,
-            Self::DnssecDsPublished(_) => ErrorCode::DnssecDsPublished,
-            Self::DnssecDsNotPublished(_) => ErrorCode::DnssecDsNotPublished,
+            Self::InvalidZoneField { .. } => ErrorCode::InvalidZoneField,
+            Self::InvalidRecordName { .. } => ErrorCode::InvalidRecordName,
+            Self::InvalidRecordValue { .. } => ErrorCode::InvalidRecordValue,
+            Self::InvalidJsonBody { .. } => ErrorCode::InvalidJsonBody,
+            Self::ZoneConflict { .. } => ErrorCode::ZoneConflict,
+            Self::RecordConflict { .. } => ErrorCode::RecordConflict,
+            Self::TokenConflict { .. } => ErrorCode::TokenConflict,
+            Self::EndpointNotFound { .. } => ErrorCode::EndpointNotFound,
+            Self::MethodNotAllowed { .. } => ErrorCode::MethodNotAllowed,
+            Self::ZoneNotFound { .. } => ErrorCode::ZoneNotFound,
+            Self::RecordNotFound { .. } => ErrorCode::RecordNotFound,
+            Self::TokenNotFound { .. } => ErrorCode::TokenNotFound,
+            Self::VersionNotFound { .. } => ErrorCode::VersionNotFound,
+            Self::SecondaryNotFound { .. } => ErrorCode::SecondaryNotFound,
+            Self::SecondaryConflict { .. } => ErrorCode::SecondaryConflict,
+            Self::TsigKeyNotFound { .. } => ErrorCode::TsigKeyNotFound,
+            Self::TsigKeyConflict { .. } => ErrorCode::TsigKeyConflict,
+            Self::TsigKeyInUse { .. } => ErrorCode::TsigKeyInUse,
+            Self::RoleNotFound { .. } => ErrorCode::RoleNotFound,
+            Self::RoleConflict { .. } => ErrorCode::RoleConflict,
+            Self::RoleInUse { .. } => ErrorCode::RoleInUse,
+            Self::RoleGrantNotFound { .. } => ErrorCode::RoleGrantNotFound,
+            Self::DnssecAlreadyEnabled { .. } => ErrorCode::DnssecAlreadyEnabled,
+            Self::DnssecNotEnabled { .. } => ErrorCode::DnssecNotEnabled,
+            Self::DnssecRolloverInProgress { .. } => ErrorCode::DnssecRolloverInProgress,
+            Self::DnssecNoRolloverInProgress { .. } => ErrorCode::DnssecNoRolloverInProgress,
+            Self::DnssecDsPublished { .. } => ErrorCode::DnssecDsPublished,
+            Self::DnssecDsNotPublished { .. } => ErrorCode::DnssecDsNotPublished,
             Self::DnssecDsUnverified { .. } => ErrorCode::DnssecDsUnverified,
-            Self::DnssecPolicyNotFound(_) => ErrorCode::DnssecPolicyNotFound,
-            Self::DnssecPolicyConflict(_) => ErrorCode::DnssecPolicyConflict,
-            Self::DnssecPolicyInUse(_) => ErrorCode::DnssecPolicyInUse,
+            Self::DnssecPolicyNotFound { .. } => ErrorCode::DnssecPolicyNotFound,
+            Self::DnssecPolicyConflict { .. } => ErrorCode::DnssecPolicyConflict,
+            Self::DnssecPolicyInUse { .. } => ErrorCode::DnssecPolicyInUse,
             Self::DnssecSigningFailed { .. } => ErrorCode::DnssecSigningFailed,
-            Self::Unauthorized(_) => ErrorCode::Unauthorized,
-            Self::InvalidToken(_) => ErrorCode::InvalidToken,
-            Self::Forbidden(_) => ErrorCode::Forbidden,
-            Self::PayloadTooLarge(_) => ErrorCode::PayloadTooLarge,
-            Self::UnsupportedMediaType(_) => ErrorCode::UnsupportedMediaType,
+            Self::Unauthorized { .. } => ErrorCode::Unauthorized,
+            Self::InvalidToken { .. } => ErrorCode::InvalidToken,
+            Self::Forbidden { .. } => ErrorCode::Forbidden,
+            Self::PayloadTooLarge { .. } => ErrorCode::PayloadTooLarge,
+            Self::UnsupportedMediaType { .. } => ErrorCode::UnsupportedMediaType,
             Self::Internal { .. } => ErrorCode::Internal,
         }
     }
@@ -287,42 +287,58 @@ impl ServiceError {
 
     /// Build an error for an invalid zone field.
     pub fn invalid_zone_field(message: impl fmt::Display) -> Self {
-        Self::InvalidZoneField(message.to_string())
+        Self::InvalidZoneField {
+            message: message.to_string(),
+        }
     }
 
     /// Build an error for an invalid record owner name.
     pub fn invalid_record_name(message: impl fmt::Display) -> Self {
-        Self::InvalidRecordName(message.to_string())
+        Self::InvalidRecordName {
+            message: message.to_string(),
+        }
     }
 
     /// Build an error for an invalid record value.
     pub fn invalid_record_value(message: impl fmt::Display) -> Self {
-        Self::InvalidRecordValue(message.to_string())
+        Self::InvalidRecordValue {
+            message: message.to_string(),
+        }
     }
 
     /// Build an error for a conflicting zone mutation.
     pub fn zone_conflict(message: impl fmt::Display) -> Self {
-        Self::ZoneConflict(message.to_string())
+        Self::ZoneConflict {
+            message: message.to_string(),
+        }
     }
 
     /// Build an error for a conflicting record mutation.
     pub fn record_conflict(message: impl fmt::Display) -> Self {
-        Self::RecordConflict(message.to_string())
+        Self::RecordConflict {
+            message: message.to_string(),
+        }
     }
 
     /// Build an error for a request without valid authentication.
     pub fn unauthorized(message: impl fmt::Display) -> Self {
-        Self::Unauthorized(message.to_string())
+        Self::Unauthorized {
+            message: message.to_string(),
+        }
     }
 
     /// Build an error for an invalid API token.
     pub fn invalid_token(message: impl fmt::Display) -> Self {
-        Self::InvalidToken(message.to_string())
+        Self::InvalidToken {
+            message: message.to_string(),
+        }
     }
 
     /// Build an error for an operation the caller may not perform.
     pub fn forbidden(message: impl fmt::Display) -> Self {
-        Self::Forbidden(message.to_string())
+        Self::Forbidden {
+            message: message.to_string(),
+        }
     }
 
     /// Build an error for an internal service failure.
@@ -347,17 +363,23 @@ impl ServiceError {
 
     /// Build an error naming the missing zone.
     pub fn zone_not_found(zone_name: impl fmt::Display) -> Self {
-        Self::ZoneNotFound(format!("zone with name '{zone_name}' not found"))
+        Self::ZoneNotFound {
+            message: format!("zone with name '{zone_name}' not found"),
+        }
     }
 
     /// Build an error identifying the missing record.
-    pub fn record_not_found(id: RecordId) -> Self {
-        Self::RecordNotFound(format!("record with id '{id}' not found"))
+    pub fn record_not_found(record_id: RecordId) -> Self {
+        Self::RecordNotFound {
+            message: format!("record with id '{record_id}' not found"),
+        }
     }
 
     /// Build an error identifying the owner name that holds no record.
     pub fn record_not_found_at_name(zone_name: impl fmt::Display, name: impl fmt::Display) -> Self {
-        Self::RecordNotFound(format!("no record named '{name}' in zone '{zone_name}'"))
+        Self::RecordNotFound {
+            message: format!("no record named '{name}' in zone '{zone_name}'"),
+        }
     }
 
     /// Build an error for an ambiguous owner name, asking for a record id in
@@ -374,42 +396,58 @@ impl ServiceError {
 
     /// Build an error naming the missing API token.
     pub fn token_not_found(name: impl fmt::Display) -> Self {
-        Self::TokenNotFound(format!("API token with name '{name}' not found"))
+        Self::TokenNotFound {
+            message: format!("API token with name '{name}' not found"),
+        }
     }
 
     /// Build an error for an API token name already in use.
     pub fn token_conflict(name: impl fmt::Display) -> Self {
-        Self::TokenConflict(format!("API token with name '{name}' already exists"))
+        Self::TokenConflict {
+            message: format!("API token with name '{name}' already exists"),
+        }
     }
 
     /// Build an error naming the missing secondary.
     pub fn secondary_not_found(name: impl fmt::Display) -> Self {
-        Self::SecondaryNotFound(format!("secondary with name '{name}' not found"))
+        Self::SecondaryNotFound {
+            message: format!("secondary with name '{name}' not found"),
+        }
     }
 
     /// Build an error for a secondary name or address already in use.
     pub fn secondary_conflict(message: impl fmt::Display) -> Self {
-        Self::SecondaryConflict(message.to_string())
+        Self::SecondaryConflict {
+            message: message.to_string(),
+        }
     }
 
     /// Build an error naming the missing TSIG key.
     pub fn tsig_key_not_found(name: impl fmt::Display) -> Self {
-        Self::TsigKeyNotFound(format!("TSIG key with name '{name}' not found"))
+        Self::TsigKeyNotFound {
+            message: format!("TSIG key with name '{name}' not found"),
+        }
     }
 
     /// Build an error for a TSIG key name already in use.
     pub fn tsig_key_conflict(name: impl fmt::Display) -> Self {
-        Self::TsigKeyConflict(format!("TSIG key with name '{name}' already exists"))
+        Self::TsigKeyConflict {
+            message: format!("TSIG key with name '{name}' already exists"),
+        }
     }
 
     /// Build an error naming the missing role.
     pub fn role_not_found(name: impl fmt::Display) -> Self {
-        Self::RoleNotFound(format!("role with name '{name}' not found"))
+        Self::RoleNotFound {
+            message: format!("role with name '{name}' not found"),
+        }
     }
 
     /// Build an error for a role name already in use.
     pub fn role_conflict(name: impl fmt::Display) -> Self {
-        Self::RoleConflict(format!("role with name '{name}' already exists"))
+        Self::RoleConflict {
+            message: format!("role with name '{name}' already exists"),
+        }
     }
 
     /// Build an error explaining that credentials still authenticate into a role.
@@ -434,25 +472,30 @@ impl ServiceError {
             holders.push(format!("{noun} {}", tsig_keys.join(", ")));
         }
 
-        Self::RoleInUse(format!(
-            "role '{name}' is still held by {}",
-            holders.join(" and ")
-        ))
+        Self::RoleInUse {
+            message: format!("role '{name}' is still held by {}", holders.join(" and ")),
+        }
     }
 
     /// Build an error identifying the missing role grant.
-    pub fn role_grant_not_found(id: RoleGrantId) -> Self {
-        Self::RoleGrantNotFound(format!("role grant with id '{id}' not found"))
+    pub fn role_grant_not_found(grant_id: RoleGrantId) -> Self {
+        Self::RoleGrantNotFound {
+            message: format!("role grant with id '{grant_id}' not found"),
+        }
     }
 
     /// Build an error for enabling DNSSEC on an already signed zone.
     pub fn dnssec_already_enabled(zone_name: impl fmt::Display) -> Self {
-        Self::DnssecAlreadyEnabled(format!("DNSSEC is already enabled for zone '{zone_name}'"))
+        Self::DnssecAlreadyEnabled {
+            message: format!("DNSSEC is already enabled for zone '{zone_name}'"),
+        }
     }
 
     /// Build an error for an operation requiring DNSSEC on an unsigned zone.
     pub fn dnssec_not_enabled(zone_name: impl fmt::Display) -> Self {
-        Self::DnssecNotEnabled(format!("DNSSEC is not enabled for zone '{zone_name}'"))
+        Self::DnssecNotEnabled {
+            message: format!("DNSSEC is not enabled for zone '{zone_name}'"),
+        }
     }
 
     /// Build an error from what the signer could not do.
@@ -464,53 +507,57 @@ impl ServiceError {
 
     /// Build an error for a rollover already in progress.
     pub fn dnssec_rollover_in_progress(zone_name: impl fmt::Display) -> Self {
-        Self::DnssecRolloverInProgress(format!(
-            "a key rollover is already in progress for zone '{zone_name}'"
-        ))
+        Self::DnssecRolloverInProgress {
+            message: format!("a key rollover is already in progress for zone '{zone_name}'"),
+        }
     }
 
     /// Build an error for confirming a rollover while no published key awaits
     /// promotion; a predecessor still retiring does not count.
     pub fn dnssec_no_rollover_in_progress(zone_name: impl fmt::Display) -> Self {
-        Self::DnssecNoRolloverInProgress(format!(
-            "no published key awaits promotion in zone '{zone_name}'"
-        ))
+        Self::DnssecNoRolloverInProgress {
+            message: format!("no published key awaits promotion in zone '{zone_name}'"),
+        }
     }
 
     /// Build an error listing DS records that still block DNSSEC removal.
     pub fn dnssec_ds_published(zone_name: impl fmt::Display, key_tags: &[KeyTag]) -> Self {
-        Self::DnssecDsPublished(format!(
-            "the parent zone still serves DS records for zone '{zone_name}' (key tag{} {}); remove \
+        Self::DnssecDsPublished {
+            message: format!(
+                "the parent zone still serves DS records for zone '{zone_name}' (key tag{} {}); remove \
                  them and wait out their TTL before disabling DNSSEC, or skip the DS check",
-            if key_tags.len() == 1 {
-                ""
-            } else {
-                "s"
-            },
-            key_tags
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ))
+                if key_tags.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                },
+                key_tags
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
     }
 
     /// Build an error listing DS records still required for key promotion.
     pub fn dnssec_ds_not_published(zone_name: impl fmt::Display, key_tags: &[KeyTag]) -> Self {
-        Self::DnssecDsNotPublished(format!(
-            "the parent zone serves no DS yet for key tag{} {} of zone '{zone_name}'; register it \
+        Self::DnssecDsNotPublished {
+            message: format!(
+                "the parent zone serves no DS yet for key tag{} {} of zone '{zone_name}'; register it \
                  and wait out the DS TTL before confirming, or skip the DS check",
-            if key_tags.len() == 1 {
-                ""
-            } else {
-                "s"
-            },
-            key_tags
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ))
+                if key_tags.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                },
+                key_tags
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
     }
 
     /// Build an error for parent DS digests that cannot be verified.
@@ -550,31 +597,37 @@ impl ServiceError {
 
     /// Build an error naming the missing DNSSEC policy.
     pub fn dnssec_policy_not_found(name: impl fmt::Display) -> Self {
-        Self::DnssecPolicyNotFound(format!("DNSSEC policy with name '{name}' not found"))
+        Self::DnssecPolicyNotFound {
+            message: format!("DNSSEC policy with name '{name}' not found"),
+        }
     }
 
     /// Build an error for a DNSSEC policy name already in use.
     pub fn dnssec_policy_conflict(name: impl fmt::Display) -> Self {
-        Self::DnssecPolicyConflict(format!("DNSSEC policy with name '{name}' already exists"))
+        Self::DnssecPolicyConflict {
+            message: format!("DNSSEC policy with name '{name}' already exists"),
+        }
     }
 
     /// Build an error explaining that zones still use a DNSSEC policy.
     pub fn dnssec_policy_in_use(name: impl fmt::Display, zone_count: u64) -> Self {
-        Self::DnssecPolicyInUse(format!(
-            "DNSSEC policy '{name}' is used by {zone_count} signed zone{}",
-            if zone_count == 1 {
-                ""
-            } else {
-                "s"
-            }
-        ))
+        Self::DnssecPolicyInUse {
+            message: format!(
+                "DNSSEC policy '{name}' is used by {zone_count} signed zone{}",
+                if zone_count == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ),
+        }
     }
 
     /// Build an error naming the missing zone serial.
     pub fn version_not_found(zone_name: impl fmt::Display, serial: Serial) -> Self {
-        Self::VersionNotFound(format!(
-            "no version with serial '{serial}' for zone '{zone_name}'"
-        ))
+        Self::VersionNotFound {
+            message: format!("no version with serial '{serial}' for zone '{zone_name}'"),
+        }
     }
 }
 

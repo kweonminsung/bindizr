@@ -19,9 +19,7 @@ pub(crate) async fn create_many_tx(
     let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
-        let mut sql = String::from(
-            "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
-        );
+        let mut sql = "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ".to_string();
         let mut bind_index = 1;
 
         for i in 0..chunk.len() {
@@ -75,14 +73,14 @@ pub(crate) async fn create_many_tx(
 /// Get a record by ID.
 pub(crate) async fn get(
     pool: &Pool<Postgres>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let record = sqlx::query_as::<_, Record>(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1",
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -92,7 +90,7 @@ pub(crate) async fn get(
 /// Get a record with its zone metadata.
 pub(crate) async fn get_with_zone(
     pool: &Pool<Postgres>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<RecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -105,7 +103,7 @@ pub(crate) async fn get_with_zone(
         WHERE r.id = $1
         "#,
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -115,12 +113,12 @@ pub(crate) async fn get_with_zone(
 /// Get a record by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
     let record = sqlx::query_as::<_, Record>(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1 FOR UPDATE",
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -174,9 +172,7 @@ pub(crate) async fn list_by_record_types_tx(
         return Ok(Vec::new());
     }
 
-    let mut sql = String::from(
-        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND record_type IN (",
-    );
+    let mut sql = "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND record_type IN (".to_string();
 
     for i in 0..record_types.len() {
         if i > 0 {
@@ -227,9 +223,7 @@ pub(crate) async fn list_by_names_tx(
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
-        let mut sql = String::from(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name IN (",
-        );
+        let mut sql = "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name IN (".to_string();
 
         for i in 0..chunk.len() {
             if i > 0 {
@@ -481,14 +475,14 @@ pub(crate) async fn update_tx(
 /// Delete many records in as few statements as the backend's bind limit allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Postgres>,
-    ids: &[RecordId],
+    record_ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
-    if ids.is_empty() {
+    if record_ids.is_empty() {
         return Ok(());
     }
 
     sqlx::query("DELETE FROM records WHERE id = ANY($1)")
-        .bind(ids)
+        .bind(record_ids)
         .execute(&mut **tx)
         .await?;
 

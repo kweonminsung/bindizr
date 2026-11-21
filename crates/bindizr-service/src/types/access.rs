@@ -56,8 +56,10 @@ pub struct AccessLogResponse {
     /// presented none or what it presented did not verify, and when API
     /// authentication is off.
     pub caller: Option<ChangeActor>,
-    /// The error the request was answered with; never a token or secret.
-    #[schema(example = "role does not permit 'zone:delete' in zone 'example.com'")]
+    /// A fixed error classification: an API error code, DNS/TSIG RCODE, or
+    /// transport failure code. Null on success; excludes rejected input and
+    /// detailed client diagnostics.
+    #[schema(example = "FORBIDDEN")]
     pub error: Option<String>,
     pub requested_at: DateTime<Utc>,
 }

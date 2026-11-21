@@ -22,12 +22,12 @@ APEX_LINES = 10
 
 async def run(adapter, config, context) -> list:
     """Measure full zone-transfer performance at the configured zone sizes."""
-    zone = context["zone"]
+    zone_name = context["zone"]
     endpoint = adapter.xfr_endpoint()
     rows = []
 
     for size in config["sizes"]:
-        await adapter.delete_zone(zone)
+        await adapter.delete_zone(zone_name)
 
         # Wait for the delete to reach the XFR endpoint before recreating: the
         # secondary drops the zone via the catalog seconds later, and the new
@@ -36,7 +36,7 @@ async def run(adapter, config, context) -> list:
         dropped = False
 
         while time.monotonic() < drop_deadline:
-            if await dig.zone_is_cleared(zone, endpoint.host, endpoint.port, APEX_LINES):
+            if await dig.zone_is_cleared(zone_name, endpoint.host, endpoint.port, APEX_LINES):
                 dropped = True
                 break
             await asyncio.sleep(1.0)
@@ -55,8 +55,8 @@ async def run(adapter, config, context) -> list:
 
             continue
 
-        await adapter.create_zone(zone)
-        await adapter.import_records(zone, generate(size, config["seed"], zone))
+        await adapter.create_zone(zone_name)
+        await adapter.import_records(zone_name, generate(size, config["seed"], zone_name))
         if adapter.bulk_errors:
             raise RuntimeError(f"preparing the AXFR zone failed for {adapter.bulk_errors} records")
 
@@ -68,7 +68,7 @@ async def run(adapter, config, context) -> list:
         propagated = False
 
         while time.monotonic() < deadline:
-            count = await dig.count_axfr_records(zone, endpoint.host, endpoint.port)
+            count = await dig.count_axfr_records(zone_name, endpoint.host, endpoint.port)
             if count is not None and count >= size and count == prev:
                 propagated = True
                 break
@@ -89,7 +89,7 @@ async def run(adapter, config, context) -> list:
 
             continue
 
-        secs, count, nbytes = await dig.axfr(zone, endpoint.host, endpoint.port)
+        secs, count, nbytes = await dig.axfr(zone_name, endpoint.host, endpoint.port)
 
         rows.append({
             "system": context["label"],

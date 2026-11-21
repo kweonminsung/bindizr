@@ -57,13 +57,13 @@ pub async fn create_tx(tx: &mut Transaction<'_>, zone: Zone) -> Result<Zone, Dat
 /// Get a zone by ID in the current transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
-    id: ZoneId,
+    zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::zone::get_tx(tx, id, lock_level).await,
-        TransactionKind::Postgres(tx) => postgres::zone::get_tx(tx, id, lock_level).await,
-        TransactionKind::Sqlite(tx) => sqlite::zone::get_tx(tx, id, lock_level).await,
+        TransactionKind::MySql(tx) => mysql::zone::get_tx(tx, zone_id, lock_level).await,
+        TransactionKind::Postgres(tx) => postgres::zone::get_tx(tx, zone_id, lock_level).await,
+        TransactionKind::Sqlite(tx) => sqlite::zone::get_tx(tx, zone_id, lock_level).await,
     }
 }
 
@@ -153,18 +153,18 @@ pub async fn update_tx(tx: &mut Transaction<'_>, zone: Zone) -> Result<Zone, Dat
 /// `None` marks the zone unsigned.
 pub async fn update_dnssec_policy_id_tx(
     tx: &mut Transaction<'_>,
-    id: ZoneId,
+    zone_id: ZoneId,
     dnssec_policy_id: Option<PolicyId>,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::zone::update_dnssec_policy_id_tx(tx, id, dnssec_policy_id).await
+            mysql::zone::update_dnssec_policy_id_tx(tx, zone_id, dnssec_policy_id).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::zone::update_dnssec_policy_id_tx(tx, id, dnssec_policy_id).await
+            postgres::zone::update_dnssec_policy_id_tx(tx, zone_id, dnssec_policy_id).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::zone::update_dnssec_policy_id_tx(tx, id, dnssec_policy_id).await
+            sqlite::zone::update_dnssec_policy_id_tx(tx, zone_id, dnssec_policy_id).await
         }
     }
 }
@@ -173,18 +173,18 @@ pub async fn update_dnssec_policy_id_tx(
 /// `None` clears the configured parent servers.
 pub async fn update_parent_ns_addrs_tx(
     tx: &mut Transaction<'_>,
-    id: ZoneId,
+    zone_id: ZoneId,
     parent_ns_addrs: Option<&str>,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::zone::update_parent_ns_addrs_tx(tx, id, parent_ns_addrs).await
+            mysql::zone::update_parent_ns_addrs_tx(tx, zone_id, parent_ns_addrs).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::zone::update_parent_ns_addrs_tx(tx, id, parent_ns_addrs).await
+            postgres::zone::update_parent_ns_addrs_tx(tx, zone_id, parent_ns_addrs).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::zone::update_parent_ns_addrs_tx(tx, id, parent_ns_addrs).await
+            sqlite::zone::update_parent_ns_addrs_tx(tx, zone_id, parent_ns_addrs).await
         }
     }
 }
@@ -210,21 +210,23 @@ pub async fn count_by_dnssec_policy_id(
 /// Bump only the serial, leaving the zone's other columns untouched.
 pub async fn update_serial_tx(
     tx: &mut Transaction<'_>,
-    id: ZoneId,
+    zone_id: ZoneId,
     serial: Serial,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::zone::update_serial_tx(tx, id, serial).await,
-        TransactionKind::Postgres(tx) => postgres::zone::update_serial_tx(tx, id, serial).await,
-        TransactionKind::Sqlite(tx) => sqlite::zone::update_serial_tx(tx, id, serial).await,
+        TransactionKind::MySql(tx) => mysql::zone::update_serial_tx(tx, zone_id, serial).await,
+        TransactionKind::Postgres(tx) => {
+            postgres::zone::update_serial_tx(tx, zone_id, serial).await
+        }
+        TransactionKind::Sqlite(tx) => sqlite::zone::update_serial_tx(tx, zone_id, serial).await,
     }
 }
 
 /// Delete a zone by ID in the current transaction.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: ZoneId) -> Result<(), DatabaseError> {
+pub async fn delete_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<(), DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::zone::delete_tx(tx, id).await,
-        TransactionKind::Postgres(tx) => postgres::zone::delete_tx(tx, id).await,
-        TransactionKind::Sqlite(tx) => sqlite::zone::delete_tx(tx, id).await,
+        TransactionKind::MySql(tx) => mysql::zone::delete_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::zone::delete_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::zone::delete_tx(tx, zone_id).await,
     }
 }

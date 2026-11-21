@@ -11,7 +11,7 @@ use bindizr_service::secondary;
 use bindizr_service::types::{CreateSecondaryRequest, CreateZoneRequest, UpdateZoneRequest};
 use serde_json::{Value, json};
 use tokio::net::UdpSocket;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::{task, time};
 
 use super::*;

@@ -18,11 +18,12 @@ pub(crate) async fn get_zone(
     cx: &Context,
     zone_name: &str,
 ) -> Result<DaemonResponse<SingleZoneResponse>, ServiceError> {
-    let zone = zone::get_by_name(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
+    let response =
+        zone::get_by_name(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
 
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
-        data: SingleZoneResponse { zone },
+        data: SingleZoneResponse { zone: response },
     })
 }
 

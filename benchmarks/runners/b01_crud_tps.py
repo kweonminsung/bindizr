@@ -14,25 +14,25 @@ from lib import loadgen  # noqa: E402
 
 async def run(adapter, config, context) -> dict:
     """Measure record creation, reading, updating, and deletion throughput."""
-    zone = context["zone"]
+    zone_name = context["zone"]
     crud_config = config["crud"]
     concurrency = crud_config["concurrency"]
     duration_secs = crud_config["duration_secs"]
     warmup_secs = crud_config["warmup_secs"]
     pool_size = crud_config["records_prepopulate"]
 
-    await adapter.create_zone(zone)
+    await adapter.create_zone(zone_name)
 
     # Prepopulate a non-destructive pool for READ/UPDATE.
     pool_records = generate(pool_size, config["seed"] + 1)
 
-    for i, record in enumerate(pool_records):
-        record["name"] = f"pool{i:07d}"
+    for index, record in enumerate(pool_records):
+        record["name"] = f"pool{index:07d}"
 
     pool_handles: list[str] = []
 
     for record in pool_records:
-        pool_handles.append(await adapter.create_record(zone, record))
+        pool_handles.append(await adapter.create_record(zone_name, record))
 
     create_records = generate(200_000, config["seed"] + 3)
     created: list[str] = []
@@ -41,7 +41,7 @@ async def run(adapter, config, context) -> dict:
         """Create one uniquely named record for the measured workload."""
         record = dict(create_records[seq % len(create_records)])
         record["name"] = f"crt{seq:08d}"
-        handle = await adapter.create_record(zone, record)
+        handle = await adapter.create_record(zone_name, record)
         created.append(handle)
         return True
 
@@ -49,22 +49,22 @@ async def run(adapter, config, context) -> dict:
 
     async def read_step(seq: int) -> bool:
         """Read one existing record for the measured workload."""
-        return await adapter.get_record(zone, pool_handles[seq % len(pool_handles)])
+        return await adapter.get_record(zone_name, pool_handles[seq % len(pool_handles)])
 
     read_recorder = await loadgen.run_closed_loop(read_step, concurrency, duration_secs, warmup_secs)
 
     async def update_step(seq: int) -> bool:
         """Update only TTL so record-group and ID-based APIs do comparable work."""
-        idx = seq % len(pool_handles)
-        record = dict(pool_records[idx])
+        index = seq % len(pool_handles)
+        record = dict(pool_records[index])
         record["ttl"] = 1800
-        return await adapter.update_record(zone, pool_handles[idx], record)
+        return await adapter.update_record(zone_name, pool_handles[index], record)
 
     update_recorder = await loadgen.run_closed_loop(update_step, concurrency, duration_secs, warmup_secs)
 
     async def delete_step(seq: int) -> bool:
         """Delete records from the CREATE phase, preserving the read/update pool."""
-        return await adapter.delete_record(zone, created[seq])
+        return await adapter.delete_record(zone_name, created[seq])
 
     delete_recorder = (
         await loadgen.run_n(delete_step, concurrency, len(created))

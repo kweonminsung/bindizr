@@ -13,12 +13,12 @@ use crate::socket::types::DaemonResponse;
 /// Get the requested record.
 pub(crate) async fn get_record(
     cx: &Context,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<DaemonResponse<SingleRecordResponse>, ServiceError> {
-    let record = record::get(cx, &Caller::socket(), id).await?;
+    let response = record::get(cx, &Caller::socket(), record_id).await?;
     Ok(DaemonResponse {
         message: "Record retrieved successfully".to_string(),
-        data: SingleRecordResponse { record },
+        data: SingleRecordResponse { record: response },
     })
 }
 
@@ -54,10 +54,10 @@ pub(crate) async fn create_record(
 /// Update the requested record.
 pub(crate) async fn update_record(
     cx: &Context,
-    id: RecordId,
+    record_id: RecordId,
     request: &UpdateRecordRequest,
 ) -> Result<DaemonResponse<WriteRecordResponse>, ServiceError> {
-    let response = record::update(cx, &Caller::socket(), id, request).await?;
+    let response = record::update(cx, &Caller::socket(), record_id, request).await?;
 
     Ok(DaemonResponse {
         message: if response.dry_run {
@@ -120,16 +120,16 @@ pub(crate) async fn create_bulk_records(
 /// /records/{id}` answers with, so `--output json` prints the same one.
 pub(crate) async fn delete_record(
     cx: &Context,
-    id: RecordId,
+    record_id: RecordId,
     run: Run,
 ) -> Result<DaemonResponse<DeleteRecordsResponse>, ServiceError> {
-    let response = record::delete(cx, &Caller::socket(), id, run).await?;
+    let response = record::delete(cx, &Caller::socket(), record_id, run).await?;
 
     Ok(DaemonResponse {
         message: if response.dry_run {
-            format!("Record {id} would be deleted")
+            format!("Record {record_id} would be deleted")
         } else {
-            format!("Record {id} deleted successfully")
+            format!("Record {record_id} deleted successfully")
         },
         data: response,
     })

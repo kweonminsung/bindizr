@@ -1,6 +1,7 @@
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::MessageResponse;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::daemon;
 use crate::socket::server::SocketContext;
@@ -15,7 +16,7 @@ pub(crate) enum DaemonControl {
 
 /// Build the control channel: the sender lives in the socket server, the daemon's
 /// lifecycle loop awaits the receiver.
-pub(crate) fn channel() -> (mpsc::Sender<DaemonControl>, mpsc::Receiver<DaemonControl>) {
+pub(crate) fn channel() -> (Sender<DaemonControl>, Receiver<DaemonControl>) {
     mpsc::channel(1)
 }
 

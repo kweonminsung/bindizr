@@ -137,14 +137,14 @@ fn build_delegation_response(
             })
         });
 
-        let forms = digest_types
+        let forms: Vec<Vec<u8>> = digest_types
             .iter()
             .map(|digest_type| {
                 key.ds_rdata(&apex, *digest_type)
                     .map(|rdata| rdata.as_bytes().to_vec())
                     .map_err(ServiceError::dnssec_signing_failed)
             })
-            .collect::<Result<Vec<Vec<u8>>, ServiceError>>()?;
+            .collect::<Result<_, ServiceError>>()?;
 
         let ds_published = !parent.answers.is_empty()
             && parent.answers.iter().all(|answer| {

@@ -120,7 +120,7 @@ pub fn extract_member_zones(
                         name: record.name.clone(),
                     })?
                     .to_string();
-                let member = ZoneName::parse(&target).map_err(|source| {
+                let member_zone_name = ZoneName::parse(&target).map_err(|source| {
                     ExtractMemberZonesError::MemberName {
                         name: target,
                         source,
@@ -128,14 +128,14 @@ pub fn extract_member_zones(
                 })?;
 
                 match member_nodes.entry(labels[0].clone()) {
-                    Entry::Occupied(entry) if entry.get() != &member => {
+                    Entry::Occupied(entry) if entry.get() != &member_zone_name => {
                         return Err(ExtractMemberZonesError::MemberNodeNotSingular {
                             name: record.name.clone(),
                         });
                     }
                     Entry::Occupied(_) => {}
                     Entry::Vacant(entry) => {
-                        entry.insert(member);
+                        entry.insert(member_zone_name);
                     }
                 }
             }

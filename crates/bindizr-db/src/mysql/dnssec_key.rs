@@ -133,7 +133,7 @@ pub(crate) async fn count_by_state(
 /// Update a key's lifecycle state and transition deadlines in the current transaction.
 pub(crate) async fn update_state_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: DnssecKeyId,
+    key_id: DnssecKeyId,
     state: DnssecKeyState,
     changed_at: DateTime<Utc>,
     eligible_at: DateTime<Utc>,
@@ -144,7 +144,7 @@ pub(crate) async fn update_state_tx(
     .bind(state.as_str())
     .bind(changed_at)
     .bind(eligible_at)
-    .bind(id)
+    .bind(key_id)
     .execute(&mut **tx)
     .await?;
 
@@ -154,12 +154,12 @@ pub(crate) async fn update_state_tx(
 /// Update the maximum TTL signed by a DNSSEC key in the current transaction.
 pub(crate) async fn update_max_signed_ttl_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: DnssecKeyId,
+    key_id: DnssecKeyId,
     max_signed_ttl: Ttl,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE dnssec_keys SET max_signed_ttl = ? WHERE id = ?")
         .bind(max_signed_ttl)
-        .bind(id)
+        .bind(key_id)
         .execute(&mut **tx)
         .await?;
 
@@ -169,10 +169,10 @@ pub(crate) async fn update_max_signed_ttl_tx(
 /// Delete a DNSSEC key by ID in the current transaction.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: DnssecKeyId,
+    key_id: DnssecKeyId,
 ) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM dnssec_keys WHERE id = ?")
-        .bind(id)
+        .bind(key_id)
         .execute(&mut **tx)
         .await?;
 

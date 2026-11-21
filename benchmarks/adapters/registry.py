@@ -45,7 +45,7 @@ BINDIZR_SYSTEMS = ("bindizr", "bindizr_knot", "bindizr_nsd", "bindizr_pdns")
 
 
 def is_bindizr(key: str) -> bool:
-    """Whether this system runs the Bindizr control plane."""
+    """Return whether this system runs the Bindizr control plane."""
     return key in BINDIZR_SYSTEMS
 
 

@@ -117,6 +117,7 @@ pub async fn list(
 ) -> Result<PaginatedResponse<TsigKeyResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(filter.limit)?;
+
     let role_id = match &filter.role_name {
         Some(name) => Some(role::lookup_by_name(cx, name).await?.id),
         None => None,
@@ -127,9 +128,10 @@ pub async fn list(
         offset: filter.offset,
     };
     let total = bindizr_db::tsig_key::count_by_filter(cx.db(), &filter).await?;
-    let rows = bindizr_db::tsig_key::list_by_filter_with_role(cx.db(), &filter).await?;
+    let tsig_keys = bindizr_db::tsig_key::list_by_filter_with_role(cx.db(), &filter).await?;
+
     Ok(pagination::build_paginated_response(
-        rows.iter().map(TsigKeyResponse::from).collect(),
+        tsig_keys.iter().map(TsigKeyResponse::from).collect(),
         filter.limit,
         filter.offset,
         total,
@@ -186,15 +188,17 @@ pub async fn delete(
         bindizr_db::secondary::count_by_notify_tsig_key_id(cx.db(), tsig_key.id).await?;
 
     if secondary_count > 0 {
-        return Err(ServiceError::TsigKeyInUse(format!(
-            "TSIG key '{}' still signs NOTIFY for {secondary_count} secondar{}",
-            tsig_key.name,
-            if secondary_count == 1 {
-                "y"
-            } else {
-                "ies"
-            }
-        )));
+        return Err(ServiceError::TsigKeyInUse {
+            message: format!(
+                "TSIG key '{}' still signs NOTIFY for {secondary_count} secondar{}",
+                tsig_key.name,
+                if secondary_count == 1 {
+                    "y"
+                } else {
+                    "ies"
+                }
+            ),
+        });
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete TSIG key").await?;
@@ -210,9 +214,9 @@ pub async fn delete(
                 // A secondary that took the key between the count above and this
                 // delete trips the FK: the same in-use conflict.
                 if error.is_foreign_key_violation() {
-                    ServiceError::TsigKeyInUse(
-                        "TSIG key still signs NOTIFY for a secondary".to_string(),
-                    )
+                    ServiceError::TsigKeyInUse {
+                        message: "TSIG key still signs NOTIFY for a secondary".to_string(),
+                    }
                 } else {
                     error.into()
                 }

@@ -148,9 +148,9 @@ pub(crate) async fn handle_openapi_yaml() -> Response {
 
 /// Return the API error for the OpenAPI document while it is not served.
 pub(crate) async fn handle_openapi_disabled() -> Response {
-    ApiError(ServiceError::EndpointNotFound(
-        "the OpenAPI document is not served; set api.openapi_enabled = true to serve it"
+    ApiError(ServiceError::EndpointNotFound {
+        message: "the OpenAPI document is not served; set api.openapi_enabled = true to serve it"
             .to_string(),
-    ))
+    })
     .into_response()
 }

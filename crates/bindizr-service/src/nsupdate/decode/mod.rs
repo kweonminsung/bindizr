@@ -20,7 +20,7 @@ pub(crate) fn decode_updates(
     zone_name: &ZoneName,
     message: &[u8],
 ) -> Result<Vec<UpdateOperation>, NsupdateError> {
-    let checked = records
+    let checked: Vec<_> = records
         .iter()
         .map(|record| {
             let owner = parse_update_owner(&record.name, zone_name)?;
@@ -28,7 +28,7 @@ pub(crate) fn decode_updates(
             validate_supported_type(record.record_type)?;
             Ok((record, owner))
         })
-        .collect::<Result<Vec<_>, NsupdateError>>()?;
+        .collect::<Result<_, NsupdateError>>()?;
 
     checked
         .into_iter()
@@ -44,7 +44,7 @@ fn validate_supported_type(rtype: Rtype) -> Result<(), NsupdateError> {
     {
         Ok(())
     } else {
-        Err(NsupdateError::UnsupportedType(rtype))
+        Err(NsupdateError::UnsupportedType { rtype })
     }
 }
 
@@ -55,9 +55,9 @@ pub(crate) fn decode_prerequisite(
     message: &[u8],
 ) -> Result<Prerequisite, NsupdateError> {
     if record.ttl.as_secs() != 0 {
-        return Err(NsupdateError::FormErr(
-            "prerequisite TTL must be 0".to_string(),
-        ));
+        return Err(NsupdateError::FormErr {
+            message: "prerequisite TTL must be 0".to_string(),
+        });
     }
 
     // RFC 2136, Section 3.2 restricts no type; an unstored one is simply absent.
@@ -68,14 +68,16 @@ pub(crate) fn decode_prerequisite(
             let is_any_class = record.class == Class::ANY;
 
             if !record.rdata.is_empty() {
-                return Err(NsupdateError::FormErr(format!(
-                    "{}-class prerequisite must have empty rdata",
-                    if is_any_class {
-                        "ANY"
-                    } else {
-                        "NONE"
-                    }
-                )));
+                return Err(NsupdateError::FormErr {
+                    message: format!(
+                        "{}-class prerequisite must have empty rdata",
+                        if is_any_class {
+                            "ANY"
+                        } else {
+                            "NONE"
+                        }
+                    ),
+                });
             }
 
             Ok(match (is_any_class, record.record_type) {
@@ -93,9 +95,9 @@ pub(crate) fn decode_prerequisite(
         }
         Class::IN => {
             if record.record_type == Rtype::ANY {
-                return Err(NsupdateError::FormErr(
-                    "IN-class prerequisite must specify a record type".to_string(),
-                ));
+                return Err(NsupdateError::FormErr {
+                    message: "IN-class prerequisite must specify a record type".to_string(),
+                });
             }
 
             Ok(Prerequisite::RecordValueMatches {
@@ -104,9 +106,9 @@ pub(crate) fn decode_prerequisite(
                 rdata: record.to_rdata(message)?,
             })
         }
-        other => Err(NsupdateError::FormErr(format!(
-            "unsupported prerequisite class: {other}"
-        ))),
+        other => Err(NsupdateError::FormErr {
+            message: format!("unsupported prerequisite class: {other}"),
+        }),
     }
 }
 
@@ -122,7 +124,9 @@ fn decode_update(
         if record.class != Class::ANY {
             record.to_rdata(message)?;
         }
-        return Err(NsupdateError::ManagedType(record.record_type));
+        return Err(NsupdateError::ManagedType {
+            rtype: record.record_type,
+        });
     }
 
     match record.class {
@@ -155,7 +159,7 @@ fn decode_update(
                 // The prescan refused every other type, so this is its error.
                 other => Some(
                     RecordType::try_from(other)
-                        .map_err(|_| NsupdateError::UnsupportedType(other))?,
+                        .map_err(|_| NsupdateError::UnsupportedType { rtype: other })?,
                 ),
             };
             Ok(Some(UpdateOperation::Record(
@@ -182,9 +186,9 @@ fn decode_update(
                 },
             )))
         }
-        other => Err(NsupdateError::FormErr(format!(
-            "unsupported update class: {other}"
-        ))),
+        other => Err(NsupdateError::FormErr {
+            message: format!("unsupported update class: {other}"),
+        }),
     }
 }
 

@@ -64,17 +64,20 @@ pub(crate) async fn refresh_catalog_tx(
         .collect();
 
     // The catalog zone is not a member of itself.
-    let member_zones: Vec<ZoneName> = zones
+    let member_zone_names: Vec<ZoneName> = zones
         .iter()
         .map(|zone| &zone.name)
         .filter(|zone_name| *zone_name != catalog_zone_name)
         .cloned()
         .collect();
 
-    log::info!("Catalog zone contains {} member zones", member_zones.len());
+    log::info!(
+        "Catalog zone contains {} member zones",
+        member_zone_names.len()
+    );
 
     // The catalog zone is virtual (no DB row).
-    let digest = catalog_digest(&member_zones);
+    let digest = catalog_digest(&member_zone_names);
     let base_serial = zones
         .iter()
         .map(|zone| zone.serial)
@@ -94,20 +97,20 @@ pub(crate) async fn refresh_catalog_tx(
         minimum_ttl: MINIMUM_TTL,
     };
 
-    Ok((catalog_zone, member_zones))
+    Ok((catalog_zone, member_zone_names))
 }
 
 /// Hash sorted member names so only membership changes advance the catalog serial.
 /// Exclude member serials: record writes do not require catalog re-provisioning.
-fn catalog_digest(member_zones: &[ZoneName]) -> String {
+fn catalog_digest(member_zone_names: &[ZoneName]) -> String {
     // Names are canonical, so sorting needs no case folding.
-    let mut members = member_zones.to_vec();
-    members.sort();
+    let mut zone_names = member_zone_names.to_vec();
+    zone_names.sort();
 
     let mut hasher = digest::Context::new(&SHA256);
 
-    for member in members {
-        hasher.update(member.as_str().as_bytes());
+    for zone_name in zone_names {
+        hasher.update(zone_name.as_str().as_bytes());
         hasher.update(b"\n");
     }
 
@@ -122,21 +125,21 @@ mod tests {
     /// indifferent to their order.
     #[test]
     fn catalog_digest_changes_only_with_membership() {
-        let members = |names: &[&str]| {
+        let zone_names = |names: &[&str]| {
             names
                 .iter()
                 .map(|name| ZoneName::parse(name).unwrap())
                 .collect::<Vec<_>>()
         };
 
-        let original = catalog_digest(&members(&["example.com", "test.com"]));
+        let original = catalog_digest(&zone_names(&["example.com", "test.com"]));
 
-        assert_ne!(original, catalog_digest(&members(&["example.com"])));
+        assert_ne!(original, catalog_digest(&zone_names(&["example.com"])));
 
         // Order is not membership, so it must not read as a change.
         assert_eq!(
             original,
-            catalog_digest(&members(&["test.com", "example.com"]))
+            catalog_digest(&zone_names(&["test.com", "example.com"]))
         );
     }
 }

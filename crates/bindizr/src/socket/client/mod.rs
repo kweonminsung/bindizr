@@ -4,7 +4,7 @@ use std::time::Duration;
 use bindizr_service::types::ErrorResponse;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
-use tokio::io::BufReader;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::time;
 
@@ -82,8 +82,6 @@ pub(crate) async fn send_control_command<T: DeserializeOwned>(
 pub(crate) async fn send_command<T: DeserializeOwned>(
     command: DaemonCommand,
 ) -> Result<DaemonResponse<T>, CliError> {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-
     let mut stream = connect_to_daemon_socket().await?;
 
     let json = serde_json::to_string(&command).map_err(|error| {

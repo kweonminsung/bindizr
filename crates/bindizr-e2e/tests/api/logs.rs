@@ -458,10 +458,7 @@ async fn access_log_records_requests_with_their_caller_and_outcome() {
         .await;
 
     assert_eq!(forbidden["status"], "403", "{forbidden}");
-    assert!(
-        forbidden["error"].as_str().unwrap().contains("log:read"),
-        "{forbidden}"
-    );
+    assert_eq!(forbidden["error"], "FORBIDDEN", "{forbidden}");
 
     // Refused by the auth layer: 401, and no token verified to name.
     app.set_auth_token("not-a-token".to_string());
@@ -483,7 +480,7 @@ async fn access_log_records_requests_with_their_caller_and_outcome() {
         .await;
 
     assert!(refused["caller"].is_null(), "{refused}");
-    assert_eq!(refused["error"], "invalid or expired token", "{refused}");
+    assert_eq!(refused["error"], "INVALID_TOKEN", "{refused}");
 
     // Answered by the router's fallbacks, which no route's layer covers: an
     // unknown path and a method its path does not take are saved too.
@@ -545,4 +542,74 @@ async fn access_log_records_requests_with_their_caller_and_outcome() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{query}: {body}");
         assert_eq!(body["code"], "INVALID_INPUT", "{query}: {body}");
     }
+}
+
+/// Verify that rejected body, query, and import values stay in client diagnostics,
+/// while access rows keep only the error code and the zone stays unchanged.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn access_log_excludes_rejected_input_values() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    let body_marker = format!("{}-body-value", app.namespace());
+    let query_marker = format!("{}-query-value", app.namespace());
+    let import_marker = format!("{}-import-value", app.namespace());
+
+    for (method, path, request, marker, code) in [
+        (
+            Method::POST,
+            "/records".to_string(),
+            Some(json!({
+                "zone_name": zone_name,
+                "name": "rejected",
+                "type": "A",
+                "value": body_marker,
+            })),
+            body_marker,
+            "INVALID_RECORD_VALUE",
+        ),
+        (
+            Method::GET,
+            format!("/zones?sort={query_marker}"),
+            None,
+            query_marker,
+            "INVALID_INPUT",
+        ),
+        (
+            Method::POST,
+            format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": "valid IN A 192.0.2.1\n", "mode": import_marker })),
+            import_marker,
+            "INVALID_INPUT",
+        ),
+    ] {
+        let (status, body) = app.send_request(method.clone(), &path, request).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {body}");
+        assert_eq!(body["code"], code, "{path}: {body}");
+        assert!(
+            body["error"].as_str().unwrap().contains(&marker),
+            "{path}: {body}"
+        );
+
+        let target = path.split('?').next().unwrap();
+        let log = app
+            .wait_for_access_log("source=api&result=failed", |log| {
+                log["method"] == method.as_str() && log["target"] == target
+            })
+            .await;
+
+        assert!(
+            !log.to_string().contains(&marker),
+            "input reached the access log: {log}"
+        );
+        assert_eq!(log["error"], code, "{log}");
+        assert_eq!(log["status"], "400", "{log}");
+    }
+
+    assert_eq!(app.list_records(zone_name).await, before);
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
 }

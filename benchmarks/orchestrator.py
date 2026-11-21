@@ -41,7 +41,7 @@ NOTIFY_OFF_BENCHMARKS = {"b01_crud_tps", "b02_bulk_import"}
 
 
 def is_bindizr_notify_enabled(bench: str) -> bool:
-    """Choose whether this workload needs bindizr to send NOTIFY."""
+    """Return whether this workload needs bindizr to send NOTIFY."""
     override = os.environ.get("BENCH_BINDIZR_NOTIFY")
     if override is not None:
         return override.lower() == "true"

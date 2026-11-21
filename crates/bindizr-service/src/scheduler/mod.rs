@@ -8,6 +8,7 @@ use bindizr_core::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{Duration, Utc};
 use tokio::sync::watch;
+use tokio::sync::watch::{Receiver, Sender};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time;
 use tokio::time::{Interval, MissedTickBehavior};
@@ -20,7 +21,7 @@ use crate::{Context, notify};
 #[derive(Debug)]
 pub struct SchedulerWorker {
     task: JoinHandle<()>,
-    stop: watch::Sender<bool>,
+    stop: Sender<bool>,
 }
 
 impl SchedulerWorker {
@@ -33,7 +34,7 @@ impl SchedulerWorker {
 
 /// Start the periodic scheduler on its own task. A zero period leaves the
 /// worker idle until a reload names one.
-pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) -> SchedulerWorker {
+pub fn spawn(cx: Arc<Context>, mut period_rx: Receiver<u64>) -> SchedulerWorker {
     let mut period = *period_rx.borrow();
 
     if period == 0 {

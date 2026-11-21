@@ -18,17 +18,17 @@ RESPONSE_STATUS = re.compile(r"^;; ->>HEADER<<- .*status: ([A-Z0-9]+),", re.MULT
 class TransferError(RuntimeError):
     """A failed or incomplete dig transfer, retaining its response status if any."""
 
-    def __init__(self, zone: str, server: str, port: int, qtype: str,
+    def __init__(self, zone_name: str, server: str, port: int, qtype: str,
                  detail: str, rcode: str | None = None):
         """Name the failed exchange and preserve its protocol classification."""
-        super().__init__(f"{qtype} of {zone} from {server}:{port} failed: {detail}")
+        super().__init__(f"{qtype} of {zone_name} from {server}:{port} failed: {detail}")
         self.rcode = rcode
 
 
-async def query(name: str, rtype: str, server: str, port: int,
+async def query(name: str, record_type: str, server: str, port: int,
                 timeout: int = 5) -> tuple[bool, float, str]:
     """Return (answered, latency_secs, raw_output)."""
-    args = ["dig", f"@{server}", "-p", str(port), name, rtype, "+tries=1",
+    args = ["dig", f"@{server}", "-p", str(port), name, record_type, "+tries=1",
             f"+time={timeout}", "+short"]
     started = time.monotonic()
 
@@ -41,17 +41,17 @@ async def query(name: str, rtype: str, server: str, port: int,
         return (False, time.monotonic() - started, "")
 
 
-async def _transfer(zone: str, server: str, port: int, qtype: str,
+async def _transfer(zone_name: str, server: str, port: int, qtype: str,
                     timeout: int) -> tuple[float, int, int]:
     """Measure only completed transfers, leaving SOA-only/delta/fallback validation to dig."""
-    args = ["dig", f"@{server}", "-p", str(port), zone, qtype, "+tcp",
+    args = ["dig", f"@{server}", "-p", str(port), zone_name, qtype, "+tcp",
             f"+time={timeout}", "+tries=1", "+noall", "+noshort", "+answer",
             "+comments", "+stats", "+noonesoa", "+nomultiline", "+ttlid", "+cl"]
     started = time.monotonic()
     try:
         result = await process.run(*args, timeout=timeout + 10)
     except subprocess.TimeoutExpired as error:
-        raise TransferError(zone, server, port, qtype, "timed out") from error
+        raise TransferError(zone_name, server, port, qtype, "timed out") from error
     elapsed = time.monotonic() - started
     output = result.stdout.decode()
     lines = [line for line in output.splitlines() if line and not line.startswith(";")]
@@ -63,7 +63,7 @@ async def _transfer(zone: str, server: str, port: int, qtype: str,
     if (result.returncode != 0 or rcode is not None or len(completions) != 1
             or int(completions[0]) != len(lines) or not lines):
         detail = result.stderr.decode().strip() or rcode or "incomplete transfer"
-        raise TransferError(zone, server, port, qtype, detail, rcode)
+        raise TransferError(zone_name, server, port, qtype, detail, rcode)
 
     first = lines[0].split()
     last = lines[-1].split()
@@ -71,42 +71,42 @@ async def _transfer(zone: str, server: str, port: int, qtype: str,
             or (len(lines) == 1 and qtype == "AXFR")
             or (len(lines) > 1 and [field.lower() for field in first]
                 != [field.lower() for field in last])):
-        raise TransferError(zone, server, port, qtype, "invalid SOA boundaries")
+        raise TransferError(zone_name, server, port, qtype, "invalid SOA boundaries")
 
     return (elapsed, len(lines), len(result.stdout))
 
 
-async def axfr(zone: str, server: str, port: int, timeout: int = 300) -> tuple[float, int, int]:
+async def axfr(zone_name: str, server: str, port: int, timeout: int = 300) -> tuple[float, int, int]:
     """Run an AXFR and report its duration, record count, and output size."""
-    return await _transfer(zone, server, port, "AXFR", timeout)
+    return await _transfer(zone_name, server, port, "AXFR", timeout)
 
 
-async def ixfr(zone: str, server: str, port: int, from_serial: int,
+async def ixfr(zone_name: str, server: str, port: int, from_serial: int,
                timeout: int = 60) -> tuple[float, int, int]:
     """Run an IXFR from a serial and report its duration and transfer size."""
-    return await _transfer(zone, server, port, f"IXFR={from_serial}", timeout)
+    return await _transfer(zone_name, server, port, f"IXFR={from_serial}", timeout)
 
 
-async def count_axfr_records(zone: str, server: str, port: int,
+async def count_axfr_records(zone_name: str, server: str, port: int,
                              timeout: int = 300) -> int | None:
     """Probe a complete AXFR's size, or report unavailable for a polling caller."""
     try:
-        return (await axfr(zone, server, port, timeout))[1]
+        return (await axfr(zone_name, server, port, timeout))[1]
     except TransferError:
         return None
 
 
-async def zone_is_cleared(zone: str, server: str, port: int,
+async def zone_is_cleared(zone_name: str, server: str, port: int,
                           apex_lines: int, timeout: int = 5) -> bool:
     """Accept a complete apex-only zone or an explicit unserved SOA response, never silence."""
     try:
-        return (await axfr(zone, server, port, timeout))[1] <= apex_lines
+        return (await axfr(zone_name, server, port, timeout))[1] <= apex_lines
     except TransferError as error:
         if error.rcode in ("NXDOMAIN", "NOTAUTH"):
             return True
 
     # An AXFR refusal alone says nothing about the old zone's presence.
-    args = ["dig", f"@{server}", "-p", str(port), zone, "SOA", "+norecurse",
+    args = ["dig", f"@{server}", "-p", str(port), zone_name, "SOA", "+norecurse",
             "+tries=1", f"+time={timeout}", "+noall", "+noshort", "+comments"]
     try:
         reply = await process.run(*args, timeout=timeout + 2)
@@ -116,14 +116,14 @@ async def zone_is_cleared(zone: str, server: str, port: int,
     return reply.returncode == 0 and statuses in (["NXDOMAIN"], ["NOTAUTH"], ["REFUSED"])
 
 
-async def poll_until_visible(name: str, rtype: str, expected: str, server: str, port: int,
+async def poll_until_visible(name: str, record_type: str, expected: str, server: str, port: int,
                              interval_ms: int = 50, timeout_secs: int = 30) -> float | None:
     """Poll until `name`/`rtype` resolves to `expected`. Return seconds, or None."""
     deadline = time.monotonic() + timeout_secs
     started = time.monotonic()
 
     while time.monotonic() < deadline:
-        ok, _, output = await query(name, rtype, server, port)
+        ok, _, output = await query(name, record_type, server, port)
         # Whole-line match: `in out` would accept 10.0.0.1 for an answer of
         # 10.0.0.10 and report propagation that never happened.
         if ok and expected in output.splitlines():
@@ -133,15 +133,15 @@ async def poll_until_visible(name: str, rtype: str, expected: str, server: str, 
     return None
 
 
-async def first_unqueryable(records: list[dict], zone: str, server: str, port: int,
+async def first_unqueryable(records: list[dict], zone_name: str, server: str, port: int,
                             interval_ms: int = 50,
                             timeout_secs: int = 30) -> dict | None:
     """Return the first unavailable record sampled across the zone, or None.
     Check first, middle and last because bulk writes may still be propagating."""
-    suffix = zone.rstrip(".")
+    suffix = zone_name.rstrip(".")
 
-    for idx in sorted({0, len(records) // 2, len(records) - 1}) if records else []:
-        record = records[idx]
+    for index in sorted({0, len(records) // 2, len(records) - 1}) if records else []:
+        record = records[index]
         if await poll_until_visible(f'{record["name"]}.{suffix}', record["type"], record["value"],
                                     server, port, interval_ms, timeout_secs) is None:
             return record

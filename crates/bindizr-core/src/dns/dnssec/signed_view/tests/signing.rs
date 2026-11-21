@@ -210,18 +210,18 @@ fn signatures_validate_case_preserving_rdata() {
             expiration_jitter_secs: 0,
             pass: SigningPass::Full,
         });
-        let rows = rrsigs_covering(
+        let signature_records = rrsigs_covering(
             &diff.added,
             &records[0].name,
             i32::from(Rtype::from(record_type).to_int()),
         );
 
-        assert_eq!(rows.len(), 1);
-        let wire = rows[0].rdata.as_bytes();
+        assert_eq!(signature_records.len(), 1);
+        let wire = signature_records[0].rdata.as_bytes();
         let signature = Rrsig::parse(&mut Parser::from_ref(wire)).unwrap();
 
         assert_eq!(signature.original_ttl().as_secs(), u32::MAX);
-        assert_eq!(rows[0].ttl.as_secs(), u32::MAX);
+        assert_eq!(signature_records[0].ttl.as_secs(), u32::MAX);
         let rdata = Rdata::from_columns(record_type, canonical_value, priority).unwrap();
 
         // RFC 4034: RRSIG fields without the signature, then the canonical record.

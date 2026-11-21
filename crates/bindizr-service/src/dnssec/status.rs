@@ -102,11 +102,11 @@ pub(crate) async fn lookup_status_tx(
 
     // The parent needs DS records only for the SEP keys the zone still wants
     // delegated trust for.
-    let ds_records = keys
+    let ds_records: Vec<_> = keys
         .iter()
         .filter(|key| key.wants_parent_ds())
         .map(|key| build_ds_response(zone, key))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<_, _>>()?;
 
     Ok(DnssecStatusResponse {
         zone_name: zone.name.to_string(),

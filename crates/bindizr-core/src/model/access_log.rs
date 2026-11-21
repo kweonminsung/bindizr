@@ -164,7 +164,7 @@ pub struct AccessLog {
     /// presented none, or what it presented did not verify.
     #[sqlx(flatten, try_from = "ChangeActorColumns")]
     pub caller: Option<ChangeActor>,
-    /// The error the request was answered with.
+    /// A fixed error classification, without rejected input or client diagnostics.
     pub error: Option<String>,
     pub requested_at: DateTime<Utc>,
 }

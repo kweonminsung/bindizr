@@ -2,7 +2,7 @@
 
 use domain::base::iana::Rtype;
 use domain::base::name::ParsedName;
-use domain::base::rdata::ParseAnyRecordData;
+use domain::base::rdata::{ComposeRecordData, ParseAnyRecordData};
 use domain::base::wire::ParseError;
 use domain::dep::octseq::parse::{Parser, ShortInput};
 use domain::rdata::AllRecordData;
@@ -32,8 +32,6 @@ impl Rdata {
         start: usize,
         len: usize,
     ) -> Result<Self, ParseRdataError> {
-        use domain::base::rdata::ComposeRecordData;
-
         let mut parser = Parser::from_ref(message);
         parser.advance(start)?;
         let mut rdata = parser.parse_parser(len)?;

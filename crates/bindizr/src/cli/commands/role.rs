@@ -231,11 +231,15 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             .await?;
             output::print_page(&response.data, output, |grant| RoleGrantRow::from(grant))?;
         }
-        RoleCommand::Revoke { name, id, output } => {
+        RoleCommand::Revoke {
+            name,
+            id: grant_id,
+            output,
+        } => {
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteRoleGrant {
                     role_name: name,
-                    id: RoleGrantId::from(id),
+                    id: RoleGrantId::from(grant_id),
                 })
                 .await?;
 

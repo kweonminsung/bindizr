@@ -7,6 +7,110 @@ use tokio::sync::oneshot;
 use crate::api::common::RECORD_ACTIONS;
 use crate::common::{TestApp, TestAppOptions};
 
+/// Verify that signed listings preserve per-zone grants and paging across both
+/// record planes, including matching signatures under a name-only grant.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn signed_record_listing_preserves_scoped_grants_and_pagination() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+    let (role_name, scoped_token) = app.create_scoped_api_token().await;
+    let zone_names = [
+        app.zone_name("name-grant.example"),
+        app.zone_name("type-grant.example"),
+    ];
+
+    for (zone_name, record_types) in zone_names.iter().zip(["*", "A"]) {
+        app.create_named_zone(zone_name).await;
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(record_body(zone_name, "www", "A", "192.0.2.10")),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{zone_name}/dnssec"),
+                Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/roles/{role_name}/grants"),
+                Some(json!({
+                    "zone_name": zone_name,
+                    "actions": ["record:read"],
+                    "record_name_pattern": "www",
+                    "record_types": record_types,
+                })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+
+    app.set_auth_token(scoped_token);
+    let query = "/records?signed=true&sort=name&order=asc";
+    let (status, body) = app.send_request(Method::GET, query, None).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["pagination"]["total"], 3, "{body}");
+    let records = body["items"].as_array().unwrap();
+
+    assert_eq!(records.len(), 3, "{body}");
+    assert!(
+        records[..2].iter().all(|record| record["type"] == "A"),
+        "{body}"
+    );
+    assert_eq!(records[2]["type"], "RRSIG", "{body}");
+    assert_eq!(records[2]["zone_name"], zone_names[0], "{body}");
+    assert_eq!(
+        records[2]["name"],
+        format!("www.{}.", zone_names[0]),
+        "{body}"
+    );
+    assert!(records[2]["id"].is_null(), "{body}");
+    assert_eq!(records[2]["actions"], json!([]), "{body}");
+
+    for (index, record) in records.iter().enumerate() {
+        let (status, page) = app
+            .send_request(
+                Method::GET,
+                &format!("{query}&limit=1&offset={index}"),
+                None,
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::OK, "offset {index}: {page}");
+        assert_eq!(page["pagination"]["total"], 3, "{page}");
+        assert_eq!(page["items"], json!([record]), "offset {index}: {page}");
+
+        if let Some(record_id) = record["id"].as_i64() {
+            let (status, body) = app
+                .send_request(Method::GET, &format!("/records/{record_id}"), None)
+                .await;
+
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(&body["record"], record);
+            assert_eq!(body["record"]["actions"], json!(["record:read"]));
+        }
+    }
+}
+
 /// Verify that roles and grants can be managed over HTTP, and that both are guarded.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

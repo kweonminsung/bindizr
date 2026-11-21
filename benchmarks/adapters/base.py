@@ -44,34 +44,34 @@ class DnsAdapter(abc.ABC):
         """Tear down containers and volumes."""
 
     @abc.abstractmethod
-    async def create_zone(self, zone: str) -> None:
+    async def create_zone(self, zone_name: str) -> None:
         """Create the zone used by the benchmark."""
         ...
 
     @abc.abstractmethod
-    async def delete_zone(self, zone: str) -> None:
+    async def delete_zone(self, zone_name: str) -> None:
         """Remove the benchmark zone and its records."""
         ...
 
     @abc.abstractmethod
-    async def create_record(self, zone: str, record: dict) -> str:
+    async def create_record(self, zone_name: str, record: dict) -> str:
         """Create a record; return its handle on success and raise on failure."""
 
     @abc.abstractmethod
-    async def get_record(self, zone: str, handle: str) -> bool:
+    async def get_record(self, zone_name: str, handle: str) -> bool:
         """Fetch a record; return True on success."""
 
     @abc.abstractmethod
-    async def update_record(self, zone: str, handle: str, record: dict) -> bool:
+    async def update_record(self, zone_name: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
         ...
 
     @abc.abstractmethod
-    async def delete_record(self, zone: str, handle: str) -> bool:
+    async def delete_record(self, zone_name: str, handle: str) -> bool:
         """Delete the record identified by the handle."""
         ...
 
-    async def import_records(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone_name: str, records: list[dict]) -> None:
         """Create records concurrently, retry transient failures, and count unrecovered bulk errors.
 
         Adapters may override this worker-pool fallback with a batch API."""
@@ -93,7 +93,7 @@ class DnsAdapter(abc.ABC):
 
                 for attempt in range(BULK_ATTEMPTS):
                     try:
-                        await self.create_record(zone, records[i])
+                        await self.create_record(zone_name, records[i])
                         break
                     except Exception:
                         if attempt == BULK_ATTEMPTS - 1:
@@ -106,8 +106,8 @@ class DnsAdapter(abc.ABC):
 
     @abc.abstractmethod
     def dns_endpoint(self) -> Endpoint:
-        """Resolver that answers queries for the managed zone."""
+        """Return the resolver that answers queries for the managed zone."""
 
     def xfr_endpoint(self) -> Endpoint:
-        """Server that answers AXFR/IXFR for the managed zone (defaults to DNS)."""
+        """Return the zone's AXFR/IXFR server, defaulting to its DNS endpoint."""
         return self.dns_endpoint()

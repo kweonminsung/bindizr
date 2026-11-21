@@ -41,15 +41,15 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
-{{- /* The secondaries a bindizr pod registers at start, as name=address words:
+{{- /* Build the secondaries a bindizr pod registers at start, as name=address words:
 each BIND replica by its headless name (NOTIFY must reach every replica), then
 extraSecondaries. */ -}}
 {{- define "bindizr-chart.secondaries" -}}
 {{- $fullname := include "bindizr-chart.fullname" . -}}
 {{- $headless := printf "%s-bind9-headless" $fullname -}}
 {{- $entries := list -}}
-{{- range $i, $_ := until (.Values.bind9.replicas | int) -}}
-{{- $entries = append $entries (printf "bind9-%d=%s-bind9-%d.%s:53" $i $fullname $i $headless) -}}
+{{- range $index, $_ := until (.Values.bind9.replicas | int) -}}
+{{- $entries = append $entries (printf "bind9-%d=%s-bind9-%d.%s:53" $index $fullname $index $headless) -}}
 {{- end -}}
 {{- range .Values.bindizr.dns.extraSecondaries -}}
 {{- $entries = append $entries (printf "%s=%s" (required "extraSecondaries entries need a name" .name) (required "extraSecondaries entries need an address" .address)) -}}

@@ -16,6 +16,7 @@ mod zone;
 
 use std::future::Future;
 use std::io;
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -25,9 +26,9 @@ use bindizr_service::types::ErrorResponse;
 use serde::Serialize;
 use thiserror::Error;
 use tokio::fs;
-use tokio::io::BufReader;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::Sender;
 use tokio::task::{JoinHandle, JoinSet};
 
 use crate::shutdown::Shutdown;
@@ -89,7 +90,7 @@ pub(crate) enum ServeSocketError {
 #[derive(Debug, Clone)]
 pub(crate) struct SocketContext {
     daemon: Arc<Context>,
-    control: mpsc::Sender<DaemonControl>,
+    control: Sender<DaemonControl>,
     /// The certificates a reload re-reads.
     tls: TlsCertificates,
 }
@@ -98,7 +99,7 @@ impl SocketContext {
     /// Build the front end's context over the daemon's.
     pub(crate) fn new(
         daemon: Arc<Context>,
-        control: mpsc::Sender<DaemonControl>,
+        control: Sender<DaemonControl>,
         tls: TlsCertificates,
     ) -> Self {
         Self {
@@ -119,7 +120,7 @@ impl SocketContext {
     }
 
     /// Return the sender a shutdown or restart request goes down.
-    pub(crate) fn control(&self) -> &mpsc::Sender<DaemonControl> {
+    pub(crate) fn control(&self) -> &Sender<DaemonControl> {
         &self.control
     }
 }
@@ -130,8 +131,6 @@ async fn handle_client(
     stream: UnixStream,
     stop: impl Future<Output = ()>,
 ) {
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-
     let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
 
@@ -283,8 +282,6 @@ async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathEr
 
 /// Prepare the control socket path and remove a stale socket if needed.
 async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathError> {
-    use std::os::unix::fs::{FileTypeExt, MetadataExt};
-
     if let Some(parent) = Path::new(socket_path).parent() {
         // No chmod of the socket by path, which a writable directory would let
         // someone redirect; the peer check in `serve` is the boundary.
@@ -386,9 +383,10 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::ListRoleGrants { role_name, page } => {
             encode_response(role::list_role_grants(cx, &role_name, page).await)
         }
-        DaemonCommand::DeleteRoleGrant { role_name, id } => {
-            encode_response(role::delete_role_grant(cx, &role_name, id).await)
-        }
+        DaemonCommand::DeleteRoleGrant {
+            role_name,
+            id: grant_id,
+        } => encode_response(role::delete_role_grant(cx, &role_name, grant_id).await),
         DaemonCommand::CreateSecondary(request) => {
             encode_response(secondary::create_secondary(cx, &request).await)
         }
@@ -477,10 +475,13 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::ListRecords(filter) => {
             encode_response(record::list_records(cx, &filter).await)
         }
-        DaemonCommand::GetRecord { id } => encode_response(record::get_record(cx, id).await),
-        DaemonCommand::UpdateRecord { id, request } => {
-            encode_response(record::update_record(cx, id, &request).await)
+        DaemonCommand::GetRecord { id: record_id } => {
+            encode_response(record::get_record(cx, record_id).await)
         }
+        DaemonCommand::UpdateRecord {
+            id: record_id,
+            request,
+        } => encode_response(record::update_record(cx, record_id, &request).await),
         DaemonCommand::UpdateRecordByName {
             zone_name,
             record_name,
@@ -488,8 +489,8 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         } => encode_response(
             record::update_record_by_name(cx, &zone_name, &record_name, &request).await,
         ),
-        DaemonCommand::DeleteRecord { id, run } => {
-            encode_response(record::delete_record(cx, id, run).await)
+        DaemonCommand::DeleteRecord { id: record_id, run } => {
+            encode_response(record::delete_record(cx, record_id, run).await)
         }
         DaemonCommand::DeleteMatchingRecords(request) => {
             encode_response(record::delete_matching_records(cx, &request).await)

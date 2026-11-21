@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use tokio::time;
 
 use crate::dns::error::DnsError;
@@ -16,8 +16,6 @@ pub(crate) async fn write_frame<W: AsyncWrite + Unpin>(
     writer: &mut W,
     frame: &[u8],
 ) -> Result<(), DnsError> {
-    use tokio::io::AsyncWriteExt as _;
-
     let write = async {
         writer.write_all(frame).await?;
         writer.flush().await
@@ -37,8 +35,6 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
     reader: &mut R,
     pending: &mut Vec<u8>,
 ) -> Result<Vec<u8>, DnsError> {
-    use tokio::io::AsyncReadExt as _;
-
     let mut buffer = [0; 4096];
 
     loop {
