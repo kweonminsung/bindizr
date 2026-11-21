@@ -3288,21 +3288,8 @@ async fn ixfr_replays_soa_replacement() {
         .expect("update"),
         Rcode::NOERROR
     );
-    let qname = dns::parse_name(zone_name).unwrap();
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(0x1234);
-    let mut question = builder.question();
-    question.push((&qname, Rtype::IXFR, Class::IN)).unwrap();
-    let mut authority = question.authority();
-    authority
-        .push((
-            &qname,
-            Class::IN,
-            Ttl::ZERO,
-            replacement(zone_name, base_serial),
-        ))
-        .unwrap();
-    let response = dns::exchange_tcp(app.dns_port(), &authority.finish()).unwrap();
+    let query = dns::build_ixfr_query(zone_name, base_serial).finish();
+    let response = dns::exchange_tcp(app.dns_port(), &query).unwrap();
     let response = Message::from_octets(response).unwrap();
 
     assert_eq!(response.header().rcode(), Rcode::NOERROR);

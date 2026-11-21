@@ -7,34 +7,26 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 /// Query parameters of the audit log listing: which changes, and the page.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct AuditLogFilter {
     /// Only changes to this kind of entity: `token`, `role`, `role_grant`,
     /// `tsig_key`, `secondary`, `dnssec_policy`, or `zone`.
-    #[schema(example = "token")]
     pub entity: Option<String>,
     /// Only changes to the entity of this name; a grant's is its role's.
-    #[schema(example = "external-dns")]
     pub entity_name: Option<String>,
     /// Only changes made at or after this time (RFC 3339).
-    #[schema(example = "2026-10-01T00:00:00Z")]
     pub since: Option<DateTime<Utc>>,
     /// Only changes made before this time (RFC 3339).
-    #[schema(example = "2026-11-01T00:00:00Z")]
     pub until: Option<DateTime<Utc>>,
     /// `created_at` (the default), `entity`, `entity_name`, or `operation`.
-    #[schema(example = "created_at")]
     pub sort: Option<String>,
     /// `desc` (the default) or `asc`.
-    #[schema(example = "desc")]
     pub order: Option<String>,
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
-    #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
-    #[schema(example = 0)]
     pub offset: Option<u64>,
 }
 

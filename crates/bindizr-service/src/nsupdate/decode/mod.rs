@@ -2,9 +2,9 @@
 //! Wire records survive the prescan even when applying them will do nothing.
 
 use bindizr_core::dns::message::{Class, Rtype};
+use bindizr_core::dns::name;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::nsupdate::parser::UpdateRecord;
-use bindizr_core::dns::{Ttl, name};
 use bindizr_core::model::dnssec_record::DnssecRecordType;
 use bindizr_core::model::record::RecordType;
 
@@ -54,7 +54,7 @@ pub(crate) fn decode_prerequisite(
     zone_name: &ZoneName,
     message: &[u8],
 ) -> Result<Prerequisite, NsupdateError> {
-    if record.ttl != 0 {
+    if record.ttl.as_secs() != 0 {
         return Err(NsupdateError::FormErr(
             "prerequisite TTL must be 0".to_string(),
         ));
@@ -128,7 +128,7 @@ fn decode_update(
     match record.class {
         Class::IN => {
             // RFC 8767, Section 4: every bit belongs to the positive TTL value.
-            let ttl = Ttl::from_secs(record.ttl);
+            let ttl = record.ttl;
 
             if record.record_type == Rtype::SOA {
                 return Ok(Some(UpdateOperation::ReplaceSoa {

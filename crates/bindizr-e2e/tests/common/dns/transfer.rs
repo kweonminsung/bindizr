@@ -3,8 +3,10 @@
 use std::io::{Read, Write};
 use std::process;
 
-use domain::base::iana::{Rcode, Rtype};
-use domain::base::{Message, MessageBuilder};
+use domain::base::iana::{Class, Rcode, Rtype};
+use domain::base::message_builder::AdditionalBuilder;
+use domain::base::{Message, MessageBuilder, Serial, Ttl};
+use domain::rdata::Soa;
 use domain::rdata::tsig::Time48;
 use domain::tsig::ClientSequence;
 use rustls::ClientConfig;
@@ -12,6 +14,36 @@ use rustls::ClientConfig;
 use crate::common::dns;
 use crate::common::dns::tsig;
 use crate::common::dns::tsig::SigningKey;
+
+/// Build an IXFR query carrying the client's SOA serial.
+pub(crate) fn build_ixfr_query(zone_name: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
+    let qname = dns::parse_name(zone_name).unwrap();
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(1995);
+    let mut question = builder.question();
+    question.push((&qname, Rtype::IXFR, Class::IN)).unwrap();
+    let mut authority = question.authority();
+
+    // RFC 1995, Section 3: the client's SOA belongs in the authority section.
+    authority
+        .push((
+            &qname,
+            Class::IN,
+            Ttl::ZERO,
+            Soa::new(
+                qname.clone(),
+                qname.clone(),
+                Serial::from(serial),
+                Ttl::ZERO,
+                Ttl::ZERO,
+                Ttl::ZERO,
+                Ttl::ZERO,
+            ),
+        ))
+        .unwrap();
+
+    authority.additional()
+}
 
 /// Transferred record count or refusal details.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

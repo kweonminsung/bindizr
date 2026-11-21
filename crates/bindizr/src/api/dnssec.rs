@@ -141,17 +141,13 @@ pub(crate) async fn disable_dnssec(
     Path(params): Path<NameParams>,
     Query(query): Query<DisableDnssecQuery>,
 ) -> Result<Response, ApiError> {
-    dnssec::disable(
+    let response = dnssec::disable(
         &cx,
         &caller,
         &zone::normalize_name(&params.name)?,
         DsCheck::from_skip_ds_check(query.skip_ds_check.unwrap_or(false)),
     )
     .await?;
-
-    let response = MessageResponse {
-        message: "DNSSEC disabled successfully".to_string(),
-    };
 
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -180,10 +176,7 @@ pub(crate) async fn sign_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    dnssec::sign(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
-    let response = MessageResponse {
-        message: "Zone signed successfully".to_string(),
-    };
+    let response = dnssec::sign(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

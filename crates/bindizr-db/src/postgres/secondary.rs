@@ -2,9 +2,8 @@ use bindizr_core::dns::address::AddressTarget;
 use bindizr_core::model::secondary::{Secondary, SecondaryId};
 use bindizr_core::model::tsig_key::TsigKeyId;
 use chrono::Utc;
-use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
+use sqlx::{Pool, Postgres, Row, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
 /// Insert a secondary.
@@ -56,12 +55,10 @@ pub(crate) async fn get_by_name(
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, Postgres>,
     name: &str,
-    lock_level: LockLevel,
 ) -> Result<Option<Secondary>, DatabaseError> {
-    let secondary = sqlx::query_as::<_, Secondary>(AssertSqlSafe(format!(
-        "SELECT id, name, address, enabled, notify_tsig_key_id, created_at FROM secondaries WHERE name = $1{}",
-        lock_level.clause(),
-    )))
+    let secondary = sqlx::query_as::<_, Secondary>(
+        "SELECT id, name, address, enabled, notify_tsig_key_id, created_at FROM secondaries WHERE name = $1 FOR UPDATE",
+    )
     .bind(name)
     .fetch_optional(&mut **tx)
     .await?;

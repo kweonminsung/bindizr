@@ -3,7 +3,7 @@ use bindizr_core::model::role_grant::{RoleGrant, RoleGrantId};
 
 use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
-use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
+use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
 /// Insert a role grant.
 pub async fn create_tx(
@@ -44,23 +44,18 @@ pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<RoleGrant>,
     }
 }
 
-/// List every grant of a role in the current transaction, locked at
-/// `lock_level`, for a mutation to authorize against.
+/// List every grant of a role in the current transaction, share-locked
+/// (`FOR SHARE` on MySQL/PostgreSQL), for a mutation to authorize against.
 pub async fn list_by_role_id_tx(
     tx: &mut Transaction<'_>,
     role_id: RoleId,
-    lock_level: LockLevel,
 ) -> Result<Vec<RoleGrant>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => {
-            mysql::role_grant::list_by_role_id_tx(tx, role_id, lock_level).await
-        }
+        TransactionKind::MySql(tx) => mysql::role_grant::list_by_role_id_tx(tx, role_id).await,
         TransactionKind::Postgres(tx) => {
-            postgres::role_grant::list_by_role_id_tx(tx, role_id, lock_level).await
+            postgres::role_grant::list_by_role_id_tx(tx, role_id).await
         }
-        TransactionKind::Sqlite(tx) => {
-            sqlite::role_grant::list_by_role_id_tx(tx, role_id, lock_level).await
-        }
+        TransactionKind::Sqlite(tx) => sqlite::role_grant::list_by_role_id_tx(tx, role_id).await,
     }
 }
 

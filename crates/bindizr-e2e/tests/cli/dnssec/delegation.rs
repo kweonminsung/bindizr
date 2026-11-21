@@ -94,7 +94,7 @@ async fn zone_dnssec_checks_parent_ds() {
 
     let disabled = app.run_cli_success(&args, None).await;
 
-    assert!(disabled.contains("DNSSEC disabled successfully"));
+    assert!(disabled.contains("DNSSEC disabled for zone"));
 }
 
 /// Verify that the CLI option disables DNSSEC without a parent DS check.
@@ -128,5 +128,5 @@ async fn zone_dnssec_disable_skips_parent_ds_check_when_requested() {
         .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;
 
-    assert!(disabled.contains("DNSSEC disabled successfully"));
+    assert!(disabled.contains("DNSSEC disabled for zone"));
 }

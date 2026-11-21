@@ -174,9 +174,6 @@ pub(crate) async fn delete_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    dnssec_policy::delete(&cx, &caller, &params.name).await?;
-    let response = MessageResponse {
-        message: "DNSSEC policy deleted successfully".to_string(),
-    };
+    let response = dnssec_policy::delete(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

@@ -1,9 +1,8 @@
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::{RoleGrant, RoleGrantId};
 use chrono::Utc;
-use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
+use sqlx::{Pool, Postgres, Row, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
 /// Insert a role grant.
@@ -82,17 +81,15 @@ pub(crate) async fn list_by_role_id(
     Ok(grants)
 }
 
-/// List every grant of a role in the current transaction, locked at
-/// `lock_level`, for a mutation to authorize against.
+/// List every grant of a role in the current transaction, share-locked,
+/// for a mutation to authorize against.
 pub(crate) async fn list_by_role_id_tx(
     tx: &mut Transaction<'_, Postgres>,
     role_id: RoleId,
-    lock_level: LockLevel,
 ) -> Result<Vec<RoleGrant>, DatabaseError> {
-    let grants = sqlx::query_as::<_, RoleGrant>(AssertSqlSafe(format!(
-        "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants WHERE role_id = $1 ORDER BY id{}",
-        lock_level.clause(),
-    )))
+    let grants = sqlx::query_as::<_, RoleGrant>(
+        "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants WHERE role_id = $1 ORDER BY id FOR SHARE",
+    )
     .bind(role_id)
     .fetch_all(&mut **tx)
     .await?;

@@ -193,27 +193,22 @@ pub struct UpdateRecordRequest {
 
 /// Delete or preview records at a required `zone_name` and `name`
 /// (RFC 2136, Section 2.5.2); whole-zone deletion belongs to `DELETE /zones/{name}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteRecordsRequest {
-    #[schema(example = "example.com")]
     pub zone_name: String,
     /// Owner name relative to the zone, or `@` for the apex.
-    #[schema(example = "www")]
     pub name: String,
     /// Narrows to one type; omitted, every type at the name goes.
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = "A")]
     pub record_type: Option<String>,
     /// Canonical value match: one string or TXT segments, as in a create request. Requires `type`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = "192.0.2.1")]
     pub value: Option<RecordValue>,
     /// MX and SRV keep their preference in its own column, so it narrows
     /// there rather than being part of `value`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = 10)]
     pub priority: Option<i32>,
     /// When true, report what would go without removing anything.
     #[serde(default)]
@@ -237,65 +232,49 @@ pub struct DeleteRecordsResponse {
 }
 
 /// Query filters and pagination for listing records.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct RecordFilter {
     /// The name of the DNS zone to filter records by.
-    #[schema(example = "example.com")]
     pub zone_name: Option<String>,
     /// Filter by record name.
-    #[schema(example = "sub")]
     pub name: Option<String>,
     /// Filter by record type.
     #[serde(rename = "type")]
-    #[schema(example = "A")]
     pub record_type: Option<String>,
     /// Partially filter by record value.
-    #[schema(example = "192.168.1.100")]
     pub value: Option<String>,
     /// Filter by TTL.
-    #[schema(example = 3600, value_type = Option<Ttl>, inline)]
     #[param(value_type = Option<Ttl>, inline)]
     pub ttl: Option<i64>,
     /// Filter by minimum TTL.
-    #[schema(example = 300, value_type = Option<Ttl>, inline)]
     #[param(value_type = Option<Ttl>, inline)]
     pub min_ttl: Option<i64>,
     /// Filter by maximum TTL.
-    #[schema(example = 86400, value_type = Option<Ttl>, inline)]
     #[param(value_type = Option<Ttl>, inline)]
     pub max_ttl: Option<i64>,
     /// Filter by priority.
-    #[schema(example = 10)]
     pub priority: Option<i32>,
     /// Filter by minimum priority.
-    #[schema(example = 1)]
     pub min_priority: Option<i32>,
     /// Filter by maximum priority.
-    #[schema(example = 20)]
     pub max_priority: Option<i32>,
     /// Partially search records.
-    #[schema(example = "api")]
     pub search: Option<String>,
     /// `name` (the default), `type`, `ttl`, `priority`, or `created_at`.
-    #[schema(example = "name")]
     pub sort: Option<String>,
     /// `asc` (the default) or `desc`.
-    #[schema(example = "asc")]
     pub order: Option<String>,
     /// Include derived DNSSEC records after user records in the same pagination.
     /// Derived rows have no id; `type` accepts derived types and search matches names only.
     /// Priority filters exclude derived rows; value filters are rejected.
-    #[schema(example = false)]
     pub signed: Option<bool>,
     /// Records per page, 1 to 1000; the HTTP API pages at 50 when it is
     /// omitted, the daemon socket not at all.
-    #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
     /// Number of records to skip.
-    #[schema(example = 0)]
     pub offset: Option<u64>,
 }
 

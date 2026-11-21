@@ -35,7 +35,7 @@ pub(crate) async fn disable_dnssec(
     zone_name: &str,
     ds_check: DsCheck,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    dnssec::disable(
+    let response = dnssec::disable(
         cx,
         &Caller::socket(),
         &zone::normalize_name(zone_name)?,
@@ -43,11 +43,9 @@ pub(crate) async fn disable_dnssec(
     )
     .await?;
 
-    let message = "DNSSEC disabled successfully".to_string();
-
     Ok(DaemonResponse {
-        message: message.clone(),
-        data: MessageResponse { message },
+        message: response.message.clone(),
+        data: response,
     })
 }
 
@@ -69,11 +67,11 @@ pub(crate) async fn sign_zone(
     cx: &Context,
     zone_name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    dnssec::sign(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
-    let message = "Zone signed successfully".to_string();
+    let response = dnssec::sign(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
+
     Ok(DaemonResponse {
-        message: message.clone(),
-        data: MessageResponse { message },
+        message: response.message.clone(),
+        data: response,
     })
 }
 

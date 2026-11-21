@@ -26,8 +26,8 @@ Examples:
 A time is a span ago (7d, 12h, 30m), a date (2026-10-01, midnight UTC as the
 AT column is), or an RFC 3339 timestamp.
 
-A change to a token, role, grant, TSIG key, secondary or DNSSEC policy, and a
-zone's deletion, is logged with the request path and the token that made it;
+A change to a token, role, grant, TSIG key, secondary or DNSSEC policy, or to a
+zone's DNSSEC settings, and a zone's deletion, is logged with the request path and the token that made it;
 a socket command names no token. Changes to zone data are in the zone's
 versions (`zone version list`) instead.")]
     Audit {

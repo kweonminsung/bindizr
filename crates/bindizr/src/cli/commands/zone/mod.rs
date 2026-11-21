@@ -48,7 +48,7 @@ and the contact is the address a resolver operator writes to.")]
         /// Default record TTL (seconds; defaults to dns.zone_defaults.ttl)
         #[arg(long)]
         default_ttl: Option<i64>,
-        /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
+        /// Starting serial, 0-4294967295 (default 1)
         #[arg(long)]
         serial: Option<u32>,
         /// SOA refresh interval (seconds)

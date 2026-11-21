@@ -85,6 +85,20 @@ impl From<Ttl> for i64 {
     }
 }
 
+impl From<domain::base::Ttl> for Ttl {
+    /// Take the `domain` crate's TTL; both hold the same wire seconds.
+    fn from(ttl: domain::base::Ttl) -> Self {
+        Self(ttl.as_secs())
+    }
+}
+
+impl From<Ttl> for domain::base::Ttl {
+    /// Hand the TTL to the `domain` crate.
+    fn from(ttl: Ttl) -> Self {
+        Self::from_secs(ttl.0)
+    }
+}
+
 impl fmt::Display for Ttl {
     /// Write the TTL in seconds.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

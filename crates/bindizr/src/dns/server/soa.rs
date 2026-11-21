@@ -220,16 +220,8 @@ async fn handle_soa_request(
             }
         };
         let (catalog_zone, _) = match access {
-            TransferAccess::Granted(content) => content,
-            TransferAccess::NotAuth => {
-                return TransferRefusal::not_auth(
-                    format!("not authoritative for zone: {zone_name_str}"),
-                    identity.signer,
-                )
-                .into_response(&QueryMetadata::from(query), query_data)
-                .map(|response| (response, SoaResult::NotAuth));
-            }
-            TransferAccess::Refused(reason) => {
+            Ok(content) => content,
+            Err(reason) => {
                 log::warn!(
                     "Refused {} query for {zone_name_str:?} from {client_ip}: {reason}",
                     query.qtype

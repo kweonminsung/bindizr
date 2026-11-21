@@ -19,7 +19,7 @@ fn soa_update_decodes_compression_and_checks_rdata_length() {
         name: "example.com.".to_string(),
         record_type: Rtype::SOA,
         class: Class::IN,
-        ttl: 300,
+        ttl: Ttl::from_secs(300),
         rdata: message[start..].to_vec(),
         rdata_start: start,
     };
@@ -283,7 +283,7 @@ fn to_record_value_preserves_txt_character_string_boundaries() {
         name: "txt.example.com.".to_string(),
         record_type: Rtype::TXT,
         class: Class::IN,
-        ttl: 300,
+        ttl: Ttl::from_secs(300),
         rdata: vec![2, b'a', b'b', 1, b'c'],
         rdata_start: 0,
     };
@@ -291,7 +291,7 @@ fn to_record_value_preserves_txt_character_string_boundaries() {
         name: "txt.example.com.".to_string(),
         record_type: Rtype::TXT,
         class: Class::IN,
-        ttl: 300,
+        ttl: Ttl::from_secs(300),
         rdata: vec![1, b'a', 2, b'b', b'c'],
         rdata_start: 0,
     };
@@ -341,7 +341,7 @@ fn to_record_value_follows_compression_pointer_in_name_rdata() {
         name: "www.example.com.".to_string(),
         record_type: Rtype::CNAME,
         class: Class::IN,
-        ttl: 300,
+        ttl: Ttl::from_secs(300),
         rdata: pointer.to_vec(),
         rdata_start,
     };
@@ -432,7 +432,7 @@ fn update_record(rtype: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> Update
         name: "www.example.com.".to_string(),
         record_type: rtype,
         class,
-        ttl,
+        ttl: Ttl::from_secs(ttl),
         rdata,
         rdata_start: 0,
     }

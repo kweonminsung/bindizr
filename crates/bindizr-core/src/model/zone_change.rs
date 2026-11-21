@@ -128,12 +128,12 @@ impl JournalRecordType {
         matches!(self, Self::Derived(_))
     }
 
-    /// Render the stored record mnemonic.
-    pub fn to_text(&self) -> String {
+    /// Return the canonical wire spelling.
+    pub fn as_str(&self) -> &'static str {
         match self {
-            Self::User(record_type) => record_type.as_str().to_string(),
-            Self::Derived(record_type) => record_type.as_str().to_string(),
-            Self::Soa => "SOA".to_string(),
+            Self::User(record_type) => record_type.as_str(),
+            Self::Derived(record_type) => record_type.as_str(),
+            Self::Soa => "SOA",
         }
     }
 }
@@ -141,7 +141,7 @@ impl JournalRecordType {
 impl fmt::Display for JournalRecordType {
     /// Write the journal record type in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_text())
+        f.write_str(self.as_str())
     }
 }
 
@@ -185,6 +185,6 @@ where
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
-        self.to_text().encode_by_ref(buffer)
+        self.as_str().to_string().encode_by_ref(buffer)
     }
 }

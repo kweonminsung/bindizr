@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
-use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
+use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
 /// Insert an API token.
 pub async fn create_tx(
@@ -18,16 +18,16 @@ pub async fn create_tx(
     }
 }
 
-/// Get an API token by ID in the current transaction, locked at `lock_level`.
+/// Get an API token by ID in the current transaction, share-locked (`FOR SHARE`
+/// on MySQL/PostgreSQL) so a revocation waits for the transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
     id: TokenId,
-    lock_level: LockLevel,
 ) -> Result<Option<ApiToken>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::api_token::get_tx(tx, id, lock_level).await,
-        TransactionKind::Postgres(tx) => postgres::api_token::get_tx(tx, id, lock_level).await,
-        TransactionKind::Sqlite(tx) => sqlite::api_token::get_tx(tx, id, lock_level).await,
+        TransactionKind::MySql(tx) => mysql::api_token::get_tx(tx, id).await,
+        TransactionKind::Postgres(tx) => postgres::api_token::get_tx(tx, id).await,
+        TransactionKind::Sqlite(tx) => sqlite::api_token::get_tx(tx, id).await,
     }
 }
 
@@ -67,12 +67,14 @@ pub async fn list_all(db: &Db) -> Result<Vec<ApiToken>, DatabaseError> {
     }
 }
 
-/// Stamp when the token was last used.
+/// Stamp when the token was last used, returning whether it was stamped. A row
+/// a transaction holds is skipped rather than waited for: the stamp only
+/// records what happened, and nothing may block on it.
 pub async fn update_last_used_at(
     db: &Db,
     id: TokenId,
     last_used_at: DateTime<Utc>,
-) -> Result<(), DatabaseError> {
+) -> Result<bool, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::api_token::update_last_used_at(pool, id, last_used_at).await,
         Backend::Postgres(pool) => {

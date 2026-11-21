@@ -343,16 +343,6 @@ impl RoleGrant {
 pub struct RoleGrants(Arc<[RoleGrant]>);
 
 impl RoleGrants {
-    /// Return whether the role holds no grant.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Iterate the grants themselves.
-    pub fn iter(&self) -> impl Iterator<Item = &RoleGrant> {
-        self.0.iter()
-    }
-
     /// Return whether an all-zones grant carries `action`, as what no zone owns needs.
     pub fn permits_all_zones(&self, action: Action) -> bool {
         self.0

@@ -69,10 +69,7 @@ async fn role_grants_support_create_list_and_revoke() {
         .run_cli_success(&["role", "revoke", &role_name, &grant_id], None)
         .await;
 
-    assert!(
-        revoked.contains("Role grant revoked successfully"),
-        "{revoked}"
-    );
+    assert!(revoked.contains("revoked successfully"), "{revoked}");
 
     let grants = app
         .run_cli_success(&["role", "grants", &role_name], None)

@@ -5144,6 +5144,7 @@ components:
       - enabled
       - keys
       - ds_records
+      - withdrawing
       - signatures
       - expired_signatures
       - serial
@@ -6810,7 +6811,9 @@ components:
         last_transfer:
           oneOf:
           - $ref: '#/components/schemas/TransferLogResponse'
-            description: The latest transfer of this zone Bindizr served the address.
+            description: |-
+              The latest transfer of this zone Bindizr served the address; null for
+              the catalog zone, whose transfers the transfer log does not hold.
           - type: 'null'
         status:
           $ref: '#/components/schemas/SecondaryStatus'

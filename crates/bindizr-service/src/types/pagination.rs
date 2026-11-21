@@ -4,16 +4,12 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 /// Requested pagination window for a listing with no row predicates.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, IntoParams)]
 #[serde(deny_unknown_fields)]
 pub struct PageRequest {
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
-    #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
-    #[schema(example = 0)]
     pub offset: Option<u64>,
 }
 

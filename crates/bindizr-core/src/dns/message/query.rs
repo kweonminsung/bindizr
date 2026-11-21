@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::dns::message::{EncodeMessageError, QueryMetadata, ResponseLimit};
 use crate::dns::name::WireName;
 use crate::dns::tsig::TransferSigner;
-use crate::dns::{LibraryError, message};
+use crate::dns::{LibraryError, Serial, message};
 
 /// A UDP answer to a query without EDNS is at most 512 octets (RFC 1035,
 /// Section 4.2.1).
@@ -237,7 +237,7 @@ pub struct ParsedQuery {
     /// Echoed in every response (RFC 5936, Section 2.2.2); only IN is served.
     pub qclass: Class,
     pub question_count: u16,
-    pub client_serial: Option<u32>,
+    pub client_serial: Option<Serial>,
     pub query_id: u16,
     pub opcode: Opcode,
     /// Copied into every response (RFC 1035, Section 4.1.1).
@@ -378,11 +378,11 @@ fn foreign_record_class(message: &Message<&[u8]>) -> Option<Class> {
 }
 
 /// Read the client's serial from the IXFR authority SOA.
-fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<u32> {
+fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<Serial> {
     message
         .authority()
         .ok()?
         .limit_to::<Soa<_>>()
         .find_map(Result::ok)
-        .map(|record| record.data().serial().into_int())
+        .map(|record| Serial::from(record.data().serial().into_int()))
 }

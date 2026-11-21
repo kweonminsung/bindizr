@@ -3,8 +3,6 @@
 
 mod canonical;
 
-use std::net::{Ipv4Addr, Ipv6Addr};
-
 use base64::Engine;
 use base64::engine::general_purpose;
 pub use canonical::ParseRdataError;
@@ -20,9 +18,9 @@ use thiserror::Error;
 use crate::dns::name;
 use crate::dns::name::EncodeNameError;
 use crate::dns::record::{
-    CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, ParseMailboxError,
-    ParseRecordValueError, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
-    WksRecordValue,
+    ARecordValue, AaaaRecordValue, CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue,
+    ParseMailboxError, ParseRecordValueError, SrvRecordValue, SshfpRecordValue, TlsaRecordValue,
+    TxtRecordValue, WksRecordValue,
 };
 use crate::model::dnssec_record::DnssecRecordType;
 use crate::model::record::RecordType;
@@ -39,12 +37,6 @@ pub enum EncodeRdataError {
     Value(#[from] ParseRecordValueError),
     #[error(transparent)]
     Mailbox(#[from] ParseMailboxError),
-    /// An address column no entry path could have written.
-    #[error("invalid {record_type} record: {value}")]
-    StoredAddress {
-        record_type: RecordType,
-        value: String,
-    },
 }
 
 /// Wire-format RDATA bytes, capped at the RDLENGTH u16 limit
@@ -139,20 +131,10 @@ impl Rdata {
         value: &str,
         priority: Option<i32>,
     ) -> Result<Self, EncodeRdataError> {
-        let stored_address = || EncodeRdataError::StoredAddress {
-            record_type,
-            value: value.to_string(),
-        };
         Ok(match record_type {
             RecordType::Wks => WksRecordValue::parse(value)?.to_rdata()?,
-            RecordType::A => {
-                let ip = value.parse::<Ipv4Addr>().map_err(|_| stored_address())?;
-                Self::new(ip.octets().to_vec())?
-            }
-            RecordType::Aaaa => {
-                let ip = value.parse::<Ipv6Addr>().map_err(|_| stored_address())?;
-                Self::new(ip.octets().to_vec())?
-            }
+            RecordType::A => ARecordValue::parse(value)?.to_rdata()?,
+            RecordType::Aaaa => AaaaRecordValue::parse(value)?.to_rdata()?,
             RecordType::Caa => CaaRecordValue::parse(value)?.to_rdata()?,
             RecordType::Cname | RecordType::Dname | RecordType::Ns | RecordType::Ptr => {
                 Self::new(name::encode_name(value)?)?

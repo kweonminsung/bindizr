@@ -4,7 +4,7 @@ use bindizr_core::model::tsig_key::TsigKeyId;
 
 use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
-use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
+use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
 /// Insert a secondary.
 pub async fn create_tx(
@@ -27,20 +27,16 @@ pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<Secondary>, Datab
     }
 }
 
-/// Get a secondary by name in the current transaction.
+/// Get a secondary by name in the current transaction, locking it for update
+/// (`FOR UPDATE` on MySQL/PostgreSQL).
 pub async fn get_by_name_tx(
     tx: &mut Transaction<'_>,
     name: &str,
-    lock_level: LockLevel,
 ) -> Result<Option<Secondary>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::secondary::get_by_name_tx(tx, name, lock_level).await,
-        TransactionKind::Postgres(tx) => {
-            postgres::secondary::get_by_name_tx(tx, name, lock_level).await
-        }
-        TransactionKind::Sqlite(tx) => {
-            sqlite::secondary::get_by_name_tx(tx, name, lock_level).await
-        }
+        TransactionKind::MySql(tx) => mysql::secondary::get_by_name_tx(tx, name).await,
+        TransactionKind::Postgres(tx) => postgres::secondary::get_by_name_tx(tx, name).await,
+        TransactionKind::Sqlite(tx) => sqlite::secondary::get_by_name_tx(tx, name).await,
     }
 }
 

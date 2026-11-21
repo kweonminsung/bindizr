@@ -50,7 +50,11 @@ fn catalog_response_preserves_metadata_and_member_records() {
     .unwrap();
 
     assert_eq!(records.len(), 5);
-    assert!(records.iter().all(|record| record.ttl == 3600));
+    assert!(
+        records
+            .iter()
+            .all(|record| record.ttl == Ttl::from_secs(3600))
+    );
     assert_eq!(records[0], records[4]);
     // Both catalog names remain the protocol placeholder "invalid.".
     let mut soa = b"\x07invalid\0\x07invalid\0".to_vec();

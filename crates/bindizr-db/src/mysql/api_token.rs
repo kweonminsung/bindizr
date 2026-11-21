@@ -1,9 +1,8 @@
 use bindizr_core::model::api_token::{ApiToken, TokenId};
 use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
-use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
+use sqlx::{MySql, Pool, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
 /// Insert an API token.
@@ -34,16 +33,14 @@ pub(crate) async fn create_tx(
     Ok(token)
 }
 
-/// Get an API token by ID in the current transaction, locked at `lock_level`.
+/// Get an API token by ID in the current transaction, share-locked.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, MySql>,
     id: TokenId,
-    lock_level: LockLevel,
 ) -> Result<Option<ApiToken>, DatabaseError> {
-    let token = sqlx::query_as::<_, ApiToken>(AssertSqlSafe(format!(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?{}",
-        lock_level.clause(),
-    )))
+    let token = sqlx::query_as::<_, ApiToken>(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ? FOR SHARE",
+    )
     .bind(id)
     .fetch_optional(&mut **tx)
     .await?;
@@ -109,21 +106,34 @@ pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<ApiToken>, Databa
     Ok(tokens)
 }
 
-/// Stamp when the token was last used.
+/// Stamp when the token was last used, returning whether it was stamped; a
+/// row a transaction holds is skipped, not waited for. MySQL refuses a
+/// subquery on the updated table, so the row is claimed first.
 pub(crate) async fn update_last_used_at(
     pool: &Pool<MySql>,
     id: TokenId,
     last_used_at: DateTime<Utc>,
-) -> Result<(), DatabaseError> {
-    let mut connection = pool.acquire().await?;
+) -> Result<bool, DatabaseError> {
+    let mut tx = pool.begin().await?;
 
-    sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
-        .bind(last_used_at)
-        .bind(id)
-        .execute(&mut *connection)
-        .await?;
+    let claimed = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM api_tokens WHERE id = ? FOR UPDATE SKIP LOCKED",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
 
-    Ok(())
+    if claimed.is_some() {
+        sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
+            .bind(last_used_at)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(claimed.is_some())
 }
 
 /// Delete an API token by ID.

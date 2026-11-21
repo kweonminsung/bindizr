@@ -8,40 +8,30 @@ use utoipa::{IntoParams, ToSchema};
 
 /// Query parameters of the access log listing: which requests, their order,
 /// and the page.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct AccessLogFilter {
     /// Only requests that arrived here: `api` or `nsupdate`.
-    #[schema(example = "api")]
     pub source: Option<String>,
     /// Only requests that ended this way: `ok`, `denied`, or `failed`.
-    #[schema(example = "denied")]
     pub result: Option<String>,
     /// Only requests made with the token or TSIG key of this name.
-    #[schema(example = "external-dns")]
     pub caller_name: Option<String>,
     /// Only requests from this client IP address.
-    #[schema(example = "192.0.2.10")]
     pub address: Option<String>,
     /// Only requests made at or after this time (RFC 3339).
-    #[schema(example = "2026-10-01T00:00:00Z")]
     pub since: Option<DateTime<Utc>>,
     /// Only requests made before this time (RFC 3339).
-    #[schema(example = "2026-11-01T00:00:00Z")]
     pub until: Option<DateTime<Utc>>,
     /// `requested_at` (the default), `source`, `target`, `status`, `result`,
     /// or `address`.
-    #[schema(example = "requested_at")]
     pub sort: Option<String>,
     /// `desc` (the default) or `asc`.
-    #[schema(example = "desc")]
     pub order: Option<String>,
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
-    #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
-    #[schema(example = 0)]
     pub offset: Option<u64>,
 }
 

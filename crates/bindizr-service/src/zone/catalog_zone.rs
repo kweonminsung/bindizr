@@ -3,7 +3,6 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::{CatalogZone, Serial, SoaInterval, Ttl};
 use bindizr_core::model::zone::Zone;
-use bindizr_db::LockLevel;
 use ring::digest;
 use ring::digest::SHA256;
 
@@ -56,7 +55,7 @@ pub(crate) async fn refresh_catalog_tx(
     log::info!("Generating catalog zone: {catalog_zone_name}");
 
     // Read only for its row lock; the serial served comes from the upsert below.
-    bindizr_db::catalog_zone::find_serial_tx(tx, catalog_zone_name, LockLevel::Exclusive).await?;
+    bindizr_db::catalog_zone::find_serial_tx(tx, catalog_zone_name).await?;
 
     let zones: Vec<Zone> = bindizr_db::zone::list_all_tx(tx)
         .await?

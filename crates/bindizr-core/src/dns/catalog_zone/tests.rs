@@ -48,7 +48,7 @@ fn name_record(owner: &str, rtype: Rtype, target: &str) -> TransferRecord {
     TransferRecord {
         name: owner.to_string(),
         rtype,
-        ttl: 0,
+        ttl: Ttl::from_secs(0),
         rdata: Rdata::new(name::encode_name(target).unwrap()).unwrap(),
     }
 }
@@ -61,7 +61,7 @@ fn version_record(catalog_zone_name: &str, version: &[u8]) -> TransferRecord {
     TransferRecord {
         name: format!("version.{catalog_zone_name}."),
         rtype: Rtype::TXT,
-        ttl: 0,
+        ttl: Ttl::from_secs(0),
         rdata: Rdata::new(rdata).unwrap(),
     }
 }
@@ -139,7 +139,7 @@ fn extract_member_zones_rejects_repeated_members() {
 fn extract_member_zones_ignores_repeated_transfer_records() {
     let catalog_zone_name = ZoneName::parse("catalog.example").unwrap();
     let mut repeated_version = version_record("CATALOG.example", b"2");
-    repeated_version.ttl = 120;
+    repeated_version.ttl = Ttl::from_secs(120);
     repeated_version.name = "VERSION.CATALOG.example.".to_string();
     let records = [
         name_record("catalog.example.", Rtype::NS, "invalid."),

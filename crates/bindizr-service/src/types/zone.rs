@@ -162,45 +162,35 @@ fn default_apex_ns() -> bool {
 }
 
 /// Query filters and pagination for listing zones.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct ZoneFilter {
     /// Filter by zone name.
-    #[schema(example = "example.com")]
     pub name: Option<String>,
     /// Filter by zone ID.
-    #[schema(example = 1, value_type = Option<i32>)]
     #[param(value_type = Option<i32>)]
     pub id: Option<ZoneId>,
     /// Filter by mname.
-    #[schema(example = "ns1.example.com")]
     pub mname: Option<String>,
     /// Filter by rname.
-    #[schema(example = "admin@example.com")]
     pub rname: Option<String>,
     /// Filter by default TTL.
-    #[schema(example = 3600, value_type = Option<Ttl>, inline)]
     #[param(value_type = Option<Ttl>, inline)]
     pub default_ttl: Option<i64>,
     /// Filter by minimum default TTL.
-    #[schema(example = 300, value_type = Option<Ttl>, inline)]
     #[param(value_type = Option<Ttl>, inline)]
     pub min_default_ttl: Option<i64>,
     /// Filter by maximum default TTL.
-    #[schema(example = 86400, value_type = Option<Ttl>, inline)]
     #[param(value_type = Option<Ttl>, inline)]
     pub max_default_ttl: Option<i64>,
     /// Filter by serial.
-    #[schema(inline)]
     #[param(inline)]
     pub serial: Option<Serial>,
     /// Filter by minimum serial.
-    #[schema(inline)]
     #[param(inline)]
     pub min_serial: Option<Serial>,
     /// Filter by maximum serial.
-    #[schema(inline)]
     #[param(inline)]
     pub max_serial: Option<Serial>,
     /// Keep zones created at or after this RFC 3339 timestamp.
@@ -208,27 +198,20 @@ pub struct ZoneFilter {
     /// Keep zones created at or before this RFC 3339 timestamp.
     pub created_before: Option<DateTime<Utc>>,
     /// `true` keeps the zones signing under a DNSSEC policy, `false` the rest.
-    #[schema(example = true)]
     pub signed: Option<bool>,
     /// `true` keeps the zones the DNS plane serves, `false` the disabled ones.
-    #[schema(example = true)]
     pub enabled: Option<bool>,
     /// Partially search zones.
-    #[schema(example = "example")]
     pub search: Option<String>,
     /// `name` (the default), `serial`, `default_ttl`, or `created_at`.
-    #[schema(example = "name")]
     pub sort: Option<String>,
     /// `asc` (the default) or `desc`.
-    #[schema(example = "asc")]
     pub order: Option<String>,
     /// Zones per page, 1 to 1000; the HTTP API pages at 50 when it is
     /// omitted, the daemon socket not at all.
-    #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
     /// Number of zones to skip.
-    #[schema(example = 0)]
     pub offset: Option<u64>,
 }
 
@@ -367,7 +350,8 @@ pub struct SecondaryStatusResponse {
     #[schema(inline)]
     pub visible_serial: Option<Serial>,
     pub error: Option<String>,
-    /// The latest transfer of this zone Bindizr served the address.
+    /// The latest transfer of this zone Bindizr served the address; null for
+    /// the catalog zone, whose transfers the transfer log does not hold.
     pub last_transfer: Option<TransferLogResponse>,
 }
 

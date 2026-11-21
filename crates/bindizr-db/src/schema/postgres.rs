@@ -1,4 +1,5 @@
-//! PostgreSQL DDL.
+//! PostgreSQL DDL: name columns compare bytewise (`COLLATE "C"`), as MySQL's
+//! binary collations and SQLite do, so listings order alike on every backend.
 
 /// Return the statements that create the application schema.
 pub(crate) fn table_creation_queries() -> Vec<&'static str> {
@@ -19,7 +20,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS zones (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(1020) UNIQUE NOT NULL,
+            name VARCHAR(1020) COLLATE "C" UNIQUE NOT NULL,
             mname VARCHAR(1020) NOT NULL,
             rname VARCHAR(1020) NOT NULL,
             default_ttl BIGINT NOT NULL,
@@ -42,7 +43,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(1024) NOT NULL,
+            name VARCHAR(1024) COLLATE "C" NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             value TEXT NOT NULL,
             display_value TEXT NOT NULL,
@@ -66,7 +67,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             zone_id INTEGER NOT NULL,
             serial BIGINT NOT NULL,
             operation VARCHAR(10) NOT NULL,
-            record_name VARCHAR(1024) NOT NULL,
+            record_name VARCHAR(1024) COLLATE "C" NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             record_value TEXT,
             record_rdata BYTEA,
@@ -116,7 +117,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS roles (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) COLLATE "C" UNIQUE NOT NULL,
             description VARCHAR(255),
             created_at TIMESTAMPTZ NOT NULL
         );
@@ -139,7 +140,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS catalog_zones (
-            name VARCHAR(1020) PRIMARY KEY,
+            name VARCHAR(1020) COLLATE "C" PRIMARY KEY,
             digest VARCHAR(64) NOT NULL,
             serial BIGINT NOT NULL
         );
@@ -153,7 +154,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS tsig_keys (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) COLLATE "C" UNIQUE NOT NULL,
             algorithm VARCHAR(32) NOT NULL,
             secret VARCHAR(255) NOT NULL,
             role_id INTEGER NOT NULL,
@@ -167,8 +168,8 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS secondaries (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
-            address VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) COLLATE "C" UNIQUE NOT NULL,
+            address VARCHAR(255) COLLATE "C" UNIQUE NOT NULL,
             enabled BOOLEAN NOT NULL DEFAULT TRUE,
             notify_tsig_key_id INTEGER NULL,
             created_at TIMESTAMPTZ NOT NULL,
@@ -181,7 +182,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS transfer_log (
             id SERIAL PRIMARY KEY,
-            client_addr VARCHAR(45) NOT NULL,
+            client_addr VARCHAR(45) COLLATE "C" NOT NULL,
             zone_id INTEGER NOT NULL,
             kind VARCHAR(4) NOT NULL,
             result VARCHAR(7) NOT NULL,
@@ -206,7 +207,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS audit_log (
             id SERIAL PRIMARY KEY,
             entity VARCHAR(16) NOT NULL,
-            entity_name VARCHAR(1020) NOT NULL,
+            entity_name VARCHAR(1020) COLLATE "C" NOT NULL,
             operation VARCHAR(16) NOT NULL,
             detail TEXT NULL,
             change_source VARCHAR(16) NOT NULL,
@@ -230,13 +231,13 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS access_log (
             id BIGSERIAL PRIMARY KEY,
             source VARCHAR(8) NOT NULL,
-            client_addr VARCHAR(45) NOT NULL,
+            client_addr VARCHAR(45) COLLATE "C" NOT NULL,
             method VARCHAR(16) NOT NULL,
             target TEXT NOT NULL,
             status VARCHAR(16) NOT NULL,
             result VARCHAR(6) NOT NULL,
             caller_kind VARCHAR(16),
-            caller_name VARCHAR(255),
+            caller_name VARCHAR(255) COLLATE "C",
             error TEXT NULL,
             requested_at TIMESTAMPTZ NOT NULL,
             CONSTRAINT chk_access_log_caller CHECK (
@@ -261,7 +262,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             role_id INTEGER NOT NULL,
             zone_id INTEGER NULL,
             actions VARCHAR(512) NOT NULL,
-            record_name_pattern VARCHAR(1024) NOT NULL,
+            record_name_pattern VARCHAR(1024) COLLATE "C" NOT NULL,
             record_types VARCHAR(255) NOT NULL,
             created_at TIMESTAMPTZ NOT NULL,
             FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
@@ -298,7 +299,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS dnssec_records (
             id SERIAL PRIMARY KEY,
             zone_id INTEGER NOT NULL,
-            name VARCHAR(1024) NOT NULL,
+            name VARCHAR(1024) COLLATE "C" NOT NULL,
             record_type INTEGER NOT NULL,
             covered_record_type INTEGER,
             ttl BIGINT NOT NULL,

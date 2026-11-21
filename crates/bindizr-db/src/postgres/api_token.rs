@@ -1,9 +1,8 @@
 use bindizr_core::model::api_token::{ApiToken, TokenId};
 use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
-use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
+use sqlx::{Pool, Postgres, Row, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
 /// Insert an API token.
@@ -35,16 +34,14 @@ pub(crate) async fn create_tx(
     Ok(token)
 }
 
-/// Get an API token by ID in the current transaction, locked at `lock_level`.
+/// Get an API token by ID in the current transaction, share-locked.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: TokenId,
-    lock_level: LockLevel,
 ) -> Result<Option<ApiToken>, DatabaseError> {
-    let token = sqlx::query_as::<_, ApiToken>(AssertSqlSafe(format!(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = $1{}",
-        lock_level.clause(),
-    )))
+    let token = sqlx::query_as::<_, ApiToken>(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = $1 FOR SHARE",
+    )
     .bind(id)
     .fetch_optional(&mut **tx)
     .await?;
@@ -110,21 +107,27 @@ pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<ApiToken>, Dat
     Ok(tokens)
 }
 
-/// Stamp when the token was last used.
+/// Stamp when the token was last used, returning whether it was stamped; a
+/// row a transaction holds is skipped, not waited for.
 pub(crate) async fn update_last_used_at(
     pool: &Pool<Postgres>,
     id: TokenId,
     last_used_at: DateTime<Utc>,
-) -> Result<(), DatabaseError> {
+) -> Result<bool, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    sqlx::query("UPDATE api_tokens SET last_used_at = $1 WHERE id = $2")
-        .bind(last_used_at)
-        .bind(id)
-        .execute(&mut *connection)
-        .await?;
+    let result = sqlx::query(
+        r#"
+        UPDATE api_tokens SET last_used_at = $1
+        WHERE id = (SELECT id FROM api_tokens WHERE id = $2 FOR UPDATE SKIP LOCKED)
+        "#,
+    )
+    .bind(last_used_at)
+    .bind(id)
+    .execute(&mut *connection)
+    .await?;
 
-    Ok(())
+    Ok(result.rows_affected() > 0)
 }
 
 /// Delete an API token by ID.

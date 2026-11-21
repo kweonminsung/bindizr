@@ -65,16 +65,16 @@ pub async fn get_with_zone(db: &Db, id: RecordId) -> Result<Option<RecordWithZon
     }
 }
 
-/// Get a record by ID in the current transaction.
+/// Get a record by ID in the current transaction, locking it for update
+/// (`FOR UPDATE` on MySQL/PostgreSQL).
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
     id: RecordId,
-    lock_level: LockLevel,
 ) -> Result<Option<Record>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::record::get_tx(tx, id, lock_level).await,
-        TransactionKind::Postgres(tx) => postgres::record::get_tx(tx, id, lock_level).await,
-        TransactionKind::Sqlite(tx) => sqlite::record::get_tx(tx, id, lock_level).await,
+        TransactionKind::MySql(tx) => mysql::record::get_tx(tx, id).await,
+        TransactionKind::Postgres(tx) => postgres::record::get_tx(tx, id).await,
+        TransactionKind::Sqlite(tx) => sqlite::record::get_tx(tx, id).await,
     }
 }
 
@@ -91,23 +91,17 @@ pub async fn list_tx(
     }
 }
 
-/// List records at an owner name in a zone in the current transaction.
+/// List records at an owner name in a zone in the current transaction, locking
+/// them for update (`FOR UPDATE` on MySQL/PostgreSQL).
 pub async fn list_by_name_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
     name: &OwnerName,
-    lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => {
-            mysql::record::list_by_name_tx(tx, zone_id, name, lock_level).await
-        }
-        TransactionKind::Postgres(tx) => {
-            postgres::record::list_by_name_tx(tx, zone_id, name, lock_level).await
-        }
-        TransactionKind::Sqlite(tx) => {
-            sqlite::record::list_by_name_tx(tx, zone_id, name, lock_level).await
-        }
+        TransactionKind::MySql(tx) => mysql::record::list_by_name_tx(tx, zone_id, name).await,
+        TransactionKind::Postgres(tx) => postgres::record::list_by_name_tx(tx, zone_id, name).await,
+        TransactionKind::Sqlite(tx) => sqlite::record::list_by_name_tx(tx, zone_id, name).await,
     }
 }
 

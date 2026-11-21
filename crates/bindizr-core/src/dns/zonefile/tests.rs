@@ -221,7 +221,7 @@ fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
     TransferRecord {
         name: name::to_fqdn(&record.owner().to_string()),
         rtype,
-        ttl: 300,
+        ttl: Ttl::from_secs(300),
         rdata: Rdata::new(bytes).unwrap(),
     }
 }
@@ -390,7 +390,7 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
     let invalid = TransferRecord {
         name: "txt.example.com.".to_string(),
         rtype: Rtype::TXT,
-        ttl: 300,
+        ttl: Ttl::from_secs(300),
         rdata: Rdata::new(vec![1, 255]).unwrap(),
     };
     let parsed = ParsedZoneFile::from_transfer(&[invalid], &zone_name);

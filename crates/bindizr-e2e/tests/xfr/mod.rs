@@ -443,7 +443,7 @@ async fn ixfr_serial_order_selects_soa_only_replies() {
         ] {
             for key in [None, Some(&key)] {
                 for udp in [false, true] {
-                    let query = common::build_ixfr_query(zone_name, client_serial);
+                    let query = dns::build_ixfr_query(zone_name, client_serial);
                     let response = dns::exchange_request(query, key, |message| {
                         if udp {
                             dns::exchange_udp(app.dns_port(), message)
@@ -512,7 +512,7 @@ async fn ixfr_soa_only_replies_require_transfer_permission() {
     for zone_name in [zone["name"].as_str().unwrap(), "catalog.bindizr"] {
         for serial in [current, current + 1] {
             for udp in [false, true] {
-                let query = common::build_ixfr_query(zone_name, serial);
+                let query = dns::build_ixfr_query(zone_name, serial);
                 let response = dns::exchange_request(query, Some(&key), |message| {
                     if udp {
                         dns::exchange_udp(app.dns_port(), message)
@@ -545,7 +545,7 @@ async fn unsigned_local_ixfr_requires_a_registered_secondary() {
 
         for qtype in [Rtype::SOA, Rtype::IXFR, Rtype::AXFR] {
             let query = if qtype == Rtype::IXFR {
-                common::build_ixfr_query(zone_name, serial).finish()
+                dns::build_ixfr_query(zone_name, serial).finish()
             } else {
                 common::build_edns_query(zone_name, qtype, &[]).finish()
             };
@@ -1701,6 +1701,12 @@ async fn rejected_queries_keep_the_tcp_connection_usable() {
 
         assert_eq!(response.header().id(), 1234);
         assert_eq!(response.header().rcode(), expected);
+        // None of these questions concerns a zone held here, so none claims
+        // authority (RFC 1035, Section 4.1.1).
+        assert!(
+            !response.header().aa(),
+            "{opcode} {qtype} {qclass} answered with AA set"
+        );
 
         let query = common::build_edns_query(zone_name, Rtype::SOA, &[]).finish();
         dns::write_frame(&mut stream, &query).unwrap();

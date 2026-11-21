@@ -52,17 +52,16 @@ pub async fn delete(
 
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        let existing_record =
-            match bindizr_db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
-                Ok(Some(record)) if record.zone_id == zone.id => record,
-                Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
-                Err(error) => {
-                    return Err(ServiceError::internal_with_source(
-                        "failed to fetch record",
-                        error,
-                    ));
-                }
-            };
+        let existing_record = match bindizr_db::record::get_tx(&mut tx, record_id).await {
+            Ok(Some(record)) if record.zone_id == zone.id => record,
+            Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
+            Err(error) => {
+                return Err(ServiceError::internal_with_source(
+                    "failed to fetch record",
+                    error,
+                ));
+            }
+        };
 
         // A record the caller may neither read nor delete reads as 404, as
         // it does on GET, so ids cannot be probed.
@@ -86,13 +85,9 @@ pub async fn delete(
 
         // Only a preview carries the diff; the owner's rows frame it.
         let diff = if run.is_dry_run() {
-            let records_at_name = bindizr_db::record::list_by_name_tx(
-                &mut tx,
-                zone.id,
-                &existing_record.name,
-                LockLevel::Exclusive,
-            )
-            .await?;
+            let records_at_name =
+                bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &existing_record.name)
+                    .await?;
             let before = caller.readable_records(
                 zone.id,
                 records_at_name.iter().cloned().map(RecordData::from),
@@ -186,7 +181,7 @@ pub async fn delete_matching(
 
     if request.value.is_some() && record_type.is_none() {
         return Err(ServiceError::invalid_input(
-            "value narrows a record within one type, so record_type is required with it",
+            "value narrows a record within one type, so type is required with it",
         ));
     }
 
@@ -218,9 +213,7 @@ pub async fn delete_matching(
             }],
         )?;
 
-        let records_at_name =
-            bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
-                .await?;
+        let records_at_name = bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &owner).await?;
         let matched: Vec<Record> = records_at_name
             .iter()
             .filter(|record| record.matches(record_type, match_value.as_deref(), request.priority))

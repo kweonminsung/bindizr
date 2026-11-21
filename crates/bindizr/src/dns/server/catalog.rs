@@ -1,9 +1,9 @@
 //! Encode and stream the service's virtual catalog as AXFR or IXFR.
 
+use bindizr_core::dns::CatalogZone;
 use bindizr_core::dns::message::{DnsMessageBuilder, ParsedQuery, Rtype};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::tsig::TransferSigner;
-use bindizr_core::dns::{CatalogZone, Serial};
 
 use crate::dns::error::DnsError;
 use crate::dns::stream::ResponseWriter;
@@ -42,7 +42,6 @@ pub(crate) async fn send_catalog_response(
         // RFC 1995, Section 2: equal or newer clients need only the current SOA.
         if query.qtype == Rtype::IXFR
             && query.client_serial.is_some_and(|client_serial| {
-                let client_serial = Serial::from(client_serial);
                 client_serial == serial || client_serial.is_newer_than(serial)
             })
         {

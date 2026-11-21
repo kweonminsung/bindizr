@@ -39,12 +39,9 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
     }
 
-    let client_serial = match query.client_serial {
-        Some(serial) => Serial::from(serial),
-        None => {
-            log::warn!("IXFR: No client serial provided, falling back to AXFR");
-            return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
-        }
+    let Some(client_serial) = query.client_serial else {
+        log::warn!("IXFR: No client serial provided, falling back to AXFR");
+        return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
     };
 
     // Authorize and select a response atomically; invalid names receive NOTAUTH.

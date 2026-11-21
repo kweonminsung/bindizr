@@ -16,7 +16,8 @@ use crate::authorization::Caller;
 use crate::dnssec::{SignedZone, parent_ns_addrs};
 use crate::error::ServiceError;
 use crate::types::{
-    DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest,
+    DnssecStatusResponse, DsCheck, EnableDnssecRequest, MessageResponse,
+    UpdateDnssecSettingsRequest,
 };
 use crate::{Context, audit, dnssec, dnssec_policy, notify, serial, transaction, zone};
 
@@ -318,7 +319,7 @@ pub async fn disable(
     caller: &Caller,
     zone_name: &ZoneName,
     ds_check: DsCheck,
-) -> Result<(), ServiceError> {
+) -> Result<MessageResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to disable DNSSEC").await?;
 
     let apply_result: Result<_, ServiceError> = async {
@@ -386,12 +387,18 @@ pub async fn disable(
 
     notify::notify_after_update(cx, zone_name).await;
 
-    Ok(())
+    Ok(MessageResponse {
+        message: format!("DNSSEC disabled for zone '{zone_name}'"),
+    })
 }
 
 /// Re-sign a zone from scratch, discarding stored signatures (recovery
 /// hatch when stored state is doubted).
-pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result<(), ServiceError> {
+pub async fn sign(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+) -> Result<MessageResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
 
     let apply_result: Result<_, ServiceError> = async {
@@ -424,7 +431,9 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
         notify::notify_after_update(cx, zone_name).await;
     }
 
-    Ok(())
+    Ok(MessageResponse {
+        message: format!("Zone '{zone_name}' signed successfully"),
+    })
 }
 
 #[cfg(test)]

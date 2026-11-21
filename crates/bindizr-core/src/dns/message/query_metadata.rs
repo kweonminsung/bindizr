@@ -1,6 +1,6 @@
 //! Error and truncated replies, including requests without a readable question.
 
-use domain::base::iana::{Opcode, OptRcode};
+use domain::base::iana::{Opcode, OptRcode, Rtype};
 use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
 use domain::base::{Message, Question};
 use domain::rdata::tsig::Time48;
@@ -96,11 +96,11 @@ impl QueryMetadata {
         rcode: OptRcode,
         truncated: bool,
         ede: Option<ExtendedErrorCode>,
-        mut signer: Option<&mut TransferSigner>,
+        signer: Option<&mut TransferSigner>,
     ) -> Result<Vec<u8>, EncodeMessageError> {
         let limit = self.response_limit();
-
-        for minimal in [false, true] {
+        // Signed on a copy of the chain, which is committed only once a message fits.
+        let build = |minimal: bool| -> Result<_, EncodeMessageError> {
             let mut candidate_signer = signer.as_deref().cloned();
             let mut additional = self.build_response(
                 if minimal {
@@ -122,23 +122,26 @@ impl QueryMetadata {
                     .map_err(|error| EncodeMessageError::Sign(Box::new(error)))?;
             }
 
-            let response = additional.finish().into_target();
+            Ok((additional.finish().into_target(), candidate_signer))
+        };
 
-            match limit.validate_len(response.len()) {
-                Ok(()) => {
-                    if let (Some(signer), Some(candidate)) =
-                        (signer.as_deref_mut(), candidate_signer)
-                    {
-                        *signer = candidate;
-                    }
-                    return Ok(response);
-                }
-                Err(error) if minimal || !limit.is_udp() => return Err(error),
-                Err(_) => {}
+        let (mut response, mut candidate_signer) = build(false)?;
+
+        // A UDP overflow is answered NOERROR with TC; a stream overflow is an error.
+        if let Err(error) = limit.validate_len(response.len()) {
+            if !limit.is_udp() {
+                return Err(error);
             }
+
+            (response, candidate_signer) = build(true)?;
+            limit.validate_len(response.len())?;
         }
 
-        unreachable!()
+        if let (Some(signer), Some(candidate)) = (signer, candidate_signer) {
+            *signer = candidate;
+        }
+
+        Ok(response)
     }
 
     /// Build a question-only response with EDNS, ready for optional TSIG signing.
@@ -160,9 +163,16 @@ impl QueryMetadata {
 
         // RFC 5936, Section 2.2.1: AA stays set on an error about a held zone and
         // "if in doubt"; NOTAUTH, FORMERR and NOTIMP deny authority, so it clears.
+        // Only an SOA or transfer question names a zone this server may hold: a
+        // refusal of any other question claims no authority (RFC 1035, Section 4.1.1).
+        let about_held_zone = self.opcode == Opcode::QUERY
+            && self.question.as_ref().is_some_and(|question| {
+                matches!(question.qtype(), Rtype::SOA | Rtype::AXFR | Rtype::IXFR)
+            });
         header.set_aa(
             self.question.is_some()
-                && (truncated || matches!(rcode, OptRcode::REFUSED | OptRcode::SERVFAIL)),
+                && (truncated
+                    || about_held_zone && matches!(rcode, OptRcode::REFUSED | OptRcode::SERVFAIL)),
         );
         header.set_tc(truncated);
 

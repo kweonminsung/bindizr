@@ -34,7 +34,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
         for key in [None, Some(&key)] {
             for qtype in [Rtype::SOA, Rtype::IXFR] {
                 let query = if qtype == Rtype::IXFR {
-                    common::build_ixfr_query(qname, 1)
+                    dns::build_ixfr_query(qname, 1)
                 } else {
                     common::build_edns_query(qname, qtype, &[(0, false)])
                 };
@@ -60,7 +60,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
                 assert_eq!(response.header_counts().ancount(), 1);
 
                 let query = if qtype == Rtype::IXFR {
-                    common::build_ixfr_query(qname, 1)
+                    dns::build_ixfr_query(qname, 1)
                 } else {
                     common::build_edns_query(qname, qtype, &[(0, false)])
                 };

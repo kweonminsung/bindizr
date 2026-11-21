@@ -51,11 +51,11 @@ pub(crate) async fn delete_role(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    role::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("Role '{name}' deleted successfully");
+    let response = role::delete(cx, &Caller::socket(), name).await?;
+
     Ok(DaemonResponse {
-        message: message.clone(),
-        data: MessageResponse { message },
+        message: response.message.clone(),
+        data: response,
     })
 }
 
@@ -91,10 +91,10 @@ pub(crate) async fn delete_role_grant(
     role_name: &str,
     id: RoleGrantId,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    grant::revoke(cx, &Caller::socket(), role_name, id).await?;
-    let message = "Role grant revoked successfully".to_string();
+    let response = grant::revoke(cx, &Caller::socket(), role_name, id).await?;
+
     Ok(DaemonResponse {
-        message: message.clone(),
-        data: MessageResponse { message },
+        message: response.message.clone(),
+        data: response,
     })
 }

@@ -31,15 +31,7 @@ pub(crate) async fn handle_axfr(
 
             access = zone::refresh_catalog_content(cx, &identity.caller) => access?,
         };
-        let content = match access {
-            TransferAccess::Granted(content) => content,
-            TransferAccess::NotAuth => {
-                return Err(DnsError::NotAuth {
-                    zone_name: zone_name_str.to_string(),
-                });
-            }
-            TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
-        };
+        let content = access.map_err(|reason| DnsError::Refused { reason })?;
 
         return catalog::send_catalog_response(writer, query, &mut identity.signer, content).await;
     }

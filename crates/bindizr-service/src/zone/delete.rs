@@ -1,9 +1,7 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::zone_version::VersionFilter;
 use bindizr_db::LockLevel;
-use bindizr_db::record::RecordFilter;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
@@ -26,17 +24,10 @@ pub async fn delete(
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::ZoneDelete, &zone)?;
 
-        // Counted for the report, not acted on, so they run unlocked.
-        let records = bindizr_db::record::count_by_filter(
-            cx.db(),
-            &RecordFilter {
-                zone_name: Some(zone.name.clone()),
-                ..Default::default()
-            },
-        )
-        .await?;
-        let versions =
-            bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, VersionFilter::All).await?;
+        // Counted for the report on the open transaction, which holds the
+        // only connection this request takes.
+        let records = bindizr_db::record::count_tx(&mut tx, zone.id).await?;
+        let versions = bindizr_db::zone_version::count_tx(&mut tx, zone.id).await?;
 
         let response = DeleteZoneResponse {
             applied: !run.is_dry_run(),

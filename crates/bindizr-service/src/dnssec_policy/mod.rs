@@ -14,8 +14,8 @@ use chrono::Utc;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{
-    CreateDnssecPolicyRequest, DnssecPolicyResponse, PageRequest, PaginatedResponse,
-    UpdateDnssecPolicyRequest,
+    CreateDnssecPolicyRequest, DnssecPolicyResponse, MessageResponse, PageRequest,
+    PaginatedResponse, UpdateDnssecPolicyRequest,
 };
 use crate::{Context, audit, pagination, text, transaction};
 
@@ -254,7 +254,11 @@ pub async fn update(
 
 /// Delete a policy by name; refused for the built-in `default` and while
 /// any zone signs under it.
-pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
+pub async fn delete(
+    cx: &Context,
+    caller: &Caller,
+    name: &str,
+) -> Result<MessageResponse, ServiceError> {
     caller.authorize_action(Action::DnssecManage)?;
 
     let policy = lookup_by_name(cx, name).await?;
@@ -310,7 +314,11 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, apply_result, "failed to delete DNSSEC policy").await
+    transaction::finish_tx(tx, apply_result, "failed to delete DNSSEC policy").await?;
+
+    Ok(MessageResponse {
+        message: format!("DNSSEC policy '{}' deleted successfully", policy.name),
+    })
 }
 
 /// Normalize a policy name: lowercased so one name means one policy on every

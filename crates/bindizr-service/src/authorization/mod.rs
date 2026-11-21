@@ -135,20 +135,28 @@ impl Caller {
             Utc::now() - last_used < Duration::seconds(LAST_USED_STAMP_INTERVAL_SECS)
         });
 
+        // The stamp only records the use, so a request never waits on or
+        // fails over it; a skipped or failed stamp leaves the stored one.
         let token = if stamp_is_fresh {
             stored_token
         } else {
             let last_used_at = Utc::now();
 
-            bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
+            match bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
                 .await
-                .map_err(|error| {
-                    ServiceError::internal_with_source("failed to update last_used_at", error)
-                })?;
-
-            ApiToken {
-                last_used_at: Some(last_used_at),
-                ..stored_token
+            {
+                Ok(true) => ApiToken {
+                    last_used_at: Some(last_used_at),
+                    ..stored_token
+                },
+                Ok(false) => stored_token,
+                Err(error) => {
+                    log::warn!(
+                        "Failed to stamp the last use of token '{}': {error}",
+                        stored_token.name
+                    );
+                    stored_token
+                }
             }
         };
 
@@ -257,7 +265,7 @@ impl Caller {
                 credential: Credential::Token(token_id),
                 ..
             } => {
-                let token = bindizr_db::api_token::get_tx(tx, *token_id, LockLevel::Shared)
+                let token = bindizr_db::api_token::get_tx(tx, *token_id)
                     .await?
                     .filter(|token| !token.is_expired(Utc::now()))
                     .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
@@ -265,8 +273,7 @@ impl Caller {
                 (token.role_id, Credential::Token(token.id))
             }
         };
-        let grants =
-            bindizr_db::role_grant::list_by_role_id_tx(tx, role_id, LockLevel::Shared).await?;
+        let grants = bindizr_db::role_grant::list_by_role_id_tx(tx, role_id).await?;
 
         Ok(Self {
             scope: CallerScope::Role {

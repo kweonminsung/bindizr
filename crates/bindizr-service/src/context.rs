@@ -28,9 +28,9 @@ pub enum ReloadConfigError {
 
 /// A refused reload is the operator's to fix.
 impl From<ReloadConfigError> for ServiceError {
-    /// Build an invalid-input error from the reload failure.
+    /// Build an invalid-input error from the reload failure, keeping its cause.
     fn from(error: ReloadConfigError) -> Self {
-        Self::invalid_input(error)
+        Self::invalid_input_with_source(error.to_string(), error)
     }
 }
 

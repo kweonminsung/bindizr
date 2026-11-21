@@ -201,13 +201,7 @@ async fn update_locked(
                     };
                 let caller = caller.reauthenticate_tx(&mut tx).await?;
 
-                let existing_record = match bindizr_db::record::get_tx(
-                    &mut tx,
-                    record_id,
-                    LockLevel::Exclusive,
-                )
-                .await
-                {
+                let existing_record = match bindizr_db::record::get_tx(&mut tx, record_id).await {
                     Ok(Some(record)) if record.zone_id == zone.id => record,
                     Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
                     Err(error) => {
@@ -238,23 +232,19 @@ async fn update_locked(
                 caller.authorize_zone_visible(&zone)?;
 
                 // Count only what the caller may read or update.
-                let mut matched: Vec<Record> = bindizr_db::record::list_by_name_tx(
-                    &mut tx,
-                    zone.id,
-                    owner,
-                    LockLevel::Exclusive,
-                )
-                .await?
-                .into_iter()
-                .filter(|record| {
-                    caller.reaches_record(
-                        Action::RecordUpdate,
-                        zone.id,
-                        &record.name,
-                        Some(record.record_type),
-                    )
-                })
-                .collect();
+                let mut matched: Vec<Record> =
+                    bindizr_db::record::list_by_name_tx(&mut tx, zone.id, owner)
+                        .await?
+                        .into_iter()
+                        .filter(|record| {
+                            caller.reaches_record(
+                                Action::RecordUpdate,
+                                zone.id,
+                                &record.name,
+                                Some(record.record_type),
+                            )
+                        })
+                        .collect();
 
                 match matched.len() {
                     1 => (zone, matched.remove(0), caller),
@@ -298,14 +288,12 @@ async fn update_locked(
 
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name = bindizr_db::record::list_by_name_tx(
-            &mut tx,
-            zone.id,
-            &candidate.name,
-            LockLevel::Exclusive,
-        )
-        .await
-        .map_err(|error| ServiceError::internal_with_source("failed to update record", error))?;
+        let records_at_name =
+            bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &candidate.name)
+                .await
+                .map_err(|error| {
+                    ServiceError::internal_with_source("failed to update record", error)
+                })?;
 
         record::validate_record_constraints(
             &records_at_name,
@@ -337,13 +325,8 @@ async fn update_locked(
 
             if candidate.name != existing_record.name {
                 framed.extend(
-                    bindizr_db::record::list_by_name_tx(
-                        &mut tx,
-                        zone.id,
-                        &existing_record.name,
-                        LockLevel::Exclusive,
-                    )
-                    .await?,
+                    bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &existing_record.name)
+                        .await?,
                 );
             }
 

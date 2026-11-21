@@ -131,7 +131,7 @@ async fn lookup_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
     let delay = match refresh {
         Ok(refresh) => window.min(Duration::from_secs(u64::from(refresh.as_secs()))),
         Err(error) => {
-            log::warn!("queued notify: failed to read SOA REFRESH; sending immediately: {error}");
+            log::warn!("queued notify: failed to read SOA REFRESH; sending immediately: {error:?}");
             Duration::ZERO
         }
     };
@@ -190,7 +190,7 @@ async fn start_batch(cx: &Arc<Context>, batch: HashSet<ZoneName>, tasks: &mut Jo
         let cx = cx.clone();
         tasks.spawn(async move {
             if let Err(error) = notify::send_zone_notify(&cx, &zone_name).await {
-                log::warn!("queued notify: NOTIFY failed for zone {zone_name}: {error}");
+                log::warn!("queued notify: NOTIFY failed for zone {zone_name}: {error:?}");
             }
         });
     }

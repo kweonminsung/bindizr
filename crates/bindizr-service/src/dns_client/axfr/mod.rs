@@ -162,32 +162,36 @@ impl AxfrClient {
             };
             let reused = previous.is_some();
 
+            // Every failure past resolution names the address it met.
+            let at_server = |addr, source| FetchZoneError::Server {
+                addr,
+                source: Box::new(source),
+            };
             let (addr, mut stream) = match (self.addr, previous) {
                 (Some(addr), Some(stream)) => (addr, stream),
                 (Some(addr), None) => (
                     addr,
                     TcpStream::connect(addr)
                         .await
-                        .map_err(FetchZoneError::Connect)?,
+                        .map_err(|error| at_server(addr, FetchZoneError::Connect(error)))?,
                 ),
                 (None, _) => connect_to_server(&self.server, import).await?,
             };
             self.addr = Some(addr);
 
-            let result = match fetch_zone_on_stream(&mut stream, &qname, import.max_records).await {
-                // Nothing came back on a reused connection: the primary let it
-                // go, as RFC 7766, Section 6.2.1 allows, so start a fresh one.
-                Err(FetchZoneError::Send(_) | FetchZoneError::Read(_)) if reused => {
-                    stream = TcpStream::connect(addr)
-                        .await
-                        .map_err(FetchZoneError::Connect)?;
-                    fetch_zone_on_stream(&mut stream, &qname, import.max_records).await
+            let result =
+                match fetch_zone_on_stream(&mut stream, &qname, import.max_records).await {
+                    // Nothing came back on a reused connection: the primary let it
+                    // go, as RFC 7766, Section 6.2.1 allows, so start a fresh one.
+                    Err(FetchZoneError::Send(_) | FetchZoneError::Read(_)) if reused => {
+                        stream = TcpStream::connect(addr)
+                            .await
+                            .map_err(|error| at_server(addr, FetchZoneError::Connect(error)))?;
+                        fetch_zone_on_stream(&mut stream, &qname, import.max_records).await
+                    }
+                    result => result,
                 }
-                result => result.map_err(|source| FetchZoneError::Server {
-                    addr,
-                    source: Box::new(source),
-                }),
-            };
+                .map_err(|source| at_server(addr, source));
 
             result.map(|(records, idle_timeout)| (records, idle_timeout, stream))
         };

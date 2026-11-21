@@ -1,20 +1,17 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
-use sqlx::{AssertSqlSafe, MySql, Transaction};
+use sqlx::{MySql, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
 
-/// Find the catalog's stored serial, locking its row at `lock_level`.
+/// Find the catalog's stored serial, locking its row for update.
 pub(crate) async fn find_serial_tx(
     tx: &mut Transaction<'_, MySql>,
     catalog_zone_name: &ZoneName,
-    lock_level: LockLevel,
 ) -> Result<Option<Serial>, DatabaseError> {
-    let serial = sqlx::query_scalar::<_, Serial>(AssertSqlSafe(format!(
-        "SELECT serial FROM catalog_zones WHERE name = ?{}",
-        lock_level.clause(),
-    )))
+    let serial = sqlx::query_scalar::<_, Serial>(
+        "SELECT serial FROM catalog_zones WHERE name = ? FOR UPDATE",
+    )
     .bind(catalog_zone_name)
     .fetch_optional(&mut **tx)
     .await?;

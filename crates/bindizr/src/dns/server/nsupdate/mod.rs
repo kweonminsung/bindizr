@@ -212,7 +212,7 @@ async fn handle_nsupdate_request(
             access_log.error = Some(format!("unacceptable EDNS: {rcode}"));
             (rcode, None)
         }
-        Err(error @ UpdateError::NotAuth { .. }) => {
+        Err(error @ UpdateError::NotAuth(_)) => {
             log::warn!("NSUPDATE notauth from {client_addr}: {error}");
             access_log.error = Some(error.to_string());
             (

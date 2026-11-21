@@ -8,7 +8,6 @@ use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
 use bindizr_core::dns::record::{CaaRecordValue, MxRecordValue};
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::zone::Zone;
-use bindizr_db::LockLevel;
 
 use crate::error::ServiceError;
 use crate::types::RecordValue;
@@ -261,10 +260,9 @@ pub(crate) async fn validate_add_tx(
 ) -> Result<AddResult, ServiceError> {
     // Only records sharing the owner name can conflict, so load just those
     // instead of the whole zone.
-    let records_at_name =
-        bindizr_db::record::list_by_name_tx(tx, zone.id, owner, LockLevel::Exclusive)
-            .await
-            .map_err(|error| ServiceError::internal_with_source("failed to load records", error))?;
+    let records_at_name = bindizr_db::record::list_by_name_tx(tx, zone.id, owner)
+        .await
+        .map_err(|error| ServiceError::internal_with_source("failed to load records", error))?;
 
     if has_matching_rdata(records_at_name.iter(), record_type, value, priority) {
         return Ok(AddResult::Duplicate);

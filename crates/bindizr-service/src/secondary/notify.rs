@@ -19,7 +19,7 @@ pub(crate) async fn find_notify_signing_key(
 
     tsig_key.to_signing_key().map(Some).map_err(|error| {
         ServiceError::internal_with_source(
-            format!("NOTIFY key '{}' is unusable: {error:?}", tsig_key.name),
+            format!("NOTIFY key '{}' is unusable", tsig_key.name),
             error,
         )
     })

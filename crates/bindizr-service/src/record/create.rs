@@ -51,12 +51,11 @@ pub async fn create(
 
         // Only records sharing the owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name =
-            bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
-                .await
-                .map_err(|error| {
-                    ServiceError::internal_with_source("failed to create record", error)
-                })?;
+        let records_at_name = bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &owner)
+            .await
+            .map_err(|error| {
+                ServiceError::internal_with_source("failed to create record", error)
+            })?;
 
         // Fixed at write time: a later zone TTL change will not move it.
         let ttl = ttl.unwrap_or(zone.default_ttl);

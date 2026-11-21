@@ -132,6 +132,15 @@ impl RecordSortField {
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
         let direction = order.keyword();
 
+        // Only priority is nullable, and backends place NULL apart: PostgreSQL
+        // sorts it last ascending, MySQL and SQLite first. The NULL test leads,
+        // so every backend puts it first ascending.
+        if self == Self::Priority {
+            return format!(
+                "ORDER BY (r.priority IS NOT NULL) {direction}, r.priority {direction}, r.id {direction}"
+            );
+        }
+
         format!("ORDER BY {} {direction}, r.id {direction}", self.column())
     }
 }

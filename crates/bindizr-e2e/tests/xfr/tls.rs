@@ -472,7 +472,7 @@ async fn ixfr_serial_policy_requires_a_key_and_registered_address() {
             };
 
             for serial in [expected, expected.wrapping_add(1)] {
-                let query = common::build_ixfr_query(zone_name, serial);
+                let query = dns::build_ixfr_query(zone_name, serial);
                 let response = dns::exchange_request(query, Some(&key), |message| {
                     dns::exchange_tls(app.dns_tls_port(), message, common::dot_client(&app))
                 })

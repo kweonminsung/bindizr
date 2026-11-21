@@ -3,6 +3,7 @@
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::rdata::AllRecordData;
 
+use crate::dns::Ttl;
 use crate::dns::name::WireName;
 use crate::dns::query::response;
 use crate::dns::query::response::ParseResponseError;
@@ -14,7 +15,7 @@ pub struct TransferRecord {
     /// Owner name as an absolute presentation name (trailing dot).
     pub name: String,
     pub rtype: Rtype,
-    pub ttl: u32,
+    pub ttl: Ttl,
     pub rdata: Rdata,
 }
 
@@ -63,7 +64,7 @@ pub fn extract_transfer_records(
             // Keep the root dot so import cannot re-qualify this absolute name.
             name: format!("{}.", record.owner()),
             rtype: record.rtype(),
-            ttl: record.ttl().as_secs(),
+            ttl: Ttl::from(record.ttl()),
             rdata: Rdata::new(rdata)?,
         });
     }
