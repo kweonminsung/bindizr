@@ -4,6 +4,11 @@
 use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder};
 use thiserror::Error;
 
+/// The Prometheus text encoder refused a gathered family.
+#[derive(Debug, Error)]
+#[error("failed to encode metrics: {0}")]
+pub(crate) struct EncodeMetricsError(#[source] prometheus::Error);
+
 /// Failure to register an adapter metric collector.
 #[derive(Debug, Error)]
 #[error(transparent)]
@@ -65,9 +70,9 @@ impl AdapterMetrics {
     }
 
     /// Render the adapter's metrics in Prometheus text format.
-    pub(crate) fn encode(&self) -> String {
+    pub(crate) fn encode(&self) -> Result<String, EncodeMetricsError> {
         TextEncoder::new()
             .encode_to_string(&self.registry.gather())
-            .unwrap_or_default()
+            .map_err(EncodeMetricsError)
     }
 }

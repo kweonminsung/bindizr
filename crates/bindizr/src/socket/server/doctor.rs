@@ -116,7 +116,7 @@ pub(crate) async fn check_installation(
     let diagnostics = if database.status == DoctorCheckStatus::Failed {
         CheckSecondariesResponse::default()
     } else {
-        secondary::check_enabled(cx, &caller, &config.dns.catalog_zone_name, catalog_serial).await?
+        secondary::check_enabled(cx, &caller, catalog_serial).await?
     };
 
     let response = DaemonDoctorResponse {

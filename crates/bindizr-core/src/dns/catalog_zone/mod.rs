@@ -10,6 +10,7 @@ use thiserror::Error;
 
 use crate::dns::name::{MAX_WIRE_NAME_LEN, OwnerName, ParseNameError, WireName, ZoneName};
 use crate::dns::query::TransferRecord;
+use crate::dns::record::TxtRecordValue;
 use crate::dns::{Serial, SoaInterval, Ttl};
 
 /// Digest octets retained in stable catalog member IDs.
@@ -59,7 +60,7 @@ pub enum ExtractMemberZonesError {
     MissingVersion,
     #[error("the catalog carries more than one version record (RFC 9432, Section 4.2.1)")]
     VersionNotSingular,
-    #[error("the catalog is schema version '{found}', not 2 (RFC 9432, Section 4.2.1)")]
+    #[error("the catalog's version is {found}, not \"2\" (RFC 9432, Section 4.2.1)")]
     UnsupportedVersion { found: String },
     #[error("invalid owner name '{name}': {source}")]
     OwnerName {
@@ -146,12 +147,12 @@ pub fn extract_member_zones(
         // One character-string, "2": the rdata is its length byte and the digit.
         Some(rdata) if rdata == [1, b'2'] => {}
         Some(rdata) => {
-            let found = rdata
-                .first()
-                .map(|len| &rdata[1..rdata.len().min(1 + usize::from(*len))])
-                .map(String::from_utf8_lossy)
-                .unwrap_or_default()
-                .into_owned();
+            // The whole value, every character-string of it, as a zone file
+            // spells it; RDATA no TXT reading accepts is shown as it came.
+            let found = TxtRecordValue::from_rdata(&rdata).map_or_else(
+                |_| String::from_utf8_lossy(&rdata).into_owned(),
+                |txt| txt.to_presentation(),
+            );
             return Err(ExtractMemberZonesError::UnsupportedVersion { found });
         }
         None => return Err(ExtractMemberZonesError::MissingVersion),

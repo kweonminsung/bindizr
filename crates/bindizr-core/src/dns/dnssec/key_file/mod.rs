@@ -12,7 +12,8 @@ use crate::dns::dnssec::KeyTag;
 use crate::dns::dnssec::rdata::DNSKEY_PROTOCOL;
 use crate::dns::{LibraryError, Ttl};
 use crate::model::dnssec_key::{
-    DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
+    DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState, SEP_KEY_FLAGS,
+    ZONE_KEY_FLAGS,
 };
 use crate::model::dnssec_policy::DnssecKeyLayout;
 use crate::model::zone::Zone;
@@ -36,15 +37,15 @@ pub enum ImportKeyError {
     DnskeyShape,
     #[error("invalid DNSKEY flags '{value}'")]
     Flags { value: String },
-    #[error("DNSKEY protocol must be 3, got '{value}'")]
+    #[error("DNSKEY protocol must be {DNSKEY_PROTOCOL}, got '{value}'")]
     Protocol { value: String },
     #[error("unsupported DNSKEY algorithm '{value}'")]
     Algorithm { value: String },
     #[error("DNSKEY public key is not base64: {0}")]
     PublicKeyNotBase64(#[source] DecodeError),
-    #[error("a 256-flag key is a ZSK, which a single-CSK layout does not use")]
+    #[error("a {ZONE_KEY_FLAGS}-flag key is a ZSK, which a single-CSK layout does not use")]
     ZskInCskLayout,
-    #[error("unsupported DNSKEY flags {flags} (expected 256 or 257)")]
+    #[error("unsupported DNSKEY flags {flags} (expected {ZONE_KEY_FLAGS} or {SEP_KEY_FLAGS})")]
     UnsupportedFlags { flags: u16 },
     #[error("invalid DNSKEY: {0}")]
     Dnskey(#[source] LibraryError),
@@ -227,10 +228,10 @@ impl DnssecKey {
 
         // Interpret the SEP flag using the zone's CSK or split-key layout.
         let role = match (flags, layout) {
-            (257, DnssecKeyLayout::Csk) => DnssecKeyRole::Csk,
-            (257, DnssecKeyLayout::Split) => DnssecKeyRole::Ksk,
-            (256, DnssecKeyLayout::Split) => DnssecKeyRole::Zsk,
-            (256, DnssecKeyLayout::Csk) => return Err(ImportKeyError::ZskInCskLayout),
+            (SEP_KEY_FLAGS, DnssecKeyLayout::Csk) => DnssecKeyRole::Csk,
+            (SEP_KEY_FLAGS, DnssecKeyLayout::Split) => DnssecKeyRole::Ksk,
+            (ZONE_KEY_FLAGS, DnssecKeyLayout::Split) => DnssecKeyRole::Zsk,
+            (ZONE_KEY_FLAGS, DnssecKeyLayout::Csk) => return Err(ImportKeyError::ZskInCskLayout),
             _ => return Err(ImportKeyError::UnsupportedFlags { flags }),
         };
 

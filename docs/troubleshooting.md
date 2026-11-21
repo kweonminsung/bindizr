@@ -17,7 +17,7 @@ On a package install, run these commands with `sudo`.
 | `unknown field \`…\`` | start, `config check` | A mistyped configuration key; the message lists the keys the section accepts. |
 | `… connection failed (check database.mysql.url)` | start, doctor | The key the message names is wrong, or the database is unreachable from this host. `bindizr doctor` repeats the connection without the daemon. |
 | `Address already in use` / `DNS port in use` | start, doctor | The secondary on the same host holds the port. Keep `dns.listen_port` off 53 (the package default is 5300) and point the secondary's catalog zone at that port. |
-| `these settings are fixed while bindizr runs` | `config reload` | `[api]`, `[database]`, the DNS listen address and port, and the catalog name require a restart. See [Reloading](configuration.md#reloading). |
+| `these settings are fixed while bindizr runs` | `config reload` | `[api]`, `[database]`, the DNS listen address and port, `[dns.tls]`, `dns.tcp_max_connections`, and the catalog name require a restart. See [Reloading](configuration.md#reloading). |
 | `duplicate key value violates unique constraint "pg_type_typname_nsp_index"` | first start on PostgreSQL | Two replicas tried to initialize the schema at once. Let the failed replica restart after initialization finishes. If failures continue, inspect its startup and database logs. |
 
 ## Secondaries

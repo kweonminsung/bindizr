@@ -278,12 +278,12 @@ async fn handle_soa_request(
             .into_response(&QueryMetadata::from(query), query_data)
             .map(|response| (response, SoaResult::NotAuth));
         }
-        TransferAccess::Refused(reason) => {
+        TransferAccess::Refused(refusal) => {
             log::warn!(
-                "Refused {} query for {zone_name_str:?} from {client_ip}: {reason}",
+                "Refused {} query for {zone_name_str:?} from {client_ip}: {refusal}",
                 query.qtype
             );
-            return TransferRefusal::refused(reason, identity.signer)
+            return TransferRefusal::refused(refusal.to_string(), identity.signer)
                 .into_response(&QueryMetadata::from(query), query_data)
                 .map(|response| (response, SoaResult::Refused));
         }

@@ -36,6 +36,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         params(PageRequest),
         responses(
             (status = 200, description = "All secondaries", body = PaginatedResponse<SecondaryResponse>),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -64,7 +65,9 @@ pub(crate) async fn list_secondaries(
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
+            (status = 404, description = "NOTIFY TSIG key not found", body = ErrorResponse),
             (status = 409, description = "A secondary with the same name or address already exists", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -90,6 +93,7 @@ pub(crate) async fn create_secondary(
         ),
         responses(
             (status = 200, description = "The secondary", body = SingleSecondaryResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
@@ -124,6 +128,7 @@ pub(crate) async fn get_secondary(
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
             (status = 409, description = "Another secondary already has the address", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -151,6 +156,7 @@ pub(crate) async fn update_secondary(
         ),
         responses(
             (status = 200, description = "Secondary deleted successfully", body = MessageResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
@@ -178,6 +184,7 @@ pub(crate) async fn delete_secondary(
         ),
         responses(
             (status = 200, description = "What the secondary answered", body = CheckSecondaryResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),

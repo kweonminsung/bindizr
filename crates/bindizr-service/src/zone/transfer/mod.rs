@@ -19,13 +19,14 @@ use crate::{Context, Transaction, transaction, zone};
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer
 /// the DNS plane owes instead.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum TransferAccess<T> {
     Granted(T),
     /// No enabled zone carries the name: NOTAUTH.
     NotAuth,
-    /// The key's role holds no `zone:transfer` reaching the zone: REFUSED, signed by it.
-    Refused(String),
+    /// The key's role holds no `zone:transfer` reaching the zone: REFUSED,
+    /// signed by it; the DNS plane renders the error where it answers.
+    Refused(ServiceError),
 }
 
 impl<T> TransferAccess<T> {
@@ -181,7 +182,7 @@ async fn authorize_transfer_tx(
     };
     let caller = match reauthenticate_transfer_tx(tx, caller).await? {
         Ok(caller) => caller,
-        Err(refusal) => return Ok(TransferAccess::Refused(refusal.to_string())),
+        Err(refusal) => return Ok(TransferAccess::Refused(refusal)),
     };
 
     // A zone the role does not reach is refused rather than hidden: NOTAUTH
@@ -189,13 +190,13 @@ async fn authorize_transfer_tx(
     match caller.authorize_zone_action(Action::ZoneTransfer, &zone) {
         Ok(()) => Ok(TransferAccess::Granted(zone)),
         Err(error) if error.code() == ErrorCode::ZoneNotFound => {
-            Ok(TransferAccess::Refused(format!(
+            Ok(TransferAccess::Refused(ServiceError::forbidden(format!(
                 "role does not permit '{}' in zone '{}'",
                 Action::ZoneTransfer,
                 zone.name
-            )))
+            ))))
         }
-        Err(error) => Ok(TransferAccess::Refused(error.to_string())),
+        Err(error) => Ok(TransferAccess::Refused(error)),
     }
 }
 

@@ -257,6 +257,27 @@ fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
     }
 }
 
+/// Verify that a root SOA MNAME reads the same from a zone file and a transfer.
+#[test]
+fn zonefile_and_transfer_preserve_a_root_soa_mname() {
+    const SOA: &str = ". admin.example.com. 7 300 60 3600000 86400";
+    let zone_name = ZoneName::parse("example.com").unwrap();
+    let parsed = ParsedZoneFile::parse(
+        &format!("example.com. 300 IN SOA {SOA}\n"),
+        &zone_name,
+        Ttl::from_secs(300),
+    );
+    let transferred = ParsedZoneFile::from_transfer(
+        &[transfer_record("example.com.", Rtype::SOA, SOA)],
+        &zone_name,
+    );
+
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    assert!(transferred.errors.is_empty(), "{:?}", transferred.errors);
+    assert_eq!(transferred.soa.as_ref().unwrap().mname, ".");
+    assert_eq!(parsed.soa, transferred.soa);
+}
+
 /// Verify that the opening SOA becomes the zone's own, never one of its records.
 #[test]
 fn transfer_keeps_one_soa_for_creation() {

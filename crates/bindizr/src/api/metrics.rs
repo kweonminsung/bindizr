@@ -5,9 +5,11 @@ use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use bindizr_core::metrics::TEXT_CONTENT_TYPE;
+use bindizr_service::error::ServiceError;
 use bindizr_service::{Context, metrics};
 use tokio::time;
 
+use crate::api::error::ApiError;
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 
 /// Serve the Prometheus text-format scrape endpoint.
@@ -21,10 +23,13 @@ pub(crate) async fn handle_metrics(State(cx): State<Arc<Context>>) -> Response {
         _ => metrics.database_up.set(0),
     }
 
-    (
-        StatusCode::OK,
-        [(CONTENT_TYPE, TEXT_CONTENT_TYPE)],
-        metrics.encode(),
-    )
-        .into_response()
+    // An empty 200 would read as a healthy scrape with every series gone.
+    match metrics.encode() {
+        Ok(text) => (StatusCode::OK, [(CONTENT_TYPE, TEXT_CONTENT_TYPE)], text).into_response(),
+        Err(error) => ApiError(ServiceError::internal_with_source(
+            "failed to encode metrics",
+            error,
+        ))
+        .into_response(),
+    }
 }

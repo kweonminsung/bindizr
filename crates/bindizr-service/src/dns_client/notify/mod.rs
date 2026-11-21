@@ -25,7 +25,7 @@ use crate::dns_client::{ExchangeMessageError, UDP_RESPONSE_BUFFER_LEN};
 
 /// Why one NOTIFY to one address was not acknowledged.
 #[derive(Debug, Error)]
-pub enum SendNotifyError {
+pub(crate) enum SendNotifyError {
     /// A socket failure shared by its pending requests.
     #[error("{0}")]
     Io(#[source] Arc<io::Error>),

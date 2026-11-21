@@ -3,7 +3,7 @@
 
 pub(crate) mod axfr;
 pub(crate) mod ds;
-pub mod notify;
+pub(crate) mod notify;
 pub mod probe;
 
 use std::io;

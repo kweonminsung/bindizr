@@ -50,6 +50,11 @@ pub struct Metrics {
 #[error("failed to register a metric: {0}")]
 pub struct RegisterMetricsError(#[source] prometheus::Error);
 
+/// The Prometheus text encoder refused a gathered family.
+#[derive(Debug, Error)]
+#[error("failed to encode metrics: {0}")]
+pub struct EncodeMetricsError(#[source] prometheus::Error);
+
 /// Register a shared clone of a metric collector.
 fn register<C: Collector + Clone + 'static>(
     registry: &Registry,
@@ -344,10 +349,10 @@ impl Metrics {
     }
 
     /// Encode every registered metric in the Prometheus text format.
-    pub fn encode(&self) -> String {
+    pub fn encode(&self) -> Result<String, EncodeMetricsError> {
         TextEncoder::new()
             .encode_to_string(&self.registry.gather())
-            .unwrap_or_default()
+            .map_err(EncodeMetricsError)
     }
 }
 

@@ -72,7 +72,9 @@ pub(crate) async fn run_tcp_server(
                 connections.spawn(async move {
                     let _permit = permit;
 
-                    if let Err(error) = connection::serve_connection(
+                    // A peer that closed or broke off its frame is the client's end of
+                    // the connection, not a fault of Bindizr's.
+                    match connection::serve_connection(
                         dns_cx,
                         DnsStream::Tcp(stream),
                         client_addr,
@@ -80,7 +82,12 @@ pub(crate) async fn run_tcp_server(
                     )
                     .await
                     {
-                        log::error!("Failed to read DNS TCP message from {client_addr}: {error}");
+                        Ok(()) | Err(DnsError::PeerClosed) => {}
+                        Err(error) => {
+                            log::warn!(
+                                "Failed to read DNS TCP message from {client_addr}: {error}"
+                            );
+                        }
                     }
                 });
             }

@@ -58,6 +58,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         ),
         responses(
             (status = 200, description = "The zone's DNSSEC status", body = DnssecStatusResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
@@ -91,6 +92,7 @@ pub(crate) async fn get_dnssec_status(
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone or DNSSEC policy not found", body = ErrorResponse),
             (status = 409, description = "DNSSEC is already enabled for the zone", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -128,6 +130,7 @@ pub(crate) struct DisableDnssecQuery {
         ),
         responses(
             (status = 200, description = "DNSSEC disabled successfully", body = MessageResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
@@ -164,6 +167,7 @@ pub(crate) async fn disable_dnssec(
         ),
         responses(
             (status = 200, description = "Zone signed successfully", body = MessageResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
@@ -198,6 +202,7 @@ pub(crate) async fn sign_zone(
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 409, description = "DNSSEC is not enabled for the zone, or a rollover is already in progress", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -334,6 +339,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
         ),
         responses(
             (status = 200, description = "The parent's answer with the zone's DNSSEC status", body = DnssecStatusResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
@@ -368,6 +374,7 @@ pub(crate) async fn check_dnssec_ds(
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone or DNSSEC policy not found", body = ErrorResponse),
             (status = 409, description = "A policy was given for a zone without DNSSEC, or a rollover is already in progress", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

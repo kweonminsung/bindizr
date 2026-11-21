@@ -57,7 +57,11 @@ pub(crate) async fn handle_axfr(
                 zone_name: zone_name_str.to_string(),
             });
         }
-        TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
+        TransferAccess::Refused(refusal) => {
+            return Err(DnsError::Refused {
+                reason: refusal.to_string(),
+            });
+        }
     };
 
     log::info!(

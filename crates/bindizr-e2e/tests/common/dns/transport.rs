@@ -10,9 +10,12 @@ use domain::base::Message;
 use domain::base::message_builder::AdditionalBuilder;
 use domain::rdata::tsig::Time48;
 use domain::tsig::ClientTransaction;
-use rustls::pki_types::ServerName;
-use rustls::{ClientConfig, ClientConnection, StreamOwned};
+use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::{
+    ClientConfig, ClientConnection, RootCertStore, StreamOwned, SupportedProtocolVersion, version,
+};
 
+use crate::common::TestApp;
 use crate::common::dns::tsig::SigningKey;
 
 /// Return the original response after checking its ID and optional TSIG.
@@ -132,4 +135,25 @@ pub(crate) fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, Str
         .map_err(|error| error.to_string())?;
 
     Ok(Some(frame))
+}
+
+/// Build a TLS client with the run's certificate, versions, and ALPN.
+pub(crate) fn xot_client(
+    cert: &CertificateDer<'static>,
+    versions: &[&'static SupportedProtocolVersion],
+    alpn: &[&[u8]],
+) -> ClientConfig {
+    let mut roots = RootCertStore::empty();
+    roots.add(cert.clone()).unwrap();
+    let mut client = ClientConfig::builder_with_protocol_versions(versions)
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    client.alpn_protocols = alpn.iter().map(|token| token.to_vec()).collect();
+
+    client
+}
+
+/// Build a TLS 1.3 client offering "dot".
+pub(crate) fn dot_client(app: &TestApp) -> ClientConfig {
+    xot_client(app.tls_cert(), &[&version::TLS13], &[b"dot"])
 }

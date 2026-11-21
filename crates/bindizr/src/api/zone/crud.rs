@@ -53,6 +53,7 @@ pub(crate) async fn list_zones(
         ),
         responses(
             (status = 200, description = "Details of the DNS zone", body = SingleZoneResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -82,6 +83,7 @@ pub(crate) async fn get_zone(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 409, description = "A zone with the same name already exists", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -121,6 +123,7 @@ pub(crate) async fn create_zone(
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 409, description = "A zone with the new name already exists", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -148,6 +151,7 @@ pub(crate) async fn update_zone(
         ),
         responses(
             (status = 200, description = "DNS zone deleted successfully", body = DeleteZoneResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),

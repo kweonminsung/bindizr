@@ -33,6 +33,7 @@ use crate::api::params::NameParams;
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 409, description = "Record conflict", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 422, description = "The file was rejected and nothing was applied; the same body carries the per-record errors", body = ImportZoneResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -70,6 +71,7 @@ pub(crate) async fn import_zone(
             (status = 400, description = "Bad request, invalid input, or the catalog could not be transferred or read", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit creating zones", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

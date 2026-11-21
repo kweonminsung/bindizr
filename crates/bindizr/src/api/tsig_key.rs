@@ -34,6 +34,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         params(TsigKeyFilter),
         responses(
             (status = 200, description = "All TSIG keys", body = PaginatedResponse<TsigKeyResponse>),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Role not found", body = ErrorResponse),
@@ -63,7 +64,9 @@ pub(crate) async fn list_tsig_keys(
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
+            (status = 404, description = "Role not found", body = ErrorResponse),
             (status = 409, description = "A TSIG key with the same name already exists", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -90,6 +93,7 @@ pub(crate) async fn create_tsig_key(
         ),
         responses(
             (status = 200, description = "The TSIG key", body = SingleTsigKeyResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),
@@ -118,6 +122,7 @@ pub(crate) async fn get_tsig_key(
         ),
         responses(
             (status = 200, description = "TSIG key deleted successfully", body = MessageResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),

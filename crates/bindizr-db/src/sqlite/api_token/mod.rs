@@ -1,6 +1,7 @@
 use bindizr_core::model::api_token::{ApiToken, TokenId};
 use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
+use sqlx::pool::PoolConnection;
 use sqlx::{Pool, Sqlite, Transaction};
 
 use crate::error::DatabaseError;
@@ -115,32 +116,50 @@ pub(crate) async fn update_last_used_at(
     id: TokenId,
     last_used_at: DateTime<Utc>,
 ) -> Result<bool, DatabaseError> {
-    let mut connection = pool.acquire().await?;
+    let mut stamp = StampConnection {
+        connection: pool.acquire().await?,
+        restored: false,
+    };
 
     sqlx::query("PRAGMA busy_timeout = 0")
-        .execute(&mut *connection)
+        .execute(&mut *stamp.connection)
         .await?;
 
-    let result = sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
+    let stamped = match sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
         .bind(last_used_at)
         .bind(id)
-        .execute(&mut *connection)
-        .await;
-
-    // The connection goes back to the pool, so it takes back the pool's wait;
-    // one that cannot is closed rather than reused without it.
-    if let Err(error) = sqlx::query(sqlite::BUSY_TIMEOUT_PRAGMA)
-        .execute(&mut *connection)
+        .execute(&mut *stamp.connection)
         .await
     {
-        connection.close_on_drop();
-        return Err(error.into());
-    }
+        Ok(result) => result.rows_affected() > 0,
+        Err(sqlx::Error::Database(error)) if sqlite::is_busy(error.as_ref()) => false,
+        Err(error) => return Err(error.into()),
+    };
 
-    match result {
-        Ok(result) => Ok(result.rows_affected() > 0),
-        Err(sqlx::Error::Database(error)) if sqlite::is_busy(error.as_ref()) => Ok(false),
-        Err(error) => Err(error.into()),
+    sqlx::query(sqlite::BUSY_TIMEOUT_PRAGMA)
+        .execute(&mut *stamp.connection)
+        .await?;
+    stamp.restored = true;
+
+    Ok(stamped)
+}
+
+/// The stamp's pooled connection, closed on drop unless its busy timeout was
+/// restored: dropped mid-stamp by a cancelled request, it would otherwise
+/// rejoin the pool without the wait. A restored one is returned, since closing
+/// the last connection of an in-memory database would discard the database.
+#[derive(Debug)]
+struct StampConnection {
+    connection: PoolConnection<Sqlite>,
+    restored: bool,
+}
+
+impl Drop for StampConnection {
+    /// Close the connection unless its busy timeout was restored.
+    fn drop(&mut self) {
+        if !self.restored {
+            self.connection.close_on_drop();
+        }
     }
 }
 
@@ -176,71 +195,4 @@ pub(crate) async fn list_by_role_id(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::{Duration, Instant};
-
-    use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-
-    use super::*;
-    use crate::schema;
-
-    /// Verify that the stamp gives up rather than wait while another
-    /// connection holds the database writer, and stamps once it is free.
-    #[tokio::test]
-    async fn update_last_used_at_skips_a_held_writer() {
-        let directory = tempfile::tempdir().unwrap();
-        let options = SqliteConnectOptions::new()
-            .filename(directory.path().join("stamp.sqlite"))
-            .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Wal);
-        let pool = SqlitePoolOptions::new()
-            .max_connections(2)
-            .after_connect(|connection, _| {
-                Box::pin(async move {
-                    sqlx::query(sqlite::BUSY_TIMEOUT_PRAGMA)
-                        .execute(&mut *connection)
-                        .await?;
-                    Ok(())
-                })
-            })
-            .connect_with(options)
-            .await
-            .unwrap();
-
-        for query in schema::sqlite::table_creation_queries() {
-            sqlx::query(query).execute(&pool).await.unwrap();
-        }
-
-        sqlx::query("INSERT INTO roles (id, name, created_at) VALUES (1, 'r', ?)")
-            .bind(Utc::now())
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query(
-            "INSERT INTO api_tokens (id, name, token, role_id, created_at) VALUES (1, 't', 'h', 1, ?)",
-        )
-        .bind(Utc::now())
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let mut writer = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
-        let started = Instant::now();
-
-        assert!(
-            !update_last_used_at(&pool, TokenId::from(1), Utc::now())
-                .await
-                .unwrap()
-        );
-        assert!(started.elapsed() < Duration::from_secs(5));
-
-        sqlx::query("SELECT 1").execute(&mut *writer).await.unwrap();
-        writer.rollback().await.unwrap();
-
-        assert!(
-            update_last_used_at(&pool, TokenId::from(1), Utc::now())
-                .await
-                .unwrap()
-        );
-    }
-}
+mod tests;

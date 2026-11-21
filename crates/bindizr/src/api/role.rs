@@ -41,6 +41,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         params(PageRequest),
         responses(
             (status = 200, description = "All roles", body = PaginatedResponse<RoleResponse>),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -70,6 +71,7 @@ pub(crate) async fn list_roles(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 409, description = "A role with the same name already exists", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -95,6 +97,7 @@ pub(crate) async fn create_role(
         ),
         responses(
             (status = 200, description = "The role", body = SingleRoleResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Role not found", body = ErrorResponse),
@@ -152,6 +155,7 @@ pub(crate) async fn delete_role(
         ),
         responses(
             (status = 200, description = "The role's grants", body = PaginatedResponse<RoleGrantResponse>),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Role not found", body = ErrorResponse),
@@ -186,6 +190,7 @@ pub(crate) async fn list_role_grants(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Role or zone not found", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

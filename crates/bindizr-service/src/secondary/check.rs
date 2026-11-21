@@ -2,7 +2,6 @@
 
 use std::net::SocketAddr;
 
-use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::{Serial, address};
 use bindizr_core::model::role_grant::Action;
 
@@ -72,10 +71,12 @@ pub async fn check(
 pub async fn check_enabled(
     cx: &Context,
     caller: &Caller,
-    catalog_zone_name: &ZoneName,
     catalog_serial: Option<Serial>,
 ) -> Result<CheckSecondariesResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
+
+    let config = cx.config();
+    let catalog_zone_name = &config.dns.catalog_zone_name;
 
     let secondaries = probe::probe_secondaries(cx, catalog_zone_name, catalog_serial).await?;
     let mut transfers = Vec::new();
