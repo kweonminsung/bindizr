@@ -125,8 +125,8 @@ pair is re-read by `bindizr config reload`. Over TLS a
 secondary must be registered *and* sign with a key (RFC 9103, Section 7.5);
 the plain listener takes either alone. [BIND](bind.md#transfers-over-tls)
 9.18.10, [Knot DNS](knot.md#transfers-over-tls) 3.4, and
-[NSD](nsd.md#transfers-over-tls) 4.3.7 or newer speak it. `secondary
-transfers` shows the transport, and the log says `XFR TLS query`. Once every
+[NSD](nsd.md#transfers-over-tls) 4.3.7 or newer speak it. `bindizr log
+transfer` shows the transport, and the log says `XFR TLS query`. Once every
 secondary pulls over TLS, `dns.transfer.require_tls = true` refuses a
 transfer over plain TCP or UDP, as RFC 9103, Section 11 asks of a zone
 whose transfers are XoT; SOA queries keep answering on every listener.

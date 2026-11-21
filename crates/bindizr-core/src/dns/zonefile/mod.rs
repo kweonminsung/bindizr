@@ -405,11 +405,13 @@ fn to_zone_file_soa<N: ToName + fmt::Display>(
 ) -> Result<ZoneFileSoa, ConvertSoaIntervalError> {
     let interval = |value: domain::base::Ttl| SoaInterval::try_from(value.as_secs());
 
+    // `domain` renders a parsed root name as the empty string, so both names
+    // are rendered absolute: a root MNAME stays `.` (RFC 2181, Section 11).
     Ok(ZoneFileSoa {
-        mname: soa.mname().to_string(),
+        mname: name::to_fqdn(&soa.mname().to_string()),
         // The mailbox is rendered in its SOA form (`admin.example.com.`); the
         // service turns it back into an address.
-        rname: soa.rname().to_string(),
+        rname: name::to_fqdn(&soa.rname().to_string()),
         serial: Serial::from(soa.serial().into_int()),
         refresh: interval(soa.refresh())?,
         retry: interval(soa.retry())?,

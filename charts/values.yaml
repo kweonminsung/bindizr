@@ -57,7 +57,7 @@ bindizr:
     #   address: ns2.example.net:53
     # NOTIFY to the secondaries.
     notify:
-      # Notify after zone changes, and for every zone at startup.
+      # NOTIFY after each zone change.
       # Window (ms) to batch a zone's NOTIFYs, sent after the write is
       # answered; 0 sends before answering.
       batchMs: 0

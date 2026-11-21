@@ -8,7 +8,7 @@ data:
   bindizr.conf.toml: |
     [api]
     listen_addr = "{{ .Values.bindizr.api.listenAddr }}"
-    listen_port = {{ .Values.bindizr.api.port }}
+    listen_port = {{ int64 .Values.bindizr.api.port }}
     authentication_required = {{ .Values.bindizr.api.authenticationRequired }}
     metrics_enabled = {{ .Values.bindizr.api.metricsEnabled }}
     external_dns_enabled = {{ .Values.bindizr.api.externalDnsEnabled }}
@@ -42,56 +42,56 @@ data:
 
     [dns]
     listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"
-    listen_port = {{ .Values.bindizr.dns.port }}
+    listen_port = {{ int64 .Values.bindizr.dns.port }}
     catalog_zone_name = "{{ .Values.bindizr.dns.catalogZoneName }}"
-    scheduler_interval_secs = {{ .Values.bindizr.dns.schedulerIntervalSecs }}
-    tcp_idle_timeout_secs = {{ .Values.bindizr.dns.tcpIdleTimeoutSecs }}
-    tcp_max_connections = {{ .Values.bindizr.dns.tcpMaxConnections }}
+    scheduler_interval_secs = {{ int64 .Values.bindizr.dns.schedulerIntervalSecs }}
+    tcp_idle_timeout_secs = {{ int64 .Values.bindizr.dns.tcpIdleTimeoutSecs }}
+    tcp_max_connections = {{ int64 .Values.bindizr.dns.tcpMaxConnections }}
 
 
     [dns.notify]
-    batch_ms = {{ .Values.bindizr.dns.notify.batchMs }}
-    retries = {{ .Values.bindizr.dns.notify.retries }}
-    timeout_secs = {{ .Values.bindizr.dns.notify.timeoutSecs }}
+    batch_ms = {{ int64 .Values.bindizr.dns.notify.batchMs }}
+    retries = {{ int64 .Values.bindizr.dns.notify.retries }}
+    timeout_secs = {{ int64 .Values.bindizr.dns.notify.timeoutSecs }}
 
     [dns.nsupdate]
     tsig_required = {{ .Values.bindizr.dns.nsupdateTsigRequired }}
     {{- with .Values.bindizr.dns.tls.existingSecret }}
 
     [dns.tls]
-    listen_port = {{ $.Values.bindizr.dns.tls.port }}
+    listen_port = {{ int64 $.Values.bindizr.dns.tls.port }}
     cert_file = "/etc/bindizr/dns-tls/tls.crt"
     key_file = "/etc/bindizr/dns-tls/tls.key"
     {{- end }}
 
     [dns.transfer]
-    cache_max_records = {{ .Values.bindizr.dns.transfer.cacheMaxRecords }}
+    cache_max_records = {{ int64 .Values.bindizr.dns.transfer.cacheMaxRecords }}
     require_tls = {{ .Values.bindizr.dns.transfer.requireTls }}
 
     [dns.import]
-    timeout_secs = {{ .Values.bindizr.dns.import.timeoutSecs }}
-    max_records = {{ .Values.bindizr.dns.import.maxRecords }}
+    timeout_secs = {{ int64 .Values.bindizr.dns.import.timeoutSecs }}
+    max_records = {{ int64 .Values.bindizr.dns.import.maxRecords }}
 
     [dns.zone_defaults]
-    ttl = {{ .Values.bindizr.zoneDefaults.ttl }}
-    refresh = {{ .Values.bindizr.zoneDefaults.refresh }}
-    retry = {{ .Values.bindizr.zoneDefaults.retry }}
+    ttl = {{ int64 .Values.bindizr.zoneDefaults.ttl }}
+    refresh = {{ int64 .Values.bindizr.zoneDefaults.refresh }}
+    retry = {{ int64 .Values.bindizr.zoneDefaults.retry }}
     expire = {{ int64 .Values.bindizr.zoneDefaults.expire }}
-    minimum_ttl = {{ .Values.bindizr.zoneDefaults.minimumTtl }}
+    minimum_ttl = {{ int64 .Values.bindizr.zoneDefaults.minimumTtl }}
 
     [history]
-    max_days = {{ .Values.bindizr.history.maxDays }}
+    max_days = {{ int64 .Values.bindizr.history.maxDays }}
 
     [audit_log]
-    max_days = {{ .Values.bindizr.auditLog.maxDays }}
+    max_days = {{ int64 .Values.bindizr.auditLog.maxDays }}
 
     [access_log]
     save = "{{ .Values.bindizr.accessLog.save }}"
-    max_days = {{ .Values.bindizr.accessLog.maxDays }}
+    max_days = {{ int64 .Values.bindizr.accessLog.maxDays }}
 
     [transfer_log]
     save = "{{ .Values.bindizr.transferLog.save }}"
-    max_days = {{ .Values.bindizr.transferLog.maxDays }}
+    max_days = {{ int64 .Values.bindizr.transferLog.maxDays }}
 
     [logging]
     level = "{{ .Values.bindizr.logging.level }}"

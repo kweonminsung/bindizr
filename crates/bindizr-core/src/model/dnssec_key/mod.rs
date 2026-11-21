@@ -11,6 +11,12 @@ use crate::dns::Ttl;
 use crate::dns::dnssec::KeyTag;
 use crate::model::zone::ZoneId;
 
+/// DNSKEY flags of a zone key that signs zone data: ZONE alone (RFC 4034, Section 2.1.1).
+pub const ZONE_KEY_FLAGS: u16 = 256;
+
+/// DNSKEY flags of a key the parent's DS names: ZONE and SEP (RFC 4034, Section 2.1.1).
+pub const SEP_KEY_FLAGS: u16 = 257;
+
 /// A DNSSEC key column or parameter outside the values bindizr signs with.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseDnssecKeyError {
@@ -165,9 +171,9 @@ impl DnssecKeyRole {
     /// (RFC 4034, Section 2.1.1).
     pub fn flags(self) -> u16 {
         if self.is_sep() {
-            257
+            SEP_KEY_FLAGS
         } else {
-            256
+            ZONE_KEY_FLAGS
         }
     }
 

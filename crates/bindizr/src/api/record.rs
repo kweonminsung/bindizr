@@ -42,6 +42,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
             (status = 200, description = "A list of DNS records", body = PaginatedResponse<RecordResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found (authentication disabled)", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -66,6 +67,7 @@ pub(crate) async fn list_records(
         ),
         responses(
             (status = 200, description = "Details of the DNS record", body = SingleRecordResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -96,6 +98,7 @@ pub(crate) async fn get_record(
             (status = 403, description = "The token's role does not permit this record write", body = ErrorResponse),
             (status = 404, description = "Zone not found, or not visible to the token", body = ErrorResponse),
             (status = 409, description = "Record conflict", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -135,6 +138,7 @@ pub(crate) async fn create_record(
             (status = 403, description = "The token's role does not permit this record write", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
             (status = 409, description = "Record conflict", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -161,6 +165,7 @@ pub(crate) async fn update_record(
         ),
         responses(
             (status = 200, description = "DNS record deleted successfully", body = DeleteRecordsResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's role does not permit this record write", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
@@ -193,6 +198,7 @@ pub(crate) async fn delete_record(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "Forbidden", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 409, description = "Record conflict", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -221,6 +227,7 @@ pub(crate) async fn delete_matching_records(
             (status = 403, description = "The token's role does not permit this record write", body = ErrorResponse),
             (status = 404, description = "Zone not found, or not visible to the token", body = ErrorResponse),
             (status = 409, description = "Record conflict", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

@@ -6,26 +6,10 @@ use domain::base::MessageBuilder;
 use domain::base::iana::{Class, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
 use reqwest::{Method, StatusCode};
-use rustls::pki_types::CertificateDer;
-use rustls::{ClientConfig, RootCertStore, SupportedProtocolVersion, version};
 use serde_json::Value;
 use tokio::time;
 
 use crate::common::{TestApp, dns};
-
-/// Read one series of a counter from `/metrics`, picked by its labels.
-pub(crate) async fn read_counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
-    let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
-
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let text = body.as_str().unwrap();
-
-    text.lines()
-        .filter(|line| line.starts_with(&format!("{name}{{")))
-        .find(|line| labels.iter().all(|label| line.contains(label)))
-        .and_then(|line| line.rsplit(' ').next()?.parse::<f64>().ok())
-        .unwrap_or_else(|| panic!("{name} {labels:?} missing from the scrape"))
-}
 
 /// Build a two-question QUERY with optional EDNS.
 pub(crate) fn build_multi_question_query(
@@ -90,27 +74,6 @@ pub(crate) fn build_edns_query(
     }
 
     additional
-}
-
-/// Build a TLS client with the run's certificate, versions, and ALPN.
-pub(crate) fn xot_client(
-    cert: &CertificateDer<'static>,
-    versions: &[&'static SupportedProtocolVersion],
-    alpn: &[&[u8]],
-) -> ClientConfig {
-    let mut roots = RootCertStore::empty();
-    roots.add(cert.clone()).unwrap();
-    let mut client = ClientConfig::builder_with_protocol_versions(versions)
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    client.alpn_protocols = alpn.iter().map(|token| token.to_vec()).collect();
-
-    client
-}
-
-/// Build a TLS 1.3 client offering "dot".
-pub(crate) fn dot_client(app: &TestApp) -> ClientConfig {
-    xot_client(app.tls_cert(), &[&version::TLS13], &[b"dot"])
 }
 
 /// Poll `/logs/transfer?{query}` until it selects `expected` rows, returning the last body on

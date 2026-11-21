@@ -300,12 +300,19 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
 
 /// `GET /metrics` — serve adapter-local Prometheus metrics.
 async fn handle_metrics(State(state): State<Arc<AppState>>) -> Response {
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, TEXT_CONTENT_TYPE)],
-        state.metrics.encode(),
-    )
-        .into_response()
+    match state.metrics.encode() {
+        Ok(text) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, TEXT_CONTENT_TYPE)],
+            text,
+        )
+            .into_response(),
+        // An empty 200 would read as a healthy scrape with every series gone.
+        Err(error) => {
+            log::error!("Failed to encode the adapter's metrics: {error:?}");
+            (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response()
+        }
+    }
 }
 
 #[cfg(test)]

@@ -332,6 +332,20 @@ impl TestApp {
         records
     }
 
+    /// Read one series of a counter from `/metrics`, picked by its labels.
+    pub(crate) async fn read_counter(&self, name: &str, labels: &[&str]) -> f64 {
+        let (status, body) = self.send_request(Method::GET, "/metrics", None).await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let text = body.as_str().unwrap();
+
+        text.lines()
+            .filter(|line| line.starts_with(&format!("{name}{{")))
+            .find(|line| labels.iter().all(|label| line.contains(label)))
+            .and_then(|line| line.rsplit(' ').next()?.parse::<f64>().ok())
+            .unwrap_or_else(|| panic!("{name} {labels:?} missing from the scrape"))
+    }
+
     /// Read the zone's current serial through the API.
     pub(crate) async fn read_zone_serial(&self, zone_name: &str) -> i64 {
         let (status, body) = self

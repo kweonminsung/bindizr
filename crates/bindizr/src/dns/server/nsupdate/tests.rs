@@ -104,7 +104,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         assert_eq!(response[3] & 15, Rcode::SERVFAIL.to_int());
     }
 
-    let metrics = cx.metrics().encode();
+    let metrics = cx.metrics().encode().unwrap();
 
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"formerr\"} 1\n"));
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"servfail\"} 2\n"));
@@ -151,7 +151,7 @@ async fn badvers_update_counts_as_badvers() {
         .await
         .unwrap();
 
-    let metrics = cx.metrics().encode();
+    let metrics = cx.metrics().encode().unwrap();
 
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"badvers\"} 1\n"));
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"noerror\"} 0\n"));

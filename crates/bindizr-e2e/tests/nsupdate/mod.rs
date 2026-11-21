@@ -3695,3 +3695,153 @@ async fn nsupdate_leaves_access_log_rows_with_their_key_and_outcome() {
     );
     assert!(applied["error"].is_null(), "{applied}");
 }
+
+/// Verify that UPDATE parse failures retain SERVFAIL when TSIG error encoding fails.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
+    let app = TestApp::start_local().await;
+
+    let owner = dns::parse_name(&format!(
+        "{}.{}.{}.{}",
+        "k".repeat(63),
+        "l".repeat(63),
+        "m".repeat(63),
+        "n".repeat(61)
+    ))
+    .unwrap();
+    let algorithm = dns::parse_name(&format!(
+        "{}.{}.{}.{}",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(61)
+    ))
+    .unwrap();
+    let labels = [r#"result="servfail""#];
+
+    let before = app
+        .read_counter("bindizr_nsupdate_requests_total", &labels)
+        .await;
+
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(8945);
+    builder.header_mut().set_opcode(Opcode::UPDATE);
+    let mut request = builder.additional();
+    request
+        .opt(|opt| {
+            opt.set_udp_payload_size(512);
+            Ok(())
+        })
+        .unwrap();
+    request
+        .push((
+            &owner,
+            Class::ANY,
+            Ttl::ZERO,
+            Tsig::new(
+                algorithm,
+                Time48::now(),
+                300,
+                vec![0; 32],
+                8945,
+                TsigRcode::NOERROR,
+                Vec::new(),
+            )
+            .unwrap(),
+        ))
+        .unwrap();
+    let response = dns::exchange_udp(app.dns_port(), &request.finish()).unwrap();
+    let response = Message::from_octets(response).unwrap();
+
+    assert_eq!(response.header().rcode(), Rcode::SERVFAIL);
+    assert_eq!(response.header_counts().qdcount(), 0);
+    assert!(response.as_slice().len() <= 512);
+    assert_eq!(
+        app.read_counter("bindizr_nsupdate_requests_total", &labels)
+            .await,
+        before + 1.0
+    );
+}
+
+/// Verify that UPDATE validation failures still use readable EDNS when their TSIG error
+/// exceeds 512 bytes.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn questionless_updates_use_readable_edns_for_tsig_errors() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+
+    let owner = dns::parse_name(&format!(
+        "{}.{}.{}.{}",
+        "k".repeat(63),
+        "l".repeat(63),
+        "m".repeat(63),
+        "n".repeat(61)
+    ))
+    .unwrap();
+    let algorithm = dns::parse_name(&format!(
+        "{}.{}.{}.{}",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(61)
+    ))
+    .unwrap();
+
+    for opcode in [Opcode::QUERY, Opcode::UPDATE] {
+        for advertised in [1232, 4096] {
+            let mut builder = MessageBuilder::new_vec();
+            builder.header_mut().set_id(8945);
+            builder.header_mut().set_opcode(opcode);
+            let mut request = builder.additional();
+            request
+                .opt(|opt| {
+                    opt.set_udp_payload_size(advertised);
+                    Ok(())
+                })
+                .unwrap();
+            let tsig = Tsig::new(
+                algorithm.clone(),
+                Time48::now(),
+                300,
+                vec![0; 32],
+                8945,
+                TsigRcode::NOERROR,
+                Vec::new(),
+            )
+            .unwrap();
+            request.push((&owner, Class::ANY, Ttl::ZERO, tsig)).unwrap();
+            let request = request.finish();
+
+            for response in [
+                dns::exchange_udp(app.dns_port(), &request).unwrap(),
+                dns::exchange_tcp(app.dns_port(), &request).unwrap(),
+                dns::exchange_tls(app.dns_tls_port(), &request, dns::dot_client(&app)).unwrap(),
+            ] {
+                let response = Message::from_octets(response).unwrap();
+
+                assert!(response.as_slice().len() > 512);
+                assert!(response.as_slice().len() <= 1232);
+                assert_eq!(response.header().id(), 8945);
+                assert_eq!(response.header().opcode(), opcode);
+                assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+                assert_eq!(response.header_counts().qdcount(), 0);
+                assert_eq!(response.opt().unwrap().udp_payload_size(), 1232);
+                let tsig = response
+                    .additional()
+                    .unwrap()
+                    .limit_to::<Tsig<_, _>>()
+                    .last()
+                    .unwrap()
+                    .unwrap();
+
+                assert_eq!(tsig.data().error(), TsigRcode::BADKEY);
+                assert!(tsig.data().mac().is_empty());
+            }
+        }
+    }
+}

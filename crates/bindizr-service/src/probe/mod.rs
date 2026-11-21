@@ -16,7 +16,7 @@ use crate::{Context, dns_client, secondary, transfer};
 impl From<ProbeSoaError> for ServiceError {
     /// Preserve probe setup failures as internal error sources.
     fn from(error: ProbeSoaError) -> Self {
-        Self::internal_with_source(error.to_string(), error)
+        Self::internal_with_source("the SOA probe could not start", error)
     }
 }
 

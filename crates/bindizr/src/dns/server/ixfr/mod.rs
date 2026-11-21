@@ -63,7 +63,11 @@ pub(crate) async fn handle_ixfr(
                 zone_name: zone_name_str.to_string(),
             });
         }
-        TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
+        TransferAccess::Refused(refusal) => {
+            return Err(DnsError::Refused {
+                reason: refusal.to_string(),
+            });
+        }
     };
     let current_serial = zone.serial;
 

@@ -36,6 +36,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         params(TokenFilter),
         responses(
             (status = 200, description = "All API tokens", body = PaginatedResponse<TokenResponse>),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Role not found", body = ErrorResponse),
@@ -65,7 +66,9 @@ pub(crate) async fn list_tokens(
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
+            (status = 404, description = "Role not found", body = ErrorResponse),
             (status = 409, description = "An API token with the same name already exists", body = ErrorResponse),
+            (status = 413, description = "Request body exceeds the route's limit", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -113,6 +116,7 @@ pub(crate) async fn get_self_token(
         params(PageRequest),
         responses(
             (status = 200, description = "The calling token's grants", body = PaginatedResponse<RoleGrantResponse>),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "No token presented: authentication is disabled", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -140,6 +144,7 @@ pub(crate) async fn list_self_token_grants(
         ),
         responses(
             (status = 200, description = "API token deleted", body = MessageResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Token not found", body = ErrorResponse),

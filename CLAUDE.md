@@ -1226,7 +1226,8 @@ lifecycle operations, outside the entity-query grammar.
   and marks the batch form `_many` (`record::create_many_tx`, never
   `record::create_records_tx`).
 - `_by_<selector>` — equality keys or a named filter input. Column keys
-  are joined with `_and_` and keep `_id` (`list_by_zone_id_and_key_id_tx`).
+  are joined with `_and_` and keep `_id` (a two-key selector reads
+  `list_by_zone_id_and_role_id`; none is live today).
   The entity's canonical id
   keys are elided, carried by the signature alone: bare `get`/`update`/
   `delete` take the row's own id, bare `list`/`count` the owning zone's id
@@ -1245,7 +1246,7 @@ lifecycle operations, outside the entity-query grammar.
 - `_with_<join>` — the result carries joined data
   (`record::get_with_zone`); never a filter or semi-join.
 - `_<predicate>` — a comparison or relation filter as `<subject>_<comparison>`
-  (`ds_without_ns`: a DS has no same-owner NS). Serial
+  (`signatures_covering_apex_soa`: the RRSIGs that cover the apex SOA). Serial
   intervals keep their contracts in doc comments — the journal's
   `between_serials` is the IXFR half-open `(from, to]`, the versions'
   `in_serial_range` the closed `[from, to]`.

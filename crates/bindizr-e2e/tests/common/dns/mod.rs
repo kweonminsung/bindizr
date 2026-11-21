@@ -21,8 +21,8 @@ use serde_json::{Value, json};
 use tokio::time;
 pub(crate) use transfer::{TransferResult, build_ixfr_query, fetch_axfr_tcp, fetch_axfr_tls};
 pub(crate) use transport::{
-    connect_tcp, connect_tls, exchange_request, exchange_tcp, exchange_tls, exchange_udp,
-    read_frame, write_frame,
+    connect_tcp, connect_tls, dot_client, exchange_request, exchange_tcp, exchange_tls,
+    exchange_udp, read_frame, write_frame, xot_client,
 };
 
 use crate::common::TestApp;

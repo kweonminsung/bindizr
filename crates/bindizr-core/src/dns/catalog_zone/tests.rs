@@ -190,13 +190,23 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
     );
 
     let foreign_version = extract_member_zones(
-        &[version_record("catalog.example", b"1"), member],
+        &[version_record("catalog.example", b"1"), member.clone()],
         &catalog_zone_name,
     );
 
     assert!(
-        matches!(&foreign_version, Err(ExtractMemberZonesError::UnsupportedVersion { found }) if found == "1"),
+        matches!(&foreign_version, Err(ExtractMemberZonesError::UnsupportedVersion { found }) if found == "\"1\""),
         "{foreign_version:?}"
+    );
+
+    // A second character-string is named in full, not hidden behind the first.
+    let mut two_strings = version_record("catalog.example", b"2");
+    two_strings.rdata = Rdata::new(vec![1, b'2', 1, b'x']).unwrap();
+    let two_strings = extract_member_zones(&[two_strings, member], &catalog_zone_name);
+
+    assert!(
+        matches!(&two_strings, Err(ExtractMemberZonesError::UnsupportedVersion { found }) if found == "\"2\" \"x\""),
+        "{two_strings:?}"
     );
 
     let foreign_owner = extract_member_zones(

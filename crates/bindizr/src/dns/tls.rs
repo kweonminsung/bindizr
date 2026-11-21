@@ -132,7 +132,9 @@ pub(crate) async fn run_tls_server(
                         return;
                     }
 
-                    if let Err(error) = connection::serve_connection(
+                    // A peer that closed or broke off its frame is the client's end of
+                    // the connection, not a fault of Bindizr's.
+                    match connection::serve_connection(
                         dns_cx,
                         DnsStream::Tls(Box::new(session)),
                         client_addr,
@@ -140,9 +142,8 @@ pub(crate) async fn run_tls_server(
                     )
                     .await
                     {
-                        log::error!(
-                            "Failed to read DNS TLS message from {client_addr}: {error}"
-                        );
+                        Ok(()) | Err(DnsError::PeerClosed) => {}
+                        Err(error) => log::warn!("Failed to read DNS TLS message from {client_addr}: {error}"),
                     }
                 });
             }

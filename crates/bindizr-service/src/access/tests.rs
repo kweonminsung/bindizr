@@ -157,6 +157,7 @@ async fn save_drops_and_counts_a_row_the_full_queue_cannot_take() {
     assert!(
         cx.metrics()
             .encode()
+            .unwrap()
             .contains("bindizr_access_log_dropped_total 1"),
         "the second row found the queue full"
     );

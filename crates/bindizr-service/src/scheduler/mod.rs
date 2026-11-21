@@ -8,7 +8,7 @@ use bindizr_core::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{Duration, Utc};
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time;
 use tokio::time::{Interval, MissedTickBehavior};
 
@@ -103,9 +103,13 @@ fn scheduler_interval(period_secs: u64) -> Interval {
 
 /// Run one scheduler pass: journal retention, signature refresh, and rollover
 /// advancement. Failures are logged, never fatal.
-async fn run_scheduler_pass(cx: &Context) {
+async fn run_scheduler_pass(cx: &Arc<Context>) {
     let config = cx.config();
     let mut failed = false;
+    // Each changed zone's NOTIFY runs beside the pass, so one silent secondary
+    // cannot hold later zones behind its ACK/retry wait (RFC 1996, Section 4.3);
+    // the pass ends only once every NOTIFY has.
+    let mut notifies = JoinSet::new();
 
     // Bound retained IXFR and rollback history before maintaining signed zones,
     // one zone per transaction under its lock, like every other step here.
@@ -217,7 +221,10 @@ async fn run_scheduler_pass(cx: &Context) {
                 match maintenance::resign_zone_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Re-signed zone {zone_name} ahead of signature expiry");
-                        notify::notify_after_update(cx, &zone_name).await;
+                        let cx = Arc::clone(cx);
+                        notifies.spawn(async move {
+                            notify::notify_after_update(&cx, &zone_name).await;
+                        });
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -248,7 +255,10 @@ async fn run_scheduler_pass(cx: &Context) {
                 match maintenance::start_zsk_rollover_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Started scheduled ZSK rollover for zone {zone_name}");
-                        notify::notify_after_update(cx, &zone_name).await;
+                        let cx = Arc::clone(cx);
+                        notifies.spawn(async move {
+                            notify::notify_after_update(&cx, &zone_name).await;
+                        });
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -287,7 +297,10 @@ async fn run_scheduler_pass(cx: &Context) {
                 match maintenance::promote_zsks_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Promoted pre-published ZSK for zone {zone_name}");
-                        notify::notify_after_update(cx, &zone_name).await;
+                        let cx = Arc::clone(cx);
+                        notifies.spawn(async move {
+                            notify::notify_after_update(&cx, &zone_name).await;
+                        });
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -312,7 +325,10 @@ async fn run_scheduler_pass(cx: &Context) {
                         log::info!(
                             "Promoted pre-published SEP key for zone {zone_name}: the parent serves its DS"
                         );
-                        notify::notify_after_update(cx, &zone_name).await;
+                        let cx = Arc::clone(cx);
+                        notifies.spawn(async move {
+                            notify::notify_after_update(&cx, &zone_name).await;
+                        });
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -345,7 +361,10 @@ async fn run_scheduler_pass(cx: &Context) {
                 match maintenance::prune_retired_keys_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Removed retired DNSSEC key(s) for zone {zone_name}");
-                        notify::notify_after_update(cx, &zone_name).await;
+                        let cx = Arc::clone(cx);
+                        notifies.spawn(async move {
+                            notify::notify_after_update(&cx, &zone_name).await;
+                        });
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -358,6 +377,12 @@ async fn run_scheduler_pass(cx: &Context) {
         Err(error) => {
             failed = true;
             log::error!("Retired-key scan failed: {error:?}");
+        }
+    }
+
+    while let Some(result) = notifies.join_next().await {
+        if let Err(error) = result {
+            log::error!("Scheduler NOTIFY task failed: {error:?}");
         }
     }
 

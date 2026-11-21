@@ -117,27 +117,20 @@ pub(crate) async fn update_last_used_at(
 ) -> Result<bool, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
+    // Closed rather than returned: dropped mid-stamp by a cancelled request,
+    // it would otherwise rejoin the pool without its busy timeout.
+    connection.close_on_drop();
+
     sqlx::query("PRAGMA busy_timeout = 0")
         .execute(&mut *connection)
         .await?;
 
-    let result = sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
+    match sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
         .bind(last_used_at)
         .bind(id)
         .execute(&mut *connection)
-        .await;
-
-    // The connection goes back to the pool, so it takes back the pool's wait;
-    // one that cannot is closed rather than reused without it.
-    if let Err(error) = sqlx::query(sqlite::BUSY_TIMEOUT_PRAGMA)
-        .execute(&mut *connection)
         .await
     {
-        connection.close_on_drop();
-        return Err(error.into());
-    }
-
-    match result {
         Ok(result) => Ok(result.rows_affected() > 0),
         Err(sqlx::Error::Database(error)) if sqlite::is_busy(error.as_ref()) => Ok(false),
         Err(error) => Err(error.into()),
@@ -185,7 +178,8 @@ mod tests {
     use crate::schema;
 
     /// Verify that the stamp gives up rather than wait while another
-    /// connection holds the database writer, and stamps once it is free.
+    /// connection holds the database writer, stamps once it is free, and leaves
+    /// no pooled connection without its busy timeout.
     #[tokio::test]
     async fn update_last_used_at_skips_a_held_writer() {
         let directory = tempfile::tempdir().unwrap();
@@ -242,5 +236,15 @@ mod tests {
                 .await
                 .unwrap()
         );
+
+        // The stamp's connection is closed, so every pooled one keeps the wait.
+        for _ in 0..2 {
+            let timeout = sqlx::query_scalar::<_, i64>("PRAGMA busy_timeout")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+            assert_eq!(timeout, 15000);
+        }
     }
 }

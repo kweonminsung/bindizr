@@ -39,6 +39,7 @@ pub(crate) struct NotifyQuery {
         params(NotifyQuery),
         responses(
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -66,6 +67,7 @@ pub(crate) async fn notify_all_zones(
         ),
         responses(
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit 'zone:update' there; notifying the catalog zone or all zones needs it in all zones", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),

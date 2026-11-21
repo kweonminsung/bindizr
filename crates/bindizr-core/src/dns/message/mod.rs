@@ -25,7 +25,7 @@ use thiserror::Error;
 use crate::dns::name::{EncodeWireNameError, WireName};
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::tsig::TransferSigner;
-use crate::dns::{LibraryError, Ttl};
+use crate::dns::{DNS_TCP_MAX_SIZE, LibraryError, Ttl};
 
 /// Fixed DNS message header length (RFC 1035, Section 4.1.1).
 pub(crate) const DNS_HEADER_LEN: usize = 12;
@@ -116,7 +116,7 @@ pub struct DnsMessageBuilder {
     limit: ResponseLimit,
     query_id: u16,
     qname: WireName,
-    qtype: u16,
+    qtype: Rtype,
     qclass: Class,
     answers: Vec<Vec<u8>>,
     /// Total byte length of `answers`, maintained incrementally for `message_len`.
@@ -141,7 +141,7 @@ impl DnsMessageBuilder {
             limit: query.response_limit(),
             query_id: query.query_id,
             qname: query.qname.clone(),
-            qtype: query.qtype.to_int(),
+            qtype: query.qtype,
             qclass: query.qclass,
             answers: Vec::new(),
             answers_len: 0,
@@ -295,7 +295,7 @@ impl DnsMessageBuilder {
 
         let mut question = builder.question();
         question
-            .push((&self.qname, Rtype::from_int(self.qtype), self.qclass))
+            .push((&self.qname, self.qtype, self.qclass))
             .map_err(|error| EncodeMessageError::ComposeQuestion(Box::new(error)))?;
 
         let mut answer = question.answer();
@@ -362,9 +362,11 @@ impl DnsMessageBuilder {
 
 /// Prefix a DNS message with its two-byte TCP frame length.
 pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError> {
-    ResponseLimit::STREAM.validate_len(message.len())?;
-
-    let len = message.len() as u16;
+    // The frame's length field is two octets (RFC 1035, Section 4.2.2).
+    let len = u16::try_from(message.len()).map_err(|_| EncodeMessageError::TooLarge {
+        len: message.len(),
+        max_len: DNS_TCP_MAX_SIZE,
+    })?;
     let mut frame = Vec::with_capacity(2 + message.len());
     frame.extend_from_slice(&len.to_be_bytes());
     frame.extend_from_slice(message);

@@ -33,6 +33,14 @@ pub(crate) enum NotifyZoneError {
     },
 }
 
+impl NotifyZoneError {
+    /// Return whether the failure is Bindizr's own rather than a secondary's,
+    /// which decides the level a failure that ends unreturned is logged at.
+    pub(crate) fn is_server_fault(&self) -> bool {
+        matches!(self, Self::Service(error) if error.code().is_internal())
+    }
+}
+
 /// Notify every enabled secondary for one zone the DNS plane serves; a zone
 /// it does not serve, disabled or gone, is skipped, since its SOA answers NOTAUTH.
 pub(crate) async fn send_zone_notify(

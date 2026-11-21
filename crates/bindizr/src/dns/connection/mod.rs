@@ -158,8 +158,13 @@ async fn handle_tcp_query(
 
     match server::refuse_unsupported_opcode(dns_cx, query_data, keepalive, transport).await {
         Ok(Some((response, _))) => {
-            if let Err(error) = writer.write_message(&response).await {
-                log::error!("Failed to refuse DNS {transport} opcode from {client_addr}: {error}");
+            match writer.write_message(&response).await {
+                Ok(()) | Err(DnsError::PeerClosed) => {}
+                Err(error) => {
+                    log::warn!(
+                        "Failed to refuse DNS {transport} opcode from {client_addr}: {error}"
+                    );
+                }
             }
 
             return;
@@ -173,10 +178,13 @@ async fn handle_tcp_query(
 
     // nsupdate parses its own message and TSIG; other queries share this parse.
     if nsupdate::is_nsupdate(query_data) {
-        if let Err(error) =
-            nsupdate::handle_tcp_nsupdate(dns_cx, writer, client_addr, query_data).await
-        {
-            log::error!("NSUPDATE {transport} handler failed for {client_addr}: {error}");
+        // Server faults are logged inside the handler; what reaches here is the
+        // client's side of the exchange.
+        match nsupdate::handle_tcp_nsupdate(dns_cx, writer, client_addr, query_data).await {
+            Ok(()) | Err(DnsError::PeerClosed) => {}
+            Err(error) => {
+                log::warn!("NSUPDATE {transport} handler failed for {client_addr}: {error}");
+            }
         }
 
         return;

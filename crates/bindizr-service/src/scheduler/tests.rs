@@ -44,6 +44,7 @@ async fn stop_joins_disabled_worker_without_starting_a_pass() {
     assert!(
         cx.metrics()
             .encode()
+            .unwrap()
             .contains("bindizr_dnssec_scheduler_runs_total{result=\"ok\"} 0")
     );
 }
@@ -80,6 +81,7 @@ async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
     assert!(
         cx.metrics()
             .encode()
+            .unwrap()
             .contains("bindizr_dnssec_scheduler_runs_total{result=\"ok\"} 0")
     );
 
@@ -95,11 +97,13 @@ async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
     assert!(
         cx.metrics()
             .encode()
+            .unwrap()
             .contains("bindizr_dnssec_scheduler_runs_total{result=\"ok\"} 1")
     );
     assert!(
         cx.metrics()
             .encode()
+            .unwrap()
             .contains("bindizr_dnssec_scheduler_runs_total{result=\"failed\"} 0")
     );
 }

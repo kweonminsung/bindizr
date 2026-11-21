@@ -2,19 +2,20 @@
 //! and signed under a TSIG key the way `primaries { addr key k; }` does.
 
 mod catalog;
-mod class;
 mod common;
-mod rejection;
 mod tls;
 
 use std::collections::HashMap;
-use std::net::TcpStream;
+use std::io;
+use std::net::{TcpStream, UdpSocket};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
-use domain::base::{Message, MessageBuilder, Ttl};
+use domain::base::iana::{Class, ExtendedErrorCode, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
+use domain::base::message_builder::AdditionalBuilder;
+use domain::base::opt::exterr::ExtendedError;
+use domain::base::{Message, MessageBuilder, Serial, Ttl};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::rdata::{A, Soa};
 use domain::tsig::{Algorithm, ClientSequence, ClientTransaction};
@@ -156,7 +157,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                                 _ => dns::exchange_tls(
                                     app.dns_tls_port(),
                                     &query,
-                                    common::dot_client(&app),
+                                    dns::dot_client(&app),
                                 ),
                             }
                             .unwrap();
@@ -371,8 +372,10 @@ async fn udp_ixfr_returns_current_soa() {
         r#"transport="udp""#,
     ];
 
-    let truncated = common::read_counter(&app, "bindizr_xfr_total", &ixfr_truncated).await;
-    let soa_ok = common::read_counter(&app, "bindizr_soa_queries_total", &[r#"result="ok""#]).await;
+    let truncated = app.read_counter("bindizr_xfr_total", &ixfr_truncated).await;
+    let soa_ok = app
+        .read_counter("bindizr_soa_queries_total", &[r#"result="ok""#])
+        .await;
 
     // RFC 1995, Section 2: Windows DNS asks this way after a NOTIFY and goes
     // to TCP only when the answer's serial is ahead of its own.
@@ -398,11 +401,12 @@ async fn udp_ixfr_returns_current_soa() {
 
     // Counted as a transfer, as a UDP AXFR's TC answer is, not as an SOA poll.
     assert_eq!(
-        common::read_counter(&app, "bindizr_xfr_total", &ixfr_truncated).await,
+        app.read_counter("bindizr_xfr_total", &ixfr_truncated).await,
         truncated + 1.0
     );
     assert_eq!(
-        common::read_counter(&app, "bindizr_soa_queries_total", &[r#"result="ok""#]).await,
+        app.read_counter("bindizr_soa_queries_total", &[r#"result="ok""#])
+            .await,
         soa_ok
     );
 }
@@ -1799,4 +1803,975 @@ async fn query_returns_notauth_for_unsupported_class() {
 
     assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
     assert!(tsig::parse_tsig_presence(&response).unwrap());
+}
+
+/// Verify that an IN IXFR query cannot take its client serial from another class's SOA.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn ixfr_rejects_foreign_soa_classes() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let serial = u32::try_from(zone["serial"].as_u64().unwrap()).unwrap();
+
+    app.create_secondary("class-loopback", "127.0.0.1").await;
+    let key = tsig::create_tsig_key(&app, "ixfr-record-class", KeyRole::Admin).await;
+
+    let qname = dns::parse_name(zone_name).unwrap();
+
+    for class in [
+        Class::IN,
+        Class::CH,
+        Class::HS,
+        Class::ANY,
+        Class::NONE,
+        Class::from_int(0),
+        Class::from_int(2),
+        Class::from_int(65280),
+        Class::from_int(u16::MAX),
+    ] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(1995);
+        let mut question = builder.question();
+        question.push((&qname, Rtype::IXFR, Class::IN)).unwrap();
+        let mut authority = question.authority();
+        authority
+            .push((
+                &qname,
+                class,
+                Ttl::ZERO,
+                Soa::new(
+                    qname.clone(),
+                    qname.clone(),
+                    Serial::from(serial),
+                    Ttl::ZERO,
+                    Ttl::ZERO,
+                    Ttl::ZERO,
+                    Ttl::ZERO,
+                ),
+            ))
+            .unwrap();
+        let mut query = authority.additional();
+        query
+            .opt(|opt| {
+                opt.set_udp_payload_size(512);
+                opt.set_dnssec_ok(true);
+                Ok(())
+            })
+            .unwrap();
+
+        for key in [None, Some(&key)] {
+            // A successful TLS transfer needs a key as well as the registered address.
+            if class == Class::IN && key.is_none() {
+                continue;
+            }
+
+            for response in [
+                dns::exchange_request(query.clone(), key, |message| {
+                    dns::exchange_udp(app.dns_port(), message)
+                }),
+                dns::exchange_request(query.clone(), key, |message| {
+                    dns::exchange_tcp(app.dns_port(), message)
+                }),
+                dns::exchange_request(query.clone(), key, |message| {
+                    dns::exchange_tls(app.dns_tls_port(), message, dns::dot_client(&app))
+                }),
+            ] {
+                let response = response.unwrap();
+
+                assert_eq!(response.header().id(), 1995);
+                assert_eq!(
+                    response.header().rcode(),
+                    if class == Class::IN {
+                        Rcode::NOERROR
+                    } else {
+                        Rcode::FORMERR
+                    },
+                    "{class}"
+                );
+                assert_eq!(response.sole_question().unwrap().qclass(), Class::IN);
+                assert!(response.opt().unwrap().dnssec_ok());
+                assert_eq!(
+                    response.header_counts().ancount(),
+                    if class == Class::IN {
+                        1
+                    } else {
+                        0
+                    }
+                );
+                assert!(response.as_slice().len() <= 512);
+            }
+        }
+    }
+}
+
+/// The message section that carries the foreign-class record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Section {
+    Answer,
+    Authority,
+    Additional,
+}
+
+/// Build a query with a foreign-class record after a valid IN SOA where applicable.
+fn build_query_with_foreign_record(
+    section: Section,
+    questions: usize,
+    version: u8,
+) -> AdditionalBuilder<Vec<u8>> {
+    let qname = dns::parse_name("example.com").unwrap();
+    let soa = Soa::new(
+        qname.clone(),
+        qname.clone(),
+        Serial::from(1),
+        Ttl::ZERO,
+        Ttl::ZERO,
+        Ttl::ZERO,
+        Ttl::ZERO,
+    );
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(1035);
+    let mut question = builder.question();
+
+    for _ in 0..questions {
+        question.push((&qname, Rtype::SOA, Class::IN)).unwrap();
+    }
+
+    let mut answer = question.answer();
+
+    if section == Section::Answer {
+        answer.push((&qname, Class::CH, Ttl::ZERO, &soa)).unwrap();
+    }
+
+    let mut authority = answer.authority();
+    authority
+        .push((&qname, Class::IN, Ttl::ZERO, &soa))
+        .unwrap();
+
+    if section == Section::Authority {
+        authority
+            .push((&qname, Class::CH, Ttl::ZERO, &soa))
+            .unwrap();
+    }
+
+    let mut additional = authority.additional();
+
+    if section == Section::Additional {
+        additional
+            .push((&qname, Class::CH, Ttl::ZERO, &soa))
+            .unwrap();
+    }
+
+    additional
+        .opt(|opt| {
+            opt.set_udp_payload_size(512);
+            opt.set_dnssec_ok(true);
+            opt.set_version(version);
+            Ok(())
+        })
+        .unwrap();
+
+    additional
+}
+
+/// Verify that every ordinary QUERY section is IN-only and that count and EDNS errors keep
+/// their order.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn queries_reject_foreign_classes_in_every_section() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+    let key = tsig::create_tsig_key(&app, "query-record-class", KeyRole::Admin).await;
+
+    for section in [Section::Answer, Section::Authority, Section::Additional] {
+        for questions in [1, 2] {
+            for version in [0, 1] {
+                let query = build_query_with_foreign_record(section, questions, version);
+
+                for key in [None, Some(&key)] {
+                    for response in [
+                        dns::exchange_request(query.clone(), key, |message| {
+                            dns::exchange_udp(app.dns_port(), message)
+                        }),
+                        dns::exchange_request(query.clone(), key, |message| {
+                            dns::exchange_tcp(app.dns_port(), message)
+                        }),
+                        dns::exchange_request(query.clone(), key, |message| {
+                            dns::exchange_tls(app.dns_tls_port(), message, dns::dot_client(&app))
+                        }),
+                    ] {
+                        let response = response.unwrap();
+
+                        assert_eq!(
+                            response.opt_rcode(),
+                            if questions == 1 && version == 1 {
+                                OptRcode::BADVERS
+                            } else {
+                                OptRcode::FORMERR
+                            },
+                            "{section:?} QDCOUNT={questions} EDNS={version}"
+                        );
+                        assert_eq!(response.sole_question().unwrap().qclass(), Class::IN);
+                        assert_eq!(response.header_counts().ancount(), 0);
+                        assert_eq!(response.header_counts().nscount(), 0);
+                        assert!(response.opt().unwrap().dnssec_ok());
+                        assert!(response.as_slice().len() <= 512);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Verify that class errors cannot bypass TSIG validation, including alongside BADVERS.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn foreign_record_classes_keep_tsig_error_precedence() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+    let key = tsig::create_tsig_key(&app, "bad-record-class", KeyRole::Admin).await;
+
+    for unknown in [false, true] {
+        let mut signing_key = key.clone();
+
+        if unknown {
+            signing_key.name = "unknown-record-class".to_string();
+        }
+
+        let mut query = build_query_with_foreign_record(Section::Authority, 1, 1);
+        tsig::sign(&mut query, &signing_key).unwrap();
+        let mut query = query.finish();
+
+        if !unknown {
+            let mac_end = query.len() - 7;
+            query[mac_end] ^= 1;
+        }
+
+        for response in [
+            dns::exchange_udp(app.dns_port(), &query).unwrap(),
+            dns::exchange_tcp(app.dns_port(), &query).unwrap(),
+            dns::exchange_tls(app.dns_tls_port(), &query, dns::dot_client(&app)).unwrap(),
+        ] {
+            let response = Message::from_octets(response).unwrap();
+
+            assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+            assert!(response.opt().unwrap().dnssec_ok());
+            let tsig = response
+                .additional()
+                .unwrap()
+                .limit_to::<Tsig<_, _>>()
+                .last()
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(
+                tsig.data().error(),
+                if unknown {
+                    TsigRcode::BADKEY
+                } else {
+                    TsigRcode::BADSIG
+                }
+            );
+            assert!(tsig.data().mac().is_empty());
+        }
+    }
+}
+
+/// Verify that TSIG error metrics follow the final RCODE, including overflow fallback.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn tsig_error_metrics_follow_the_encoded_response() {
+    let app = TestApp::start_local().await;
+
+    let owner = dns::parse_name(&format!(
+        "{}.{}.{}.{}",
+        "k".repeat(63),
+        "l".repeat(63),
+        "m".repeat(63),
+        "n".repeat(61)
+    ))
+    .unwrap();
+    let algorithm = dns::parse_name(&format!(
+        "{}.{}.{}.{}",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(61)
+    ))
+    .unwrap();
+
+    for advertised in [512, 1232] {
+        for (opcode, qtype) in [
+            (Opcode::QUERY, Rtype::SOA),
+            (Opcode::QUERY, Rtype::AXFR),
+            (Opcode::QUERY, Rtype::IXFR),
+            (Opcode::UPDATE, Rtype::SOA),
+        ] {
+            let expected = if advertised == 512 {
+                Rcode::SERVFAIL
+            } else {
+                Rcode::NOTAUTH
+            };
+            let (metric, outcome) = if opcode == Opcode::UPDATE {
+                (
+                    "bindizr_nsupdate_requests_total",
+                    if advertised == 512 {
+                        "servfail"
+                    } else {
+                        "tsig_failed"
+                    },
+                )
+            } else if qtype == Rtype::SOA {
+                (
+                    "bindizr_soa_queries_total",
+                    if advertised == 512 {
+                        "failed"
+                    } else {
+                        "refused"
+                    },
+                )
+            } else {
+                (
+                    "bindizr_xfr_total",
+                    if advertised == 512 {
+                        "failed"
+                    } else {
+                        "refused"
+                    },
+                )
+            };
+            let mut labels = vec![format!(r#"result="{outcome}""#)];
+
+            if metric == "bindizr_xfr_total" {
+                labels.push(format!(r#"type="{}""#, qtype.to_string().to_lowercase()));
+                labels.push(r#"transport="udp""#.to_string());
+            }
+
+            let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+
+            let before = app.read_counter(metric, &labels).await;
+
+            let mut builder = MessageBuilder::new_vec();
+            builder.header_mut().set_id(8945);
+            builder.header_mut().set_opcode(opcode);
+            let mut question = builder.question();
+            question
+                .push((dns::parse_name("example.com").unwrap(), qtype))
+                .unwrap();
+            let mut request = question.additional();
+            request
+                .opt(|opt| {
+                    opt.set_udp_payload_size(advertised);
+                    Ok(())
+                })
+                .unwrap();
+            request
+                .push((
+                    &owner,
+                    Class::ANY,
+                    Ttl::ZERO,
+                    Tsig::new(
+                        algorithm.clone(),
+                        Time48::now(),
+                        300,
+                        vec![0; 32],
+                        8945,
+                        TsigRcode::NOERROR,
+                        Vec::new(),
+                    )
+                    .unwrap(),
+                ))
+                .unwrap();
+            let response = dns::exchange_udp(app.dns_port(), &request.finish()).unwrap();
+            let response = Message::from_octets(response).unwrap();
+
+            assert_eq!(response.header().rcode(), expected);
+            assert!(response.as_slice().len() <= usize::from(advertised));
+            assert_eq!(app.read_counter(metric, &labels).await, before + 1.0);
+        }
+    }
+}
+
+/// Verify that signed UDP AXFR encoding failures count as failed transfers.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn udp_axfr_counts_encoding_failure_before_truncation() {
+    let app = TestApp::start_local().await;
+
+    let tsig_key_name = format!("{}.{}.{}.k", "d".repeat(63), "e".repeat(63), "f".repeat(63));
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/tsig-keys",
+            Some(json!({
+                "name": tsig_key_name,
+                "role_name": "admin",
+                "algorithm": "hmac-sha512"
+            })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let key = SigningKey {
+        name: tsig_key_name,
+        secret: body["secret"].as_str().unwrap().to_string(),
+        algorithm: Algorithm::Sha512,
+    };
+    let qname = dns::parse_name(&format!(
+        "{}.{}.{}.q",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63)
+    ))
+    .unwrap();
+
+    for advertised in [512, 1232] {
+        let failed = [r#"type="axfr""#, r#"transport="udp""#, r#"result="failed""#];
+        let truncated = [
+            r#"type="axfr""#,
+            r#"transport="udp""#,
+            r#"result="truncated""#,
+        ];
+
+        let failed_before = app.read_counter("bindizr_xfr_total", &failed).await;
+        let truncated_before = app.read_counter("bindizr_xfr_total", &truncated).await;
+
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(5936);
+        let mut question = builder.question();
+        question.push((&qname, Rtype::AXFR)).unwrap();
+        let mut query = question.additional();
+        query
+            .opt(|opt| {
+                opt.set_udp_payload_size(advertised);
+                Ok(())
+            })
+            .unwrap();
+        let client =
+            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut query, Time48::now())
+                .unwrap();
+        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        socket
+            .send_to(&query.finish(), ("127.0.0.1", app.dns_port()))
+            .unwrap();
+        let mut buffer = vec![0; 4096];
+        let received = socket.recv_from(&mut buffer);
+
+        if advertised == 512 {
+            assert!(matches!(
+                received,
+                Err(error) if matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock)
+            ));
+            assert_eq!(
+                app.read_counter("bindizr_xfr_total", &failed).await,
+                failed_before + 1.0
+            );
+            assert_eq!(
+                app.read_counter("bindizr_xfr_total", &truncated).await,
+                truncated_before
+            );
+        } else {
+            buffer.truncate(received.unwrap().0);
+            let mut response = Message::from_octets(buffer).unwrap();
+
+            assert!(response.header().tc());
+            assert_eq!(response.header().rcode(), Rcode::NOERROR);
+            client.answer(&mut response, Time48::now()).unwrap();
+
+            assert_eq!(
+                app.read_counter("bindizr_xfr_total", &failed).await,
+                failed_before
+            );
+            assert_eq!(
+                app.read_counter("bindizr_xfr_total", &truncated).await,
+                truncated_before + 1.0
+            );
+        }
+    }
+}
+
+/// Verify that a readable first question does not make a truncated later section usable.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn unreadable_bodies_receive_header_only_responses_on_every_transport() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+
+    for opcode in [Opcode::QUERY, Opcode::UPDATE] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(6891);
+        builder.header_mut().set_rd(true);
+        builder.header_mut().set_opcode(opcode);
+        let mut question = builder.question();
+        question
+            .push((dns::parse_name("example.com").unwrap(), Rtype::SOA))
+            .unwrap();
+        let complete = question.finish();
+        let mut truncated_record = complete.clone();
+        truncated_record[6..8].copy_from_slice(&1u16.to_be_bytes());
+        let mut truncated_question = complete[..12].to_vec();
+        truncated_question.extend_from_slice(&[5, b'x']);
+        let mut trailing_data = complete;
+        trailing_data.push(0);
+
+        for request in [truncated_record, truncated_question, trailing_data] {
+            for response in [
+                dns::exchange_udp(app.dns_port(), &request).unwrap(),
+                dns::exchange_tcp(app.dns_port(), &request).unwrap(),
+                dns::exchange_tls(app.dns_tls_port(), &request, dns::dot_client(&app)).unwrap(),
+            ] {
+                let response = Message::from_octets(response).unwrap();
+
+                assert_eq!(response.header().id(), 6891);
+                assert_eq!(response.header().opcode(), opcode);
+                assert!(response.header().qr() && response.header().rd());
+                assert_eq!(response.header().rcode(), Rcode::FORMERR);
+                assert_eq!(response.as_slice().len(), 12);
+                assert_eq!(response.header_counts().qdcount(), 0);
+                assert_eq!(response.header_counts().arcount(), 0);
+            }
+        }
+    }
+}
+
+/// Verify that readable Additional sections remain meaningful when QDCOUNT is zero.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn questionless_queries_preserve_edns_and_tsig() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+    let key = tsig::create_tsig_key(&app, "questionless-key", KeyRole::Admin).await;
+
+    for opcode in [Opcode::QUERY, Opcode::from_int(15)] {
+        for version in [None, Some(0), Some(1)] {
+            for dnssec_ok in [false, true] {
+                for key in [None, Some(&key)] {
+                    let mut builder = MessageBuilder::new_vec();
+                    builder.header_mut().set_id(9619);
+                    builder.header_mut().set_rd(true);
+                    builder.header_mut().set_opcode(opcode);
+                    let mut request = builder.additional();
+
+                    if let Some(version) = version {
+                        request
+                            .opt(|opt| {
+                                opt.set_udp_payload_size(512);
+                                opt.set_version(version);
+                                opt.set_dnssec_ok(dnssec_ok);
+                                Ok(())
+                            })
+                            .unwrap();
+                    }
+
+                    let plain_rcode = if opcode == Opcode::QUERY {
+                        OptRcode::FORMERR
+                    } else {
+                        OptRcode::NOTIMP
+                    };
+                    let tls_rcode = if opcode == Opcode::QUERY {
+                        OptRcode::FORMERR
+                    } else {
+                        OptRcode::REFUSED
+                    };
+
+                    for (response, expected) in [
+                        (
+                            dns::exchange_request(request.clone(), key, |message| {
+                                dns::exchange_udp(app.dns_port(), message)
+                            }),
+                            plain_rcode,
+                        ),
+                        (
+                            dns::exchange_request(request.clone(), key, |message| {
+                                dns::exchange_tcp(app.dns_port(), message)
+                            }),
+                            plain_rcode,
+                        ),
+                        (
+                            dns::exchange_request(request, key, |message| {
+                                dns::exchange_tls(
+                                    app.dns_tls_port(),
+                                    message,
+                                    dns::dot_client(&app),
+                                )
+                            }),
+                            tls_rcode,
+                        ),
+                    ] {
+                        let response = response.unwrap();
+
+                        assert_eq!(response.header().id(), 9619);
+                        assert_eq!(response.header().opcode(), opcode);
+                        assert!(response.header().qr() && response.header().rd());
+                        assert!(!response.header().aa() && !response.header().tc());
+                        assert_eq!(response.header_counts().qdcount(), 0);
+                        assert_eq!(response.header_counts().ancount(), 0);
+                        assert_eq!(response.header_counts().nscount(), 0);
+                        assert_eq!(
+                            response.opt_rcode(),
+                            if version == Some(1) {
+                                OptRcode::BADVERS
+                            } else {
+                                expected
+                            }
+                        );
+                        assert_eq!(response.opt().is_some(), version.is_some());
+
+                        if let Some(opt) = response.opt() {
+                            assert_eq!(opt.version(), 0);
+                            assert_eq!(opt.dnssec_ok(), dnssec_ok);
+                        }
+
+                        assert!(response.as_slice().len() <= 512);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Verify that an unsupported opcode needs only a header, not a QUERY-shaped body.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn unsupported_opcodes_return_refusals_without_questions() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+
+    for edns in [false, true] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(8906);
+        builder.header_mut().set_opcode(Opcode::from_int(15));
+        let mut request = builder.additional();
+
+        if edns {
+            request
+                .opt(|opt| {
+                    opt.set_udp_payload_size(1232);
+                    Ok(())
+                })
+                .unwrap();
+        }
+
+        let request = request.finish();
+
+        for response in [
+            dns::exchange_udp(app.dns_port(), &request).unwrap(),
+            dns::exchange_tcp(app.dns_port(), &request).unwrap(),
+        ] {
+            let response = Message::from_octets(response).unwrap();
+
+            assert_eq!(response.header().opcode(), Opcode::from_int(15));
+            assert_eq!(response.header().rcode(), Rcode::NOTIMP);
+            assert_eq!(response.header_counts().qdcount(), 0);
+            assert_eq!(response.opt().is_some(), edns);
+        }
+
+        let response =
+            dns::exchange_tls(app.dns_tls_port(), &request, dns::dot_client(&app)).unwrap();
+        let response = Message::from_octets(response).unwrap();
+
+        assert_eq!(response.header().rcode(), Rcode::REFUSED);
+        assert_eq!(response.header_counts().qdcount(), 0);
+        assert_eq!(response.opt().is_some(), edns);
+
+        if let Some(opt) = response.opt() {
+            assert_eq!(
+                opt.opt()
+                    .iter::<ExtendedError<_>>()
+                    .next()
+                    .unwrap()
+                    .unwrap()
+                    .code(),
+                ExtendedErrorCode::NOT_SUPPORTED
+            );
+        }
+    }
+}
+
+/// Verify that TSIG validation precedes question-count, EDNS-version, and opcode refusals.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn questionless_tsig_failures_keep_their_specific_errors() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+    let key = tsig::create_tsig_key(&app, "questionless-errors", KeyRole::Admin).await;
+
+    for opcode in [Opcode::QUERY, Opcode::from_int(15)] {
+        for version in [None, Some(0), Some(1)] {
+            for (unknown, corrupt, age, mac_len, expected) in [
+                (true, false, 0, 32, TsigRcode::BADKEY),
+                (false, true, 0, 32, TsigRcode::BADSIG),
+                (false, false, 3600, 32, TsigRcode::BADTIME),
+                (false, false, 0, 16, TsigRcode::BADTRUNC),
+                (false, true, 3600, 16, TsigRcode::BADSIG),
+                (false, false, 3600, 16, TsigRcode::BADTIME),
+            ] {
+                let mut signing_key = key.clone();
+
+                if unknown {
+                    signing_key.name = "unregistered-questionless-key".to_string();
+                }
+
+                let mut builder = MessageBuilder::new_vec();
+                builder.header_mut().set_id(8945);
+                builder.header_mut().set_opcode(opcode);
+                let mut request = builder.additional();
+
+                if let Some(version) = version {
+                    request
+                        .opt(|opt| {
+                            opt.set_udp_payload_size(512);
+                            opt.set_version(version);
+                            opt.set_dnssec_ok(true);
+                            Ok(())
+                        })
+                        .unwrap();
+                }
+
+                let signed_at = Time48::from_u64(u64::from(Time48::now()) - age);
+                ClientTransaction::request_with_fudge(
+                    signing_key.to_tsig_key_with_mac_len(mac_len).unwrap(),
+                    &mut request,
+                    signed_at,
+                    17,
+                )
+                .unwrap();
+                let mut request = request.finish();
+
+                if corrupt {
+                    let mac_end = request.len() - 7;
+                    request[mac_end] ^= 1;
+                }
+
+                for response in [
+                    dns::exchange_udp(app.dns_port(), &request).unwrap(),
+                    dns::exchange_tcp(app.dns_port(), &request).unwrap(),
+                    dns::exchange_tls(app.dns_tls_port(), &request, dns::dot_client(&app)).unwrap(),
+                ] {
+                    let response = Message::from_octets(response).unwrap();
+
+                    assert_eq!(response.header().id(), 8945);
+                    assert_eq!(response.header().opcode(), opcode);
+                    assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+                    assert_eq!(response.header_counts().qdcount(), 0);
+                    assert_eq!(response.opt().is_some(), version.is_some());
+
+                    if let Some(opt) = response.opt() {
+                        assert_eq!(opt.version(), 0);
+                        assert!(opt.dnssec_ok());
+                    }
+
+                    let tsig = response
+                        .additional()
+                        .unwrap()
+                        .limit_to::<Tsig<_, _>>()
+                        .last()
+                        .unwrap()
+                        .unwrap();
+
+                    assert_eq!(tsig.data().error(), expected);
+                    assert_eq!(
+                        tsig.data().other().len(),
+                        if expected == TsigRcode::BADTIME {
+                            6
+                        } else {
+                            0
+                        }
+                    );
+
+                    if expected == TsigRcode::BADKEY || expected == TsigRcode::BADSIG {
+                        assert!(tsig.data().mac().is_empty());
+                    } else {
+                        assert_eq!(tsig.data().mac().len(), 32);
+                        tsig::verify_response_mac(&request, &response, &key).unwrap();
+                    }
+
+                    assert!(response.as_slice().len() <= 512);
+                }
+            }
+        }
+    }
+}
+
+/// Verify that a nonstandard opcode body cannot be mistaken for a malformed QUERY or TSIG.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+
+    for count in [0u16, 1, u16::MAX] {
+        for body in [&[][..], &[0xc0, 0x0c][..], &[0xff; 32][..]] {
+            let mut builder = MessageBuilder::new_vec();
+            builder.header_mut().set_id(8906);
+            builder.header_mut().set_opcode(Opcode::from_int(15));
+            let mut request = builder.finish();
+            request[4..6].copy_from_slice(&count.to_be_bytes());
+            request.extend_from_slice(body);
+
+            for response in [
+                dns::exchange_udp(app.dns_port(), &request).unwrap(),
+                dns::exchange_tcp(app.dns_port(), &request).unwrap(),
+            ] {
+                let response = Message::from_octets(response).unwrap();
+
+                assert_eq!(response.header().rcode(), Rcode::NOTIMP);
+                assert_eq!(response.header_counts().qdcount(), 0);
+                assert_eq!(response.as_slice().len(), 12);
+            }
+
+            let response =
+                dns::exchange_tls(app.dns_tls_port(), &request, dns::dot_client(&app)).unwrap();
+            let response = Message::from_octets(response).unwrap();
+
+            assert_eq!(response.header().rcode(), Rcode::REFUSED);
+            assert_eq!(response.header_counts().qdcount(), 0);
+            assert_eq!(response.as_slice().len(), 12);
+        }
+    }
+}
+
+/// Verify that invalid OPT/TSIG metadata remains FORMERR even when no question is present.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn questionless_malformed_extensions_receive_formerr() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+    let key = tsig::create_tsig_key(&app, "questionless-malformed", KeyRole::Admin).await;
+
+    for malformed_tsig in [false, true] {
+        let mut query = MessageBuilder::new_vec().additional();
+        query
+            .opt(|opt| {
+                opt.set_udp_payload_size(512);
+                Ok(())
+            })
+            .unwrap();
+
+        if malformed_tsig {
+            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut query, Time48::now())
+                .unwrap();
+        } else {
+            // A second OPT is invalid but its record boundaries are readable.
+            query
+                .opt(|opt| {
+                    opt.set_udp_payload_size(512);
+                    Ok(())
+                })
+                .unwrap();
+        }
+
+        let mut query = query.finish();
+
+        if malformed_tsig {
+            let message = Message::from_octets(query.as_slice()).unwrap();
+            let mut additional = message.additional().unwrap();
+            additional.next().unwrap().unwrap();
+            let tsig_start = additional.pos();
+            let owner_len = key.name.len() + 2;
+
+            // TSIG requires CLASS ANY; zero breaks framing-independent validation.
+            let class_start = tsig_start + owner_len + 2;
+            query[class_start..class_start + 2].copy_from_slice(&0u16.to_be_bytes());
+        }
+
+        for response in [
+            dns::exchange_udp(app.dns_port(), &query).unwrap(),
+            dns::exchange_tcp(app.dns_port(), &query).unwrap(),
+            dns::exchange_tls(app.dns_tls_port(), &query, dns::dot_client(&app)).unwrap(),
+        ] {
+            let response = Message::from_octets(response).unwrap();
+
+            assert_eq!(response.header().rcode(), Rcode::FORMERR);
+            assert_eq!(response.header_counts().qdcount(), 0);
+            assert!(response.opt().is_some());
+            assert!(
+                !response
+                    .additional()
+                    .unwrap()
+                    .any(|record| record.unwrap().rtype() == Rtype::TSIG)
+            );
+        }
+    }
+}
+
+/// Verify that a refused message leaves both framed transports available for another
+/// request.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn questionless_refusals_allow_connection_reuse() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+    let mut stream = dns::connect_tcp(app.dns_port()).unwrap();
+
+    for opcode in [Opcode::QUERY, Opcode::from_int(15), Opcode::QUERY] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_opcode(opcode);
+        dns::write_frame(&mut stream, &builder.finish()).unwrap();
+        let response = dns::read_frame(&mut stream).unwrap().unwrap();
+        let response = Message::from_octets(response).unwrap();
+
+        assert_eq!(
+            response.header().rcode(),
+            if opcode == Opcode::QUERY {
+                Rcode::FORMERR
+            } else {
+                Rcode::NOTIMP
+            }
+        );
+    }
+
+    let mut stream = dns::connect_tls(app.dns_tls_port(), dns::dot_client(&app)).unwrap();
+
+    for opcode in [Opcode::QUERY, Opcode::from_int(15), Opcode::QUERY] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_opcode(opcode);
+        dns::write_frame(&mut stream, &builder.finish()).unwrap();
+        let response = dns::read_frame(&mut stream).unwrap().unwrap();
+        let response = Message::from_octets(response).unwrap();
+
+        assert_eq!(
+            response.header().rcode(),
+            if opcode == Opcode::QUERY {
+                Rcode::FORMERR
+            } else {
+                Rcode::REFUSED
+            }
+        );
+    }
 }
