@@ -12,15 +12,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from adapters import registry  # noqa: E402
 from datasets.gen_dataset import generate  # noqa: E402
 from lib import loadgen  # noqa: E402
-from lib.resources import sampler_for  # noqa: E402
+from lib.resources import load_sampler  # noqa: E402
 
 # Sampled around the measured phase below, not by the orchestrator.
 SELF_SAMPLES = True
 
 
 def _mem_split(resource_usage: dict) -> tuple[float, float]:
-    """Bindizr's own peak vs the DB server container's, from the per-container
-    peaks. sqlite runs in-process, so its DB share is 0."""
+    """Return Bindizr and database container memory peaks separately.
+
+    SQLite runs in-process, so its database container share is zero.
+    """
     by_service = {}
 
     for name, mb in resource_usage.get("mem_by_container", {}).items():
@@ -51,7 +53,7 @@ async def _bench_backend(adapter, config, zone_name, label, pairing) -> dict:
         handles.append(await adapter.create_record(zone_name, record))
 
     # The resource window includes create-data preparation and both warmups.
-    sampler = sampler_for(adapter, config)
+    sampler = load_sampler(adapter, config)
     with sampler:
         create_records = generate(200_000, config["seed"] + 3)
 
@@ -99,7 +101,7 @@ async def _bulk_backend(adapter, config, zone_name, backend, size, pairing) -> d
 
     records = generate(size, config["seed"], zone_name)
 
-    sampler = sampler_for(adapter, config)
+    sampler = load_sampler(adapter, config)
     with sampler:
         started = time.monotonic()
 

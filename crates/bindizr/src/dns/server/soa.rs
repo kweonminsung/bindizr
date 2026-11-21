@@ -9,6 +9,7 @@ use bindizr_core::dns::tsig::{RequestSignature, TransferSigner};
 use bindizr_core::metrics::{SoaResult, XfrResult};
 use bindizr_core::model::transfer::{TransferKind, TransferTransport};
 use bindizr_service::authorization::Caller;
+use bindizr_service::types::ZoneView;
 use bindizr_service::zone;
 use bindizr_service::zone::TransferAccess;
 
@@ -239,33 +240,29 @@ async fn handle_soa_request(
     }
 
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
-    let include_signatures = query.qtype == Rtype::SOA && query.edns.dnssec_ok();
+    let view = ZoneView::from_signed(query.qtype == Rtype::SOA && query.edns.dnssec_ok());
 
     let access = match zone::normalize_name(zone_name_str) {
-        Ok(zone_name) => match zone::authorize_soa_content_by_name(
-            cx,
-            &identity.caller,
-            &zone_name,
-            include_signatures,
-        )
-        .await
-        {
-            Ok(access) => access,
-            Err(error) => {
-                log::error!(
-                    "Failed to load SOA content for {} query for {zone_name_str:?} from {client_ip}: {error:?}",
-                    query.qtype
-                );
-                return Ok((
-                    query.build_signed_error_response(
-                        OptRcode::SERVFAIL,
-                        None,
-                        identity.signer.as_mut(),
-                    )?,
-                    SoaResult::Failed,
-                ));
+        Ok(zone_name) => {
+            match zone::authorize_soa_content_by_name(cx, &identity.caller, &zone_name, view).await
+            {
+                Ok(access) => access,
+                Err(error) => {
+                    log::error!(
+                        "Failed to load SOA content for {} query for {zone_name_str:?} from {client_ip}: {error:?}",
+                        query.qtype
+                    );
+                    return Ok((
+                        query.build_signed_error_response(
+                            OptRcode::SERVFAIL,
+                            None,
+                            identity.signer.as_mut(),
+                        )?,
+                        SoaResult::Failed,
+                    ));
+                }
             }
-        },
+        }
         Err(_) => TransferAccess::NotAuth,
     };
     let (zone, signatures) = match access {

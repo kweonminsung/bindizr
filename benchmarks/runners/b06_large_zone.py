@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
 from lib import dig  # noqa: E402
-from lib.resources import sampler_for  # noqa: E402
+from lib.resources import load_sampler  # noqa: E402
 
 # Sampled around the measured phase below, not by the orchestrator.
 SELF_SAMPLES = True
@@ -30,7 +30,7 @@ async def run(adapter, config, context) -> list:
     rows = []
 
     for size in config["sizes"]:
-        sampler = sampler_for(adapter, config)
+        sampler = load_sampler(adapter, config)
         with sampler:
             await adapter.delete_zone(zone_name)
 

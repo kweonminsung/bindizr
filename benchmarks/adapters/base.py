@@ -106,8 +106,8 @@ class DnsAdapter(abc.ABC):
 
     @abc.abstractmethod
     def dns_endpoint(self) -> Endpoint:
-        """Resolver that answers queries for the managed zone."""
+        """Return the resolver that answers queries for the managed zone."""
 
     def xfr_endpoint(self) -> Endpoint:
-        """Server that answers AXFR/IXFR for the managed zone (defaults to DNS)."""
+        """Return the zone's AXFR/IXFR server, defaulting to its DNS endpoint."""
         return self.dns_endpoint()

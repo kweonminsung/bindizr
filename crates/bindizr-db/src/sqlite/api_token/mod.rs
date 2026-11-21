@@ -182,9 +182,6 @@ pub(crate) async fn list_by_role_id(
     Ok(tokens)
 }
 
-#[cfg(test)]
-mod tests;
-
 /// List credential metadata with its role name, filtered and paged in SQL.
 pub(crate) async fn list_by_filter_with_role(
     pool: &Pool<Sqlite>,
@@ -235,3 +232,6 @@ pub(crate) async fn count_by_filter(
 
     Ok(count as u64)
 }
+
+#[cfg(test)]
+mod tests;

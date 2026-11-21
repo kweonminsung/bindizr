@@ -38,8 +38,8 @@ def _to_bytes(text: str) -> float:
     return value * scale.get(unit, 1)
 
 
-def sampler_for(adapter, config: dict) -> "ResourceSampler":
-    """Sampler over the containers an adapter declares measurable."""
+def load_sampler(adapter, config: dict) -> "ResourceSampler":
+    """Load a sampler after resolving the adapter's running containers."""
     container_ids = [adapter.compose.resolve_container_id(service) for service in adapter.resource_services]
     return ResourceSampler([container_id for container_id in container_ids if container_id],
                            config["resources"]["sample_interval_secs"])

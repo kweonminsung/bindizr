@@ -9,10 +9,9 @@ use axum::middleware::Next;
 use axum::response::Response;
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
+use bindizr_service::error::ErrorCode;
 use bindizr_service::{Context, access};
 use chrono::Utc;
-
-use crate::api::error::ErrorMessage;
 
 /// The longest request path kept; a longer one is cut short, since an
 /// unauthenticated client chooses it.
@@ -23,8 +22,8 @@ const MAX_TARGET_LEN: usize = 1024;
 const MAX_METHOD_LEN: usize = 16;
 
 /// Answer the request, then queue its row: the method and path, the peer, the
-/// credential the auth layer verified, and the error it was answered with.
-/// The query and body stay out, so no secret a request carries is saved.
+/// credential the auth layer verified, and its fixed error code.
+/// Query, body, and client diagnostics stay out, since they may carry secrets.
 pub(crate) async fn save_access_log(
     State(cx): State<Arc<Context>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -63,8 +62,8 @@ pub(crate) async fn save_access_log(
             caller: response.extensions().get::<ChangeActor>().cloned(),
             error: response
                 .extensions()
-                .get::<ErrorMessage>()
-                .map(|message| message.0.clone()),
+                .get::<ErrorCode>()
+                .map(|code| code.as_str().to_string()),
             requested_at,
         },
     );

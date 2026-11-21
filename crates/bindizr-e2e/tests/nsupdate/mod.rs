@@ -3696,6 +3696,70 @@ async fn nsupdate_leaves_access_log_rows_with_their_key_and_outcome() {
     assert!(applied["error"].is_null(), "{applied}");
 }
 
+/// Verify that rejected NAPTR RDATA stays out of unsigned UDP and signed TCP access
+/// rows, without committing the valid record preceding it.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn nsupdate_access_log_excludes_rejected_record_values() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        nsupdate_tsig_required: false,
+        ..Default::default()
+    })
+    .await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = tsig::create_tsig_key(&app, "private-rdata-key", KeyRole::Admin).await;
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    let marker = format!("{}-private-rdata", app.namespace());
+    let regexp = format!("!^.*$!{marker}!x");
+    let mut rdata = vec![0, 10, 0, 10, 1, b'U', 7];
+    rdata.extend_from_slice(b"E2U+sip");
+    rdata.push(u8::try_from(regexp.len()).unwrap());
+    rdata.extend_from_slice(regexp.as_bytes());
+    rdata.push(0);
+    let updates = [
+        UpdateRecord::AddA {
+            name: format!("atomic.{zone_name}."),
+            ttl: 300,
+            addr: "192.0.2.19".to_string(),
+        },
+        UpdateRecord::AddRecord {
+            name: format!("naptr.{zone_name}."),
+            rtype: Rtype::NAPTR,
+            ttl: 300,
+            rdata,
+        },
+    ];
+
+    assert_eq!(
+        nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
+        Rcode::REFUSED
+    );
+    assert_eq!(
+        nsupdate::send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+        Rcode::REFUSED
+    );
+
+    for caller in [Value::Null, json!({ "kind": "tsig_key", "name": key.name })] {
+        let log = app
+            .wait_for_access_log("source=nsupdate&result=denied", |log| {
+                log["target"] == zone_name && log["caller"] == caller
+            })
+            .await;
+
+        assert!(
+            !log.to_string().contains(&marker),
+            "RDATA reached the access log: {log}"
+        );
+        assert_eq!(log["error"], "REFUSED", "{log}");
+        assert_eq!(log["status"], "REFUSED", "{log}");
+    }
+
+    assert_eq!(app.list_records(zone_name).await, before);
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+}
+
 /// Verify that UPDATE parse failures retain SERVFAIL when TSIG error encoding fails.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

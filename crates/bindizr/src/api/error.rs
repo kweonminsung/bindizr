@@ -55,10 +55,6 @@ pub(crate) fn http_status(code: ErrorCode) -> StatusCode {
     }
 }
 
-/// The message an error response carried, attached for the access log.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ErrorMessage(pub(crate) String);
-
 /// Newtype over [`ServiceError`] so the service error can be converted into an
 /// HTTP response (orphan rules forbid implementing `IntoResponse` directly).
 #[derive(Debug, Error)]
@@ -83,9 +79,9 @@ impl IntoResponse for ApiError {
         let status = http_status(self.0.code());
         let code = self.0.code();
         let body = ErrorResponse::from(&self.0);
-        let message = ErrorMessage(body.error.clone());
         let mut response = (status, Json(body)).into_response();
-        response.extensions_mut().insert(message);
+        // Detailed diagnostics may contain rejected input; only the code is log-safe.
+        response.extensions_mut().insert(code);
 
         // RFC 9110, Section 15.5.2 wants a challenge on every 401; RFC 6750, Section 3
         // spells it with a realm and, for a refused token, `error="invalid_token"`.

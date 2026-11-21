@@ -52,7 +52,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
                     patch.object(adapter, "_flush_and_reload", AsyncMock(return_value=False)):
                 scope = nullcontext(sampler)
                 scope.summary = sampler.summary
-                with patch.object(b02_bulk_import, "sampler_for", return_value=scope):
+                with patch.object(b02_bulk_import, "load_sampler", return_value=scope):
                     result = await b02_bulk_import._measure(
                         adapter, "bench.example", 1, adapter.key,
                         lambda: adapter.import_records("bench.example", [self.record]),

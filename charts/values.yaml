@@ -135,8 +135,11 @@ bindizr:
   securityContext:
     runAsUser: 10001
     runAsGroup: 10001
+    # true | false — require the container to run as a non-root user.
     runAsNonRoot: true
+    # true | false — permit privilege escalation inside the container.
     allowPrivilegeEscalation: false
+    # true | false — mount the container root filesystem read-only.
     readOnlyRootFilesystem: true
     capabilities:
       # The image sets cap_net_bind_service on the binary for port 53; with
@@ -179,9 +182,9 @@ bindizr:
     failureThreshold: 30
   terminationGracePeriodSeconds: 30
 
-  # Keeps a node drain from taking every replica at once. Ignored below two
-  # replicas, where one budget or the other would block the drain outright.
   podDisruptionBudget:
+    # true | false — use the spec below to protect availability during node drains.
+    # Ignored below two Bindizr replicas.
     enabled: true
     spec:
       maxUnavailable: 1
@@ -191,6 +194,7 @@ bindizr:
   affinity: {}
 
 bindizrUi:
+  # true | false — deploy the Bindizr Web UI.
   enabled: false
   image:
     repository: kweonminsung/bindizr-ui
@@ -236,8 +240,9 @@ bind9:
     nodePort: ""
     annotations: {}
 
-  # A volume per pod for the transferred zones; off, an emptyDir.
   persistence:
+    # true | false — use a persistent volume per pod for transferred zones;
+    # false uses an emptyDir.
     enabled: true
     storageClass: ""
     accessModes:
@@ -266,11 +271,13 @@ bind9:
   affinity: {}
 
 serviceAccount:
+  # true | false — create the chart's service account.
   create: true
   annotations: {}
   name: ""
 
 mysql:
+  # true | false — deploy the bundled MySQL database.
   enabled: false
   image:
     repository: mysql
@@ -280,6 +287,8 @@ mysql:
   service:
     port: 3306
   persistence:
+    # true | false — use a persistent volume for MySQL data;
+    # false uses an emptyDir.
     enabled: true
     storageClass: ""
     accessModes:
@@ -299,6 +308,7 @@ mysql:
   affinity: {}
 
 postgresql:
+  # true | false — deploy the bundled PostgreSQL database.
   enabled: false
   image:
     repository: postgres
@@ -308,6 +318,8 @@ postgresql:
   service:
     port: 5432
   persistence:
+    # true | false — use a persistent volume for PostgreSQL data;
+    # false uses an emptyDir.
     enabled: true
     storageClass: ""
     accessModes:

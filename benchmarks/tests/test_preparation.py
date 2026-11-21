@@ -32,8 +32,8 @@ class PreparationTests(IsolatedAsyncioTestCase):
                     ixfr = stack.enter_context(patch.object(dig, "ixfr", AsyncMock()))
                     visible = stack.enter_context(patch.object(dig, "first_unqueryable", AsyncMock(return_value=None)))
                     query = stack.enter_context(patch.object(b08_query_perf.dnsquery, "query_load", AsyncMock()))
-                    stack.enter_context(patch.object(b06_large_zone, "sampler_for", return_value=sampler))
-                    resource_sampler = stack.enter_context(patch.object(b09_resource_usage, "sampler_for"))
+                    stack.enter_context(patch.object(b06_large_zone, "load_sampler", return_value=sampler))
+                    resource_sampler = stack.enter_context(patch.object(b09_resource_usage, "load_sampler"))
                     with self.assertRaisesRegex(RuntimeError, f"failed for {errors} records"):
                         await module.run(adapter, self.config, self.context)
                     adapter.import_records.assert_awaited_once()

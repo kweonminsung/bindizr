@@ -24,7 +24,7 @@ BENCHES=""
 
 # Print benchmark usage information and exit.
 print_usage() {
-  sed -n '2,20p' "$0"
+  sed -n '2,20p' "${0##*/}"
   exit 0
 }
 

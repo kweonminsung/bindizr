@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
 from lib import dnsquery, dig  # noqa: E402
-from lib.resources import sampler_for  # noqa: E402
+from lib.resources import load_sampler  # noqa: E402
 
 # Samples its own query phase, including warmup, rather than the orchestrator's full run.
 SELF_SAMPLES = True
@@ -48,7 +48,7 @@ async def run(adapter, config, context) -> dict:
         }
 
     # Resource samples include query warmup; throughput and latency samples exclude it.
-    sampler = sampler_for(adapter, config)
+    sampler = load_sampler(adapter, config)
     with sampler:
         recorder = await dnsquery.query_load(
             endpoint.host, endpoint.port, names, dnsquery.QTYPE["A"], config["query"]["concurrency"],

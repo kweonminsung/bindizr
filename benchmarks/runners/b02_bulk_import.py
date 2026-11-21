@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
-from lib.resources import sampler_for  # noqa: E402
+from lib.resources import load_sampler  # noqa: E402
 
 # Sampled around the measured phase below, not by the orchestrator.
 SELF_SAMPLES = True
@@ -22,7 +22,7 @@ async def _measure(adapter, zone_name, size, label, load, errors) -> dict:
     await adapter.delete_zone(zone_name)
     await adapter.create_zone(zone_name)
 
-    sampler = sampler_for(adapter, adapter.config)
+    sampler = load_sampler(adapter, adapter.config)
     with sampler:
         started = time.monotonic()
 

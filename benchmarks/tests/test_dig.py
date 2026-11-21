@@ -202,7 +202,7 @@ class DigTests(IsolatedAsyncioTestCase):
                 patch.object(dig, "ixfr", AsyncMock(side_effect=error)), \
                 patch.object(b05_ixfr, "_query_serial", AsyncMock(side_effect=[1, 2, 2])), \
                 patch.object(b04_axfr.asyncio, "sleep", AsyncMock()), \
-                patch.object(b06_large_zone, "sampler_for", return_value=sampler):
+                patch.object(b06_large_zone, "load_sampler", return_value=sampler):
             for module in (b04_axfr, b05_ixfr, b06_large_zone):
                 with self.subTest(runner=module.__name__), self.assertRaises(dig.TransferError):
                     await module.run(adapter, config, context)

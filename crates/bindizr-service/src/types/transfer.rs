@@ -58,7 +58,9 @@ pub struct TransferLogResponse {
     #[schema(inline)]
     pub serial: Option<Serial>,
     pub at: DateTime<Utc>,
-    /// Why the transfer was refused or failed.
+    /// A fixed error classification, excluding record values and detailed
+    /// diagnostics; null when the transfer succeeded.
+    #[schema(example = "DNS_ENCODING_FAILED")]
     pub error: Option<String>,
 }
 

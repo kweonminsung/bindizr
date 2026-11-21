@@ -38,6 +38,16 @@ pub(crate) enum TransferRefusal {
 }
 
 impl TransferRefusal {
+    /// Return a fixed log classification without the detailed refusal or its cause.
+    pub(crate) fn to_log_code(&self) -> String {
+        match self {
+            Self::Dns { rcode, .. } => rcode.to_string(),
+            Self::Failed { .. } => "SERVFAIL".to_string(),
+            Self::Tsig(TsigError::Rejected { rcode, .. }) => rcode.to_string(),
+            Self::Tsig(_) => "TSIG_AUTHENTICATION_FAILED".to_string(),
+        }
+    }
+
     /// Return SERVFAIL under the verified key, if any.
     pub(crate) fn failed(
         context: &'static str,

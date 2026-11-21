@@ -8,8 +8,10 @@ mod get;
 mod update;
 mod validation;
 
+use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::dnssec_record::DnssecRecordWithZone;
-use bindizr_core::model::record::RecordWithZone;
+use bindizr_core::model::record::{RecordType, RecordWithZone};
+use bindizr_core::model::zone::ZoneId;
 pub use bulk::create_bulk;
 pub(crate) use changes::{create_with_changes_tx, delete_with_changes_tx, update_with_changes_tx};
 pub use create::create;
@@ -22,7 +24,7 @@ pub(crate) use validation::{
     validate_record_constraints, validate_record_name_in_zone,
 };
 
-use crate::authorization::Caller;
+use crate::authorization::{Caller, GrantedRecord, ReadableRecords};
 use crate::types::{RecordResponse, RecordValue};
 
 /// An API-visible user or derived DNSSEC record; SOA stays in zone metadata.
@@ -32,30 +34,65 @@ enum ServedRecord {
     Derived(DnssecRecordWithZone),
 }
 
-/// Render a served record; derived DNSSEC rows have presentation RDATA but no id or actions.
-fn build_record_response(caller: &Caller, record: &ServedRecord) -> RecordResponse {
-    match record {
-        ServedRecord::User(record) => RecordResponse::from_record(
-            &record.record,
-            &record.zone_name,
-            caller.record_actions(
-                record.record.zone_id,
-                &record.record.name,
-                record.record.record_type,
-            ),
-        ),
-        ServedRecord::Derived(record) => RecordResponse {
-            id: None,
-            name: record.name.to_fqdn(&record.zone_name),
-            record_type: record.record_type.into(),
-            value: RecordValue::Text(record.rdata.to_presentation(record.record_type)),
-            ttl: record.ttl,
-            priority: None,
-            zone_id: record.zone_id,
-            zone_name: record.zone_name.to_string(),
-            actions: Vec::new(),
-        },
+impl ServedRecord {
+    /// Return the zone that owns this user or derived row.
+    fn zone_id(&self) -> ZoneId {
+        match self {
+            Self::User(record) => record.record.zone_id,
+            Self::Derived(record) => record.zone_id,
+        }
     }
+}
+
+impl GrantedRecord for ServedRecord {
+    /// Return the owner name in the row's zone.
+    fn name(&self) -> &OwnerName {
+        match self {
+            Self::User(record) => &record.record.name,
+            Self::Derived(record) => &record.name,
+        }
+    }
+
+    /// Return the user type, or no type for a derived row's grant matching.
+    fn record_type(&self) -> Option<RecordType> {
+        match self {
+            Self::User(record) => Some(record.record.record_type),
+            Self::Derived(_) => None,
+        }
+    }
+}
+
+/// Render checked rows; derived DNSSEC records have no id or actions.
+fn build_record_responses(
+    caller: &Caller,
+    records: &ReadableRecords<ServedRecord>,
+) -> Vec<RecordResponse> {
+    records
+        .as_slice()
+        .iter()
+        .map(|record| match record {
+            ServedRecord::User(record) => RecordResponse::from_record(
+                &record.record,
+                &record.zone_name,
+                caller.record_actions(
+                    record.record.zone_id,
+                    &record.record.name,
+                    record.record.record_type,
+                ),
+            ),
+            ServedRecord::Derived(record) => RecordResponse {
+                id: None,
+                name: record.name.to_fqdn(&record.zone_name),
+                record_type: record.record_type.into(),
+                value: RecordValue::Text(record.rdata.to_presentation(record.record_type)),
+                ttl: record.ttl,
+                priority: None,
+                zone_id: record.zone_id,
+                zone_name: record.zone_name.to_string(),
+                actions: Vec::new(),
+            },
+        })
+        .collect()
 }
 
 #[cfg(test)]

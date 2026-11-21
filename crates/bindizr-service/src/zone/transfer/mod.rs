@@ -15,6 +15,7 @@ pub use ixfr::{IxfrPlan, authorize_ixfr_plan_by_name};
 
 use crate::authorization::Caller;
 use crate::error::{ErrorCode, ServiceError};
+use crate::types::ZoneView;
 use crate::{Context, Transaction, transaction, zone};
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer
@@ -54,7 +55,7 @@ pub async fn authorize_soa_content_by_name(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    include_signatures: bool,
+    view: ZoneView,
 ) -> Result<TransferAccess<(Zone, Vec<DnssecRecord>)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load SOA content").await?;
 
@@ -64,7 +65,7 @@ pub async fn authorize_soa_content_by_name(
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
-        let signatures = if include_signatures {
+        let signatures = if view == ZoneView::Signed {
             bindizr_db::dnssec_record::list_signatures_covering_apex_soa_tx(&mut tx, zone.id)
                 .await?
         } else {

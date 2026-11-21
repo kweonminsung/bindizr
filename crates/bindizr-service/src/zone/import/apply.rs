@@ -319,16 +319,17 @@ pub(crate) async fn apply_import(
                 .collect();
 
             let before = caller.readable_records(
-                zone.id,
-                existing_records.iter().cloned().map(RecordData::from),
+                existing_records
+                    .iter()
+                    .cloned()
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
             let mut after = caller.readable_records(
-                zone.id,
                 existing_records
                     .iter()
                     .filter(|record| !deleted_ids.contains(&record.id))
                     .cloned()
-                    .map(RecordData::from),
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
 
             for desired_record in &plan.adds {

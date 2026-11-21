@@ -344,18 +344,18 @@ impl Caller {
         })
     }
 
-    /// Return the records a `record:read` grant covers; the rest are dropped, so a
-    /// write-only grant learns what it writes and nothing already there.
+    /// Return the records a `record:read` grant covers in each supplied zone;
+    /// the rest are dropped, so a write-only grant learns no stored values.
     pub(crate) fn readable_records<T: GrantedRecord>(
         &self,
-        zone_id: ZoneId,
-        records: impl IntoIterator<Item = T>,
+        records: impl IntoIterator<Item = (ZoneId, T)>,
     ) -> ReadableRecords<T> {
         ReadableRecords(
             records
                 .into_iter()
-                .filter(|record| {
-                    self.sees_record(zone_id, record.name(), Some(record.record_type()))
+                .filter_map(|(zone_id, record)| {
+                    self.sees_record(zone_id, record.name(), record.record_type())
+                        .then_some(record)
                 })
                 .collect(),
         )
@@ -465,8 +465,9 @@ pub(crate) trait GrantedRecord {
     /// Return the owner name, relative to its zone (stored form).
     fn name(&self) -> &OwnerName;
 
-    /// Return the record's type.
-    fn record_type(&self) -> RecordType;
+    /// Return the user type, or `None` for a derived row that only grants
+    /// without a type constraint may read.
+    fn record_type(&self) -> Option<RecordType>;
 }
 
 impl GrantedRecord for Record {
@@ -476,8 +477,8 @@ impl GrantedRecord for Record {
     }
 
     /// Return the stored type.
-    fn record_type(&self) -> RecordType {
-        self.record_type
+    fn record_type(&self) -> Option<RecordType> {
+        Some(self.record_type)
     }
 }
 
@@ -488,8 +489,8 @@ impl GrantedRecord for RecordData {
     }
 
     /// Return the type.
-    fn record_type(&self) -> RecordType {
-        self.record_type
+    fn record_type(&self) -> Option<RecordType> {
+        Some(self.record_type)
     }
 }
 

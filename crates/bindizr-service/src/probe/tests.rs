@@ -1,6 +1,6 @@
-use std::io;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{io, ptr};
 
 use bindizr_core::config::Config;
 use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
@@ -276,7 +276,7 @@ async fn diagnostic_reuses_resolution_failure_for_probe_and_notify() {
     let Err(ProbeSoaError::Resolve(probe_error)) = probe.serial else {
         panic!("the original resolution failure was lost");
     };
-    assert!(std::ptr::eq(
+    assert!(ptr::eq(
         std::error::Error::source(&probe_error)
             .unwrap()
             .downcast_ref::<ResolveAddressError>()

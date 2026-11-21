@@ -97,7 +97,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         )
         samplers = []
 
-        def sampler_for(*args):
+        def load_sampler(*args):
             """Track each test sampler and register cleanup for failed assertions."""
             sampler = resources.ResourceSampler([], 0.01)
             samplers.append(sampler)
@@ -107,7 +107,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         record = {"name": "a", "type": "A", "value": "192.0.2.1"}
         with ExitStack() as patches:
             for module in modules.values():
-                patches.enter_context(patch.object(module, "sampler_for", side_effect=sampler_for))
+                patches.enter_context(patch.object(module, "load_sampler", side_effect=load_sampler))
             for name in ("b07_database", "b09_resource_usage"):
                 patches.enter_context(patch.object(modules[name], "generate", return_value=[record]))
             patches.enter_context(patch.object(modules["b09_resource_usage"].dig,

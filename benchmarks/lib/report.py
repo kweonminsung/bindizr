@@ -134,7 +134,7 @@ def _display_metric(row: dict, key: str, precision: int = 1, default: Any = "-")
 
 
 def _render_bulk_linearity_note(rows: list[dict]) -> str:
-    """Per-series 10k→100k scaling: import time should grow ~10x for 10x records."""
+    """Render each series' 10k→100k scaling against the expected 10x import time."""
     by_sys: dict[str, dict[int, float]] = {}
 
     for row in rows:
@@ -145,13 +145,13 @@ def _render_bulk_linearity_note(rows: list[dict]) -> str:
     lines = []
 
     for system, bysize in by_sys.items():
-        if 10000 in bysize and 100000 in bysize and bysize[10000]:
-            ratio = bysize[100000] / bysize[10000]
+        if 10000 in bysize and 100_000 in bysize and bysize[10000]:
+            ratio = bysize[100_000] / bysize[10000]
             verdict = "near-linear" if 8.0 <= ratio <= 12.0 else "super-linear" \
                 if ratio > 12.0 else "sub-linear"
             lines.append(
                 f"- **{system}:** 10k → {bysize[10000]:.2f}s, "
-                f"100k → {bysize[100000]:.2f}s ({ratio:.1f}× for 10× records → {verdict})")
+                f"100k → {bysize[100_000]:.2f}s ({ratio:.1f}× for 10× records → {verdict})")
 
     if not lines:
         return ""

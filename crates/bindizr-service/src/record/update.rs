@@ -317,15 +317,18 @@ async fn update_locked(
                 );
             }
 
-            let before =
-                caller.readable_records(zone.id, framed.iter().cloned().map(RecordData::from));
+            let before = caller.readable_records(
+                framed
+                    .iter()
+                    .cloned()
+                    .map(|record| (zone.id, RecordData::from(record))),
+            );
             let mut after = caller.readable_records(
-                zone.id,
                 framed
                     .iter()
                     .filter(|record| record.id != existing_record.id)
                     .cloned()
-                    .map(RecordData::from),
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
             after.push_written(RecordData::from(candidate.clone()));
             let diff = diff::build_record_diff(&zone, &before, &after);

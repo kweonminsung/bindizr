@@ -73,16 +73,17 @@ pub async fn delete(
                 bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &existing_record.name)
                     .await?;
             let before = caller.readable_records(
-                zone.id,
-                records_at_name.iter().cloned().map(RecordData::from),
+                records_at_name
+                    .iter()
+                    .cloned()
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
             let after = caller.readable_records(
-                zone.id,
                 records_at_name
                     .iter()
                     .filter(|record| record.id != existing_record.id)
                     .cloned()
-                    .map(RecordData::from),
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
 
             diff::build_record_diff(&zone, &before, &after)
@@ -96,7 +97,7 @@ pub async fn delete(
             deleted: 1,
             // Only what the caller may read is listed back.
             records: caller
-                .readable_records(zone.id, [existing_record.clone()])
+                .readable_records([(zone.id, existing_record.clone())])
                 .as_slice()
                 .iter()
                 .map(|record| {
@@ -208,17 +209,18 @@ pub async fn delete_matching(
         // runs and empty matches return before any records or serials are written.
         let diff = if request.dry_run {
             let before = caller.readable_records(
-                zone.id,
-                records_at_name.iter().cloned().map(RecordData::from),
+                records_at_name
+                    .iter()
+                    .cloned()
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
             let deleted_ids: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
             let after = caller.readable_records(
-                zone.id,
                 records_at_name
                     .iter()
                     .filter(|record| !deleted_ids.contains(&record.id))
                     .cloned()
-                    .map(RecordData::from),
+                    .map(|record| (zone.id, RecordData::from(record))),
             );
 
             diff::build_record_diff(&zone, &before, &after)
@@ -231,7 +233,7 @@ pub async fn delete_matching(
             dry_run: request.dry_run,
             deleted: matched.len() as u64,
             records: caller
-                .readable_records(zone.id, matched.iter().cloned())
+                .readable_records(matched.iter().cloned().map(|record| (zone.id, record)))
                 .as_slice()
                 .iter()
                 .map(|record| {
