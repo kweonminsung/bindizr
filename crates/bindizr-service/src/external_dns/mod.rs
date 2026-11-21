@@ -99,6 +99,7 @@ pub async fn list_records(
     // Every zone, hidden ones included: a hidden child shadows a granted
     // parent here as it does in apply.
     let zones = bindizr_db::zone::list_all(cx.db()).await?;
+    let zone_index = policy::ZoneIndex::new(&zones);
     // One zone answers for a name, and its rows of one type share a TTL.
     let mut grouped: BTreeMap<RecordSetKey, (Ttl, Vec<String>)> = BTreeMap::new();
     let mut offset = 0u64;
@@ -128,9 +129,7 @@ pub async fn list_records(
             let name =
                 policy::normalize_lookup_name(&record.name.to_fqdn(&record_with_zone.zone_name))?;
 
-            if policy::authoritative_zone(&zones, &name).map(|(zone, _)| zone.id)
-                != Some(record.zone_id)
-            {
+            if zone_index.find(&name).map(|(zone, _)| zone.id) != Some(record.zone_id) {
                 continue;
             }
 

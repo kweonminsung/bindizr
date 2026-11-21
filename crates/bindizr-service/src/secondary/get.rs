@@ -1,10 +1,7 @@
 //! Read registered secondaries and assemble their named-key representations.
 
-use std::collections::HashMap;
-
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::secondary::Secondary;
-use bindizr_core::model::tsig_key::TsigKeyId;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
@@ -19,31 +16,19 @@ pub async fn list(
 ) -> Result<PaginatedResponse<SecondaryResponse>, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
     pagination::validate_page_limit(page.limit)?;
-
-    let secondaries = bindizr_db::secondary::list_all(cx.db()).await?;
-
-    // One statement names every key rather than one per secondary.
-    let tsig_key_names: HashMap<TsigKeyId, String> = bindizr_db::tsig_key::list_all(cx.db())
-        .await?
-        .into_iter()
-        .map(|tsig_key| (tsig_key.id, tsig_key.name))
-        .collect();
-
-    Ok(pagination::build_page(
-        secondaries
-            .iter()
-            .map(|secondary| {
-                SecondaryResponse::from_secondary(
-                    secondary,
-                    secondary
-                        .notify_tsig_key_id
-                        .and_then(|tsig_key_id| tsig_key_names.get(&tsig_key_id))
-                        .map(String::as_str),
-                )
+    let total = bindizr_db::secondary::count_all(cx.db()).await?;
+    let rows =
+        bindizr_db::secondary::list_all_with_notify_tsig_key(cx.db(), page.limit, page.offset)
+            .await?;
+    Ok(pagination::build_paginated_response(
+        rows.iter()
+            .map(|row| {
+                SecondaryResponse::from_secondary(&row.secondary, row.notify_key_name.as_deref())
             })
             .collect(),
         page.limit,
         page.offset,
+        total,
     ))
 }
 

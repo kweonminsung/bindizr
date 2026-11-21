@@ -1,5 +1,8 @@
 //! Diagnose a named secondary, including disabled ones, or the enabled secondary group.
+//! Each request reuses its selected rows and resolved addresses through NOTIFY;
+//! the next request selects and resolves again.
 
+use std::iter;
 use std::net::SocketAddr;
 
 use bindizr_core::dns::{Serial, address};
@@ -7,6 +10,7 @@ use bindizr_core::model::role_grant::Action;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
+use crate::secondary::SecondaryTarget;
 use crate::types::{
     CheckSecondariesResponse, CheckSecondaryResponse, SecondaryTransferSummaryResponse,
 };
@@ -40,18 +44,18 @@ pub async fn check(
             Err(error) => (None, Some(format!("{dns_addr}: {error}"))),
         };
 
-    let (addresses, resolve_error) =
-        match dns_client::resolve_address_entry(&secondary.address, timeout).await {
-            Ok(addrs) => (addrs.iter().map(ToString::to_string).collect(), None),
-            Err(error) => (Vec::new(), Some(error.to_string())),
-        };
-    let catalog =
-        probe::probe_secondary(cx, &catalog_zone_name, &secondary, catalog_serial).await?;
-    let transfers = secondary::summarize_transfers(cx, &secondary).await?;
-    let secondary_response = secondary::lookup_response(cx, &secondary).await?;
+    let target = SecondaryTarget::resolve(secondary, timeout).await;
+    let (addresses, resolve_error) = match &target.addresses {
+        Ok(addrs) => (addrs.iter().map(ToString::to_string).collect(), None),
+        Err(error) => (Vec::new(), Some(error.to_string())),
+    };
+    let catalog = probe::probe_target(cx, &catalog_zone_name, &target, catalog_serial).await?;
+    let transfers = secondary::summarize_transfers_by_clients(cx, &target.client_ips()).await?;
+    let secondary_response = secondary::lookup_response(cx, &target.secondary).await?;
 
     // Last, once every read has succeeded: a failed report must not follow a NOTIFY it hides.
-    let notifies = notify::send_notify_to_secondary(cx, &catalog_zone_name, &secondary).await?;
+    let notifies =
+        notify::send_notify_to_targets(cx, &catalog_zone_name, iter::once(&target)).await?;
 
     Ok(CheckSecondaryResponse {
         secondary: secondary_response,
@@ -78,19 +82,18 @@ pub async fn check_enabled(
     let config = cx.config();
     let catalog_zone_name = &config.dns.catalog_zone_name;
 
-    let secondaries = probe::probe_secondaries(cx, catalog_zone_name, catalog_serial).await?;
+    let targets = secondary::resolve_enabled(cx).await?;
+    let secondaries = probe::probe_targets(cx, catalog_zone_name, &targets, catalog_serial).await?;
     let mut transfers = Vec::new();
-
-    for secondary in secondary::list_enabled(cx).await? {
+    for target in &targets {
         transfers.push(SecondaryTransferSummaryResponse {
-            summary: secondary::summarize_transfers(cx, &secondary).await?,
-            secondary_name: secondary.name,
-            address: secondary.address.to_string(),
+            summary: secondary::summarize_transfers_by_clients(cx, &target.client_ips()).await?,
+            secondary_name: target.secondary.name.clone(),
+            address: target.secondary.address.to_string(),
         });
     }
-
     // Last, once every read has succeeded: a failed report must not follow a NOTIFY it hides.
-    let notifies = notify::send_notify_to_secondaries(cx, catalog_zone_name).await?;
+    let notifies = notify::send_notify_to_targets(cx, catalog_zone_name, &targets).await?;
 
     Ok(CheckSecondariesResponse {
         secondaries,

@@ -9,12 +9,12 @@ use crate::error::ServiceError;
 use crate::types::TransferSummaryResponse;
 use crate::{Context, dns_client, transfer};
 
-/// Summarize how Bindizr last served `secondary` each zone, for the check and doctor.
-pub(crate) async fn summarize_transfers(
+/// Summarize transfers using the same client IPs a diagnostic request already resolved.
+pub(crate) async fn summarize_transfers_by_clients(
     cx: &Context,
-    secondary: &Secondary,
+    clients: &[IpAddr],
 ) -> Result<TransferSummaryResponse, ServiceError> {
-    let latest = transfer::list_latest_by_clients(cx, &resolve_ips(cx, secondary).await).await?;
+    let latest = transfer::list_latest_by_clients(cx, clients).await?;
     Ok(build_transfer_summary(&latest))
 }
 

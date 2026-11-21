@@ -11,7 +11,7 @@ use sqlx::error::BoxDynError;
 use thiserror::Error;
 use utoipa::ToSchema;
 
-use crate::dns::name::OwnerName;
+use crate::dns::name::{OwnerName, ZoneName};
 use crate::model::grant_pattern;
 use crate::model::grant_pattern::MATCH_ANY;
 use crate::model::record::RecordType;
@@ -434,6 +434,14 @@ impl From<Vec<RoleGrant>> for RoleGrants {
     fn from(grants: Vec<RoleGrant>) -> Self {
         Self(grants.into())
     }
+}
+
+/// A grant joined with its zone name; an all-zones grant has no zone name.
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct RoleGrantWithZone {
+    #[sqlx(flatten)]
+    pub grant: RoleGrant,
+    pub zone_name: Option<ZoneName>,
 }
 
 #[cfg(test)]

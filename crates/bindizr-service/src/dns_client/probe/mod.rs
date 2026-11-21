@@ -1,6 +1,7 @@
 //! SOA network probes for explicitly supplied targets.
 
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
 use bindizr_core::dns::address::AddressTarget;
@@ -11,15 +12,15 @@ use bindizr_core::dns::{Serial, query};
 use thiserror::Error;
 
 use crate::dns_client;
-use crate::dns_client::{ExchangeMessageError, ResolveAddressError};
+use crate::dns_client::{ExchangeMessageError, ResolveAddressError, SharedResolveAddressError};
 
 /// Why a server's SOA serial could not be read.
 #[derive(Debug, Error)]
 pub enum ProbeSoaError {
     #[error("invalid zone name: {0}")]
     ZoneName(#[from] EncodeWireNameError),
-    #[error("failed to resolve: {0}")]
-    Resolve(#[source] ResolveAddressError),
+    #[error(transparent)]
+    Resolve(SharedResolveAddressError),
     #[error(transparent)]
     Exchange(#[from] ExchangeMessageError),
     #[error(transparent)]
@@ -34,35 +35,27 @@ pub(crate) struct SoaProbe {
     pub(crate) clients: Vec<IpAddr>,
 }
 
-/// Resolve a target and try its addresses in order until one answers.
+/// Probe the supplied resolved addresses in order until one answers.
 pub(crate) async fn probe_addresses(
     zone_name: &ZoneName,
     target: &AddressTarget,
+    addrs: &[SocketAddr],
     timeout: Duration,
 ) -> Result<SoaProbe, ProbeSoaError> {
     let qname = zone_name.to_wire_name()?;
-
-    let addrs = match dns_client::resolve_address_entry(target, timeout).await {
-        Ok(addrs) => addrs,
-        Err(error) => {
-            return Ok(SoaProbe {
-                address: target.to_string(),
-                serial: Err(ProbeSoaError::Resolve(error)),
-                clients: Vec::new(),
-            });
-        }
-    };
     // Transfer rows store an IPv4-mapped client as IPv4.
     let clients = addrs.iter().map(|addr| addr.ip().to_canonical()).collect();
     let mut probe = SoaProbe {
         address: target.to_string(),
-        serial: Err(ProbeSoaError::Resolve(ResolveAddressError::NoAddresses)),
+        serial: Err(ProbeSoaError::Resolve(
+            Arc::new(ResolveAddressError::NoAddresses).into(),
+        )),
         clients,
     };
 
     for addr in addrs {
         probe.address = addr.to_string();
-        probe.serial = probe_address(&qname, addr, timeout).await;
+        probe.serial = probe_address(&qname, *addr, timeout).await;
         if probe.serial.is_ok() {
             break;
         }

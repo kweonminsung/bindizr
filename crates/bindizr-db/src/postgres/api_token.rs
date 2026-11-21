@@ -1,8 +1,9 @@
-use bindizr_core::model::api_token::{ApiToken, TokenId};
+use bindizr_core::model::api_token::{ApiToken, ApiTokenMetadata, TokenId};
 use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
 use sqlx::{Pool, Postgres, Row, Transaction};
 
+use crate::api_token::ApiTokenFilter;
 use crate::error::DatabaseError;
 
 /// Insert an API token.
@@ -94,19 +95,6 @@ pub(crate) async fn count_all(pool: &Pool<Postgres>) -> Result<u64, DatabaseErro
     Ok(count as u64)
 }
 
-/// List all API tokens.
-pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<ApiToken>, DatabaseError> {
-    let mut connection = pool.acquire().await?;
-
-    let tokens = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id DESC",
-    )
-    .fetch_all(&mut *connection)
-    .await?;
-
-    Ok(tokens)
-}
-
 /// Stamp when the token was last used, returning whether it was stamped; a
 /// row a transaction holds is skipped, not waited for.
 pub(crate) async fn update_last_used_at(
@@ -159,4 +147,51 @@ pub(crate) async fn list_by_role_id(
     .await?;
 
     Ok(tokens)
+}
+
+/// List credential metadata with its role name, filtered and paged in SQL.
+pub(crate) async fn list_by_filter_with_role(
+    pool: &Pool<Postgres>,
+    filter: &ApiTokenFilter,
+) -> Result<Vec<ApiTokenMetadata>, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result = sqlx::query_as::<_, ApiTokenMetadata>(
+        r#"
+        SELECT t.id, t.name, t.description, r.name AS role_name, t.created_at, t.expires_at, t.last_used_at
+        FROM api_tokens t
+        INNER JOIN roles r ON r.id = t.role_id
+        WHERE ($1::INT4 IS NULL OR t.role_id = $2)
+        ORDER BY t.created_at DESC, t.id DESC
+        LIMIT $3
+        OFFSET $4
+        "#,
+    )
+    .bind(filter.role_id)
+    .bind(filter.role_id)
+    .bind(filter.limit.map_or(i64::MAX, i64::from))
+    .bind(filter.offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
+    .fetch_all(&mut *connection)
+    .await?;
+    Ok(result)
+}
+
+/// Count credentials matching the role filter, ignoring its page window.
+pub(crate) async fn count_by_filter(
+    pool: &Pool<Postgres>,
+    filter: &ApiTokenFilter,
+) -> Result<u64, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM api_tokens t
+        INNER JOIN roles r ON r.id = t.role_id
+        WHERE ($1::INT4 IS NULL OR t.role_id = $2)
+        "#,
+    )
+    .bind(filter.role_id)
+    .bind(filter.role_id)
+    .fetch_one(&mut *connection)
+    .await?;
+    Ok(result as u64)
 }

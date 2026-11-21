@@ -83,19 +83,6 @@ pub(crate) async fn get_by_name_tx(
     Ok(policy)
 }
 
-/// List all DNSSEC policies.
-pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<DnssecPolicy>, DatabaseError> {
-    let mut connection = pool.acquire().await?;
-
-    let policies = sqlx::query_as::<_, DnssecPolicy>(
-        "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies ORDER BY name",
-    )
-    .fetch_all(&mut *connection)
-    .await?;
-
-    Ok(policies)
-}
-
 /// Write the editable timing fields; the key layout, algorithm, and denial mode
 /// are fixed at creation.
 pub(crate) async fn update_tx(
@@ -131,4 +118,36 @@ pub(crate) async fn delete_tx(
         .await?;
 
     Ok(result.rows_affected() > 0)
+}
+
+/// List DNSSEC policies in name order, applying the supplied window.
+pub(crate) async fn list_all(
+    pool: &Pool<Sqlite>,
+    limit: Option<u32>,
+    offset: Option<u64>,
+) -> Result<Vec<DnssecPolicy>, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result = sqlx::query_as::<_, DnssecPolicy>(
+        r#"
+        SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at
+        FROM dnssec_policies
+        ORDER BY name
+        LIMIT ?
+        OFFSET ?
+        "#,
+    )
+    .bind(limit.map_or(i64::MAX, i64::from))
+    .bind(offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
+    .fetch_all(&mut *connection)
+    .await?;
+    Ok(result)
+}
+
+/// Count all DNSSEC policies.
+pub(crate) async fn count_all(pool: &Pool<Sqlite>) -> Result<u64, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM dnssec_policies"#)
+        .fetch_one(&mut *connection)
+        .await?;
+    Ok(result as u64)
 }

@@ -27,3 +27,16 @@ impl Role {
         self.name == Self::ADMIN
     }
 }
+
+/// A role joined with its credential and grant cardinalities.
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct RoleWithCounts {
+    #[sqlx(flatten)]
+    pub role: Role,
+    #[sqlx(try_from = "i64")]
+    pub grant_count: u64,
+    #[sqlx(try_from = "i64")]
+    pub token_count: u64,
+    #[sqlx(try_from = "i64")]
+    pub tsig_key_count: u64,
+}

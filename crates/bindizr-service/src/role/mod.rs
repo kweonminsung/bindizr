@@ -2,8 +2,6 @@
 
 pub mod grant;
 
-use std::collections::HashMap;
-
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role::{Role, RoleId};
 use bindizr_core::model::role_grant::Action;
@@ -101,67 +99,24 @@ pub async fn list(
 ) -> Result<PaginatedResponse<RoleResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(page.limit)?;
-
-    let roles = bindizr_db::role::list_all(cx.db()).await?;
-
-    // Management collections are small, so each is read once and counted
-    // here rather than queried per role.
-    let mut grant_counts: HashMap<RoleId, u64> = HashMap::new();
-
-    for grant in bindizr_db::role_grant::list_all(cx.db()).await? {
-        *grant_counts.entry(grant.role_id).or_default() += 1;
-    }
-
-    let mut token_counts: HashMap<RoleId, u64> = HashMap::new();
-
-    for token in bindizr_db::api_token::list_all(cx.db()).await? {
-        *token_counts.entry(token.role_id).or_default() += 1;
-    }
-
-    let mut tsig_key_counts: HashMap<RoleId, u64> = HashMap::new();
-
-    for tsig_key in bindizr_db::tsig_key::list_all(cx.db()).await? {
-        *tsig_key_counts.entry(tsig_key.role_id).or_default() += 1;
-    }
-
-    Ok(pagination::build_page(
-        roles
-            .into_iter()
-            .map(|role| RoleResponse {
-                id: role.id,
-                builtin: role.is_builtin(),
-                grant_count: grant_counts.get(&role.id).copied().unwrap_or(0),
-                token_count: token_counts.get(&role.id).copied().unwrap_or(0),
-                tsig_key_count: tsig_key_counts.get(&role.id).copied().unwrap_or(0),
-                name: role.name,
-                description: role.description,
-                created_at: role.created_at,
-            })
-            .collect(),
+    let total = bindizr_db::role::count_all(cx.db()).await?;
+    let rows = bindizr_db::role::list_all_with_counts(cx.db(), page.limit, page.offset).await?;
+    Ok(pagination::build_paginated_response(
+        rows.iter().map(RoleResponse::from).collect(),
         page.limit,
         page.offset,
+        total,
     ))
 }
 
 /// Get one role by name, with how many grants, tokens, and keys it has.
 pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<RoleResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
-
-    let role = lookup_by_name(cx, name).await?;
-    let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), role.id).await?;
-    let tokens = bindizr_db::api_token::list_by_role_id(cx.db(), role.id).await?;
-    let tsig_keys = bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?;
-
-    Ok(RoleResponse {
-        id: role.id,
-        builtin: role.is_builtin(),
-        grant_count: grants.len() as u64,
-        token_count: tokens.len() as u64,
-        tsig_key_count: tsig_keys.len() as u64,
-        name: role.name,
-        description: role.description,
-        created_at: role.created_at,
-    })
+    let name = normalize_name(name)?;
+    let row = bindizr_db::role::get_by_name_with_counts(cx.db(), &name)
+        .await?
+        .ok_or_else(|| ServiceError::role_not_found(&name))?;
+    Ok(RoleResponse::from(&row))
 }
 
 /// Delete a role and its grants; refused for the built-in role and while a credential holds it.

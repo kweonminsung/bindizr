@@ -2,14 +2,16 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::time::Duration;
 
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::secondary::Secondary;
 use tokio::task::JoinSet;
 
-use crate::dns_client::probe::ProbeSoaError;
+use crate::dns_client::probe::{ProbeSoaError, SoaProbe};
 use crate::error::ServiceError;
+use crate::secondary::SecondaryTarget;
 use crate::types::{SecondaryStatus, SecondaryStatusResponse, TransferLogResponse};
 use crate::{Context, dns_client, secondary, transfer};
 
@@ -60,8 +62,17 @@ pub async fn probe_secondaries(
     zone_name: &ZoneName,
     expected_serial: Option<Serial>,
 ) -> Result<Vec<SecondaryStatusResponse>, ServiceError> {
-    let secondaries = secondary::list_enabled(cx).await?;
+    let targets = secondary::resolve_enabled(cx).await?;
+    probe_targets(cx, zone_name, &targets, expected_serial).await
+}
 
+/// Probe targets resolved by the owning diagnostic request, preserving their order.
+pub(crate) async fn probe_targets(
+    cx: &Context,
+    zone_name: &ZoneName,
+    secondaries: &[SecondaryTarget],
+    expected_serial: Option<Serial>,
+) -> Result<Vec<SecondaryStatusResponse>, ServiceError> {
     if secondaries.is_empty() {
         return Ok(Vec::new());
     }
@@ -71,13 +82,11 @@ pub async fn probe_secondaries(
     let mut tasks = JoinSet::new();
     let mut targets = HashMap::new();
 
-    for (index, secondary) in secondaries.into_iter().enumerate() {
+    for (index, target) in secondaries.iter().cloned().enumerate() {
         let zone_name = zone_name.clone();
-        let address = secondary.address.to_string();
+        let address = target.secondary.address.to_string();
 
-        let task = tasks.spawn(async move {
-            dns_client::probe::probe_addresses(&zone_name, &secondary.address, timeout).await
-        });
+        let task = tasks.spawn(async move { probe_resolved(&zone_name, &target, timeout).await });
         targets.insert(task.id(), (index, address));
     }
 
@@ -119,10 +128,40 @@ pub async fn probe_secondary(
     secondary: &Secondary,
     expected_serial: Option<Serial>,
 ) -> Result<SecondaryStatusResponse, ServiceError> {
-    let timeout = cx.config().dns.notify.timeout();
-    let probe = dns_client::probe::probe_addresses(zone_name, &secondary.address, timeout).await?;
-    let status = build_secondary_status(probe.address, expected_serial, probe.serial);
-    attach_last_transfer(cx, zone_name, status, &probe.clients).await
+    let target =
+        SecondaryTarget::resolve(secondary.clone(), cx.config().dns.notify.timeout()).await;
+    probe_target(cx, zone_name, &target, expected_serial).await
+}
+
+/// Probe one request-owned target and attach history for the same resolved IPs.
+pub(crate) async fn probe_target(
+    cx: &Context,
+    zone_name: &ZoneName,
+    target: &SecondaryTarget,
+    expected_serial: Option<Serial>,
+) -> Result<SecondaryStatusResponse, ServiceError> {
+    let result = probe_resolved(zone_name, target, cx.config().dns.notify.timeout()).await?;
+    let status = build_secondary_status(result.address, expected_serial, result.serial);
+    attach_last_transfer(cx, zone_name, status, &result.clients).await
+}
+
+/// Probe the request's addresses or report its original resolution failure.
+async fn probe_resolved(
+    zone_name: &ZoneName,
+    target: &SecondaryTarget,
+    timeout: Duration,
+) -> Result<SoaProbe, ProbeSoaError> {
+    match &target.addresses {
+        Ok(addrs) => {
+            dns_client::probe::probe_addresses(zone_name, &target.secondary.address, addrs, timeout)
+                .await
+        }
+        Err(error) => Ok(SoaProbe {
+            address: target.secondary.address.to_string(),
+            serial: Err(ProbeSoaError::Resolve(error.clone().into())),
+            clients: Vec::new(),
+        }),
+    }
 }
 
 /// Attach the latest zone transfer matching the probe's resolved IPs. The

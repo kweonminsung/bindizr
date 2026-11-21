@@ -32,13 +32,12 @@ async def run_closed_loop(
     async def worker() -> None:
         """Run workload steps and record their latency and success."""
         while True:
-            now = clock()
+            started = clock()
 
-            if now >= measure_end:
+            if started >= measure_end:
                 return
 
             seq = next(counter)
-            started = clock()
 
             try:
                 ok = await step(seq)
@@ -48,7 +47,7 @@ async def run_closed_loop(
             # Warmup work runs normally but contributes no measured samples.
             finished = clock()
 
-            if finished >= warmup_until:
+            if started >= warmup_until:
                 recorder.track_latency(finished - started, ok=ok)
 
     workers = [asyncio.create_task(worker()) for _ in range(concurrency)]

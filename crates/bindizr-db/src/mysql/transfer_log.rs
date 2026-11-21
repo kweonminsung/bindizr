@@ -190,15 +190,19 @@ pub(crate) async fn prune_older_than(
     let mut connection = pool.acquire().await?;
 
     // MySQL requires a derived table when DELETE reads its own table; the
-    // grouping keeps it from being merged back into the statement.
+    // window keeps it from being merged back into the statement.
     let result = sqlx::query(
         r#"
         DELETE FROM transfer_log
         WHERE served_at < ?
           AND id NOT IN (
               SELECT id FROM (
-                  SELECT MAX(id) AS id FROM transfer_log GROUP BY client_addr, zone_id
+                  SELECT id, ROW_NUMBER() OVER (
+                      PARTITION BY client_addr, zone_id ORDER BY served_at DESC, id DESC
+                  ) AS recency
+                  FROM transfer_log
               ) AS newest
+              WHERE recency = 1
           )
         "#,
     )

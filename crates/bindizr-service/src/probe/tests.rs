@@ -166,3 +166,179 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
             .all(|status| status.status == SecondaryStatus::Unreachable)
     );
 }
+
+/// A diagnostic keeps its selected peer through probing and NOTIFY; a later selection refreshes it.
+#[tokio::test]
+async fn diagnostic_reuses_resolved_target_after_secondary_changes() {
+    use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
+
+    use crate::notify;
+    use crate::types::UpdateSecondaryRequest;
+
+    let cx = context().await;
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let resolved = socket.local_addr().unwrap();
+    secondary::create(
+        &cx,
+        &Caller::socket(),
+        &CreateSecondaryRequest {
+            name: "selected".to_string(),
+            address: "127.0.0.1:1".to_string(),
+            notify_key_name: None,
+        },
+    )
+    .await
+    .unwrap();
+    let target = SecondaryTarget {
+        secondary: secondary::lookup_by_name(&cx, "selected").await.unwrap(),
+        addresses: Ok(vec![resolved]),
+    };
+    secondary::update(
+        &cx,
+        &Caller::socket(),
+        "selected",
+        &UpdateSecondaryRequest {
+            address: Some("127.0.0.1:2".to_string()),
+            enabled: Some(false),
+            notify_key_name: None,
+        },
+    )
+    .await
+    .unwrap();
+    let server = tokio::spawn(async move {
+        for rcode in [OptRcode::REFUSED, OptRcode::NOERROR] {
+            let mut buffer = [0; 4096];
+            let (len, peer) = time::timeout(Duration::from_secs(3), socket.recv_from(&mut buffer))
+                .await
+                .unwrap()
+                .unwrap();
+            let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
+            let response = query
+                .build_signed_error_response(rcode, None, None)
+                .unwrap();
+            socket.send_to(&response, peer).await.unwrap();
+        }
+    });
+    let zone = cx.config().dns.catalog_zone_name.clone();
+    let status = probe_target(&cx, &zone, &target, None).await.unwrap();
+    assert_eq!(status.address, resolved.to_string());
+    assert_eq!(status.status, SecondaryStatus::Unreachable);
+    assert!(status.error.unwrap().contains("RCODE 5"));
+    let reports = notify::send_notify_to_targets(&cx, &zone, [&target])
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].address, resolved.to_string());
+    assert!(reports[0].error.is_none());
+    assert_eq!(target.client_ips(), vec![resolved.ip()]);
+    server.await.unwrap();
+
+    assert!(secondary::resolve_enabled(&cx).await.unwrap().is_empty());
+    let next = SecondaryTarget::resolve(
+        secondary::lookup_by_name(&cx, "selected").await.unwrap(),
+        Duration::from_secs(1),
+    )
+    .await;
+    assert_eq!(
+        next.addresses.unwrap(),
+        vec!["127.0.0.1:2".parse().unwrap()]
+    );
+}
+
+/// Every stage reports the same failed resolution without retrying the configured literal address.
+#[tokio::test]
+async fn diagnostic_reuses_resolution_failure_for_probe_and_notify() {
+    use crate::dns_client::ResolveAddressError;
+    use crate::notify;
+
+    let cx = context().await;
+    secondary::create(
+        &cx,
+        &Caller::socket(),
+        &CreateSecondaryRequest {
+            name: "failed".to_string(),
+            address: "127.0.0.1:1".to_string(),
+            notify_key_name: None,
+        },
+    )
+    .await
+    .unwrap();
+    let error = Arc::new(ResolveAddressError::NoAddresses);
+    assert!(
+        std::error::Error::source(&ProbeSoaError::Resolve(error.clone().into()))
+            .unwrap()
+            .is::<ResolveAddressError>()
+    );
+    let target = SecondaryTarget {
+        secondary: secondary::lookup_by_name(&cx, "failed").await.unwrap(),
+        addresses: Err(error.clone()),
+    };
+    let zone = &cx.config().dns.catalog_zone_name;
+    let result = probe_resolved(zone, &target, Duration::from_secs(1))
+        .await
+        .unwrap();
+    let Err(ProbeSoaError::Resolve(probe_error)) = result.serial else {
+        panic!("the original resolution failure was lost");
+    };
+    assert!(std::ptr::eq(
+        std::error::Error::source(&probe_error)
+            .unwrap()
+            .downcast_ref::<ResolveAddressError>()
+            .unwrap(),
+        error.as_ref()
+    ));
+    assert!(target.client_ips().is_empty());
+    let status = probe_target(&cx, zone, &target, None).await.unwrap();
+    let reports = notify::send_notify_to_targets(&cx, zone, [&target])
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].address, target.secondary.address.to_string());
+    assert_eq!(reports[0].error, status.error);
+    assert_eq!(status.status, SecondaryStatus::Unreachable);
+}
+
+/// A later missing key aborts preparation before an earlier target can receive NOTIFY.
+#[tokio::test]
+async fn diagnostic_loads_all_keys_before_sending_any_notify() {
+    use bindizr_core::model::tsig_key::TsigKeyId;
+
+    use crate::notify;
+
+    let cx = context().await;
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let address = socket.local_addr().unwrap();
+    secondary::create(
+        &cx,
+        &Caller::socket(),
+        &CreateSecondaryRequest {
+            name: "selected".to_string(),
+            address: address.to_string(),
+            notify_key_name: None,
+        },
+    )
+    .await
+    .unwrap();
+    let first = SecondaryTarget {
+        secondary: secondary::lookup_by_name(&cx, "selected").await.unwrap(),
+        addresses: Ok(vec![address]),
+    };
+    // A request-owned row can outlive its referenced key; resolution still succeeded.
+    let mut second = first.clone();
+    second.secondary.notify_tsig_key_id = Some(TsigKeyId::from(i32::MAX));
+    let error =
+        notify::send_notify_to_targets(&cx, &cx.config().dns.catalog_zone_name, [&first, &second])
+            .await
+            .unwrap_err();
+    assert!(error.to_string().contains("is missing"));
+    let mut buffer = [0; 4096];
+    assert!(
+        time::timeout(Duration::from_millis(150), socket.recv_from(&mut buffer))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        cx.notify_preparations().available_permits(),
+        notify::CONCURRENT_PREPARATIONS
+    );
+}

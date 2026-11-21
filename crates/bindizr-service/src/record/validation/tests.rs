@@ -11,6 +11,88 @@ use crate::error::ErrorCode;
 /// instead of tripping the record set TTL rule.
 const RECORD_SET_TTL: i64 = 3600;
 
+/// Verify that rejected additions leave later candidates validating against the last accepted state.
+#[test]
+fn constraint_index_keeps_rejected_candidates_out_of_state() {
+    let existing = [test_record(1, "pool", RecordType::A, "192.0.2.1", None)];
+    let mut index = RecordConstraintIndex::new(&existing);
+    let candidate = test_record(2, "pool", RecordType::A, "192.0.2.2", None);
+    assert!(
+        index
+            .validate(
+                &candidate.name,
+                candidate.record_type,
+                &candidate.value,
+                Ttl::from_secs(60),
+                candidate.priority
+            )
+            .is_err()
+    );
+    assert!(
+        index
+            .validate(
+                &candidate.name,
+                candidate.record_type,
+                &candidate.value,
+                candidate.ttl,
+                candidate.priority
+            )
+            .is_ok()
+    );
+    index.insert(&candidate);
+    assert!(
+        index
+            .validate(
+                &candidate.name,
+                candidate.record_type,
+                &candidate.value,
+                candidate.ttl,
+                candidate.priority
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("already exists")
+    );
+    let other = test_record(3, "other", RecordType::Cname, "target.example.", None);
+    assert!(
+        index
+            .validate(
+                &other.name,
+                other.record_type,
+                &other.value,
+                other.ttl,
+                other.priority
+            )
+            .is_ok()
+    );
+}
+
+/// Verify that an existing mixed-TTL set keeps the first conflicting TTL in its error.
+#[test]
+fn constraint_index_preserves_mixed_ttl_conflict_precedence() {
+    let mut existing = [
+        test_record(1, "pool", RecordType::A, "192.0.2.1", None),
+        test_record(2, "pool", RecordType::A, "192.0.2.2", None),
+    ];
+    existing[1].ttl = Ttl::from_secs(60);
+    let index = RecordConstraintIndex::new(&existing);
+    for (ttl, conflict) in [(3600, 60), (120, 3600)] {
+        let error = index
+            .validate(
+                &existing[0].name,
+                RecordType::A,
+                "192.0.2.3",
+                Ttl::from_secs(ttl),
+                None,
+            )
+            .unwrap_err();
+        assert!(
+            error.to_string().contains(&format!("(TTL {conflict})")),
+            "{error}"
+        );
+    }
+}
+
 /// Verify that WKS values may coexist only when their IPv4 address or protocol differs.
 #[test]
 fn add_rejects_duplicate_wks_address_and_protocol() {

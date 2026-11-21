@@ -23,3 +23,11 @@ pub struct Secondary {
     pub notify_tsig_key_id: Option<TsigKeyId>,
     pub created_at: DateTime<Utc>,
 }
+
+/// A secondary joined with its NOTIFY key's name, without loading the key's secret.
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct SecondaryWithNotifyKey {
+    #[sqlx(flatten)]
+    pub secondary: Secondary,
+    pub notify_key_name: Option<String>,
+}

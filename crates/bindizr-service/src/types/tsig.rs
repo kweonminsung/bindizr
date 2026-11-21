@@ -1,6 +1,6 @@
 //! TSIG key payloads.
 
-use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
+use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId, TsigKeyMetadata};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -70,4 +70,17 @@ pub struct SingleTsigKeyResponse {
     pub tsig_key: TsigKeyResponse,
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: String,
+}
+
+impl From<&TsigKeyMetadata> for TsigKeyResponse {
+    /// Build the response from metadata that carries no credential material.
+    fn from(row: &TsigKeyMetadata) -> Self {
+        Self {
+            id: row.id,
+            name: row.name.clone(),
+            algorithm: row.algorithm,
+            role_name: row.role_name.clone(),
+            created_at: row.created_at,
+        }
+    }
 }

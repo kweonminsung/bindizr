@@ -7,7 +7,7 @@ mod rewind;
 use std::collections::{HashMap, HashSet};
 
 use bindizr_core::dns::Serial;
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::record::SoaMailbox;
 use bindizr_core::model::record::{Record, RecordData, RecordId, RecordKey};
 use bindizr_core::model::role_grant::Action;
@@ -255,20 +255,12 @@ pub async fn rollback(
 
         let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
 
-        // Validate the adds in-memory against the records left after the deletes
-        // (mirrors the import reconcile).
-        let mut records_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
-
-        for record in &current_records {
-            if deleted_ids.contains(&record.id) {
-                continue;
-            }
-
-            records_by_name
-                .entry(record.name.clone())
-                .or_default()
-                .push(record.clone());
-        }
+        // Validate the post-delete state and extend it only with accepted additions.
+        let mut constraints = record::RecordConstraintIndex::new(
+            current_records
+                .iter()
+                .filter(|record| !deleted_ids.contains(&record.id)),
+        );
 
         let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());
 
@@ -276,15 +268,12 @@ pub async fn rollback(
             // The history predates the zone's current name, which may no
             // longer fit the names it restores.
             record::validate_record_name_in_zone(&target.name, &zone.name)?;
-            let records_at_name = records_by_name.entry(target.name.clone()).or_default();
-            record::validate_record_constraints(
-                records_at_name,
+            constraints.validate(
                 &target.name,
                 target.record_type,
                 &target.value,
                 target.ttl,
                 target.priority,
-                None,
             )?;
             let record = Record {
                 id: RecordId::UNWRITTEN,
@@ -296,7 +285,7 @@ pub async fn rollback(
                 zone_id: zone.id,
                 created_at: Utc::now(),
             };
-            records_at_name.push(record.clone());
+            constraints.insert(&record);
             to_insert.push(record);
         }
 

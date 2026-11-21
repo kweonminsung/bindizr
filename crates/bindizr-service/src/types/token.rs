@@ -1,6 +1,6 @@
 //! API token payloads.
 
-use bindizr_core::model::api_token::{ApiToken, TokenId};
+use bindizr_core::model::api_token::{ApiToken, ApiTokenMetadata, TokenId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -79,4 +79,19 @@ pub struct CreateTokenResponse {
     pub token: TokenResponse,
     #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]
     pub secret: String,
+}
+
+impl From<&ApiTokenMetadata> for TokenResponse {
+    /// Build the response from metadata that carries no credential material.
+    fn from(row: &ApiTokenMetadata) -> Self {
+        Self {
+            id: row.id,
+            name: row.name.clone(),
+            description: row.description.clone(),
+            role_name: row.role_name.clone(),
+            created_at: row.created_at,
+            expires_at: row.expires_at,
+            last_used_at: row.last_used_at,
+        }
+    }
 }

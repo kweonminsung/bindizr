@@ -1,12 +1,9 @@
 //! Manages TSIG credentials shared by update and transfer authentication.
 
-use std::collections::HashMap;
-
 use base64::Engine;
 use base64::engine::general_purpose;
 use bindizr_core::dns::name;
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
-use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
 use chrono::Utc;
@@ -120,30 +117,22 @@ pub async fn list(
 ) -> Result<PaginatedResponse<TsigKeyResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(filter.limit)?;
-
-    let tsig_keys = match &filter.role_name {
-        Some(role_name) => {
-            let role = role::lookup_by_name(cx, role_name).await?;
-            bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?
-        }
-        None => bindizr_db::tsig_key::list_all(cx.db()).await?,
+    let role_id = match &filter.role_name {
+        Some(name) => Some(role::lookup_by_name(cx, name).await?.id),
+        None => None,
     };
-    let role_names: HashMap<RoleId, String> = bindizr_db::role::list_all(cx.db())
-        .await?
-        .into_iter()
-        .map(|role| (role.id, role.name))
-        .collect();
-
-    Ok(pagination::build_page(
-        tsig_keys
-            .iter()
-            .map(|tsig_key| {
-                let role_name = role_names.get(&tsig_key.role_id).map_or("", String::as_str);
-                TsigKeyResponse::from_tsig_key(tsig_key, role_name)
-            })
-            .collect(),
+    let filter = bindizr_db::tsig_key::TsigKeyFilter {
+        role_id,
+        limit: filter.limit,
+        offset: filter.offset,
+    };
+    let total = bindizr_db::tsig_key::count_by_filter(cx.db(), &filter).await?;
+    let rows = bindizr_db::tsig_key::list_by_filter_with_role(cx.db(), &filter).await?;
+    Ok(pagination::build_paginated_response(
+        rows.iter().map(TsigKeyResponse::from).collect(),
         filter.limit,
         filter.offset,
+        total,
     ))
 }
 

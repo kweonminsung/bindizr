@@ -98,6 +98,10 @@ standalone run, so its pairing is reported without a comparison.
 
 ## Methodology & fairness
 
+Closed-loop workloads exclude requests started during warmup, including requests
+that finish after measurement begins. Requests started during measurement finish
+before the run returns; their drain time is included in the measured elapsed time.
+
 - **Common interface.** Every system implements the same adapter
   ([`adapters/base.py`](adapters/base.py)); a runner issues one identical
   workload against all of them. Architectural differences (replacing every

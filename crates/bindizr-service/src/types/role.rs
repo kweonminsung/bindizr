@@ -1,7 +1,7 @@
 //! Role and role grant payloads.
 
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role::{RoleId, RoleWithCounts};
 use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrantId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -110,4 +110,20 @@ impl RoleGrantResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleRoleGrantResponse {
     pub role_grant: RoleGrantResponse,
+}
+
+impl From<&RoleWithCounts> for RoleResponse {
+    /// Build a role response from its row and SQL cardinalities.
+    fn from(row: &RoleWithCounts) -> Self {
+        Self {
+            id: row.role.id,
+            name: row.role.name.clone(),
+            description: row.role.description.clone(),
+            builtin: row.role.is_builtin(),
+            grant_count: row.grant_count,
+            token_count: row.token_count,
+            tsig_key_count: row.tsig_key_count,
+            created_at: row.role.created_at,
+        }
+    }
 }
