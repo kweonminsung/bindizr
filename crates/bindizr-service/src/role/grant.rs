@@ -1,14 +1,10 @@
 //! A role's grants: actions in one zone or all zones.
 
-use std::collections::HashMap;
-
-use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::api_token::ApiToken;
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::grant_pattern::MATCH_ANY;
 use bindizr_core::model::role::Role;
 use bindizr_core::model::role_grant::{Action, ActionSet, RoleGrant, RoleGrantId, RoleZoneScope};
-use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
@@ -235,25 +231,22 @@ async fn list_by_role(
     role: &Role,
     page: PageRequest,
 ) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
-    let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), role.id).await?;
-    let zone_names: HashMap<ZoneId, ZoneName> = bindizr_db::zone::list_all(cx.db())
-        .await?
-        .into_iter()
-        .map(|zone| (zone.id, zone.name))
-        .collect();
-
-    Ok(pagination::build_page(
-        grants
-            .iter()
-            .map(|grant| {
-                let zone_name = grant
-                    .zone_scope
-                    .zone_id()
-                    .and_then(|zone_id| zone_names.get(&zone_id));
-                RoleGrantResponse::from_grant(grant, &role.name, zone_name)
+    let total = bindizr_db::role_grant::count_by_role_id(cx.db(), role.id).await?;
+    let rows = bindizr_db::role_grant::list_by_role_id_with_zone(
+        cx.db(),
+        role.id,
+        page.limit,
+        page.offset,
+    )
+    .await?;
+    Ok(pagination::build_paginated_response(
+        rows.iter()
+            .map(|row| {
+                RoleGrantResponse::from_grant(&row.grant, &role.name, row.zone_name.as_ref())
             })
             .collect(),
         page.limit,
         page.offset,
+        total,
     ))
 }

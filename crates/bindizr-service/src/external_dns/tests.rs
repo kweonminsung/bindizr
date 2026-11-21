@@ -335,16 +335,21 @@ fn authoritative_zone_picks_most_specific_match() {
     ];
 
     assert_eq!(
-        policy::authoritative_zone(&zones, "api.internal.example.com")
+        policy::ZoneIndex::new(&zones)
+            .find("api.internal.example.com")
             .map(|(zone, owner)| (zone.id, owner)),
         Some((ZoneId::from(2), OwnerName::from_row("api")))
     );
     assert_eq!(
-        policy::authoritative_zone(&zones, "www.example.com").map(|(zone, _)| zone.id),
+        policy::ZoneIndex::new(&zones)
+            .find("www.example.com")
+            .map(|(zone, _)| zone.id),
         Some(ZoneId::from(1))
     );
     assert_eq!(
-        policy::authoritative_zone(&zones, "internal.example.com").map(|(zone, _)| zone.id),
+        policy::ZoneIndex::new(&zones)
+            .find("internal.example.com")
+            .map(|(zone, _)| zone.id),
         Some(ZoneId::from(2))
     );
 }
@@ -354,8 +359,12 @@ fn authoritative_zone_picks_most_specific_match() {
 fn authoritative_zone_requires_label_boundary() {
     let zones = vec![test_zone(1, "example.com")];
 
-    assert!(policy::authoritative_zone(&zones, "notexample.com").is_none());
-    assert!(policy::authoritative_zone(&zones, "example.org").is_none());
+    assert!(
+        policy::ZoneIndex::new(&zones)
+            .find("notexample.com")
+            .is_none()
+    );
+    assert!(policy::ZoneIndex::new(&zones).find("example.org").is_none());
 }
 
 /// Verify that an escaped dot does not put a name inside the zone it spells.
@@ -367,7 +376,7 @@ fn authoritative_zone_rejects_escaped_label_boundary() {
     let name = policy::normalize_lookup_name(r"evil\.example.com").unwrap();
 
     assert_eq!(name, r"evil\046example.com");
-    assert!(policy::authoritative_zone(&zones, &name).is_none());
+    assert!(policy::ZoneIndex::new(&zones).find(&name).is_none());
 }
 
 /// Verify that `normalize_lookup_name` lowercases and strips trailing dot.
@@ -565,8 +574,9 @@ fn zone_operations(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> Zon
     for operation in change_set::parse_changes_request(request).unwrap() {
         let (RecordSetOperation::Add(record_set) | RecordSetOperation::Delete(record_set)) =
             &operation;
-        let (_, owner) =
-            policy::authoritative_zone(slice::from_ref(zone), &record_set.name).unwrap();
+        let (_, owner) = policy::ZoneIndex::new(slice::from_ref(zone))
+            .find(&record_set.name)
+            .unwrap();
         zone_operations.push(owner, operation);
     }
 

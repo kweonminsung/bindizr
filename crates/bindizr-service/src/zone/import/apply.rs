@@ -266,33 +266,21 @@ pub(crate) async fn apply_import(
         // Validate additions without writes, indexing simulated records by owner for conflict checks.
         let started = Instant::now();
         let deleted_ids: HashSet<RecordId> = all_deletes.iter().map(|record| record.id).collect();
-        let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
-            HashMap::with_capacity(existing_records.len());
-
-        for record in &existing_records {
-            if !deleted_ids.contains(&record.id) {
-                simulated_by_name
-                    .entry(record.name.clone())
-                    .or_default()
-                    .push(record.clone());
-            }
-        }
+        let mut constraints = record::RecordConstraintIndex::new(
+            existing_records
+                .iter()
+                .filter(|record| !deleted_ids.contains(&record.id)),
+        );
 
         for (desired_record, candidate) in plan.adds.iter().zip(&to_insert) {
-            let records_at_name = simulated_by_name
-                .entry(desired_record.data.name.clone())
-                .or_default();
-
-            match record::validate_record_constraints(
-                records_at_name,
+            match constraints.validate(
                 &desired_record.data.name,
                 desired_record.data.record_type,
                 &desired_record.data.value,
                 desired_record.data.ttl,
                 desired_record.data.priority,
-                None,
             ) {
-                Ok(()) => records_at_name.push(candidate.clone()),
+                Ok(()) => constraints.insert(candidate),
                 Err(error) => errors.push(format!("{}: {error}", desired_record.source_name)),
             }
         }

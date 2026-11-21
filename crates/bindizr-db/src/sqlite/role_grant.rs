@@ -1,5 +1,5 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::role_grant::{RoleGrant, RoleGrantId};
+use bindizr_core::model::role_grant::{RoleGrant, RoleGrantId, RoleGrantWithZone};
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
@@ -51,19 +51,6 @@ pub(crate) async fn get(
     Ok(grant)
 }
 
-/// List every role's grants.
-pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<RoleGrant>, DatabaseError> {
-    let mut connection = pool.acquire().await?;
-
-    let grants = sqlx::query_as::<_, RoleGrant>(
-        "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants ORDER BY id",
-    )
-    .fetch_all(&mut *connection)
-    .await?;
-
-    Ok(grants)
-}
-
 /// List every grant of a role, which bounds what a credential of it may see.
 pub(crate) async fn list_by_role_id(
     pool: &Pool<Sqlite>,
@@ -109,4 +96,45 @@ pub(crate) async fn delete_tx(
         .await?;
 
     Ok(result.rows_affected() > 0)
+}
+
+/// List a role's grants with zone names in id order, applying the supplied window.
+pub(crate) async fn list_by_role_id_with_zone(
+    pool: &Pool<Sqlite>,
+    role_id: RoleId,
+    limit: Option<u32>,
+    offset: Option<u64>,
+) -> Result<Vec<RoleGrantWithZone>, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result = sqlx::query_as::<_, RoleGrantWithZone>(
+        r#"
+        SELECT g.id, g.role_id, g.zone_id, g.actions, g.record_name_pattern, g.record_types, g.created_at, z.name AS zone_name
+        FROM role_grants g
+        LEFT JOIN zones z ON z.id = g.zone_id
+        WHERE g.role_id = ?
+        ORDER BY g.id
+        LIMIT ?
+        OFFSET ?
+        "#,
+    )
+    .bind(role_id)
+    .bind(limit.map_or(i64::MAX, i64::from))
+    .bind(offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
+    .fetch_all(&mut *connection)
+    .await?;
+    Ok(result)
+}
+
+/// Count the grants of one role.
+pub(crate) async fn count_by_role_id(
+    pool: &Pool<Sqlite>,
+    role_id: RoleId,
+) -> Result<u64, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result =
+        sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM role_grants WHERE role_id = ?"#)
+            .bind(role_id)
+            .fetch_one(&mut *connection)
+            .await?;
+    Ok(result as u64)
 }

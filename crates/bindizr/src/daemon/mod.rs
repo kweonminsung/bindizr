@@ -125,7 +125,7 @@ impl From<ReloadError> for ServiceError {
     fn from(error: ReloadError) -> Self {
         match error {
             ReloadError::Config(error) => Self::from(error),
-            tls @ ReloadError::Tls(_) => Self::invalid_input(tls),
+            tls @ ReloadError::Tls(_) => Self::invalid_input_with_source(tls.to_string(), tls),
         }
     }
 }
@@ -380,4 +380,51 @@ fn reexec(daemon_exe: Option<PathBuf>) -> DaemonError {
     let args: Vec<OsString> = env::args_os().skip(1).collect();
 
     DaemonError::Reexec(Command::new(exe).args(args).exec())
+}
+
+#[cfg(test)]
+mod tests {
+    use bindizr_core::config::TlsFiles;
+    use rustls::pki_types::pem;
+
+    use super::*;
+    use crate::tls::TlsCertificate;
+
+    /// Verify that a TLS reload failure retains its read cause, error code, and message.
+    #[test]
+    fn tls_reload_failure_preserves_source_and_response() {
+        use std::error::Error as _;
+
+        let directory = tempfile::tempdir().unwrap();
+        let cert_file = directory.path().join("missing-cert.pem");
+        let key_file = directory.path().join("missing-key.pem");
+        let source = TlsCertificate::load(TlsFiles {
+            cert_file: cert_file.to_str().unwrap(),
+            key_file: key_file.to_str().unwrap(),
+        })
+        .unwrap_err();
+        let reload = ReloadError::from(source);
+        let message = reload.to_string();
+
+        let error = ServiceError::from(reload);
+
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
+        assert_eq!(error.to_string(), message);
+        let reload = error
+            .source()
+            .unwrap()
+            .downcast_ref::<ReloadError>()
+            .unwrap();
+        let certificate = reload
+            .source()
+            .unwrap()
+            .downcast_ref::<LoadCertificateError>()
+            .unwrap();
+        let read = certificate
+            .source()
+            .unwrap()
+            .downcast_ref::<pem::Error>()
+            .unwrap();
+        assert!(matches!(read, pem::Error::Io(error) if error.kind() == io::ErrorKind::NotFound));
+    }
 }

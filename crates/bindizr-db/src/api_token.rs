@@ -1,4 +1,4 @@
-use bindizr_core::model::api_token::{ApiToken, TokenId};
+use bindizr_core::model::api_token::{ApiToken, ApiTokenMetadata, TokenId};
 use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
 
@@ -58,15 +58,6 @@ pub async fn count_all(db: &Db) -> Result<u64, DatabaseError> {
     }
 }
 
-/// List all API tokens.
-pub async fn list_all(db: &Db) -> Result<Vec<ApiToken>, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::api_token::list_all(pool).await,
-        Backend::Postgres(pool) => postgres::api_token::list_all(pool).await,
-        Backend::Sqlite(pool) => sqlite::api_token::list_all(pool).await,
-    }
-}
-
 /// Stamp when the token was last used, returning whether it was stamped. A row
 /// a transaction holds is skipped rather than waited for: the stamp only
 /// records what happened, and nothing may block on it.
@@ -102,5 +93,36 @@ pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<ApiToken>, 
         Backend::MySql(pool) => mysql::api_token::list_by_role_id(pool, role_id).await,
         Backend::Postgres(pool) => postgres::api_token::list_by_role_id(pool, role_id).await,
         Backend::Sqlite(pool) => sqlite::api_token::list_by_role_id(pool, role_id).await,
+    }
+}
+
+/// Role selection and a validated window for metadata listings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ApiTokenFilter {
+    pub role_id: Option<RoleId>,
+    pub limit: Option<u32>,
+    pub offset: Option<u64>,
+}
+
+/// List credential metadata with its role name, filtered and paged in SQL.
+pub async fn list_by_filter_with_role(
+    db: &Db,
+    filter: &ApiTokenFilter,
+) -> Result<Vec<ApiTokenMetadata>, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::api_token::list_by_filter_with_role(pool, filter).await,
+        Backend::Postgres(pool) => {
+            postgres::api_token::list_by_filter_with_role(pool, filter).await
+        }
+        Backend::Sqlite(pool) => sqlite::api_token::list_by_filter_with_role(pool, filter).await,
+    }
+}
+
+/// Count credentials matching the role filter, ignoring its page window.
+pub async fn count_by_filter(db: &Db, filter: &ApiTokenFilter) -> Result<u64, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::api_token::count_by_filter(pool, filter).await,
+        Backend::Postgres(pool) => postgres::api_token::count_by_filter(pool, filter).await,
+        Backend::Sqlite(pool) => sqlite::api_token::count_by_filter(pool, filter).await,
     }
 }

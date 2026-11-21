@@ -31,3 +31,15 @@ impl ApiToken {
         self.expires_at.is_some_and(|expires_at| now >= expires_at)
     }
 }
+
+/// Token metadata joined with its role name, without the authentication hash.
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct ApiTokenMetadata {
+    pub id: TokenId,
+    pub name: String,
+    pub description: Option<String>,
+    pub role_name: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
+}

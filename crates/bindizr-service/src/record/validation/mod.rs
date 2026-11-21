@@ -3,11 +3,14 @@
 //! TTL per name and type), the duplicate and add-outcome check, and the
 //! stored-name wire fit check.
 
+mod index;
+
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
-use bindizr_core::dns::record::{CaaRecordValue, MxRecordValue};
+use bindizr_core::dns::record::CaaRecordValue;
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::zone::Zone;
+pub(crate) use index::RecordConstraintIndex;
 
 use crate::error::ServiceError;
 use crate::types::RecordValue;
@@ -105,124 +108,12 @@ pub(crate) fn validate_record_constraints(
     priority: Option<i32>,
     except_record_id: Option<RecordId>,
 ) -> Result<(), ServiceError> {
-    record_type
-        .validate_value(value, priority)
-        .map_err(ServiceError::invalid_record_value)?;
-
-    if record_type == RecordType::Cname && owner.is_apex() {
-        return Err(ServiceError::invalid_record_name(
-            "CNAME record cannot have '@' as name",
-        ));
-    }
-
-    let records_at_name: Vec<_> = records
-        .iter()
-        .filter(|record| record.name == *owner && (except_record_id != Some(record.id)))
-        .collect();
-
-    if has_matching_rdata(
-        records_at_name.iter().copied(),
-        record_type,
-        value,
-        priority,
-    ) {
-        return Err(ServiceError::record_conflict(format!(
-            "record '{owner}' {record_type} '{value}' already exists in this zone"
-        )));
-    }
-
-    if record_type == RecordType::Wks
-        && records_at_name
+    RecordConstraintIndex::new(
+        records
             .iter()
-            .any(|record| record.is_replaced_by(RecordType::Wks, value, priority))
-    {
-        return Err(ServiceError::record_conflict(
-            "WKS records at the same name must have distinct addresses or protocols",
-        ));
-    }
-
-    if record_type == RecordType::Mx {
-        let adding_null_mx =
-            MxRecordValue::parse(value, priority).is_ok_and(MxRecordValue::is_null);
-        let has_existing_null_mx = records_at_name.iter().any(|record| {
-            record.record_type == RecordType::Mx
-                && MxRecordValue::parse(&record.value, record.priority)
-                    .is_ok_and(MxRecordValue::is_null)
-        });
-        let has_existing_mx = records_at_name
-            .iter()
-            .any(|record| record.record_type == RecordType::Mx);
-
-        if (adding_null_mx && has_existing_mx) || (!adding_null_mx && has_existing_null_mx) {
-            return Err(ServiceError::record_conflict(format!(
-                "null MX record for '{owner}' cannot coexist with other MX records"
-            )));
-        }
-    }
-
-    if !records_at_name.is_empty() {
-        if record_type == RecordType::Cname {
-            return Err(ServiceError::record_conflict(format!(
-                "another record with name '{owner}' already exists in this zone, so CNAME cannot be used"
-            )));
-        }
-        if records_at_name
-            .iter()
-            .any(|record| record.record_type == RecordType::Cname)
-        {
-            return Err(ServiceError::record_conflict(format!(
-                "a CNAME record with name '{owner}' already exists in this zone"
-            )));
-        }
-    }
-
-    // RFC 6672, Section 2.4: one DNAME per name, and none beside a
-    // delegation, which at any name but the apex is what NS records are.
-    let has_at_name = |wanted: RecordType| {
-        records_at_name
-            .iter()
-            .any(|record| record.record_type == wanted)
-    };
-
-    if record_type == RecordType::Dname {
-        if has_at_name(RecordType::Dname) {
-            return Err(ServiceError::record_conflict(format!(
-                "a DNAME record already exists at '{owner}'; only one DNAME is allowed per name"
-            )));
-        }
-        if !owner.is_apex() && has_at_name(RecordType::Ns) {
-            return Err(ServiceError::record_conflict(format!(
-                "a DNAME record cannot share the delegation '{owner}' with NS records"
-            )));
-        }
-    }
-
-    if record_type == RecordType::Ns && !owner.is_apex() && has_at_name(RecordType::Dname) {
-        return Err(ServiceError::record_conflict(format!(
-            "NS records cannot delegate '{owner}' beside its DNAME record"
-        )));
-    }
-
-    // A DS names a child zone's key (RFC 4034, Section 5); the zone's own
-    // DS lives in its parent; the final-state check verifies its NS delegation.
-    if record_type == RecordType::Ds && owner.is_apex() {
-        return Err(ServiceError::invalid_record_name(
-            "DS records secure a child delegation; the zone's own DS belongs in the parent zone",
-        ));
-    }
-
-    // RFC 2181, Section 5.2: one TTL per record set.
-    if let Some(conflicting) = records_at_name
-        .iter()
-        .find(|record| record.record_type == record_type && record.ttl != ttl)
-    {
-        return Err(ServiceError::record_conflict(format!(
-            "TTL {ttl} does not match the existing {record_type} records for '{owner}' (TTL {}); records sharing a name and type share one TTL",
-            conflicting.ttl
-        )));
-    }
-
-    Ok(())
+            .filter(|record| record.name == *owner && except_record_id != Some(record.id)),
+    )
+    .validate(owner, record_type, value, ttl, priority)
 }
 
 /// Refuse a stored name that no longer fits the wire under `zone_name`, the

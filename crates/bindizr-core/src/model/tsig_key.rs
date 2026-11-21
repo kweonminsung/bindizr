@@ -114,6 +114,17 @@ pub struct TsigKey {
     pub created_at: DateTime<Utc>,
 }
 
+/// Key metadata joined with its role name, without the signing secret.
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct TsigKeyMetadata {
+    pub id: TsigKeyId,
+    pub name: String,
+    #[sqlx(try_from = "String")]
+    pub algorithm: TsigAlgorithm,
+    pub role_name: String,
+    pub created_at: DateTime<Utc>,
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

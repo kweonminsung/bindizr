@@ -1,5 +1,5 @@
 use bindizr_core::dns::address::AddressTarget;
-use bindizr_core::model::secondary::{Secondary, SecondaryId};
+use bindizr_core::model::secondary::{Secondary, SecondaryId, SecondaryWithNotifyKey};
 use bindizr_core::model::tsig_key::TsigKeyId;
 use chrono::Utc;
 use sqlx::{Pool, Postgres, Row, Transaction};
@@ -145,4 +145,37 @@ pub(crate) async fn delete_tx(
         .await?;
 
     Ok(result.rows_affected() > 0)
+}
+
+/// List secondaries with their NOTIFY key names in name order, applying the supplied window.
+pub(crate) async fn list_all_with_notify_tsig_key(
+    pool: &Pool<Postgres>,
+    limit: Option<u32>,
+    offset: Option<u64>,
+) -> Result<Vec<SecondaryWithNotifyKey>, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result = sqlx::query_as::<_, SecondaryWithNotifyKey>(
+        r#"
+        SELECT s.id, s.name, s.address, s.enabled, s.notify_tsig_key_id, s.created_at, k.name AS notify_key_name
+        FROM secondaries s
+        LEFT JOIN tsig_keys k ON k.id = s.notify_tsig_key_id
+        ORDER BY s.name
+        LIMIT $1
+        OFFSET $2
+        "#,
+    )
+    .bind(limit.map_or(i64::MAX, i64::from))
+    .bind(offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
+    .fetch_all(&mut *connection)
+    .await?;
+    Ok(result)
+}
+
+/// Count all registered secondaries.
+pub(crate) async fn count_all(pool: &Pool<Postgres>) -> Result<u64, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM secondaries"#)
+        .fetch_one(&mut *connection)
+        .await?;
+    Ok(result as u64)
 }

@@ -349,6 +349,71 @@ async fn prune_older_than_keeps_the_newest_row_of_each_client_and_zone() {
     );
 }
 
+/// Verify that pruning uses event time and id ties independently for each client and zone.
+#[tokio::test]
+async fn prune_older_than_preserves_latest_when_inserts_arrive_out_of_order() {
+    let (cx, zone_ids) = context(SavedTransfers::All, &["a.test", "b.test"]).await;
+    let now = Utc::now();
+    for (zone_index, client, days, serial) in [
+        (0, "192.0.2.1", 20, 20),
+        (0, "192.0.2.1", 30, 10),
+        (1, "192.0.2.1", 20, 1),
+        (1, "192.0.2.1", 20, 2),
+        (0, "192.0.2.2", 40, 3),
+        (0, "192.0.2.2", 50, 4),
+        (1, "192.0.2.2", 1, 5),
+    ] {
+        let mut log = test_log(zone_ids[zone_index], now - Duration::days(days));
+        log.client_addr = client.to_string();
+        log.serial = Some(Serial::from(serial));
+        transfer_log::create(cx.db(), log).await.unwrap();
+    }
+
+    assert_eq!(
+        transfer_log::prune_older_than(cx.db(), now - Duration::days(10))
+            .await
+            .unwrap(),
+        3
+    );
+    let mut retained: Vec<_> = list_logs(&cx, &transfer_log::TransferLogFilter::default())
+        .await
+        .into_iter()
+        .map(|entry| {
+            (
+                entry.zone_name.to_string(),
+                entry.log.client_addr,
+                entry.log.serial,
+            )
+        })
+        .collect();
+    retained.sort();
+    assert_eq!(
+        retained,
+        [
+            (
+                "a.test".to_string(),
+                "192.0.2.1".to_string(),
+                Some(Serial::from(20))
+            ),
+            (
+                "a.test".to_string(),
+                "192.0.2.2".to_string(),
+                Some(Serial::from(3))
+            ),
+            (
+                "b.test".to_string(),
+                "192.0.2.1".to_string(),
+                Some(Serial::from(2))
+            ),
+            (
+                "b.test".to_string(),
+                "192.0.2.2".to_string(),
+                Some(Serial::from(5))
+            ),
+        ]
+    );
+}
+
 /// Verify that `list` reads the address, result and order, and refuses what it cannot parse or find.
 #[tokio::test]
 async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {

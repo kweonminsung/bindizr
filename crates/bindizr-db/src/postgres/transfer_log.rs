@@ -146,7 +146,15 @@ pub(crate) async fn prune_older_than(
         r#"
         DELETE FROM transfer_log
         WHERE served_at < $1
-          AND id NOT IN (SELECT MAX(id) FROM transfer_log GROUP BY client_addr, zone_id)
+          AND id NOT IN (
+              SELECT id FROM (
+                  SELECT id, ROW_NUMBER() OVER (
+                      PARTITION BY client_addr, zone_id ORDER BY served_at DESC, id DESC
+                  ) AS recency
+                  FROM transfer_log
+              ) AS newest
+              WHERE recency = 1
+          )
         "#,
     )
     .bind(cutoff)

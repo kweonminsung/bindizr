@@ -153,3 +153,16 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
         server.await.unwrap();
     }
 }
+
+/// Sharing a failed resolution retains the resolver's type in the error chain.
+#[test]
+fn notify_resolution_error_exposes_original_cause() {
+    let error =
+        SendNotifyError::Resolve(Arc::new(dns_client::ResolveAddressError::NoAddresses).into());
+    assert!(
+        error
+            .source()
+            .unwrap()
+            .is::<dns_client::ResolveAddressError>()
+    );
+}

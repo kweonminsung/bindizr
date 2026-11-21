@@ -6,7 +6,7 @@ mod send;
 use std::sync::Arc;
 
 use bindizr_core::dns::name::ZoneName;
-pub(crate) use send::{NotifyZoneError, send_zone_notify};
+pub(crate) use send::{NotifyZoneError, send_notify_to_targets, send_zone_notify};
 pub use send::{send_notify_to_secondaries, send_notify_to_secondary};
 use thiserror::Error;
 use tokio::task::JoinSet;

@@ -1,10 +1,11 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
+use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId, TsigKeyMetadata};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
+use crate::tsig_key::TsigKeyFilter;
 
 /// Insert a TSIG key.
 pub(crate) async fn create_tx(
@@ -84,19 +85,6 @@ pub(crate) async fn get_by_name(
     Ok(tsig_key)
 }
 
-/// List all TSIG keys.
-pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<TsigKey>, DatabaseError> {
-    let mut connection = pool.acquire().await?;
-
-    let tsig_keys = sqlx::query_as::<_, TsigKey>(
-        "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys ORDER BY name",
-    )
-    .fetch_all(&mut *connection)
-    .await?;
-
-    Ok(tsig_keys)
-}
-
 /// Delete a TSIG key by ID.
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
@@ -126,4 +114,55 @@ pub(crate) async fn list_by_role_id(
     .await?;
 
     Ok(tsig_keys)
+}
+
+/// List credential metadata with its role name, filtered and paged in SQL.
+pub(crate) async fn list_by_filter_with_role(
+    pool: &Pool<MySql>,
+    filter: &TsigKeyFilter,
+) -> Result<Vec<TsigKeyMetadata>, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result = sqlx::query_as::<_, TsigKeyMetadata>(
+        r#"
+        SELECT t.id, t.name, t.algorithm, r.name AS role_name, t.created_at
+        FROM tsig_keys t
+        INNER JOIN roles r ON r.id = t.role_id
+        WHERE (? IS NULL OR t.role_id = ?)
+        ORDER BY t.name
+        LIMIT ?
+        OFFSET ?
+        "#,
+    )
+    .bind(filter.role_id)
+    .bind(filter.role_id)
+    .bind(filter.limit.map_or(i64::MAX, i64::from))
+    .bind(
+        filter
+            .offset
+            .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    Ok(result)
+}
+
+/// Count credentials matching the role filter, ignoring its page window.
+pub(crate) async fn count_by_filter(
+    pool: &Pool<MySql>,
+    filter: &TsigKeyFilter,
+) -> Result<u64, DatabaseError> {
+    let mut connection = pool.acquire().await?;
+    let result = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM tsig_keys t
+        INNER JOIN roles r ON r.id = t.role_id
+        WHERE (? IS NULL OR t.role_id = ?)
+        "#,
+    )
+    .bind(filter.role_id)
+    .bind(filter.role_id)
+    .fetch_one(&mut *connection)
+    .await?;
+    Ok(result as u64)
 }

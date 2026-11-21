@@ -6,9 +6,10 @@ pub(crate) mod ds;
 pub(crate) mod notify;
 pub mod probe;
 
-use std::io;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
+use std::{fmt, io};
 
 use bindizr_core::dns::address::{AddressTarget, DEFAULT_DNS_PORT};
 use bindizr_core::dns::message::{EncodeMessageError, Keepalive, ParseQueryError, QueryMetadata};
@@ -56,6 +57,29 @@ pub enum ResolveAddressError {
     Lookup(#[from] io::Error),
     #[error("resolution timed out after {secs} seconds")]
     TimedOut { secs: u64 },
+}
+
+/// One shared resolution failure, retaining the original typed cause for every consumer.
+#[derive(Debug, Clone)]
+pub struct SharedResolveAddressError(Arc<ResolveAddressError>);
+
+impl From<Arc<ResolveAddressError>> for SharedResolveAddressError {
+    fn from(error: Arc<ResolveAddressError>) -> Self {
+        Self(error)
+    }
+}
+
+impl fmt::Display for SharedResolveAddressError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to resolve: {}", self.0)
+    }
+}
+
+impl std::error::Error for SharedResolveAddressError {
+    /// A transparent error variant delegates here, exposing the resolver rather than its Arc.
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.0.as_ref())
+    }
 }
 
 /// Ask over UDP and, when the answer comes back truncated, again over TCP

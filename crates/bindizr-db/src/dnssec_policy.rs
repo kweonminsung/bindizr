@@ -56,15 +56,6 @@ pub async fn get_by_name_tx(
     }
 }
 
-/// List all DNSSEC policies.
-pub async fn list_all(db: &Db) -> Result<Vec<DnssecPolicy>, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::dnssec_policy::list_all(pool).await,
-        Backend::Postgres(pool) => postgres::dnssec_policy::list_all(pool).await,
-        Backend::Sqlite(pool) => sqlite::dnssec_policy::list_all(pool).await,
-    }
-}
-
 /// Write the editable timing fields; the key layout, algorithm, and denial mode
 /// are fixed at creation.
 pub async fn update_tx(
@@ -85,5 +76,27 @@ pub async fn delete_tx(tx: &mut Transaction<'_>, id: PolicyId) -> Result<bool, D
         TransactionKind::MySql(tx) => mysql::dnssec_policy::delete_tx(tx, id).await,
         TransactionKind::Postgres(tx) => postgres::dnssec_policy::delete_tx(tx, id).await,
         TransactionKind::Sqlite(tx) => sqlite::dnssec_policy::delete_tx(tx, id).await,
+    }
+}
+
+/// List DNSSEC policies in name order, applying the supplied window.
+pub async fn list_all(
+    db: &Db,
+    limit: Option<u32>,
+    offset: Option<u64>,
+) -> Result<Vec<DnssecPolicy>, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::dnssec_policy::list_all(pool, limit, offset).await,
+        Backend::Postgres(pool) => postgres::dnssec_policy::list_all(pool, limit, offset).await,
+        Backend::Sqlite(pool) => sqlite::dnssec_policy::list_all(pool, limit, offset).await,
+    }
+}
+
+/// Count all DNSSEC policies.
+pub async fn count_all(db: &Db) -> Result<u64, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::dnssec_policy::count_all(pool).await,
+        Backend::Postgres(pool) => postgres::dnssec_policy::count_all(pool).await,
+        Backend::Sqlite(pool) => sqlite::dnssec_policy::count_all(pool).await,
     }
 }

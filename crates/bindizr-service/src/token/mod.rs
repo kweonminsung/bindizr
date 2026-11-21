@@ -1,10 +1,7 @@
 //! Creates, lists, and revokes API tokens.
 
-use std::collections::HashMap;
-
 use bindizr_core::model::api_token::{ApiToken, TokenId};
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
-use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::Action;
 use chrono::{DateTime, Duration, Utc};
 use rand::RngExt;
@@ -125,30 +122,22 @@ pub async fn list(
 ) -> Result<PaginatedResponse<TokenResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(filter.limit)?;
-
-    let tokens = match &filter.role_name {
-        Some(role_name) => {
-            let role = role::lookup_by_name(cx, role_name).await?;
-            bindizr_db::api_token::list_by_role_id(cx.db(), role.id).await?
-        }
-        None => bindizr_db::api_token::list_all(cx.db()).await?,
+    let role_id = match &filter.role_name {
+        Some(name) => Some(role::lookup_by_name(cx, name).await?.id),
+        None => None,
     };
-    let role_names: HashMap<RoleId, String> = bindizr_db::role::list_all(cx.db())
-        .await?
-        .into_iter()
-        .map(|role| (role.id, role.name))
-        .collect();
-
-    Ok(pagination::build_page(
-        tokens
-            .iter()
-            .map(|token| {
-                let role_name = role_names.get(&token.role_id).map_or("", String::as_str);
-                TokenResponse::from_token(token, role_name)
-            })
-            .collect(),
+    let filter = bindizr_db::api_token::ApiTokenFilter {
+        role_id,
+        limit: filter.limit,
+        offset: filter.offset,
+    };
+    let total = bindizr_db::api_token::count_by_filter(cx.db(), &filter).await?;
+    let rows = bindizr_db::api_token::list_by_filter_with_role(cx.db(), &filter).await?;
+    Ok(pagination::build_paginated_response(
+        rows.iter().map(TokenResponse::from).collect(),
         filter.limit,
         filter.offset,
+        total,
     ))
 }
 

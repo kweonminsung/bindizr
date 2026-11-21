@@ -43,6 +43,7 @@ pub async fn apply_changes(
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
         let zones = bindizr_db::zone::list_all_tx(&mut tx).await?;
+        let zone_index = policy::ZoneIndex::new(&zones);
 
         // Only to learn the lock targets, from all zones so a hidden subzone
         // still shadows a granted parent; nothing is decided on these rows.
@@ -51,7 +52,7 @@ pub async fn apply_changes(
             .filter_map(|operation| {
                 let (RecordSetOperation::Add(record_set) | RecordSetOperation::Delete(record_set)) =
                     operation;
-                policy::authoritative_zone(&zones, &record_set.name)
+                zone_index.find(&record_set.name)
             })
             .map(|(zone, _)| &zone.name)
             .collect();
@@ -64,6 +65,7 @@ pub async fn apply_changes(
         }
 
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
+        let locked_zone_index = policy::ZoneIndex::new(&locked_zones);
 
         // Refuse missing and hidden zones alike, in request order and before any
         // grant check; the locked zones hold each name's most-specific match.
@@ -71,7 +73,8 @@ pub async fn apply_changes(
         for operation in operations {
             let (RecordSetOperation::Add(record_set) | RecordSetOperation::Delete(record_set)) =
                 &operation;
-            let Some((zone, owner)) = policy::authoritative_zone(&locked_zones, &record_set.name)
+            let Some((zone, owner)) = locked_zone_index
+                .find(&record_set.name)
                 .filter(|(zone, _)| caller.sees_zone(zone.id))
             else {
                 return Err(ServiceError::ZoneNotFound(format!(

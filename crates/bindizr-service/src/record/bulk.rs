@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::time::Instant;
 
 use bindizr_core::dns::name::OwnerName;
@@ -122,17 +121,9 @@ pub async fn create_bulk(
             Vec::new()
         };
 
-        // Index by owner to limit conflict scans while including earlier batch additions.
+        // Index existing identities once; accepted candidates extend the same state.
         let started = Instant::now();
-        let mut records_by_name: HashMap<OwnerName, Vec<Record>> =
-            HashMap::with_capacity(existing_records.len());
-
-        for record in existing_records {
-            records_by_name
-                .entry(record.name.clone())
-                .or_default()
-                .push(record);
-        }
+        let mut constraints = record::RecordConstraintIndex::new(existing_records.iter());
 
         timings.build_index_ms = time::elapsed_ms(started);
 
@@ -142,19 +133,15 @@ pub async fn create_bulk(
         for (prepared_record, owner) in prepared.iter().zip(owners) {
             let owner = owner?;
 
-            let records_at_name = records_by_name.entry(owner.clone()).or_default();
-
             // Fixed at write time: a later zone TTL change will not move it.
             let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
-            record::validate_record_constraints(
-                records_at_name,
+            constraints.validate(
                 &owner,
                 prepared_record.record_type,
                 &prepared_record.value,
                 ttl,
                 prepared_record.priority,
-                None,
             )?;
 
             let record = Record {
@@ -167,7 +154,7 @@ pub async fn create_bulk(
                 zone_id: zone.id,
                 created_at: Utc::now(),
             };
-            records_at_name.push(record.clone());
+            constraints.insert(&record);
             to_insert.push(record);
         }
 

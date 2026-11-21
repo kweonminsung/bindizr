@@ -12,6 +12,7 @@ use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_core::model::zone_version::{VersionFilter, ZoneVersion, ZoneVersionId};
 use bindizr_db::Db;
 use chrono::Utc;
+use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
@@ -20,7 +21,7 @@ use crate::error::ErrorCode;
 use crate::types::{
     AuditLogFilter, PageRequest, RecordFilter, TokenFilter, TsigKeyFilter, ZoneFilter,
 };
-use crate::{Context, audit, record, role, token, tsig_key, zone};
+use crate::{Context, audit, record, role, secondary, token, tsig_key, zone};
 
 /// Build real service state over a disposable in-memory database.
 async fn context() -> Context {
@@ -55,28 +56,164 @@ fn page_limit_accepts_absence_and_rejects_out_of_range() {
     }
 }
 
-/// Verify that collection paging retains the unbounded request and reports offsets without truncating them.
-#[test]
-fn build_page_preserves_unbounded_windows_and_metadata() {
-    for (limit, offset, expected) in [
-        (None, None, 1001),
-        (Some(1000), None, 1000),
-        (None, Some(1000), 1),
-        (Some(2), Some(1000), 1),
-        (None, Some(1001), 0),
-        (None, Some(u64::MAX), 0),
-    ] {
-        let page = build_page((0..1001).collect(), limit, offset);
-        assert_eq!(page.items.len(), expected);
-        assert_eq!(page.pagination.total, 1001);
-        assert_eq!(page.pagination.limit, limit.unwrap_or(1001));
-        assert_eq!(page.pagination.offset, offset.unwrap_or(0));
+/// Verify that joined metadata pages preserve role filters, all-zone grants, key names, and counts.
+#[tokio::test]
+async fn management_metadata_pages_keep_names_filters_and_cardinalities() {
+    let cx = context().await;
+    let caller = Caller::socket();
+    role::create(
+        &cx,
+        &caller,
+        &serde_json::from_value(json!({"name": "metadata"})).unwrap(),
+    )
+    .await
+    .unwrap();
+    zone::create(&cx, &caller, &serde_json::from_value(json!({
+        "name": "metadata.example", "mname": "ns.metadata.example", "rname": "admin@metadata.example"
+    })).unwrap()).await.unwrap();
+    for zone_name in [None, Some("metadata.example")] {
+        role::grant::create(
+            &cx,
+            &caller,
+            "metadata",
+            &serde_json::from_value(json!({
+                "zone_name": zone_name, "actions": ["record:read"]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
     }
+    for name in ["a-credential", "b-credential"] {
+        token::create(
+            &cx,
+            &caller,
+            &serde_json::from_value(json!({"name": name, "role_name": "metadata"})).unwrap(),
+        )
+        .await
+        .unwrap();
+        tsig_key::create(
+            &cx,
+            &caller,
+            &serde_json::from_value(json!({"name": name, "role_name": "metadata"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    }
+    secondary::create(
+        &cx,
+        &caller,
+        &serde_json::from_value(json!({
+            "name": "metadata-secondary", "address": "192.0.2.1", "notify_key_name": "a-credential"
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let tokens = token::list(
+        &cx,
+        &caller,
+        &TokenFilter {
+            role_name: Some("metadata".to_string()),
+            limit: Some(1),
+            offset: Some(1),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(tokens.pagination.total, 2);
+    assert_eq!(tokens.items[0].name, "a-credential");
+    assert_eq!(tokens.items[0].role_name, "metadata");
+    let all_tokens = token::list(&cx, &caller, &TokenFilter::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        all_tokens
+            .items
+            .iter()
+            .map(|token| token.name.as_str())
+            .collect::<Vec<_>>(),
+        ["b-credential", "a-credential"]
+    );
+    let keys = tsig_key::list(
+        &cx,
+        &caller,
+        &TsigKeyFilter {
+            role_name: Some("metadata".to_string()),
+            limit: Some(1),
+            offset: Some(1),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(keys.pagination.total, 2);
+    assert_eq!(keys.items[0].name, "b-credential");
+    let grants = role::grant::list(
+        &cx,
+        &caller,
+        "metadata",
+        PageRequest {
+            limit: Some(1),
+            offset: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(grants.pagination.total, 2);
+    assert_eq!(grants.items[0].zone_name, None);
+    let grants = role::grant::list(
+        &cx,
+        &caller,
+        "metadata",
+        PageRequest {
+            limit: Some(1),
+            offset: Some(1),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        grants.items[0].zone_name.as_deref(),
+        Some("metadata.example")
+    );
+    let secondaries = secondary::list(
+        &cx,
+        &caller,
+        PageRequest {
+            limit: Some(1),
+            offset: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        secondaries.items[0].notify_key_name.as_deref(),
+        Some("a-credential")
+    );
+    let role = role::get(&cx, &caller, "metadata").await.unwrap();
+    assert_eq!(
+        (role.grant_count, role.token_count, role.tsig_key_count),
+        (2, 2, 2)
+    );
+    let page = token::list(
+        &cx,
+        &caller,
+        &TokenFilter {
+            limit: Some(1),
+            offset: Some(u64::MAX),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(page.items.is_empty());
+    assert_eq!(page.pagination.offset, u64::MAX);
+    assert_eq!(page.pagination.total, 2);
 }
 
-/// Verify that SQL and collection listings return every row when a socket caller omits the limit.
+/// Verify that Record and management listings return every row when a socket caller omits the limit.
 #[tokio::test]
-async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
+async fn listings_preserve_unbounded_windows_across_records_and_management() {
     let cx = context().await;
 
     let caller = Caller::socket();
@@ -347,7 +484,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
 
 /// Verify that bad page sizes are rejected before an unrelated role lookup can mask the input error.
 #[tokio::test]
-async fn collection_listings_reject_invalid_limits_before_role_queries() {
+async fn management_listings_reject_invalid_limits_before_role_queries() {
     let cx = context().await;
 
     let caller = Caller::socket();

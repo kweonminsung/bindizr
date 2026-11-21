@@ -1,21 +1,26 @@
 //! Prepare NOTIFY targets and collect per-address send results.
 
+use std::net::SocketAddr;
+use std::sync::Arc;
+
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::metrics::NotifyResult;
 use bindizr_core::model::secondary::Secondary;
 use thiserror::Error;
 use tokio::task::JoinSet;
 
-use crate::dns_client::ResolveAddressError;
+use crate::dns_client::SharedResolveAddressError;
+use crate::dns_client::notify::NotifyHandle;
 use crate::error::ServiceError;
+use crate::secondary::SecondaryTarget;
 use crate::types::CheckNotifyResponse;
 use crate::{Context, dns_client, secondary, zone};
 
 /// Why a NOTIFY target could not be reached or acknowledged.
 #[derive(Debug, Error)]
 pub(crate) enum SendNotifyError {
-    #[error("failed to resolve: {0}")]
-    Resolve(#[source] ResolveAddressError),
+    #[error(transparent)]
+    Resolve(SharedResolveAddressError),
     #[error("{0}")]
     Send(#[source] dns_client::notify::SendNotifyError),
 }
@@ -99,6 +104,67 @@ pub async fn send_notify_to_secondary(
     ))
 }
 
+/// Notify the addresses already resolved by one diagnostic request.
+pub(crate) async fn send_notify_to_targets<'a>(
+    cx: &Context,
+    zone_name: &ZoneName,
+    targets: impl IntoIterator<Item = &'a SecondaryTarget>,
+) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
+    let qname = zone_name
+        .to_wire_name()
+        .map_err(|error| ServiceError::internal_with_source("invalid zone name", error))?;
+    let config = cx.config();
+    let timeout = config.dns.notify.timeout();
+    let retries = config.dns.notify.retries;
+    let permit = cx.notify_preparations().acquire().await.map_err(|error| {
+        ServiceError::internal_with_source("NOTIFY preparation queue closed", error)
+    })?;
+    let mut handles = Vec::new();
+    let mut results = Vec::new();
+    let mut prepared = Vec::new();
+    // A later key failure must precede every send, just as in the normal path.
+    for target in targets {
+        let key = match secondary::find_notify_signing_key(cx, &target.secondary).await {
+            Ok(key) => key,
+            Err(error) => {
+                cx.metrics().track_notify(NotifyResult::Failed);
+                return Err(error);
+            }
+        };
+        prepared.push((target, key));
+    }
+    for (target, key) in prepared {
+        let addrs = match &target.addresses {
+            Ok(addrs) => addrs,
+            Err(error) => {
+                cx.metrics().track_notify(NotifyResult::ResolveFailed);
+                results.push((
+                    target.secondary.address.to_string(),
+                    Err(SendNotifyError::Resolve(error.clone().into())),
+                ));
+                continue;
+            }
+        };
+        for &addr in addrs {
+            match cx
+                .notify_client()
+                .send(&qname, addr, timeout, retries, key.as_ref())
+                .await
+            {
+                Ok(handle) => handles.push((addr, handle)),
+                Err(error) => {
+                    cx.metrics().track_notify(NotifyResult::Failed);
+                    results.push((addr.to_string(), Err(SendNotifyError::Send(error))));
+                }
+            }
+        }
+    }
+    drop(permit);
+    Ok(build_notify_reports(
+        complete_requests(cx, handles, results).await,
+    ))
+}
+
 /// Format send results for a diagnostic response.
 fn build_notify_reports(
     results: Vec<(String, Result<(), SendNotifyError>)>,
@@ -158,7 +224,10 @@ async fn send_notify(
             Ok(addrs) => addrs,
             Err(error) => {
                 cx.metrics().track_notify(NotifyResult::ResolveFailed);
-                results.push((address.to_string(), Err(SendNotifyError::Resolve(error))));
+                results.push((
+                    address.to_string(),
+                    Err(SendNotifyError::Resolve(Arc::new(error).into())),
+                ));
                 continue;
             }
         };
@@ -181,6 +250,15 @@ async fn send_notify(
     // Release preparation slots before waiting for ACKs.
     drop(permit);
 
+    Ok(complete_requests(cx, handles, results).await)
+}
+
+/// Wait for every enqueued request and account for its final result.
+async fn complete_requests(
+    cx: &Context,
+    handles: Vec<(SocketAddr, NotifyHandle)>,
+    mut results: Vec<(String, Result<(), SendNotifyError>)>,
+) -> Vec<(String, Result<(), SendNotifyError>)> {
     for (addr, handle) in handles {
         let result = match handle.wait().await {
             Ok(()) => {
@@ -197,7 +275,7 @@ async fn send_notify(
         results.push((addr.to_string(), result));
     }
 
-    Ok(results)
+    results
 }
 
 #[cfg(test)]

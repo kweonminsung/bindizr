@@ -68,23 +68,5 @@ pub(crate) fn build_paginated_response<T>(
     }
 }
 
-/// Apply a validated window to a collection and build its page metadata.
-pub(crate) fn build_page<T>(
-    items: Vec<T>,
-    limit: Option<u32>,
-    offset: Option<u64>,
-) -> PaginatedResponse<T> {
-    let total = items.len() as u64;
-    let start = offset.unwrap_or(0);
-    let take = limit.map_or(items.len(), |limit| limit as usize);
-    let page = items
-        .into_iter()
-        .skip(usize::try_from(start).unwrap_or(usize::MAX))
-        .take(take)
-        .collect();
-
-    build_paginated_response(page, limit, offset, total)
-}
-
 #[cfg(test)]
 mod tests;

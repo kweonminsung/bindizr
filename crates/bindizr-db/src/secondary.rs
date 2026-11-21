@@ -1,5 +1,5 @@
 use bindizr_core::dns::address::AddressTarget;
-use bindizr_core::model::secondary::{Secondary, SecondaryId};
+use bindizr_core::model::secondary::{Secondary, SecondaryId, SecondaryWithNotifyKey};
 use bindizr_core::model::tsig_key::TsigKeyId;
 
 use crate::error::DatabaseError;
@@ -100,5 +100,33 @@ pub async fn delete_tx(tx: &mut Transaction<'_>, id: SecondaryId) -> Result<bool
         TransactionKind::MySql(tx) => mysql::secondary::delete_tx(tx, id).await,
         TransactionKind::Postgres(tx) => postgres::secondary::delete_tx(tx, id).await,
         TransactionKind::Sqlite(tx) => sqlite::secondary::delete_tx(tx, id).await,
+    }
+}
+
+/// List secondaries with their NOTIFY key names in name order, applying the supplied window.
+pub async fn list_all_with_notify_tsig_key(
+    db: &Db,
+    limit: Option<u32>,
+    offset: Option<u64>,
+) -> Result<Vec<SecondaryWithNotifyKey>, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => {
+            mysql::secondary::list_all_with_notify_tsig_key(pool, limit, offset).await
+        }
+        Backend::Postgres(pool) => {
+            postgres::secondary::list_all_with_notify_tsig_key(pool, limit, offset).await
+        }
+        Backend::Sqlite(pool) => {
+            sqlite::secondary::list_all_with_notify_tsig_key(pool, limit, offset).await
+        }
+    }
+}
+
+/// Count all registered secondaries.
+pub async fn count_all(db: &Db) -> Result<u64, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::secondary::count_all(pool).await,
+        Backend::Postgres(pool) => postgres::secondary::count_all(pool).await,
+        Backend::Sqlite(pool) => sqlite::secondary::count_all(pool).await,
     }
 }

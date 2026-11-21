@@ -1,5 +1,5 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
+use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId, TsigKeyMetadata};
 
 use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
@@ -48,15 +48,6 @@ pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<TsigKey>, Databas
     }
 }
 
-/// List all TSIG keys.
-pub async fn list_all(db: &Db) -> Result<Vec<TsigKey>, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::tsig_key::list_all(pool).await,
-        Backend::Postgres(pool) => postgres::tsig_key::list_all(pool).await,
-        Backend::Sqlite(pool) => sqlite::tsig_key::list_all(pool).await,
-    }
-}
-
 /// Delete a TSIG key by ID.
 /// Reports `false` when no row had the id.
 pub async fn delete_tx(tx: &mut Transaction<'_>, id: TsigKeyId) -> Result<bool, DatabaseError> {
@@ -73,5 +64,34 @@ pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<TsigKey>, D
         Backend::MySql(pool) => mysql::tsig_key::list_by_role_id(pool, role_id).await,
         Backend::Postgres(pool) => postgres::tsig_key::list_by_role_id(pool, role_id).await,
         Backend::Sqlite(pool) => sqlite::tsig_key::list_by_role_id(pool, role_id).await,
+    }
+}
+
+/// Role selection and a validated window for metadata listings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TsigKeyFilter {
+    pub role_id: Option<RoleId>,
+    pub limit: Option<u32>,
+    pub offset: Option<u64>,
+}
+
+/// List credential metadata with its role name, filtered and paged in SQL.
+pub async fn list_by_filter_with_role(
+    db: &Db,
+    filter: &TsigKeyFilter,
+) -> Result<Vec<TsigKeyMetadata>, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::tsig_key::list_by_filter_with_role(pool, filter).await,
+        Backend::Postgres(pool) => postgres::tsig_key::list_by_filter_with_role(pool, filter).await,
+        Backend::Sqlite(pool) => sqlite::tsig_key::list_by_filter_with_role(pool, filter).await,
+    }
+}
+
+/// Count credentials matching the role filter, ignoring its page window.
+pub async fn count_by_filter(db: &Db, filter: &TsigKeyFilter) -> Result<u64, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::tsig_key::count_by_filter(pool, filter).await,
+        Backend::Postgres(pool) => postgres::tsig_key::count_by_filter(pool, filter).await,
+        Backend::Sqlite(pool) => sqlite::tsig_key::count_by_filter(pool, filter).await,
     }
 }
