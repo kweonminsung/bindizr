@@ -135,10 +135,12 @@ pub async fn list(
 ) -> Result<PaginatedResponse<DnssecPolicyResponse>, ServiceError> {
     caller.authorize_action(Action::DnssecRead)?;
     pagination::validate_page_limit(page.limit)?;
+
     let total = bindizr_db::dnssec_policy::count_all(cx.db()).await?;
-    let rows = bindizr_db::dnssec_policy::list_all(cx.db(), page.limit, page.offset).await?;
+    let policies = bindizr_db::dnssec_policy::list_all(cx.db(), page.limit, page.offset).await?;
+
     Ok(pagination::build_paginated_response(
-        rows.iter().map(DnssecPolicyResponse::from).collect(),
+        policies.iter().map(DnssecPolicyResponse::from).collect(),
         page.limit,
         page.offset,
         total,

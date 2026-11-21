@@ -47,26 +47,26 @@ impl RecordConstraintIndex {
 
     /// Add an existing row or a candidate that passed validation to the proposed state.
     pub(crate) fn insert(&mut self, record: &Record) {
-        let owner = self.owners.entry(record.name.clone()).or_default();
-        owner.count += 1;
-        owner.identities.insert(record.match_key());
-        let set = owner
+        let owner_records = self.owners.entry(record.name.clone()).or_default();
+        owner_records.count += 1;
+        owner_records.identities.insert(record.match_key());
+        let record_set = owner_records
             .sets
             .entry(record.record_type)
             .or_insert(RecordSetState {
                 first_ttl: record.ttl,
                 other_ttl: None,
             });
-        if record.ttl != set.first_ttl && set.other_ttl.is_none() {
-            set.other_ttl = Some(record.ttl);
+        if record.ttl != record_set.first_ttl && record_set.other_ttl.is_none() {
+            record_set.other_ttl = Some(record.ttl);
         }
         if record.record_type == RecordType::Wks
             && let Ok(value) = WksRecordValue::parse(&record.value)
         {
-            owner.wks.insert(value.address_and_protocol());
+            owner_records.wks.insert(value.address_and_protocol());
         }
         if record.record_type == RecordType::Mx {
-            owner.null_mx |= MxRecordValue::parse(&record.value, record.priority)
+            owner_records.null_mx |= MxRecordValue::parse(&record.value, record.priority)
                 .is_ok_and(MxRecordValue::is_null);
         }
     }
@@ -109,7 +109,7 @@ impl RecordConstraintIndex {
             ));
         }
         let has_at_name =
-            |wanted| existing.is_some_and(|records| records.sets.contains_key(&wanted));
+            |record_type| existing.is_some_and(|records| records.sets.contains_key(&record_type));
         if record_type == RecordType::Mx {
             let adding_null_mx =
                 MxRecordValue::parse(value, priority).is_ok_and(MxRecordValue::is_null);

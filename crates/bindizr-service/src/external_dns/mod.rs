@@ -44,11 +44,11 @@ const SYNC_ACTIONS: [Action; 3] = [
 pub fn adjust_records(
     request: &AdjustExternalDnsRecordsRequest,
 ) -> Result<AdjustExternalDnsRecordsResponse, ServiceError> {
-    let records = request
+    let records: Vec<_> = request
         .records
         .iter()
         .map(change_set::adjust_record_set)
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<_, _>>()?;
     Ok(AdjustExternalDnsRecordsResponse { records })
 }
 

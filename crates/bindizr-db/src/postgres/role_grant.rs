@@ -106,7 +106,8 @@ pub(crate) async fn list_by_role_id_with_zone(
     offset: Option<u64>,
 ) -> Result<Vec<RoleGrantWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, RoleGrantWithZone>(
+
+    let grants = sqlx::query_as::<_, RoleGrantWithZone>(
         r#"
         SELECT g.id, g.role_id, g.zone_id, g.actions, g.record_name_pattern, g.record_types, g.created_at, z.name AS zone_name
         FROM role_grants g
@@ -122,7 +123,8 @@ pub(crate) async fn list_by_role_id_with_zone(
     .bind(offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
     .fetch_all(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(grants)
 }
 
 /// Count the grants of one role.
@@ -131,10 +133,12 @@ pub(crate) async fn count_by_role_id(
     role_id: RoleId,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result =
+
+    let count =
         sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM role_grants WHERE role_id = $1"#)
             .bind(role_id)
             .fetch_one(&mut *connection)
             .await?;
-    Ok(result as u64)
+
+    Ok(count as u64)
 }

@@ -78,8 +78,8 @@ class DigTests(IsolatedAsyncioTestCase):
         self.addAsyncCleanup(cleanup)
         return server.sockets[0].getsockname()[1], requests
 
-    async def test_actual_axfr_and_ixfr_completion_shapes(self):
-        """Keep full, empty, SOA-only, delta and AXFR-fallback transfers valid."""
+    async def test_transfers_accept_complete_axfr_and_ixfr_shapes_with_real_dig(self):
+        """Verify that full, empty, SOA-only, delta and AXFR-fallback transfers remain valid."""
         cases = [
             ("full", [soa(3), address(1), soa(3)], None),
             ("empty", [soa(3), soa(3)], None),
@@ -98,8 +98,8 @@ class DigTests(IsolatedAsyncioTestCase):
                 self.assertEqual(count, len(records))
                 self.assertGreater(size, 0)
 
-    async def test_actual_incomplete_and_mismatched_transfers_are_rejected(self):
-        """Reject early EOF, wrong closing SOA and refused transfers even with exit zero."""
+    async def test_transfers_reject_incomplete_or_mismatched_data_with_real_dig(self):
+        """Verify that early EOF, wrong closing SOA and refused transfers fail even with exit zero."""
         for records, rcode in [([soa(3), address(1)], 0), ([soa(3), address(1), soa(4)], 0), ([], 5)]:
             with self.subTest(records=len(records), rcode=rcode):
                 port, _ = await self.peer(records, rcode)
@@ -109,7 +109,7 @@ class DigTests(IsolatedAsyncioTestCase):
                 self.assertIsNone(await dig.count_axfr_records("bench.example", "127.0.0.1", port, 1))
 
     async def test_failed_command_and_inconsistent_completion_never_measure(self):
-        """Require a successful command and an exact completed record count."""
+        """Verify that measurement requires a successful command and an exact completed record count."""
         text = ("bench.example. 60 IN SOA ns.bench.example. hostmaster.bench.example. 3 60 60 3600 60\n"
                 "bench.example. 60 IN SOA ns.bench.example. hostmaster.bench.example. 3 60 60 3600 60\n"
                 ";; XFR size: 2 records (messages 1, bytes 100)\n")
@@ -125,7 +125,7 @@ class DigTests(IsolatedAsyncioTestCase):
         self.assertIs(failure.exception.__cause__, timeout)
 
     async def test_reset_requires_explicit_unserved_response_or_complete_apex(self):
-        """Separate reset readiness from unavailable or refused transfer measurements."""
+        """Verify that reset readiness differs from unavailable or refused transfer measurements."""
         for records, rcode in [([soa(3), soa(3)], 0), ([], 3), ([], 9)]:
             port, _ = await self.peer(records, rcode)
             self.assertTrue(await dig.zone_is_cleared("bench.example", "127.0.0.1", port, 2, 1))
@@ -141,14 +141,14 @@ class DigTests(IsolatedAsyncioTestCase):
             self.assertFalse(await dig.zone_is_cleared("bench.example", "127.0.0.1", 1, 2))
 
     async def test_visibility_poll_compares_whole_answers(self):
-        """Preserve exact-value matching while polling without an executor thread."""
+        """Verify that visibility polling matches exact values without an executor thread."""
         with patch.object(dig, "query", AsyncMock(side_effect=[
                 (True, 0, "192.0.2.10"), (True, 0, "192.0.2.1")])) as query:
             self.assertIsNotNone(await dig.poll_until_visible("a.example", "A", "192.0.2.1", "127.0.0.1", 1, 0, 1))
         self.assertEqual(query.await_count, 2)
 
     async def test_cancellation_reaps_actual_dig_before_orchestrator_teardown(self):
-        """Cancel B04's real exchange and require its child to exit before teardown."""
+        """Verify that cancelling B04 reaps its dig child before orchestrator teardown."""
         import orchestrator
 
         release = asyncio.Event()
@@ -188,7 +188,7 @@ class DigTests(IsolatedAsyncioTestCase):
         self.assertTrue(all(child.returncode is not None for child in children))
 
     async def test_final_transfer_failure_never_returns_a_success_row(self):
-        """Keep failed final AXFR/IXFR/export results out of all three runners' metrics."""
+        """Verify that failed final AXFR, IXFR and export results never become successful measurements."""
         adapter = SimpleNamespace(delete_zone=AsyncMock(), create_zone=AsyncMock(), import_records=AsyncMock(),
                                   bulk_errors=0,
                                   xfr_endpoint=lambda: SimpleNamespace(host="127.0.0.1", port=1))

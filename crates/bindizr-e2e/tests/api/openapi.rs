@@ -126,8 +126,8 @@ async fn openapi_serves_documents_without_token_when_enabled() {
         serial
     );
 
-    for (path, item) in body["paths"].as_object().unwrap() {
-        for operation in item.as_object().unwrap().values() {
+    for (path, path_item) in body["paths"].as_object().unwrap() {
+        for operation in path_item.as_object().unwrap().values() {
             let Some(parameters) = operation["parameters"].as_array() else {
                 continue;
             };
@@ -261,8 +261,8 @@ async fn pagination_limits_match_the_openapi_contract() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    for (path, item) in body["paths"].as_object().unwrap() {
-        let Some(parameters) = item["get"]["parameters"].as_array() else {
+    for (path, path_item) in body["paths"].as_object().unwrap() {
+        let Some(parameters) = path_item["get"]["parameters"].as_array() else {
             continue;
         };
 

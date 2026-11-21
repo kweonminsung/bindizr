@@ -27,7 +27,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
                 for key in ("bind9_rndc", "bind9_native", "coredns")]
 
     async def test_failed_mutations_do_not_publish_candidate_state(self):
-        """Failed mutations must preserve the last published snapshot."""
+        """Verify that failed mutations preserve the last published snapshot."""
         for adapter in self.adapters():
             adapter.records = {"old|A": self.old}
             with self.subTest(adapter=adapter.key), \
@@ -43,7 +43,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
                 self.assertEqual(adapter.records, {"old|A": self.old})
 
     async def test_failed_bulk_reload_yields_zero_throughput(self):
-        """A failed reload must count as an import error with zero throughput."""
+        """Verify that a failed reload counts as an import error with zero throughput."""
         sampler = Mock(summary=lambda: {})
         for adapter in self.adapters():
             with self.subTest(adapter=adapter.key), \
@@ -61,7 +61,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
                 self.assertEqual(result["records_per_sec"], 0)
 
     async def test_bind9_only_publishes_successful_reloads_and_resets_errors(self):
-        """Publish accepted snapshots and clear bulk errors after success."""
+        """Verify that Bind9 publishes accepted snapshots and clears bulk errors after success."""
         adapter = self.adapters()[0]
         adapter.records = {"old|A": self.old}
         # Failure writing the file and failure requesting reload both preserve state.
@@ -82,7 +82,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
             self.assertEqual(adapter.records, {})
 
     async def test_bind9_serializes_concurrent_candidate_writes(self):
-        """Concurrent writes must retain both records."""
+        """Verify that concurrent writes retain both records."""
         adapter = self.adapters()[0]
         entered, release = asyncio.Event(), asyncio.Event()
 
@@ -101,7 +101,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
         self.assertEqual(set(adapter.records), {"old|A", "new|A"})
 
     async def test_every_file_adapter_serializes_and_publishes_accepted_candidates(self):
-        """Share snapshot mutation semantics while publishers keep their readiness rules."""
+        """Verify that file adapters share mutation semantics while retaining publisher readiness rules."""
         for adapter in self.adapters():
             entered, release = asyncio.Event(), asyncio.Event()
 
@@ -125,7 +125,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
                 self.assertEqual(set(adapter.records), {"old|A", "new|A"})
 
     async def test_cancelled_publication_preserves_state_and_releases_the_write_lock(self):
-        """Cancel pending publication without retaining a candidate or blocking later writes."""
+        """Verify that cancelled publication preserves state and permits later writes."""
         for adapter in self.adapters():
             adapter.records = {"old|A": self.old}
             entered = asyncio.Event()
@@ -150,7 +150,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
             self.assertEqual(set(adapter.records), {"old|A", "new|A"})
 
     async def test_coredns_copy_failure_and_cancel_preserve_state(self):
-        """Failed or cancelled copies preserve the published snapshot."""
+        """Verify that failed or cancelled CoreDNS copies preserve the published snapshot."""
         adapter = self.adapters()[2]
         adapter.records = {"old|A": self.old}
         from lib import process
@@ -178,7 +178,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
             self.assertEqual(adapter.records, {"old|A": self.old})
 
     async def test_coredns_stream_preserves_zone_content_permissions_and_reload_time(self):
-        """Preserve UTF-8 zone data, container read access and reload timestamps."""
+        """Verify that CoreDNS streaming preserves UTF-8 zone data, read access and reload timestamps."""
         adapter = self.adapters()[2]
         adapter.cid = "unit-coredns"
         record = {"name": "txt", "type": "TXT", "value": '한글 "quote"', "ttl": 60}
@@ -203,7 +203,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
         self.assertEqual(adapter.records, {"txt|TXT": record})
 
     async def test_coredns_publishes_only_after_observing_the_new_serial(self):
-        """Publish CoreDNS candidates only once the new serial is visible."""
+        """Verify that CoreDNS publishes a candidate only after its serial is visible."""
         adapter = self.adapters()[2]
         adapter.records = {"old|A": self.old}
         candidate = {"new|A": self.record}

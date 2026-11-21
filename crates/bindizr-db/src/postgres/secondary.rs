@@ -154,7 +154,8 @@ pub(crate) async fn list_all_with_notify_tsig_key(
     offset: Option<u64>,
 ) -> Result<Vec<SecondaryWithNotifyKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, SecondaryWithNotifyKey>(
+
+    let secondaries = sqlx::query_as::<_, SecondaryWithNotifyKey>(
         r#"
         SELECT s.id, s.name, s.address, s.enabled, s.notify_tsig_key_id, s.created_at, k.name AS notify_key_name
         FROM secondaries s
@@ -168,14 +169,17 @@ pub(crate) async fn list_all_with_notify_tsig_key(
     .bind(offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
     .fetch_all(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(secondaries)
 }
 
 /// Count all registered secondaries.
 pub(crate) async fn count_all(pool: &Pool<Postgres>) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM secondaries"#)
+
+    let count = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM secondaries"#)
         .fetch_one(&mut *connection)
         .await?;
-    Ok(result as u64)
+
+    Ok(count as u64)
 }

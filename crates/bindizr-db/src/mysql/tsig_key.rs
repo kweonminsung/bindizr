@@ -122,7 +122,8 @@ pub(crate) async fn list_by_filter_with_role(
     filter: &TsigKeyFilter,
 ) -> Result<Vec<TsigKeyMetadata>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, TsigKeyMetadata>(
+
+    let tsig_keys = sqlx::query_as::<_, TsigKeyMetadata>(
         r#"
         SELECT t.id, t.name, t.algorithm, r.name AS role_name, t.created_at
         FROM tsig_keys t
@@ -143,7 +144,8 @@ pub(crate) async fn list_by_filter_with_role(
     )
     .fetch_all(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(tsig_keys)
 }
 
 /// Count credentials matching the role filter, ignoring its page window.
@@ -152,7 +154,8 @@ pub(crate) async fn count_by_filter(
     filter: &TsigKeyFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_scalar::<_, i64>(
+
+    let count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
         FROM tsig_keys t
@@ -164,5 +167,6 @@ pub(crate) async fn count_by_filter(
     .bind(filter.role_id)
     .fetch_one(&mut *connection)
     .await?;
-    Ok(result as u64)
+
+    Ok(count as u64)
 }

@@ -83,15 +83,15 @@ pub struct CreateTokenResponse {
 
 impl From<&ApiTokenMetadata> for TokenResponse {
     /// Build the response from metadata that carries no credential material.
-    fn from(row: &ApiTokenMetadata) -> Self {
+    fn from(token: &ApiTokenMetadata) -> Self {
         Self {
-            id: row.id,
-            name: row.name.clone(),
-            description: row.description.clone(),
-            role_name: row.role_name.clone(),
-            created_at: row.created_at,
-            expires_at: row.expires_at,
-            last_used_at: row.last_used_at,
+            id: token.id,
+            name: token.name.clone(),
+            description: token.description.clone(),
+            role_name: token.role_name.clone(),
+            created_at: token.created_at,
+            expires_at: token.expires_at,
+            last_used_at: token.last_used_at,
         }
     }
 }

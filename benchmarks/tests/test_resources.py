@@ -17,7 +17,7 @@ from lib import docker, resources
 
 class SamplerTests(unittest.TestCase):
     def test_observation_error_preserves_workload_failure_and_cancellation(self):
-        """Preserve the workload failure or cancellation when resource sampling also fails."""
+        """Verify that resource sampling failure preserves the workload failure or cancellation."""
         for failure in (ValueError("workload failed"), asyncio.CancelledError()):
             with self.subTest(failure=type(failure).__name__):
                 sampler = resources.ResourceSampler(["test"], 0.01)
@@ -31,7 +31,7 @@ class SamplerTests(unittest.TestCase):
                 self.assertFalse(sampler._thread.is_alive())
 
     def test_stop_waits_for_the_snapshot_before_returning(self):
-        """Keep stop blocked until the active resource snapshot finishes."""
+        """Verify that stop waits for the active resource snapshot to finish."""
         entered, release, returned = (threading.Event() for _ in range(3))
 
         def snapshot(ids):
@@ -58,7 +58,7 @@ class SamplerTests(unittest.TestCase):
             self.assertFalse(sampler._thread.is_alive())
 
     def test_docker_timeout_stops_the_child_and_reaches_the_owner(self):
-        """Reap a stalled Docker command and propagate its timeout to the sampler owner."""
+        """Verify that a Docker timeout reaps the command and reaches the sampler owner."""
         run = subprocess.run
 
         def slow_docker(command, **kwargs):
@@ -78,7 +78,7 @@ class SamplerTests(unittest.TestCase):
 
 class RunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_every_self_sampling_scope_stops_on_failure_and_cancellation(self):
-        """Stop each runner's sampler when its workload fails or is cancelled."""
+        """Verify that each runner stops its sampler on workload failure or cancellation."""
         modules = {name: importlib.import_module("runners." + name) for name in
                    ("b02_bulk_import", "b06_large_zone", "b07_database", "b09_resource_usage")}
         config = {
@@ -137,7 +137,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertFalse(samplers[-1]._thread.is_alive())
 
     async def test_observation_failure_cannot_skip_adapter_teardown(self):
-        """Run adapter teardown even when workload execution and resource sampling fail."""
+        """Verify that adapter teardown runs even when workload execution and sampling fail."""
         import orchestrator
 
         adapter = SimpleNamespace(setup=AsyncMock(), teardown=AsyncMock(),

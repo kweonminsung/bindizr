@@ -143,12 +143,8 @@ pub(crate) fn parse_string_octets<'a>(
 
     while let Some((index, byte)) = bytes.next() {
         match byte {
-            b'"' if quoted => {
-                return Ok((octets, &rest[index + 1..]));
-            }
-            byte if !quoted && byte.is_ascii_whitespace() => {
-                return Ok((octets, &rest[index..]));
-            }
+            b'"' if quoted => return Ok((octets, &rest[index + 1..])),
+            byte if !quoted && byte.is_ascii_whitespace() => return Ok((octets, &rest[index..])),
             b'"' => {
                 return Err(ParseRecordValueError::NotQuoted {
                     field,

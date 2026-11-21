@@ -74,13 +74,13 @@ pub struct SingleTsigKeyResponse {
 
 impl From<&TsigKeyMetadata> for TsigKeyResponse {
     /// Build the response from metadata that carries no credential material.
-    fn from(row: &TsigKeyMetadata) -> Self {
+    fn from(tsig_key: &TsigKeyMetadata) -> Self {
         Self {
-            id: row.id,
-            name: row.name.clone(),
-            algorithm: row.algorithm,
-            role_name: row.role_name.clone(),
-            created_at: row.created_at,
+            id: tsig_key.id,
+            name: tsig_key.name.clone(),
+            algorithm: tsig_key.algorithm,
+            role_name: tsig_key.role_name.clone(),
+            created_at: tsig_key.created_at,
         }
     }
 }

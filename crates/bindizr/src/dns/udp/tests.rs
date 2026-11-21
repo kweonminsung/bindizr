@@ -1,14 +1,14 @@
 use std::time::Duration;
 
 use bindizr_core::dns::message::EncodeMessageError;
-use tokio::time;
+use tokio::{net, time};
 
 use super::*;
 
 /// Exchange datagrams through connected clients, which accept replies only
 /// from the address and port they queried.
 async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
-    let socket = tokio::net::UdpSocket::bind((bind_ip, 0)).await.unwrap();
+    let socket = net::UdpSocket::bind((bind_ip, 0)).await.unwrap();
     let port = socket.local_addr().unwrap().port();
     let socket = Arc::new(UdpSocket::new(socket).unwrap());
     let mut clients = Vec::new();
@@ -20,7 +20,7 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
             IpAddr::V6(Ipv6Addr::LOCALHOST)
         };
 
-        let client = tokio::net::UdpSocket::bind((client_ip, 0)).await.unwrap();
+        let client = net::UdpSocket::bind((client_ip, 0)).await.unwrap();
         client.connect((*destination, port)).await.unwrap();
         client.send(&[u8::try_from(index).unwrap()]).await.unwrap();
 
@@ -127,11 +127,11 @@ async fn udp_preserves_destination_across_interleaved_requests() {
 /// Verify that a truncated datagram is rejected before it can be parsed or answered.
 #[tokio::test]
 async fn recv_from_rejects_truncated_datagram() {
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let socket = net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let addr = socket.local_addr().unwrap();
     let socket = UdpSocket::new(socket).unwrap();
 
-    let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let client = net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client.send_to(&[0; 32], addr).await.unwrap();
     let result = time::timeout(Duration::from_secs(2), socket.recv_from(&mut [0; 4]))
         .await
@@ -143,11 +143,11 @@ async fn recv_from_rejects_truncated_datagram() {
 /// Verify that missing packet information never falls back to an OS-selected source address.
 #[tokio::test]
 async fn recv_from_rejects_missing_destination() {
-    let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await.unwrap();
+    let socket = net::UdpSocket::bind("0.0.0.0:0").await.unwrap();
     let port = socket.local_addr().unwrap().port();
     let socket = UdpSocket { socket };
 
-    let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let client = net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client
         .send_to(&[0; 32], (Ipv4Addr::LOCALHOST, port))
         .await
@@ -162,10 +162,10 @@ async fn recv_from_rejects_missing_destination() {
 /// Verify that the final UDP guard rejects overflow before I/O and allows the exact boundary.
 #[tokio::test]
 async fn udp_send_enforces_the_response_budget() {
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let socket = net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let socket = UdpSocket::new(socket).unwrap();
 
-    let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let client = net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client
         .connect(socket.socket.local_addr().unwrap())
         .await

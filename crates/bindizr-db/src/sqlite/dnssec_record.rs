@@ -18,9 +18,7 @@ pub(crate) async fn create_many_tx(
     const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?)";
 
     for chunk in records.chunks(CHUNK) {
-        let mut sql = String::from(
-            "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest) VALUES ",
-        );
+        let mut sql = "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest) VALUES ".to_string();
 
         for i in 0..chunk.len() {
             if i > 0 {

@@ -122,6 +122,7 @@ pub async fn list(
 ) -> Result<PaginatedResponse<TokenResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(filter.limit)?;
+
     let role_id = match &filter.role_name {
         Some(name) => Some(role::lookup_by_name(cx, name).await?.id),
         None => None,
@@ -132,9 +133,10 @@ pub async fn list(
         offset: filter.offset,
     };
     let total = bindizr_db::api_token::count_by_filter(cx.db(), &filter).await?;
-    let rows = bindizr_db::api_token::list_by_filter_with_role(cx.db(), &filter).await?;
+    let tokens = bindizr_db::api_token::list_by_filter_with_role(cx.db(), &filter).await?;
+
     Ok(pagination::build_paginated_response(
-        rows.iter().map(TokenResponse::from).collect(),
+        tokens.iter().map(TokenResponse::from).collect(),
         filter.limit,
         filter.offset,
         total,

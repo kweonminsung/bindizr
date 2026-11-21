@@ -20,7 +20,7 @@ pub(crate) fn decode_updates(
     zone_name: &ZoneName,
     message: &[u8],
 ) -> Result<Vec<UpdateOperation>, NsupdateError> {
-    let checked = records
+    let checked: Vec<_> = records
         .iter()
         .map(|record| {
             let owner = parse_update_owner(&record.name, zone_name)?;
@@ -28,7 +28,7 @@ pub(crate) fn decode_updates(
             validate_supported_type(record.record_type)?;
             Ok((record, owner))
         })
-        .collect::<Result<Vec<_>, NsupdateError>>()?;
+        .collect::<Result<_, NsupdateError>>()?;
 
     checked
         .into_iter()

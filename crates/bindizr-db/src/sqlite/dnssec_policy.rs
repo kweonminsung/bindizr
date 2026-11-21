@@ -127,7 +127,8 @@ pub(crate) async fn list_all(
     offset: Option<u64>,
 ) -> Result<Vec<DnssecPolicy>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, DnssecPolicy>(
+
+    let policies = sqlx::query_as::<_, DnssecPolicy>(
         r#"
         SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at
         FROM dnssec_policies
@@ -140,14 +141,17 @@ pub(crate) async fn list_all(
     .bind(offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
     .fetch_all(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(policies)
 }
 
 /// Count all DNSSEC policies.
 pub(crate) async fn count_all(pool: &Pool<Sqlite>) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM dnssec_policies"#)
+
+    let count = sqlx::query_scalar::<_, i64>(r#"SELECT COUNT(*) FROM dnssec_policies"#)
         .fetch_one(&mut *connection)
         .await?;
-    Ok(result as u64)
+
+    Ok(count as u64)
 }

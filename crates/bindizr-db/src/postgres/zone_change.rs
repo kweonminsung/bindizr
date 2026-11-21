@@ -14,9 +14,7 @@ pub(crate) async fn create_many_tx(
     const CHUNK: usize = 500;
 
     for chunk in changes.chunks(CHUNK) {
-        let mut sql = String::from(
-            "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES ",
-        );
+        let mut sql = "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES ".to_string();
         let mut bind_index = 1;
 
         for i in 0..chunk.len() {

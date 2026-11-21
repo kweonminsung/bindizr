@@ -14,7 +14,7 @@ from lib import process
 
 class ProcessTests(IsolatedAsyncioTestCase):
     async def test_input_output_and_nonzero_exit_reach_the_caller(self):
-        """Preserve stdin, captured output, and a nonzero exit status."""
+        """Verify that stdin, captured output and nonzero exit status reach the caller."""
         result = await process.run(sys.executable, "-c",
                                    "import sys; print(sys.stdin.read()); "
                                    "print('failure detail',file=sys.stderr); sys.exit(7)",
@@ -24,7 +24,7 @@ class ProcessTests(IsolatedAsyncioTestCase):
         self.assertEqual(result.stderr, b"failure detail\n")
 
     async def test_timeout_kills_and_reaps_the_child(self):
-        """Return a timeout only after the OS child has exited."""
+        """Verify that a timeout returns only after the OS child exits."""
         children = []
         spawn = asyncio.create_subprocess_exec
 
@@ -42,7 +42,7 @@ class ProcessTests(IsolatedAsyncioTestCase):
         self.assertIsNotNone(children[0].returncode)
 
     async def test_cancellation_reaps_the_child_before_returning(self):
-        """Cancellation must reap the child before reaching its caller."""
+        """Verify that cancellation reaps the child before reaching its caller."""
         children = []
         spawn = asyncio.create_subprocess_exec
 
@@ -69,7 +69,7 @@ class ProcessTests(IsolatedAsyncioTestCase):
         self.assertIsNotNone(children[0].returncode)
 
     async def test_repeated_cancel_during_spawn_still_reaps_the_child(self):
-        """Cancellation during spawn must not abandon the eventual child."""
+        """Verify that cancellation during spawn still reaps the eventual child."""
         spawn = asyncio.create_subprocess_exec
         acquired, release = asyncio.Event(), asyncio.Event()
         children = []
@@ -96,7 +96,7 @@ class ProcessTests(IsolatedAsyncioTestCase):
         self.assertIsNotNone(children[0].returncode)
 
     async def test_spawn_failure_is_preserved(self):
-        """Preserve the original error when no child could be spawned."""
+        """Verify that spawn failure preserves the original error."""
         error = FileNotFoundError("missing command")
         with patch.object(asyncio, "create_subprocess_exec", side_effect=error):
             with self.assertRaises(FileNotFoundError) as failure:
@@ -104,7 +104,7 @@ class ProcessTests(IsolatedAsyncioTestCase):
         self.assertIs(failure.exception, error)
 
     async def test_cleanup_failure_does_not_replace_the_original_error(self):
-        """A cleanup error must not hide the communication failure."""
+        """Verify that a cleanup error does not hide the communication failure."""
         error = ValueError("communication failed")
         child = SimpleNamespace(returncode=None, communicate=AsyncMock(side_effect=error),
                                 kill=Mock(side_effect=OSError("cleanup failed")))

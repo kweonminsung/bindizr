@@ -15,6 +15,7 @@ use nix::sys::socket;
 use nix::sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, SockaddrStorage, sockopt};
 use thiserror::Error;
 use tokio::io::Interest;
+use tokio::net;
 use tokio::task::JoinSet;
 
 use crate::dns::error::DnsError;
@@ -52,12 +53,12 @@ enum UdpError {
 /// The UDP socket and packet metadata needed to preserve the queried address.
 #[derive(Debug)]
 pub(crate) struct UdpSocket {
-    socket: tokio::net::UdpSocket,
+    socket: net::UdpSocket,
 }
 
 impl UdpSocket {
     /// Enable per-packet addressing before the listener starts receiving.
-    pub(crate) fn new(socket: tokio::net::UdpSocket) -> io::Result<Self> {
+    pub(crate) fn new(socket: net::UdpSocket) -> io::Result<Self> {
         if socket.local_addr()?.is_ipv6() {
             socket::setsockopt(&socket, sockopt::Ipv6RecvPacketInfo, &true)?;
         } else {

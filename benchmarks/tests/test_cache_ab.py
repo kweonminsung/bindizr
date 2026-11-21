@@ -11,7 +11,7 @@ from ab.zone_cache_ab import create_transfer_key
 
 class CacheAbTests(IsolatedAsyncioTestCase):
     async def test_transfer_key_uses_a_role_granted_only_the_requested_zone(self):
-        """Create a key with only the requested zone's transfer grant."""
+        """Verify that a transfer key has only the requested zone's transfer grant."""
         requests = []
 
         class Response:
@@ -39,7 +39,7 @@ class CacheAbTests(IsolatedAsyncioTestCase):
         ])
 
     async def test_failed_role_setup_cannot_continue_to_key_creation(self):
-        """A denied role creation must stop key setup."""
+        """Verify that denied role creation stops key setup."""
         requests = []
 
         class Response:

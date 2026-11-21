@@ -114,16 +114,16 @@ pub struct SingleRoleGrantResponse {
 
 impl From<&RoleWithCounts> for RoleResponse {
     /// Build a role response from its row and SQL cardinalities.
-    fn from(row: &RoleWithCounts) -> Self {
+    fn from(role: &RoleWithCounts) -> Self {
         Self {
-            id: row.role.id,
-            name: row.role.name.clone(),
-            description: row.role.description.clone(),
-            builtin: row.role.is_builtin(),
-            grant_count: row.grant_count,
-            token_count: row.token_count,
-            tsig_key_count: row.tsig_key_count,
-            created_at: row.role.created_at,
+            id: role.role.id,
+            name: role.role.name.clone(),
+            description: role.role.description.clone(),
+            builtin: role.role.is_builtin(),
+            grant_count: role.grant_count,
+            token_count: role.token_count,
+            tsig_key_count: role.tsig_key_count,
+            created_at: role.role.created_at,
         }
     }
 }

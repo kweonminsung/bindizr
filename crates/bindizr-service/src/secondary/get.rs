@@ -16,14 +16,20 @@ pub async fn list(
 ) -> Result<PaginatedResponse<SecondaryResponse>, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
     pagination::validate_page_limit(page.limit)?;
+
     let total = bindizr_db::secondary::count_all(cx.db()).await?;
-    let rows =
+    let secondaries =
         bindizr_db::secondary::list_all_with_notify_tsig_key(cx.db(), page.limit, page.offset)
             .await?;
+
     Ok(pagination::build_paginated_response(
-        rows.iter()
-            .map(|row| {
-                SecondaryResponse::from_secondary(&row.secondary, row.notify_key_name.as_deref())
+        secondaries
+            .iter()
+            .map(|secondary| {
+                SecondaryResponse::from_secondary(
+                    &secondary.secondary,
+                    secondary.notify_key_name.as_deref(),
+                )
             })
             .collect(),
         page.limit,

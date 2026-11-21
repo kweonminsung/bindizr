@@ -543,12 +543,12 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 outln!("{}", response.message);
 
                 // Diagnostics go to stderr, so a pipeline keeps the table clean.
-                for item in &import.zones {
-                    let Some(zone_import) = &item.import else {
+                for zone_result in &import.zones {
+                    let Some(zone_import) = &zone_result.import else {
                         continue;
                     };
                     for error in &zone_import.errors {
-                        errln!("  {} - {error}", item.zone_name);
+                        errln!("  {} - {error}", zone_result.zone_name);
                     }
                 }
 

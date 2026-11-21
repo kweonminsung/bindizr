@@ -45,7 +45,7 @@ pub async fn create_bulk(
 
     // Validate types and values up front so a malformed record fails fast.
     let started = Instant::now();
-    let prepared = records
+    let prepared: Vec<_> = records
         .iter()
         .map(|record| {
             record::parse_record_fields(
@@ -55,7 +55,7 @@ pub async fn create_bulk(
                 record.priority,
             )
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<_, _>>()?;
     let owners: Vec<_> = records
         .iter()
         .map(|record| record::normalize_record_owner_name(&record.name, &zone_name))

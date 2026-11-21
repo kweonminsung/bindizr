@@ -117,7 +117,7 @@ struct DnsRecord {
     value: Option<Value>,
 }
 
-/// Compare response records with expected values for the record type.
+/// Return whether response records match the expected values for the record type.
 fn matches_dns_values(record_type: u16, expected: &[Value], records: &[DnsRecord]) -> bool {
     if record_type == Rtype::SOA.to_int() {
         return true;

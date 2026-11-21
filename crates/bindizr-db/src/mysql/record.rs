@@ -28,9 +28,7 @@ pub(crate) async fn create_many_tx(
     let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
-        let mut sql = String::from(
-            "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
-        );
+        let mut sql = "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ".to_string();
 
         for i in 0..chunk.len() {
             if i > 0 {
@@ -60,9 +58,9 @@ pub(crate) async fn create_many_tx(
         // by `increment` under every innodb_autoinc_lock_mode.
         let first = result.last_insert_id() as i32;
 
-        for (offset, record) in chunk.iter().enumerate() {
+        for (index, record) in chunk.iter().enumerate() {
             let mut created_record = record.clone();
-            created_record.id = RecordId::from(first + offset as i32 * increment);
+            created_record.id = RecordId::from(first + index as i32 * increment);
             created_record.created_at = now;
             created_records.push(created_record);
         }
@@ -170,9 +168,7 @@ pub(crate) async fn list_by_record_types_tx(
         return Ok(Vec::new());
     }
 
-    let mut sql = String::from(
-        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND record_type IN (",
-    );
+    let mut sql = "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND record_type IN (".to_string();
 
     sql.push_str(&sql::placeholders(record_types.len()));
 
@@ -218,9 +214,7 @@ pub(crate) async fn list_by_names_tx(
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
-        let mut sql = String::from(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name IN (",
-        );
+        let mut sql = "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name IN (".to_string();
 
         sql.push_str(&sql::placeholders(chunk.len()));
 

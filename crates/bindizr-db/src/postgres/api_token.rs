@@ -155,7 +155,8 @@ pub(crate) async fn list_by_filter_with_role(
     filter: &ApiTokenFilter,
 ) -> Result<Vec<ApiTokenMetadata>, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_as::<_, ApiTokenMetadata>(
+
+    let tokens = sqlx::query_as::<_, ApiTokenMetadata>(
         r#"
         SELECT t.id, t.name, t.description, r.name AS role_name, t.created_at, t.expires_at, t.last_used_at
         FROM api_tokens t
@@ -172,7 +173,8 @@ pub(crate) async fn list_by_filter_with_role(
     .bind(filter.offset.map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)))
     .fetch_all(&mut *connection)
     .await?;
-    Ok(result)
+
+    Ok(tokens)
 }
 
 /// Count credentials matching the role filter, ignoring its page window.
@@ -181,7 +183,8 @@ pub(crate) async fn count_by_filter(
     filter: &ApiTokenFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
-    let result = sqlx::query_scalar::<_, i64>(
+
+    let count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
         FROM api_tokens t
@@ -193,5 +196,6 @@ pub(crate) async fn count_by_filter(
     .bind(filter.role_id)
     .fetch_one(&mut *connection)
     .await?;
-    Ok(result as u64)
+
+    Ok(count as u64)
 }

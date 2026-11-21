@@ -64,19 +64,21 @@ pub enum ResolveAddressError {
 pub struct SharedResolveAddressError(Arc<ResolveAddressError>);
 
 impl From<Arc<ResolveAddressError>> for SharedResolveAddressError {
+    /// Share a resolver failure while retaining its original cause.
     fn from(error: Arc<ResolveAddressError>) -> Self {
         Self(error)
     }
 }
 
 impl fmt::Display for SharedResolveAddressError {
+    /// Format the shared resolver failure for a diagnostic.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "failed to resolve: {}", self.0)
     }
 }
 
 impl std::error::Error for SharedResolveAddressError {
-    /// A transparent error variant delegates here, exposing the resolver rather than its Arc.
+    /// Return the original resolver cause for transparent error variants.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(self.0.as_ref())
     }

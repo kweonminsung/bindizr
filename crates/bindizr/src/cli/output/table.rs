@@ -459,20 +459,20 @@ pub(crate) struct ImportZonesRow {
 
 impl From<&ImportZonesItemResponse> for ImportZonesRow {
     /// Build a CLI table row from one zone's outcome.
-    fn from(item: &ImportZonesItemResponse) -> Self {
-        let summary = item.import.as_ref().map(|import| import.summary);
+    fn from(zone_result: &ImportZonesItemResponse) -> Self {
+        let summary = zone_result.import.as_ref().map(|import| import.summary);
         let count = |value: Option<u64>| display::display_option(&value);
 
         Self {
-            zone_name: item.zone_name.clone(),
-            result: item.result.to_string(),
+            zone_name: zone_result.zone_name.clone(),
+            result: zone_result.result.to_string(),
             parsed: count(summary.map(|summary| summary.parsed)),
             added: count(summary.map(|summary| summary.added)),
             deleted: count(summary.map(|summary| summary.deleted)),
             updated: count(summary.map(|summary| summary.updated)),
             unchanged: count(summary.map(|summary| summary.unchanged)),
             skipped: count(summary.map(|summary| summary.skipped)),
-            error: display::display_option(&item.error.as_ref().map(|error| &error.error)),
+            error: display::display_option(&zone_result.error.as_ref().map(|error| &error.error)),
         }
     }
 }

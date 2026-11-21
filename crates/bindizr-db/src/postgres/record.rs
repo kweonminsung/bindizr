@@ -19,9 +19,7 @@ pub(crate) async fn create_many_tx(
     let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
-        let mut sql = String::from(
-            "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
-        );
+        let mut sql = "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ".to_string();
         let mut bind_index = 1;
 
         for i in 0..chunk.len() {
@@ -174,9 +172,7 @@ pub(crate) async fn list_by_record_types_tx(
         return Ok(Vec::new());
     }
 
-    let mut sql = String::from(
-        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND record_type IN (",
-    );
+    let mut sql = "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND record_type IN (".to_string();
 
     for i in 0..record_types.len() {
         if i > 0 {
@@ -227,9 +223,7 @@ pub(crate) async fn list_by_names_tx(
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
-        let mut sql = String::from(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name IN (",
-        );
+        let mut sql = "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name IN (".to_string();
 
         for i in 0..chunk.len() {
             if i > 0 {

@@ -117,6 +117,7 @@ pub async fn list(
 ) -> Result<PaginatedResponse<TsigKeyResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(filter.limit)?;
+
     let role_id = match &filter.role_name {
         Some(name) => Some(role::lookup_by_name(cx, name).await?.id),
         None => None,
@@ -127,9 +128,10 @@ pub async fn list(
         offset: filter.offset,
     };
     let total = bindizr_db::tsig_key::count_by_filter(cx.db(), &filter).await?;
-    let rows = bindizr_db::tsig_key::list_by_filter_with_role(cx.db(), &filter).await?;
+    let tsig_keys = bindizr_db::tsig_key::list_by_filter_with_role(cx.db(), &filter).await?;
+
     Ok(pagination::build_paginated_response(
-        rows.iter().map(TsigKeyResponse::from).collect(),
+        tsig_keys.iter().map(TsigKeyResponse::from).collect(),
         filter.limit,
         filter.offset,
         total,
