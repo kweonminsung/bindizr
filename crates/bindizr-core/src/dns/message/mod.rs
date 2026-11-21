@@ -22,10 +22,10 @@ pub use query::{
 pub use query_metadata::{QueryMetadata, has_readable_sections};
 use thiserror::Error;
 
-use crate::dns::LibraryError;
 use crate::dns::name::{EncodeWireNameError, WireName};
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::tsig::TransferSigner;
+use crate::dns::{LibraryError, Ttl};
 
 /// Fixed DNS message header length (RFC 1035, Section 4.1.1).
 pub(crate) const DNS_HEADER_LEN: usize = 12;
@@ -171,7 +171,7 @@ impl DnsMessageBuilder {
         &mut self,
         owner: WireName,
         rtype: Rtype,
-        ttl: u32,
+        ttl: Ttl,
         rdata: Rdata,
     ) -> Result<(), EncodeMessageError> {
         let data = UnknownRecordData::from_octets(rtype, rdata.into_bytes())
@@ -182,8 +182,8 @@ impl DnsMessageBuilder {
 
     /// Compose one class-IN answer record into its own buffer so it can be
     /// popped/reflushed by the chunked TCP writer.
-    fn add_answer<N: ToName, D: ComposeRecordData>(&mut self, owner: N, ttl: u32, data: D) {
-        let record = Record::new(owner, Class::IN, domain::base::Ttl::from_secs(ttl), data);
+    fn add_answer<N: ToName, D: ComposeRecordData>(&mut self, owner: N, ttl: Ttl, data: D) {
+        let record = Record::new(owner, Class::IN, ttl.into(), data);
         let mut answer = Vec::new();
         let Ok(()) = record.compose_record(&mut answer);
         self.push_answer(answer);

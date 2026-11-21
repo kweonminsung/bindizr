@@ -31,7 +31,9 @@ pub(crate) async fn handle_axfr(
 
             access = zone::refresh_catalog_content(cx, &identity.caller) => access?,
         };
-        let content = access.map_err(|reason| DnsError::Refused { reason })?;
+        let content = access.map_err(|refusal| DnsError::Refused {
+            reason: refusal.to_string(),
+        })?;
 
         return catalog::send_catalog_response(writer, query, &mut identity.signer, content).await;
     }

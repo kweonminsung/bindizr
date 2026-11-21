@@ -192,10 +192,7 @@ pub async fn rollback(
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
             .map_err(|error| {
-                ServiceError::internal_with_source(
-                    format!("failed to decode version rname: {error}"),
-                    error,
-                )
+                ServiceError::internal_with_source("failed to decode version rname", error)
             })?;
         let restored_zone = Zone {
             id: zone.id,
@@ -330,10 +327,11 @@ pub async fn rollback(
         // Restore metadata and records as a new version in this transaction.
         bindizr_db::zone::update_tx(&mut tx, restored_zone.clone()).await?;
 
-        if soa_changed {
-            let changes = zone::soa_replacement_changes(&zone, &restored_zone, new_serial)?;
-            bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
-        }
+        // The SOA pair is journaled whatever else changed: a step with no
+        // journal row reads to IXFR as a gap, and every client across it would
+        // fall back to AXFR.
+        let changes = zone::soa_replacement_changes(&zone, &restored_zone, new_serial)?;
+        bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
 
         record::delete_with_changes_tx(&mut tx, new_serial, &deletes).await?;
         record::create_with_changes_tx(&mut tx, new_serial, &to_insert).await?;

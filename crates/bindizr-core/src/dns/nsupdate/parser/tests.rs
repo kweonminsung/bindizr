@@ -1,4 +1,5 @@
 use super::*;
+use crate::dns::Serial;
 use crate::model::record::RecordType;
 
 /// Verify that compressed SOA names and unsigned fields decode without crossing RDLENGTH.
@@ -27,11 +28,9 @@ fn soa_update_decodes_compression_and_checks_rdata_length() {
 
     assert_eq!(soa.mname, "ns1.example.com.");
     assert_eq!(soa.rname, r"host\046master.example.com.");
-    assert_eq!(soa.serial, u32::MAX);
-    assert_eq!(
-        [soa.refresh, soa.retry, soa.expire, soa.minimum],
-        [7200, 3600, 604_800, 86400]
-    );
+    assert_eq!(soa.serial, Serial::from(u32::MAX));
+    assert_eq!([soa.refresh, soa.retry, soa.expire], [7200, 3600, 604_800]);
+    assert_eq!(soa.minimum, Ttl::from_secs(86400));
     let length = record.rdata.len();
 
     for length in 0..length {

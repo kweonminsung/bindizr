@@ -48,15 +48,6 @@ impl From<u32> for Ttl {
     }
 }
 
-impl TryFrom<i32> for Ttl {
-    type Error = ConvertTtlError;
-
-    /// Accept a nonnegative signed 32-bit value.
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        Self::try_from(i64::from(value))
-    }
-}
-
 impl TryFrom<i64> for Ttl {
     type Error = ConvertTtlError;
 

@@ -7,10 +7,10 @@ use domain::dep::octseq::parse::Parser;
 use domain::rdata::{A, Aaaa, Caa, Ds, Mx, Naptr, Soa, Srv, Sshfp, Tlsa};
 use thiserror::Error;
 
-use crate::dns::Ttl;
 use crate::dns::nsupdate::parser;
 use crate::dns::nsupdate::parser::ParseUpdateError;
 use crate::dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue, WksRecordValue};
+use crate::dns::{Serial, Ttl};
 use crate::model::record::RecordType;
 
 /// A prerequisite or update record with an RDATA offset into the original message.
@@ -89,11 +89,11 @@ impl UpdateRecord {
         Ok(SoaRecordValue {
             mname: parser::to_presentation_name(data.mname()),
             rname: parser::to_presentation_name(data.rname()),
-            serial: data.serial().into_int(),
+            serial: Serial::from(data.serial().into_int()),
             refresh: data.refresh().as_secs(),
             retry: data.retry().as_secs(),
             expire: data.expire().as_secs(),
-            minimum: data.minimum().as_secs(),
+            minimum: Ttl::from(data.minimum()),
         })
     }
 

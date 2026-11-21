@@ -26,6 +26,7 @@ use crate::api::params::NameParams;
         responses(
             (status = 200, description = "The zone's secondary sync status", body = ZoneStatusResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

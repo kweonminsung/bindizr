@@ -28,7 +28,7 @@ async fn log_audit_shows_socket_changes() {
     let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
 
     assert_eq!(listed["pagination"]["total"], 2, "{listed}");
-    let items = listed["items"].as_array().unwrap();
+    let items = listed["items"].as_array().expect("log list has items");
 
     assert_eq!(items[0]["operation"], "delete");
     assert_eq!(items[1]["operation"], "create");
@@ -72,9 +72,9 @@ async fn log_audit_shows_socket_changes() {
     let sorted: Value = serde_json::from_str(&sorted).expect("CLI did not return valid JSON");
     let entities: Vec<&str> = sorted["items"]
         .as_array()
-        .unwrap()
+        .expect("log list has items")
         .iter()
-        .map(|log| log["entity"].as_str().unwrap())
+        .map(|log| log["entity"].as_str().expect("log row has an entity"))
         .collect();
 
     assert_eq!(entities, ["role", "token", "token"], "{sorted}");
@@ -146,7 +146,7 @@ async fn log_access_lists_api_requests() {
     assert!(
         listed["items"]
             .as_array()
-            .unwrap()
+            .expect("log list has items")
             .iter()
             .any(|log| log["target"] == path && log["status"] == "404"),
         "{listed}"

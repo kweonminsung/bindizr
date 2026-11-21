@@ -270,16 +270,10 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     let keys = dnssec["keys"].as_array().unwrap();
 
     assert_eq!(keys.len(), 2);
-    let published = keys
-        .iter()
-        .find(|key| key["state"] == "published")
-        .expect("the move pre-publishes a replacement of the new algorithm");
+    let published = keys.iter().find(|key| key["state"] == "published").unwrap();
 
     assert_eq!(published["algorithm"], "ed25519");
-    let active = keys
-        .iter()
-        .find(|key| key["state"] == "active")
-        .expect("the old key keeps signing during the rollover");
+    let active = keys.iter().find(|key| key["state"] == "active").unwrap();
 
     assert_eq!(active["algorithm"], "ecdsap256sha256");
     assert_eq!(dnssec["serial"], base_serial + 1);

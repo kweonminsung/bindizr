@@ -69,6 +69,11 @@ pub async fn create(
                 ServiceError::secondary_conflict(format!(
                     "secondary with name '{name}' or address '{address}' already exists"
                 ))
+            } else if error.is_foreign_key_violation()
+                && let Some(tsig_key) = &notify_tsig_key
+            {
+                // The NOTIFY key went between its lookup and this insert.
+                ServiceError::tsig_key_not_found(&tsig_key.name)
             } else {
                 error.into()
             }

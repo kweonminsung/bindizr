@@ -13,7 +13,7 @@ use crate::{Context, dns_client, secondary, zone};
 
 /// Why a NOTIFY target could not be reached or acknowledged.
 #[derive(Debug, Error)]
-pub enum SendNotifyError {
+pub(crate) enum SendNotifyError {
     #[error("failed to resolve: {0}")]
     Resolve(#[source] ResolveAddressError),
     #[error("{0}")]
@@ -22,7 +22,7 @@ pub enum SendNotifyError {
 
 /// Sending a zone's NOTIFY requests failed.
 #[derive(Debug, Error)]
-pub enum NotifyZoneError {
+pub(crate) enum NotifyZoneError {
     #[error(transparent)]
     Service(#[from] ServiceError),
     /// Failed targets and their original causes; whoever reports it names
@@ -111,9 +111,9 @@ async fn send_notify(
     secondaries: Vec<Secondary>,
 ) -> Result<Vec<(String, Result<(), SendNotifyError>)>, ServiceError> {
     // An invalid stored zone name is a server fault.
-    let qname = zone_name.to_wire_name().map_err(|error| {
-        ServiceError::internal_with_source(format!("invalid zone name: {error}"), error)
-    })?;
+    let qname = zone_name
+        .to_wire_name()
+        .map_err(|error| ServiceError::internal_with_source("invalid zone name", error))?;
     let timeout = cx.config().dns.notify.timeout();
     let retries = cx.config().dns.notify.retries;
 

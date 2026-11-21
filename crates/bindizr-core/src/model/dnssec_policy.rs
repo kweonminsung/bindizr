@@ -118,13 +118,9 @@ impl DnssecPolicy {
         self.name == DEFAULT_DNSSEC_POLICY_NAME
     }
 
-    /// Return the policy's key layout as validation errors describe it.
-    pub fn key_layout(&self) -> &'static str {
-        if self.split_keys {
-            "split KSK/ZSK keys"
-        } else {
-            "a single CSK"
-        }
+    /// Return the policy's key layout.
+    pub fn key_layout(&self) -> DnssecKeyLayout {
+        DnssecKeyLayout::from_split_keys(self.split_keys)
     }
 
     /// Return the expiration jitter, half the available window, to avoid zone-wide
@@ -275,6 +271,16 @@ impl DnssecKeyLayout {
         } else {
             Self::Csk
         }
+    }
+}
+
+impl fmt::Display for DnssecKeyLayout {
+    /// Write the layout as messages describe it.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Csk => "a single CSK",
+            Self::Split => "split KSK/ZSK keys",
+        })
     }
 }
 

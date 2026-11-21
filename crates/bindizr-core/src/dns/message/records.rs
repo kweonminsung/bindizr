@@ -29,7 +29,7 @@ impl DnsMessageBuilder {
                 self.add_raw_rdata(
                     change.record_name.to_wire_name(zone_name)?,
                     Rtype::from(*record_type),
-                    change.record_ttl.as_secs(),
+                    change.record_ttl,
                     rdata,
                 )
             }
@@ -58,7 +58,7 @@ impl DnsMessageBuilder {
         self.add_raw_rdata(
             zone.name.to_wire_name()?,
             Rtype::SOA,
-            zone.default_ttl.as_secs(),
+            zone.default_ttl,
             rdata,
         )
     }
@@ -71,17 +71,17 @@ impl DnsMessageBuilder {
         let rdata = SoaRecordValue {
             mname: "invalid",
             rname: "invalid",
-            serial: catalog_zone.serial.as_u32(),
+            serial: catalog_zone.serial,
             refresh: catalog_zone.refresh.as_secs(),
             retry: catalog_zone.retry.as_secs(),
             expire: catalog_zone.expire.as_secs(),
-            minimum: catalog_zone.minimum_ttl.as_secs(),
+            minimum: catalog_zone.minimum_ttl,
         }
         .to_rdata()?;
         self.add_raw_rdata(
             catalog_zone.name.to_wire_name()?,
             Rtype::SOA,
-            catalog_zone.default_ttl.as_secs(),
+            catalog_zone.default_ttl,
             rdata,
         )
     }
@@ -91,21 +91,16 @@ impl DnsMessageBuilder {
         let rdata = SoaRecordValue {
             mname: &version.mname,
             rname: &version.rname,
-            serial: version.serial.as_u32(),
+            serial: version.serial,
             refresh: version.refresh.as_secs(),
             retry: version.retry.as_secs(),
             expire: version.expire.as_secs(),
-            minimum: version.minimum_ttl.as_secs(),
+            minimum: version.minimum_ttl,
         }
         .to_rdata()?;
 
         // IXFR SOA owner is the transfer QNAME.
-        self.add_raw_rdata(
-            self.qname.clone(),
-            Rtype::SOA,
-            version.default_ttl.as_secs(),
-            rdata,
-        )
+        self.add_raw_rdata(self.qname.clone(), Rtype::SOA, version.default_ttl, rdata)
     }
 
     /// Add the catalog-zone NS record, which is the placeholder "invalid".
@@ -183,7 +178,7 @@ impl DnsMessageBuilder {
         self.add_raw_rdata(
             owner.to_wire_name(zone_name)?,
             Rtype::from(record_type),
-            ttl.as_secs(),
+            ttl,
             rdata,
         )
     }
@@ -197,7 +192,7 @@ impl DnsMessageBuilder {
         self.add_raw_rdata(
             record.name.to_wire_name(zone_name)?,
             Rtype::from(record.record_type),
-            record.ttl.as_secs(),
+            record.ttl,
             record.rdata.clone(),
         )
     }

@@ -77,11 +77,11 @@ fn encode_soa_rdata_returns_names_and_five_counters() {
     let rdata = SoaRecordValue {
         mname: "ns1.example.com",
         rname: "admin.example.com",
-        serial: 42,
+        serial: Serial::from(42),
         refresh: 2,
         retry: 3,
         expire: 4,
-        minimum: 5,
+        minimum: Ttl::from_secs(5),
     }
     .to_rdata()
     .unwrap();

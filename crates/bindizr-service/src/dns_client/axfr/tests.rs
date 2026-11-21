@@ -1,6 +1,7 @@
 use bindizr_core::dns::message::Class;
 use bindizr_core::dns::name::WireName;
 use bindizr_core::dns::record::{Rdata, SoaRecordValue};
+use bindizr_core::dns::{Serial, Ttl};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 
@@ -74,11 +75,11 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                 let soa = SoaRecordValue {
                     mname: "ns.example.com.",
                     rname: "admin.example.com.",
-                    serial: 1,
+                    serial: Serial::from(1),
                     refresh: 1,
                     retry: 1,
                     expire: 1,
-                    minimum: 1,
+                    minimum: Ttl::from_secs(1),
                 }
                 .to_rdata()
                 .unwrap();
@@ -219,11 +220,11 @@ async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
     let opening = SoaRecordValue {
         mname: "NS1.Example.COM.",
         rname: "Hostmaster.Example.COM.",
-        serial: 42,
+        serial: Serial::from(42),
         refresh: 7200,
         retry: 3600,
         expire: 604_800,
-        minimum: 300,
+        minimum: Ttl::from_secs(300),
     };
 
     for (mname, rname) in [
@@ -255,11 +256,11 @@ async fn fetch_zone_rejects_changed_closing_soa() {
     let opening = SoaRecordValue {
         mname: "ns1.example.com.",
         rname: "hostmaster.example.com.",
-        serial: 42,
+        serial: Serial::from(42),
         refresh: 7200,
         retry: 3600,
         expire: 604_800,
-        minimum: 300,
+        minimum: Ttl::from_secs(300),
     };
 
     for closing in [
@@ -272,7 +273,7 @@ async fn fetch_zone_rejects_changed_closing_soa() {
             ..opening
         },
         SoaRecordValue {
-            serial: 43,
+            serial: Serial::from(43),
             ..opening
         },
         SoaRecordValue {
@@ -288,7 +289,7 @@ async fn fetch_zone_rejects_changed_closing_soa() {
             ..opening
         },
         SoaRecordValue {
-            minimum: 301,
+            minimum: Ttl::from_secs(301),
             ..opening
         },
     ] {

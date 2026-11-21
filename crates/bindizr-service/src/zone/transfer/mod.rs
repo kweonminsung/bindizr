@@ -103,22 +103,22 @@ pub async fn authorize_transfer_by_name(
 
 /// Refresh the catalog a transfer serves after authorizing `zone:transfer` in
 /// all zones, reading its members and persisted serial in that transaction.
-/// The catalog is always served, so a denial is a refusal (`Err` with its
-/// reason), never NOTAUTH.
+/// The catalog is always served, so a denial is a refusal (the inner `Err`,
+/// the error that refused it), never NOTAUTH.
 pub async fn refresh_catalog_content(
     cx: &Context,
     caller: &Caller,
-) -> Result<Result<(CatalogZone, Vec<ZoneName>), String>, ServiceError> {
+) -> Result<Result<(CatalogZone, Vec<ZoneName>), ServiceError>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to load catalog content").await?;
 
     let result: Result<_, ServiceError> = async {
         let caller = match reauthenticate_transfer_tx(&mut tx, caller).await? {
             Ok(caller) => caller,
-            Err(reason) => return Ok(Err(reason)),
+            Err(refusal) => return Ok(Err(refusal)),
         };
 
-        if let Err(error) = caller.authorize_action(Action::ZoneTransfer) {
-            return Ok(Err(error.to_string()));
+        if let Err(refusal) = caller.authorize_action(Action::ZoneTransfer) {
+            return Ok(Err(refusal));
         }
 
         Ok(Ok(zone::refresh_catalog_tx(&mut tx, cx).await?))
@@ -181,7 +181,7 @@ async fn authorize_transfer_tx(
     };
     let caller = match reauthenticate_transfer_tx(tx, caller).await? {
         Ok(caller) => caller,
-        Err(reason) => return Ok(TransferAccess::Refused(reason)),
+        Err(refusal) => return Ok(TransferAccess::Refused(refusal.to_string())),
     };
 
     // A zone the role does not reach is refused rather than hidden: NOTAUTH
@@ -200,14 +200,14 @@ async fn authorize_transfer_tx(
 }
 
 /// Re-read the caller's credential and grants under the transfer's lock; a
-/// credential gone since is a refusal (`Err` with its reason), not a fault.
+/// credential gone since is a refusal (the inner `Err`), not a fault.
 async fn reauthenticate_transfer_tx(
     tx: &mut Transaction<'_>,
     caller: &Caller,
-) -> Result<Result<Caller, String>, ServiceError> {
+) -> Result<Result<Caller, ServiceError>, ServiceError> {
     match caller.reauthenticate_tx(tx).await {
         Ok(caller) => Ok(Ok(caller)),
-        Err(error) if error.code() == ErrorCode::InvalidToken => Ok(Err(error.to_string())),
+        Err(error) if error.code() == ErrorCode::InvalidToken => Ok(Err(error)),
         Err(error) => Err(error),
     }
 }

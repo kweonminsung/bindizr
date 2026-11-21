@@ -4,7 +4,7 @@
 use bindizr_core::dns::dnssec::SigningPass;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
-use bindizr_core::model::dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecKeyLayout};
+use bindizr_core::model::dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME;
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
@@ -106,7 +106,7 @@ pub async fn import_keys(
         for pair in &request.keys {
             let key = DnssecKey::import(
                 &zone,
-                DnssecKeyLayout::from_split_keys(policy.split_keys),
+                policy.key_layout(),
                 &pair.dnskey,
                 &pair.private_key,
                 now,

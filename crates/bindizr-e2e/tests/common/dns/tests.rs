@@ -8,6 +8,7 @@ use super::*;
 
 /// Verify that `extract_dns_records` renders values in harness comparison format.
 #[test]
+#[serial_test::serial(bindizr_e2e)]
 fn extract_dns_records_renders_values_in_harness_comparison_format() {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(7);
@@ -155,6 +156,7 @@ fn build_wks_response(rdata: Vec<u8>) -> Vec<u8> {
 
 /// Verify that WKS values match the API's numeric fields, including bitmap boundaries and empty services.
 #[test]
+#[serial_test::serial(bindizr_e2e)]
 fn extract_dns_records_decodes_wks_service_bitmaps() {
     // The captured BIND response advertises ports 22, 80, and 443.
     let mut observed = vec![0; 61];
@@ -184,6 +186,7 @@ fn extract_dns_records_decodes_wks_service_bitmaps() {
 
 /// Verify that incomplete fixed fields and service bits beyond port 65535 fail response decoding.
 #[test]
+#[serial_test::serial(bindizr_e2e)]
 fn extract_dns_records_rejects_invalid_wks_rdata() {
     for length in [0, 1, 2, 3, 4, 8198] {
         let response = build_wks_response(vec![0; length]);
@@ -197,6 +200,7 @@ fn extract_dns_records_rejects_invalid_wks_rdata() {
 
 /// Verify that `extract_dns_records` treats nxdomain as no records.
 #[test]
+#[serial_test::serial(bindizr_e2e)]
 fn extract_dns_records_treats_nxdomain_as_no_records() {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(9);

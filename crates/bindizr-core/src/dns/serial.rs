@@ -78,15 +78,6 @@ impl TryFrom<i64> for Serial {
     }
 }
 
-impl TryFrom<i32> for Serial {
-    type Error = ConvertSerialError;
-
-    /// Convert a signed application value without reinterpreting negative bits.
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        Self::try_from(i64::from(value))
-    }
-}
-
 impl From<Serial> for i64 {
     /// Widen the wire serial into its lossless database representation.
     fn from(serial: Serial) -> Self {

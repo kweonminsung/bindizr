@@ -7,7 +7,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS dnssec_policies (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) COLLATE "C" UNIQUE NOT NULL,
             algorithm INTEGER NOT NULL,
             denial VARCHAR(8) NOT NULL,
             split_keys BOOLEAN NOT NULL DEFAULT FALSE,
@@ -233,7 +233,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             source VARCHAR(8) NOT NULL,
             client_addr VARCHAR(45) COLLATE "C" NOT NULL,
             method VARCHAR(16) NOT NULL,
-            target TEXT NOT NULL,
+            target TEXT COLLATE "C" NOT NULL,
             status VARCHAR(16) NOT NULL,
             result VARCHAR(6) NOT NULL,
             caller_kind VARCHAR(16),

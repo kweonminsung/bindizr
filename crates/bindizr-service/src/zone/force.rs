@@ -1,5 +1,6 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
@@ -20,6 +21,15 @@ pub(crate) async fn force_increment_serial(
         caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
 
         let new_serial = serial::generate_serial(Some(zone.serial));
+
+        // The bump's SOA pair is its only journal row, so IXFR can step across
+        // it rather than read a gap and answer AXFR.
+        let bumped = Zone {
+            serial: new_serial,
+            ..zone.clone()
+        };
+        let changes = zone::soa_replacement_changes(&zone, &bumped, new_serial)?;
+        bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
 
         // The SOA rdata carries the serial, so its signature must follow
         // every bump — forced ones included.

@@ -31,7 +31,7 @@ async fn zone_versions_support_diff_and_rollback() {
     let fetched = app
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"], None)
         .await;
-    let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
+    let fetched: Value = serde_json::from_str(&fetched).unwrap();
 
     assert_eq!(fetched["zone"]["serial"], 1);
 
@@ -75,7 +75,7 @@ async fn zone_versions_support_diff_and_rollback() {
             None,
         )
         .await;
-    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let listed: Value = serde_json::from_str(&listed).unwrap();
     let serials: Vec<i64> = listed["items"]
         .as_array()
         .unwrap()
@@ -99,7 +99,7 @@ async fn zone_versions_support_diff_and_rollback() {
             None,
         )
         .await;
-    let detail: Value = serde_json::from_str(&detail).expect("CLI did not return valid JSON");
+    let detail: Value = serde_json::from_str(&detail).unwrap();
     let a_records: Vec<&str> = detail["records"]
         .as_array()
         .unwrap()
@@ -175,7 +175,7 @@ async fn zone_versions_support_diff_and_rollback() {
             None,
         )
         .await;
-    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let listed: Value = serde_json::from_str(&listed).unwrap();
     let names: Vec<&str> = listed["items"]
         .as_array()
         .unwrap()

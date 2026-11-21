@@ -11,7 +11,7 @@ use crate::common::TestApp;
 async fn root_record_targets_round_trip() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().expect("zone has a name");
 
     for record_type in ["NS", "CNAME", "PTR", "DNAME"] {
         let owner = record_type.to_ascii_lowercase();
@@ -82,7 +82,7 @@ async fn root_record_targets_round_trip() {
 async fn escaped_record_targets_round_trip() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().expect("zone has a name");
 
     for (record_type, prefix) in [
         ("CNAME", ""),

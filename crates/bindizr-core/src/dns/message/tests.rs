@@ -160,7 +160,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
             .add_raw_rdata(
                 query.qname.clone(),
                 Rtype::TXT,
-                3600,
+                Ttl::from_secs(3600),
                 Rdata::new(vec![0; 1400]).unwrap(),
             )
             .unwrap();
@@ -751,7 +751,7 @@ fn udp_response_truncates_answers_above_limit() {
             .add_raw_rdata(
                 qname.clone(),
                 Rtype::TXT,
-                300,
+                Ttl::from_secs(300),
                 Rdata::new(vec![3, b'a', b'b', b'c']).unwrap(),
             )
             .unwrap();
@@ -949,7 +949,7 @@ fn oversized_frame_does_not_advance_the_signer() {
             .add_raw_rdata(
                 query.qname.clone(),
                 Rtype::TXT,
-                300,
+                Ttl::from_secs(300),
                 Rdata::new(vec![0; 1000]).unwrap(),
             )
             .unwrap();

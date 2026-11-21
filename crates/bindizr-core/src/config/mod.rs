@@ -19,6 +19,13 @@ const DEFAULT_CONFIG_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 /// The longest idle timeout the edns-tcp-keepalive option carries.
 const MAX_TCP_IDLE_TIMEOUT_SECS: u64 = 6553;
 
+/// A one-word setting outside the words it accepts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("expected {expected}")]
+pub struct ParseConfigValueError {
+    expected: &'static str,
+}
+
 /// Why the configuration could not be loaded or does not describe a runnable
 /// process. Each message names the setting an operator would fix.
 #[derive(Debug, Error)]
@@ -47,8 +54,6 @@ pub enum ConfigError {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
-    #[error("expected {expected}")]
-    UnknownValue { expected: &'static str },
     #[error("{first} and {second} cannot share port {port}")]
     SharedPort {
         first: &'static str,
@@ -446,7 +451,7 @@ impl fmt::Display for DatabaseType {
 }
 
 impl FromStr for DatabaseType {
-    type Err = ConfigError;
+    type Err = ParseConfigValueError;
 
     /// Parse a database type from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -454,7 +459,7 @@ impl FromStr for DatabaseType {
             "mysql" => Ok(Self::MySql),
             "sqlite" => Ok(Self::Sqlite),
             "postgresql" => Ok(Self::Postgres),
-            _ => Err(ConfigError::UnknownValue {
+            _ => Err(ParseConfigValueError {
                 expected: "mysql, postgresql, or sqlite",
             }),
         }
@@ -545,7 +550,7 @@ impl fmt::Display for DatabaseTlsMode {
 }
 
 impl FromStr for DatabaseTlsMode {
-    type Err = ConfigError;
+    type Err = ParseConfigValueError;
 
     /// Parse a TLS mode from its configuration spelling.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -555,7 +560,7 @@ impl FromStr for DatabaseTlsMode {
             "require" => Ok(Self::Require),
             "verify-ca" => Ok(Self::VerifyCa),
             "verify-full" => Ok(Self::VerifyFull),
-            _ => Err(ConfigError::UnknownValue {
+            _ => Err(ParseConfigValueError {
                 expected: "disable, prefer, require, verify-ca, or verify-full",
             }),
         }
@@ -1124,7 +1129,7 @@ impl fmt::Display for SavedRequests {
 }
 
 impl FromStr for SavedRequests {
-    type Err = ConfigError;
+    type Err = ParseConfigValueError;
 
     /// Parse the setting from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -1132,7 +1137,7 @@ impl FromStr for SavedRequests {
             "all" => Ok(Self::All),
             "denied" => Ok(Self::Denied),
             "none" => Ok(Self::None),
-            _ => Err(ConfigError::UnknownValue {
+            _ => Err(ParseConfigValueError {
                 expected: "all, denied, or none",
             }),
         }
@@ -1199,7 +1204,7 @@ impl fmt::Display for SavedTransfers {
 }
 
 impl FromStr for SavedTransfers {
-    type Err = ConfigError;
+    type Err = ParseConfigValueError;
 
     /// Parse the setting from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -1207,7 +1212,7 @@ impl FromStr for SavedTransfers {
             "all" => Ok(Self::All),
             "unserved" => Ok(Self::Unserved),
             "none" => Ok(Self::None),
-            _ => Err(ConfigError::UnknownValue {
+            _ => Err(ParseConfigValueError {
                 expected: "all, unserved, or none",
             }),
         }
@@ -1252,14 +1257,14 @@ impl fmt::Display for LogFormat {
 }
 
 impl FromStr for LogFormat {
-    type Err = ConfigError;
+    type Err = ParseConfigValueError;
 
     /// Parse a log format from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "text" => Ok(Self::Text),
             "json" => Ok(Self::Json),
-            _ => Err(ConfigError::UnknownValue {
+            _ => Err(ParseConfigValueError {
                 expected: "text or json",
             }),
         }
@@ -1299,7 +1304,7 @@ impl fmt::Display for LogLevel {
 }
 
 impl FromStr for LogLevel {
-    type Err = ConfigError;
+    type Err = ParseConfigValueError;
 
     /// Parse a log level from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -1309,7 +1314,7 @@ impl FromStr for LogLevel {
             "info" => Ok(Self::Info),
             "warn" => Ok(Self::Warn),
             "error" => Ok(Self::Error),
-            _ => Err(ConfigError::UnknownValue {
+            _ => Err(ParseConfigValueError {
                 expected: "trace, debug, info, warn, or error",
             }),
         }

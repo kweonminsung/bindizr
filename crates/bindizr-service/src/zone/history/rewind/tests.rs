@@ -27,7 +27,7 @@ fn record(id: i32, name: &str, value: &str) -> Record {
 
 /// Build a journal entry for a rewind test.
 fn change(
-    serial: i32,
+    serial: u32,
     operation: ChangeOperation,
     name: &str,
     record_type: JournalRecordType,
@@ -35,7 +35,7 @@ fn change(
 ) -> ZoneChange {
     ZoneChange {
         zone_id: ZoneId::from(1),
-        serial: Serial::try_from(serial).unwrap(),
+        serial: Serial::from(serial),
         operation,
         record_name: OwnerName::parse_in_zone(name, &zone_name()).unwrap(),
         record_type,

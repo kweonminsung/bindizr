@@ -66,11 +66,11 @@ impl Zone {
         SoaRecordValue {
             mname: self.mname.as_str(),
             rname: rname.as_str(),
-            serial: serial.as_u32(),
+            serial,
             refresh: self.refresh.as_secs(),
             retry: self.retry.as_secs(),
             expire: self.expire.as_secs(),
-            minimum: self.minimum_ttl.as_secs(),
+            minimum: self.minimum_ttl,
         }
         .to_rdata()
     }

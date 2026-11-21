@@ -203,8 +203,11 @@ pub struct DeleteRecordsRequest {
     /// Narrows to one type; omitted, every type at the name goes.
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub record_type: Option<String>,
-    /// Canonical value match: one string or TXT segments, as in a create request. Requires `type`.
+    /// Canonical value match, as in a create request; requires `type`. A query
+    /// string carries one string, so a TXT value of several segments is matched
+    /// by the daemon socket's JSON form, or its record deleted by id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(value_type = Option<String>)]
     pub value: Option<RecordValue>,
     /// MX and SRV keep their preference in its own column, so it narrows
     /// there rather than being part of `value`.

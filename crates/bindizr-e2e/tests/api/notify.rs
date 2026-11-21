@@ -68,7 +68,7 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
 
         let (len, peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
             .await
-            .expect("an earlier ACK must not delay the next committed zone")
+            .unwrap()
             .unwrap();
         let query = Message::from_octets(buffer[..len].to_vec()).unwrap();
 
@@ -111,7 +111,7 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
         }
     })
     .await
-    .expect("all zones must start before the three-second ACK timeout");
+    .unwrap();
 
     assert_eq!(seen, zone_names.into_iter().collect());
     assert_eq!(
@@ -290,7 +290,7 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
         }
     })
     .await
-    .expect("REFRESH must cap the ten-second batching delay");
+    .unwrap();
 
     assert_eq!(
         receiver
@@ -324,7 +324,7 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
         }
     })
     .await
-    .expect("shutdown must flush without the ten-second batching delay");
+    .unwrap();
 }
 
 /// Verify that a matching NOTIMP completes the manual NOTIFY API call successfully.
