@@ -27,9 +27,9 @@ fn zone() -> Zone {
 }
 
 /// Build a DNSSEC policy fixture with the requested identity.
-fn policy(id: i32, name: &str) -> DnssecPolicy {
+fn policy(policy_id: i32, name: &str) -> DnssecPolicy {
     DnssecPolicy {
-        id: PolicyId::from(id),
+        id: PolicyId::from(policy_id),
         name: name.to_string(),
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
         denial: DnssecDenial::Nsec,

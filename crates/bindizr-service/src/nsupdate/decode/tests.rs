@@ -33,7 +33,12 @@ fn nsupdate_decode_rejects_managed_dnssec_changes_after_validating_wire_data() {
         let error =
             decode_updates(&[record(class, Rtype::DNSKEY, 0, data)], &zone_name, data).unwrap_err();
 
-        assert!(matches!(error, NsupdateError::ManagedType(Rtype::DNSKEY)));
+        assert!(matches!(
+            error,
+            NsupdateError::ManagedType {
+                rtype: Rtype::DNSKEY
+            }
+        ));
         assert_eq!(error.rcode().ok(), Some(Rcode::REFUSED));
     }
 

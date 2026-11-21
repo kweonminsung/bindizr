@@ -3,6 +3,7 @@
 use base64::engine::general_purpose;
 use base64::{DecodeError, Engine};
 use domain::base::iana::SecurityAlgorithm;
+use domain::base::rdata::ComposeRecordData;
 use domain::rdata::Dnskey;
 use ring::digest::{Algorithm, Context, SHA1_FOR_LEGACY_USE_ONLY, SHA256, SHA384};
 use thiserror::Error;
@@ -57,12 +58,12 @@ impl TryFrom<u8> for DsDigestType {
     type Error = ConvertDsDigestTypeError;
 
     /// Read a digest type number a DS record carries.
-    fn try_from(digest_type: u8) -> Result<Self, Self::Error> {
-        match digest_type {
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
             1 => Ok(Self::Sha1),
             2 => Ok(Self::Sha256),
             4 => Ok(Self::Sha384),
-            _ => Err(ConvertDsDigestTypeError { digest_type }),
+            _ => Err(ConvertDsDigestTypeError { digest_type: value }),
         }
     }
 }
@@ -124,8 +125,6 @@ impl DnssecKey {
         apex: &WireName,
         digest_type: DsDigestType,
     ) -> Result<DsRecordValue, EncodeKeyRdataError> {
-        use domain::base::rdata::ComposeRecordData;
-
         let dnskey = self.to_dnskey()?;
         let mut dnskey_rdata = Vec::new();
         let Ok(()) = dnskey.compose_rdata(&mut dnskey_rdata);

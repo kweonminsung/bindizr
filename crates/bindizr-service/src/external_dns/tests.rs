@@ -277,9 +277,9 @@ async fn list_records_omits_parent_rows_a_child_zone_shadows() {
 }
 
 /// Build a zone fixture for the test.
-fn test_zone(id: i32, zone_name: &str) -> Zone {
+fn test_zone(zone_id: i32, zone_name: &str) -> Zone {
     Zone {
-        id: ZoneId::from(id),
+        id: ZoneId::from(zone_id),
         name: ZoneName::parse(zone_name).unwrap(),
         mname: format!("ns1.{zone_name}"),
         rname: format!("hostmaster@{zone_name}"),
@@ -298,9 +298,15 @@ fn test_zone(id: i32, zone_name: &str) -> Zone {
 }
 
 /// Build a record fixture with the requested fields.
-fn test_record(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
+fn test_record(
+    record_id: i32,
+    name: &str,
+    record_type: RecordType,
+    value: &str,
+    ttl: i64,
+) -> Record {
     Record {
-        id: RecordId::from(id),
+        id: RecordId::from(record_id),
         name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),

@@ -207,7 +207,7 @@ async fn fetch_transfer(
         fetch_zone_on_stream(&mut stream, &qname, 2),
     )
     .await
-    .expect("AXFR did not complete");
+    .unwrap();
     server.await.unwrap();
 
     result.map(|(records, _)| records)

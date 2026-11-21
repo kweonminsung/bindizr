@@ -18,7 +18,7 @@ use crate::model::record::{Record, RecordType};
 use crate::model::zone::Zone;
 
 /// Build a signing-key fixture for the test.
-fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {
+fn test_key(zone: &Zone, key_id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {
     let mut key = DnssecKey::generate(
         zone,
         DnssecAlgorithm::EcdsaP256Sha256,
@@ -28,7 +28,7 @@ fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) ->
         fixed_now(),
     )
     .unwrap();
-    key.id = DnssecKeyId::from(id);
+    key.id = DnssecKeyId::from(key_id);
 
     key
 }

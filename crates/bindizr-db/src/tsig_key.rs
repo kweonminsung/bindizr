@@ -18,24 +18,26 @@ pub async fn create_tx(
 }
 
 /// Get a TSIG key by ID.
-pub async fn get(db: &Db, id: TsigKeyId) -> Result<Option<TsigKey>, DatabaseError> {
+pub async fn get(db: &Db, tsig_key_id: TsigKeyId) -> Result<Option<TsigKey>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::tsig_key::get(pool, id).await,
-        Backend::Postgres(pool) => postgres::tsig_key::get(pool, id).await,
-        Backend::Sqlite(pool) => sqlite::tsig_key::get(pool, id).await,
+        Backend::MySql(pool) => mysql::tsig_key::get(pool, tsig_key_id).await,
+        Backend::Postgres(pool) => postgres::tsig_key::get(pool, tsig_key_id).await,
+        Backend::Sqlite(pool) => sqlite::tsig_key::get(pool, tsig_key_id).await,
     }
 }
 
 /// Get a TSIG key by ID in the current transaction, locked at `lock_level`.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
-    id: TsigKeyId,
+    tsig_key_id: TsigKeyId,
     lock_level: LockLevel,
 ) -> Result<Option<TsigKey>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::tsig_key::get_tx(tx, id, lock_level).await,
-        TransactionKind::Postgres(tx) => postgres::tsig_key::get_tx(tx, id, lock_level).await,
-        TransactionKind::Sqlite(tx) => sqlite::tsig_key::get_tx(tx, id, lock_level).await,
+        TransactionKind::MySql(tx) => mysql::tsig_key::get_tx(tx, tsig_key_id, lock_level).await,
+        TransactionKind::Postgres(tx) => {
+            postgres::tsig_key::get_tx(tx, tsig_key_id, lock_level).await
+        }
+        TransactionKind::Sqlite(tx) => sqlite::tsig_key::get_tx(tx, tsig_key_id, lock_level).await,
     }
 }
 
@@ -50,11 +52,14 @@ pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<TsigKey>, Databas
 
 /// Delete a TSIG key by ID.
 /// Reports `false` when no row had the id.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: TsigKeyId) -> Result<bool, DatabaseError> {
+pub async fn delete_tx(
+    tx: &mut Transaction<'_>,
+    tsig_key_id: TsigKeyId,
+) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::tsig_key::delete_tx(tx, id).await,
-        TransactionKind::Postgres(tx) => postgres::tsig_key::delete_tx(tx, id).await,
-        TransactionKind::Sqlite(tx) => sqlite::tsig_key::delete_tx(tx, id).await,
+        TransactionKind::MySql(tx) => mysql::tsig_key::delete_tx(tx, tsig_key_id).await,
+        TransactionKind::Postgres(tx) => postgres::tsig_key::delete_tx(tx, tsig_key_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::tsig_key::delete_tx(tx, tsig_key_id).await,
     }
 }
 

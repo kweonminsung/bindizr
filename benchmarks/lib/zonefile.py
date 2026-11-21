@@ -28,12 +28,12 @@ def build_record_line(record: dict) -> str:
             f'{build_record_data(record)}')
 
 
-def build_zone_file(zone: str, serial: int, records: Iterable[dict]) -> str:
+def build_zone_file(zone_name: str, serial: int, records: Iterable[dict]) -> str:
     """Build a benchmark zone file, preserving the supplied record order."""
     lines = [
         "$TTL 3600",
-        f"@ IN SOA ns1.{zone}. admin.{zone}. ( {serial} 3600 600 604800 3600 )",
-        f"@ IN NS ns1.{zone}.",
+        f"@ IN SOA ns1.{zone_name}. admin.{zone_name}. ( {serial} 3600 600 604800 3600 )",
+        f"@ IN NS ns1.{zone_name}.",
         "ns1 IN A 127.0.0.1",
     ]
 

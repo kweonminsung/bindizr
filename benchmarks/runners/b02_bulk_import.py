@@ -16,11 +16,11 @@ from lib.resources import sampler_for  # noqa: E402
 SELF_SAMPLES = True
 
 
-async def _measure(adapter, zone, size, label, load, errors) -> dict:
+async def _measure(adapter, zone_name, size, label, load, errors) -> dict:
     """Load records into a fresh zone via `load()` and time it, sampling the
     server's resource usage. `errors()` reads the adapter's post-load error count."""
-    await adapter.delete_zone(zone)
-    await adapter.create_zone(zone)
+    await adapter.delete_zone(zone_name)
+    await adapter.create_zone(zone_name)
 
     sampler = sampler_for(adapter, adapter.config)
     with sampler:
@@ -49,22 +49,22 @@ async def _measure(adapter, zone, size, label, load, errors) -> dict:
 
 async def run(adapter, config, context) -> list:
     """Measure bulk import performance at the configured record counts."""
-    zone = context["zone"]
+    zone_name = context["zone"]
     rows = []
 
     for size in config["sizes"]:
-        records = generate(size, config["seed"], zone)
+        records = generate(size, config["seed"], zone_name)
 
         rows.append(await _measure(
-            adapter, zone, size, context["label"],
-            lambda: adapter.import_records(zone, records),
+            adapter, zone_name, size, context["label"],
+            lambda: adapter.import_records(zone_name, records),
             lambda: getattr(adapter, "bulk_errors", 0)))
 
         # Bindizr also supports importing a BIND zone file; report it alongside.
         if getattr(adapter, "supports_zone_import", False):
             rows.append(await _measure(
-                adapter, zone, size, f'{context["label"]} (zone import)',
-                lambda: adapter.import_zone_file(zone, records),
+                adapter, zone_name, size, f'{context["label"]} (zone import)',
+                lambda: adapter.import_zone_file(zone_name, records),
                 lambda: getattr(adapter, "import_errors", 0)))
 
     return rows

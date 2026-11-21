@@ -109,14 +109,14 @@ impl From<JsonRejection> for ApiError {
     fn from(rejection: JsonRejection) -> Self {
         let error = match rejection {
             JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
-                ServiceError::InvalidJsonBody(format!(
-                    "invalid JSON body: {}",
-                    rejection.body_text()
-                ))
+                ServiceError::InvalidJsonBody {
+                    message: format!("invalid JSON body: {}", rejection.body_text()),
+                }
             }
-            JsonRejection::MissingJsonContentType(_) => ServiceError::UnsupportedMediaType(
-                "unsupported media type: expected 'Content-Type: application/json'".to_string(),
-            ),
+            JsonRejection::MissingJsonContentType(_) => ServiceError::UnsupportedMediaType {
+                message: "unsupported media type: expected 'Content-Type: application/json'"
+                    .to_string(),
+            },
             // A body over DefaultBodyLimit arrives as a BytesRejection; it is a
             // client size error, so keep axum's status instead of reporting 500.
             // The rejection does not say which limit the route carries.
@@ -124,11 +124,13 @@ impl From<JsonRejection> for ApiError {
                 if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE =>
             {
                 // The routing table alone says which routes take the upload cap.
-                ServiceError::PayloadTooLarge(format!(
-                    "request body exceeds the route's limit ({} MiB, or {} MiB for upload routes)",
-                    DEFAULT_BODY_BYTES / (1024 * 1024),
-                    MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
-                ))
+                ServiceError::PayloadTooLarge {
+                    message: format!(
+                        "request body exceeds the route's limit ({} MiB, or {} MiB for upload routes)",
+                        DEFAULT_BODY_BYTES / (1024 * 1024),
+                        MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
+                    ),
+                }
             }
             // A body the client broke off or framed badly is the client's
             // mistake, which axum already classes as 4xx.

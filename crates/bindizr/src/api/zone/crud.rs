@@ -64,8 +64,8 @@ pub(crate) async fn get_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let zone = zone::get_by_name(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
-    let response = SingleZoneResponse { zone };
+    let response = zone::get_by_name(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
+    let response = SingleZoneResponse { zone: response };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

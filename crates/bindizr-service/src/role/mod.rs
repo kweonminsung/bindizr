@@ -167,10 +167,12 @@ pub async fn delete(
                 // A credential that took the role between the counts above and
                 // this delete trips the FK: the same in-use conflict.
                 if error.is_foreign_key_violation() {
-                    ServiceError::RoleInUse(format!(
-                        "role '{}' is still held by an API token or TSIG key",
-                        role.name
-                    ))
+                    ServiceError::RoleInUse {
+                        message: format!(
+                            "role '{}' is still held by an API token or TSIG key",
+                            role.name
+                        ),
+                    }
                 } else {
                     error.into()
                 }
@@ -213,7 +215,9 @@ pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<Role, Ser
 pub(crate) async fn lookup(cx: &Context, role_id: RoleId) -> Result<Role, ServiceError> {
     bindizr_db::role::get(cx.db(), role_id)
         .await?
-        .ok_or_else(|| ServiceError::RoleNotFound(format!("role with id '{role_id}' not found")))
+        .ok_or_else(|| ServiceError::RoleNotFound {
+            message: format!("role with id '{role_id}' not found"),
+        })
 }
 
 /// Refuse a change to the built-in role.

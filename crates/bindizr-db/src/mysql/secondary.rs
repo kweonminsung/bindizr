@@ -136,10 +136,10 @@ pub(crate) async fn count_by_notify_tsig_key_id(
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: SecondaryId,
+    secondary_id: SecondaryId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM secondaries WHERE id = ?")
-        .bind(id)
+        .bind(secondary_id)
         .execute(&mut **tx)
         .await?;
 

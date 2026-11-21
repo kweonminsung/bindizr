@@ -84,9 +84,10 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
     let zone_name = ZoneName::parse("second.example").unwrap();
     jobs_tx.send(NotifyJob::new(&zone_name)).unwrap();
 
+    // Waiting for the first ACK must not block the next batch.
     let (len, second_peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
         .await
-        .expect("ACK wait must not block the next batch")
+        .unwrap()
         .unwrap();
     let second_request = buffer[..len].to_vec();
 

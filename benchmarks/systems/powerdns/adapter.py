@@ -75,73 +75,73 @@ class PowerDnsAdapter(DnsAdapter):
         self.compose.down()
 
     @staticmethod
-    def _fqdn(zone: str, name: str) -> str:
+    def _fqdn(zone_name: str, name: str) -> str:
         """Qualify a record owner with its zone name."""
-        return f"{name}.{zone.rstrip('.')}."
+        return f"{name}.{zone_name.rstrip('.')}."
 
-    async def create_zone(self, zone: str) -> None:
+    async def create_zone(self, zone_name: str) -> None:
         """Create the zone used by the benchmark."""
-        zone_name = zone if zone.endswith(".") else zone + "."
+        fqdn_zone_name = zone_name if zone_name.endswith(".") else zone_name + "."
         body = {
-            "name": zone_name,
+            "name": fqdn_zone_name,
             "kind": "Native",
-            "nameservers": [f"ns1.{zone_name}"],
+            "nameservers": [f"ns1.{fqdn_zone_name}"],
         }
 
         async with self.session.post(self.base + "/zones", json=body) as response:
             if response.status not in (201, 200, 409, 422):
                 raise RuntimeError(f"create_zone {response.status}: {await response.text()}")
 
-    async def delete_zone(self, zone: str) -> None:
+    async def delete_zone(self, zone_name: str) -> None:
         """Remove the benchmark zone and its records."""
-        zone_name = zone if zone.endswith(".") else zone + "."
-        async with self.session.delete(self.base + f"/zones/{zone_name}") as response:
+        fqdn_zone_name = zone_name if zone_name.endswith(".") else zone_name + "."
+        async with self.session.delete(self.base + f"/zones/{fqdn_zone_name}") as response:
             await response.read()
 
-    async def _patch(self, zone: str, name: str, rtype: str, changetype: str,
+    async def _patch(self, zone_name: str, name: str, record_type: str, changetype: str,
                      record: dict | None) -> bool:
         """Submit a record-group change through the PowerDNS API."""
-        zone_name = zone if zone.endswith(".") else zone + "."
-        rrset = {"name": self._fqdn(zone, name), "type": rtype, "changetype": changetype}
+        fqdn_zone_name = zone_name if zone_name.endswith(".") else zone_name + "."
+        rrset = {"name": self._fqdn(zone_name, name), "type": record_type, "changetype": changetype}
 
         if changetype == "REPLACE":
             rrset["ttl"] = record.get("ttl", 3600)
             rrset["records"] = [{"content": _content(record), "disabled": False}]
 
-        async with self.session.patch(self.base + f"/zones/{zone_name}", json={"rrsets": [rrset]}) as response:
+        async with self.session.patch(self.base + f"/zones/{fqdn_zone_name}", json={"rrsets": [rrset]}) as response:
             await response.read()
             return response.status in (200, 204)
 
-    async def create_record(self, zone: str, record: dict) -> str:
+    async def create_record(self, zone_name: str, record: dict) -> str:
         """Create a record and return its adapter-specific handle."""
-        if not await self._patch(zone, record["name"], record["type"], "REPLACE", record):
+        if not await self._patch(zone_name, record["name"], record["type"], "REPLACE", record):
             raise RuntimeError(f'create_record failed for {record["name"]} {record["type"]}')
-        return f'{self._fqdn(zone, record["name"])}|{record["type"]}'
+        return f'{self._fqdn(zone_name, record["name"])}|{record["type"]}'
 
-    async def import_records(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone_name: str, records: list[dict]) -> None:
         """Import records in batched PowerDNS PATCH requests for throughput."""
-        zone_name = zone if zone.endswith(".") else zone + "."
+        fqdn_zone_name = zone_name if zone_name.endswith(".") else zone_name + "."
         batch = 500
 
         for start in range(0, len(records), batch):
             rrsets = [{
-                "name": self._fqdn(zone, record["name"]),
+                "name": self._fqdn(zone_name, record["name"]),
                 "type": record["type"],
                 "ttl": record.get("ttl", 3600),
                 "changetype": "REPLACE",
                 "records": [{"content": _content(record), "disabled": False}],
             } for record in records[start:start + batch]]
 
-            async with self.session.patch(self.base + f"/zones/{zone_name}",
+            async with self.session.patch(self.base + f"/zones/{fqdn_zone_name}",
                                           json={"rrsets": rrsets}) as response:
                 if response.status not in (200, 204):
                     raise RuntimeError(f"bulk PATCH {response.status}: {await response.text()}")
 
-    async def get_record(self, zone: str, handle: str) -> bool:
+    async def get_record(self, zone_name: str, handle: str) -> bool:
         """Check whether the record identified by the handle is present."""
-        fqdn, rtype = handle.rsplit("|", 1)
-        zone_name = zone if zone.endswith(".") else zone + "."
-        url = self.base + f"/zones/{zone_name}?rrset_name={fqdn}&rrset_type={rtype}"
+        fqdn, record_type = handle.rsplit("|", 1)
+        fqdn_zone_name = zone_name if zone_name.endswith(".") else zone_name + "."
+        url = self.base + f"/zones/{fqdn_zone_name}?rrset_name={fqdn}&rrset_type={record_type}"
 
         async with self.session.get(url) as response:
             if response.status != 200:
@@ -149,17 +149,17 @@ class PowerDnsAdapter(DnsAdapter):
             data = await response.json()
             return bool(data.get("rrsets"))
 
-    async def update_record(self, zone: str, handle: str, record: dict) -> bool:
+    async def update_record(self, zone_name: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
-        fqdn, rtype = handle.rsplit("|", 1)
-        name = fqdn[: -(len(zone.rstrip(".")) + 2)]
-        return await self._patch(zone, name, rtype, "REPLACE", {**record, "type": rtype})
+        fqdn, record_type = handle.rsplit("|", 1)
+        name = fqdn[: -(len(zone_name.rstrip(".")) + 2)]
+        return await self._patch(zone_name, name, record_type, "REPLACE", {**record, "type": record_type})
 
-    async def delete_record(self, zone: str, handle: str) -> bool:
+    async def delete_record(self, zone_name: str, handle: str) -> bool:
         """Delete the record identified by the handle."""
-        fqdn, rtype = handle.rsplit("|", 1)
-        name = fqdn[: -(len(zone.rstrip(".")) + 2)]
-        return await self._patch(zone, name, rtype, "DELETE", None)
+        fqdn, record_type = handle.rsplit("|", 1)
+        name = fqdn[: -(len(zone_name.rstrip(".")) + 2)]
+        return await self._patch(zone_name, name, record_type, "DELETE", None)
 
     def dns_endpoint(self) -> Endpoint:
         """Return the DNS endpoint that serves the managed zone."""

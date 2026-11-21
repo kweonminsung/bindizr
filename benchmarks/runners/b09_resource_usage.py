@@ -16,26 +16,26 @@ SELF_SAMPLES = True
 
 async def run(adapter, config, context) -> dict:
     """Measure system resource use under the configured benchmark workloads."""
-    zone = context["zone"]
+    zone_name = context["zone"]
     size = config["query"]["zone_size"]
 
-    await adapter.create_zone(zone)
+    await adapter.create_zone(zone_name)
 
-    records = [record for record in generate(size * 2, config["seed"], zone)
+    records = [record for record in generate(size * 2, config["seed"], zone_name)
                if record["type"] == "A"][:size]
 
-    await adapter.import_records(zone, records)
+    await adapter.import_records(zone_name, records)
     if adapter.bulk_errors:
         raise RuntimeError(f"preparing the resource workload failed for {adapter.bulk_errors} records")
 
-    names = [f'{record["name"]}.{zone.rstrip(".")}' for record in records]
+    names = [f'{record["name"]}.{zone_name.rstrip(".")}' for record in records]
     endpoint = adapter.dns_endpoint()
 
     # Keep import and propagation costs outside the resource sampling window.
     propagation_config = config["propagation"]
 
     missing = await dig.first_unqueryable(
-        records, zone, endpoint.host, endpoint.port,
+        records, zone_name, endpoint.host, endpoint.port,
         propagation_config["poll_interval_ms"], propagation_config["timeout_secs"])
 
     if missing is not None:

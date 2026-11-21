@@ -9,7 +9,7 @@ use tokio::task;
 use super::*;
 
 /// Build real service state and its reload channel over a disposable SQLite database.
-async fn context(period: u64) -> (Arc<Context>, watch::Receiver<u64>) {
+async fn context(period: u64) -> (Arc<Context>, Receiver<u64>) {
     let mut config: Config = serde_json::from_str("{}").unwrap();
     config.database.sqlite.file_path = "sqlite::memory:".to_string();
     config.dns.scheduler_interval_secs = period;

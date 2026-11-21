@@ -22,12 +22,12 @@ pub async fn create_tx(
 /// on MySQL/PostgreSQL) so a revocation waits for the transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
-    id: TokenId,
+    token_id: TokenId,
 ) -> Result<Option<ApiToken>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::api_token::get_tx(tx, id).await,
-        TransactionKind::Postgres(tx) => postgres::api_token::get_tx(tx, id).await,
-        TransactionKind::Sqlite(tx) => sqlite::api_token::get_tx(tx, id).await,
+        TransactionKind::MySql(tx) => mysql::api_token::get_tx(tx, token_id).await,
+        TransactionKind::Postgres(tx) => postgres::api_token::get_tx(tx, token_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::api_token::get_tx(tx, token_id).await,
     }
 }
 
@@ -63,27 +63,29 @@ pub async fn count_all(db: &Db) -> Result<u64, DatabaseError> {
 /// records what happened, and nothing may block on it.
 pub async fn update_last_used_at(
     db: &Db,
-    id: TokenId,
+    token_id: TokenId,
     last_used_at: DateTime<Utc>,
 ) -> Result<bool, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::api_token::update_last_used_at(pool, id, last_used_at).await,
+        Backend::MySql(pool) => {
+            mysql::api_token::update_last_used_at(pool, token_id, last_used_at).await
+        }
         Backend::Postgres(pool) => {
-            postgres::api_token::update_last_used_at(pool, id, last_used_at).await
+            postgres::api_token::update_last_used_at(pool, token_id, last_used_at).await
         }
         Backend::Sqlite(pool) => {
-            sqlite::api_token::update_last_used_at(pool, id, last_used_at).await
+            sqlite::api_token::update_last_used_at(pool, token_id, last_used_at).await
         }
     }
 }
 
 /// Delete an API token by ID.
 /// Reports `false` when no row had the id.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: TokenId) -> Result<bool, DatabaseError> {
+pub async fn delete_tx(tx: &mut Transaction<'_>, token_id: TokenId) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::api_token::delete_tx(tx, id).await,
-        TransactionKind::Postgres(tx) => postgres::api_token::delete_tx(tx, id).await,
-        TransactionKind::Sqlite(tx) => sqlite::api_token::delete_tx(tx, id).await,
+        TransactionKind::MySql(tx) => mysql::api_token::delete_tx(tx, token_id).await,
+        TransactionKind::Postgres(tx) => postgres::api_token::delete_tx(tx, token_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::api_token::delete_tx(tx, token_id).await,
     }
 }
 

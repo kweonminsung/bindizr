@@ -12,8 +12,10 @@ use bindizr_core::dns::query::{ParseResponseError, TransferMessagePosition, Tran
 use bindizr_core::dns::record::ParseRdataError;
 use bindizr_core::dns::{message, name, query};
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
+use tokio::sync::oneshot::{Receiver, Sender};
 use tokio::time;
 use tokio::time::Instant;
 
@@ -92,8 +94,8 @@ pub(crate) struct AxfrClient {
 enum Connection {
     Open(TcpStream),
     Idle {
-        resume: oneshot::Sender<()>,
-        stream: oneshot::Receiver<TcpStream>,
+        resume: Sender<()>,
+        stream: Receiver<TcpStream>,
     },
 }
 
@@ -256,8 +258,6 @@ async fn fetch_zone_on_stream(
     qname: &WireName,
     max_records: usize,
 ) -> Result<(Vec<TransferRecord>, Option<Duration>), FetchZoneError> {
-    use tokio::io::AsyncWriteExt;
-
     let (query_id, query) = query::build_axfr_query(qname);
 
     stream

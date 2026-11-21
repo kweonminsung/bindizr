@@ -32,7 +32,7 @@ def _mem_split(resource_usage: dict) -> tuple[float, float]:
             by_service.get("mysql", 0) + by_service.get("postgres", 0))
 
 
-async def _bench_backend(adapter, config, zone, label, pairing) -> dict:
+async def _bench_backend(adapter, config, zone_name, label, pairing) -> dict:
     """Measure create/read throughput, latency, and resource use for one backend."""
     crud_config = config["crud"]
     concurrency, duration_secs, warmup_secs = (
@@ -41,14 +41,14 @@ async def _bench_backend(adapter, config, zone, label, pairing) -> dict:
     pool_size = min(crud_config["records_prepopulate"], 2000)
 
     # Populate the read workload's record pool before resource sampling starts.
-    await adapter.create_zone(zone)
+    await adapter.create_zone(zone_name)
 
     pool = generate(pool_size, config["seed"] + 1)
     handles = []
 
-    for i, record in enumerate(pool):
-        record["name"] = f"pool{i:07d}"
-        handles.append(await adapter.create_record(zone, record))
+    for index, record in enumerate(pool):
+        record["name"] = f"pool{index:07d}"
+        handles.append(await adapter.create_record(zone_name, record))
 
     # The resource window includes create-data preparation and both warmups.
     sampler = sampler_for(adapter, config)
@@ -59,12 +59,12 @@ async def _bench_backend(adapter, config, zone, label, pairing) -> dict:
             """Create one uniquely named record for the measured workload."""
             record = dict(create_records[seq % len(create_records)])
             record["name"] = f"crt{seq:08d}"
-            await adapter.create_record(zone, record)
+            await adapter.create_record(zone_name, record)
             return True
 
         async def read_step(seq):
             """Read one existing record for the measured workload."""
-            return await adapter.get_record(zone, handles[seq % len(handles)])
+            return await adapter.get_record(zone_name, handles[seq % len(handles)])
 
         # Measure create and read separately, each with its own unrecorded warmup.
         create_recorder = await loadgen.run_closed_loop(create_step, concurrency, duration_secs, warmup_secs)
@@ -91,19 +91,19 @@ async def _bench_backend(adapter, config, zone, label, pairing) -> dict:
     }
 
 
-async def _bulk_backend(adapter, config, zone, backend, size, pairing) -> dict:
+async def _bulk_backend(adapter, config, zone_name, backend, size, pairing) -> dict:
     """Import `size` records into a fresh zone via the backend and time it,
     sampling the DB container's resource usage."""
-    await adapter.delete_zone(zone)
-    await adapter.create_zone(zone)
+    await adapter.delete_zone(zone_name)
+    await adapter.create_zone(zone_name)
 
-    records = generate(size, config["seed"], zone)
+    records = generate(size, config["seed"], zone_name)
 
     sampler = sampler_for(adapter, config)
     with sampler:
         started = time.monotonic()
 
-        await adapter.import_records(zone, records)
+        await adapter.import_records(zone_name, records)
 
         elapsed = time.monotonic() - started
     resource_usage = sampler.summary()
@@ -131,7 +131,7 @@ async def _bulk_backend(adapter, config, zone, backend, size, pairing) -> dict:
 
 async def run(_adapter, config, context) -> list:
     """Compare CRUD and bulk import performance across database backends."""
-    zone = context["zone"]
+    zone_name = context["zone"]
     pairing = context["label"]
     rows = []
     # The system key selects which secondary runs beside Bindizr; the backend
@@ -148,16 +148,16 @@ async def run(_adapter, config, context) -> list:
             print(f"    backend {backend}: setup...", flush=True)
 
             await adapter.setup()
-            row = await _bench_backend(adapter, config, zone, backend, pairing)
+            crud_result = await _bench_backend(adapter, config, zone_name, backend, pairing)
 
-            rows.append(row)
-            print(f"    backend {backend} (crud): {row}", flush=True)
+            rows.append(crud_result)
+            print(f"    backend {backend} (crud): {crud_result}", flush=True)
 
             for size in config.get("db_bulk_sizes", []):
-                brow = await _bulk_backend(adapter, config, zone, backend, size,
+                bulk_result = await _bulk_backend(adapter, config, zone_name, backend, size,
                                            pairing)
-                rows.append(brow)
-                print(f"    backend {backend} (bulk {size}): {brow}", flush=True)
+                rows.append(bulk_result)
+                print(f"    backend {backend} (bulk {size}): {bulk_result}", flush=True)
         except Exception as error:
             print(f"    backend {backend} FAILED: {error}")
             # Report the failure faithfully instead of silently omitting it.

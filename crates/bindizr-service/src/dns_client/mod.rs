@@ -15,6 +15,7 @@ use bindizr_core::dns::address::{AddressTarget, DEFAULT_DNS_PORT};
 use bindizr_core::dns::message::{EncodeMessageError, Keepalive, ParseQueryError, QueryMetadata};
 use bindizr_core::dns::{message, query};
 use thiserror::Error;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::{net, time};
 
@@ -107,8 +108,6 @@ pub(crate) async fn exchange_over_tcp(
     request: &[u8],
     what: &'static str,
 ) -> Result<Vec<u8>, ExchangeMessageError> {
-    use tokio::io::AsyncWriteExt;
-
     let frame = message::encode_tcp_message(request)?;
 
     let exchange = async {
@@ -124,8 +123,6 @@ pub(crate) async fn exchange_over_tcp(
 
 /// Read one length-prefixed DNS message (RFC 1035, Section 4.2.2).
 pub(crate) async fn read_tcp_message(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
-    use tokio::io::AsyncReadExt;
-
     let mut prefix = [0; 2];
     stream.read_exact(&mut prefix).await?;
     let mut message = vec![0; usize::from(u16::from_be_bytes(prefix))];

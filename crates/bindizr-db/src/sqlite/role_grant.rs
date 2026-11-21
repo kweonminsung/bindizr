@@ -37,14 +37,14 @@ pub(crate) async fn create_tx(
 /// Get a role grant by ID.
 pub(crate) async fn get(
     pool: &Pool<Sqlite>,
-    id: RoleGrantId,
+    grant_id: RoleGrantId,
 ) -> Result<Option<RoleGrant>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let grant = sqlx::query_as::<_, RoleGrant>(
         "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants WHERE id = ?",
     )
-    .bind(id)
+    .bind(grant_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -88,10 +88,10 @@ pub(crate) async fn list_by_role_id_tx(
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: RoleGrantId,
+    grant_id: RoleGrantId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM role_grants WHERE id = ?")
-        .bind(id)
+        .bind(grant_id)
         .execute(&mut **tx)
         .await?;
 

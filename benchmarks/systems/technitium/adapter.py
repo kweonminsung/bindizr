@@ -74,20 +74,20 @@ class TechnitiumAdapter(DnsAdapter):
             return await response.json()
 
     @staticmethod
-    def _fqdn(zone: str, name: str) -> str:
+    def _fqdn(zone_name: str, name: str) -> str:
         """Qualify a record owner with its zone name."""
-        return f"{name}.{zone.rstrip('.')}"
+        return f"{name}.{zone_name.rstrip('.')}"
 
-    async def create_zone(self, zone: str) -> None:
+    async def create_zone(self, zone_name: str) -> None:
         """Create the zone used by the benchmark."""
-        await self._get("/zones/create", {"zone": zone.rstrip("."), "type": "Primary"})
+        await self._get("/zones/create", {"zone": zone_name.rstrip("."), "type": "Primary"})
         # Enable AXFR/IXFR for Benchmarks 4 & 5.
         await self._get("/zones/options/set",
-                        {"zone": zone.rstrip("."), "zoneTransfer": "Allow"})
+                        {"zone": zone_name.rstrip("."), "zoneTransfer": "Allow"})
 
-    async def delete_zone(self, zone: str) -> None:
+    async def delete_zone(self, zone_name: str) -> None:
         """Remove the benchmark zone and its records."""
-        await self._get("/zones/delete", {"zone": zone.rstrip(".")})
+        await self._get("/zones/delete", {"zone": zone_name.rstrip(".")})
 
     def _build_record_params(self, record: dict) -> dict:
         """Map a benchmark record value to Technitium request parameters."""
@@ -108,24 +108,24 @@ class TechnitiumAdapter(DnsAdapter):
 
         return {"rdata": value}
 
-    def _encode_record_handle(self, zone: str, record: dict) -> str:
+    def _encode_record_handle(self, zone_name: str, record: dict) -> str:
         """Encode the record identity and value into a reusable adapter handle."""
-        return SEP.join([self._fqdn(zone, record["name"]), record["type"], record["value"],
+        return SEP.join([self._fqdn(zone_name, record["name"]), record["type"], record["value"],
                          str(record.get("priority", ""))])
 
     def _decode_record_handle(self, handle: str) -> dict:
         """Decode a record handle into its stored identity and value."""
-        fqdn, rtype, value, prio = handle.split(SEP)
-        record = {"fqdn": fqdn, "type": rtype, "value": value}
+        fqdn, record_type, value, prio = handle.split(SEP)
+        record = {"fqdn": fqdn, "type": record_type, "value": value}
         if prio:
             record["priority"] = int(prio)
         return record
 
-    async def create_record(self, zone: str, record: dict) -> str:
+    async def create_record(self, zone_name: str, record: dict) -> str:
         """Create a record and return its adapter-specific handle."""
         params = {
-            "domain": self._fqdn(zone, record["name"]),
-            "zone": zone.rstrip("."),
+            "domain": self._fqdn(zone_name, record["name"]),
+            "zone": zone_name.rstrip("."),
             "type": record["type"],
             "ttl": record.get("ttl", 3600),
             **self._build_record_params(record),
@@ -136,23 +136,23 @@ class TechnitiumAdapter(DnsAdapter):
         if data.get("status") != "ok":
             raise RuntimeError(f"add record failed: {data}")
 
-        return self._encode_record_handle(zone, record)
+        return self._encode_record_handle(zone_name, record)
 
-    async def get_record(self, zone: str, handle: str) -> bool:
+    async def get_record(self, zone_name: str, handle: str) -> bool:
         """Fetch the handle's record information and report API success."""
         existing_record = self._decode_record_handle(handle)
         data = await self._get("/zones/records/get",
-                               {"domain": existing_record["fqdn"], "zone": zone.rstrip("."),
+                               {"domain": existing_record["fqdn"], "zone": zone_name.rstrip("."),
                                 "listZone": "false"})
         return data.get("status") == "ok"
 
-    async def update_record(self, zone: str, handle: str, record: dict) -> bool:
+    async def update_record(self, zone_name: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
         existing_record = self._decode_record_handle(handle)
         record_type = existing_record["type"]
         params = {
             "domain": existing_record["fqdn"],
-            "zone": zone.rstrip("."),
+            "zone": zone_name.rstrip("."),
             "type": record_type,
             "ttl": record.get("ttl", 3600),
         }
@@ -168,12 +168,12 @@ class TechnitiumAdapter(DnsAdapter):
 
         return data.get("status") == "ok"
 
-    async def delete_record(self, zone: str, handle: str) -> bool:
+    async def delete_record(self, zone_name: str, handle: str) -> bool:
         """Delete the record identified by the handle."""
         existing_record = self._decode_record_handle(handle)
         params = {
             "domain": existing_record["fqdn"],
-            "zone": zone.rstrip("."),
+            "zone": zone_name.rstrip("."),
             "type": existing_record["type"],
             **self._build_record_params({"type": existing_record["type"], "value": existing_record["value"],
                                   "priority": existing_record.get("priority", 10)}),

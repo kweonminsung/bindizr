@@ -12,9 +12,9 @@ fn zone_name() -> ZoneName {
 }
 
 /// Build a record fixture with the requested fields.
-fn record(id: i32, name: &str, value: &str) -> Record {
+fn record(record_id: i32, name: &str, value: &str) -> Record {
     Record {
-        id: RecordId::from(id),
+        id: RecordId::from(record_id),
         name: OwnerName::parse_in_zone(name, &zone_name()).unwrap(),
         record_type: RecordType::A,
         value: value.to_string(),

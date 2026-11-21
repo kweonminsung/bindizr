@@ -56,10 +56,10 @@ class CoreDnsAdapter(ZoneFileAdapter):
         """Stop the benchmark system and release its resources."""
         self.compose.down()
 
-    async def _dig(self, name: str, rtype: str) -> str:
+    async def _dig(self, name: str, record_type: str) -> str:
         """Query a record through the system DNS endpoint."""
         proc = await process.run(
-            "dig", f"@{SERVER}", "-p", str(DNS_PORT), name, rtype, "+short",
+            "dig", f"@{SERVER}", "-p", str(DNS_PORT), name, record_type, "+short",
             "+tries=1", "+time=3",
             timeout=5, stderr=asyncio.subprocess.DEVNULL)
         return proc.stdout.decode().strip()
@@ -111,6 +111,6 @@ class CoreDnsAdapter(ZoneFileAdapter):
 
         return False
 
-    async def create_zone(self, zone: str) -> None:
+    async def create_zone(self, zone_name: str) -> None:
         """Create the zone used by the benchmark."""
         return  # the zone is declared in the Corefile

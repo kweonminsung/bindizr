@@ -23,19 +23,14 @@ pub async fn create(
     let candidate = prepare_create(cx, request)?;
     let zone_name = &candidate.name;
 
-    match bindizr_db::zone::get_by_name(cx.db(), zone_name).await {
-        Ok(Some(_)) => {
-            return Err(ServiceError::zone_conflict(format!(
-                "zone with name '{zone_name}' already exists"
-            )));
-        }
-        Ok(None) => {}
-        Err(error) => {
-            return Err(ServiceError::internal_with_source(
-                "failed to create zone",
-                error,
-            ));
-        }
+    if bindizr_db::zone::get_by_name(cx.db(), zone_name)
+        .await
+        .map_err(|error| ServiceError::internal_with_source("failed to create zone", error))?
+        .is_some()
+    {
+        return Err(ServiceError::zone_conflict(format!(
+            "zone with name '{zone_name}' already exists"
+        )));
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create zone").await?;

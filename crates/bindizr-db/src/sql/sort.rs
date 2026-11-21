@@ -410,6 +410,8 @@ impl FromStr for SortOrder {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt;
+
     use super::*;
 
     /// Verify that an order by ends on the row id, in the sort's own direction.
@@ -441,7 +443,7 @@ mod tests {
         /// Assert that each value reads back from its spelling, lower and upper case.
         fn assert_round_trip<T>(values: &[T], as_str: fn(T) -> &'static str)
         where
-            T: Copy + PartialEq + std::fmt::Debug + FromStr<Err = ParseSortError>,
+            T: Copy + PartialEq + fmt::Debug + FromStr<Err = ParseSortError>,
         {
             for value in values {
                 let text = as_str(*value);

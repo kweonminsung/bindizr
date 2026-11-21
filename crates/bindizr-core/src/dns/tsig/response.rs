@@ -1,8 +1,8 @@
 //! Compose TSIG failures separately from request authentication.
 
-use domain::base::Message;
 use domain::base::iana::{Class, OptRcode, Rcode, TsigRcode};
 use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
+use domain::base::{Message, ToName};
 use domain::rdata::tsig::{Time48, Tsig};
 use ring::hmac;
 use thiserror::Error;
@@ -107,8 +107,6 @@ fn build_signed_error_response(
     now: Time48,
     include_question: bool,
 ) -> Result<Vec<u8>, LibraryError> {
-    use domain::base::ToName;
-
     let request_tsig = message
         .additional()?
         .limit_to::<Tsig<_, _>>()

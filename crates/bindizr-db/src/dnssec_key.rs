@@ -93,20 +93,20 @@ pub async fn count_by_state(db: &Db, state: DnssecKeyState) -> Result<u64, Datab
 /// Update a key's lifecycle state and transition deadlines in the current transaction.
 pub async fn update_state_tx(
     tx: &mut Transaction<'_>,
-    id: DnssecKeyId,
+    key_id: DnssecKeyId,
     state: DnssecKeyState,
     changed_at: DateTime<Utc>,
     eligible_at: DateTime<Utc>,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::dnssec_key::update_state_tx(tx, id, state, changed_at, eligible_at).await
+            mysql::dnssec_key::update_state_tx(tx, key_id, state, changed_at, eligible_at).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::dnssec_key::update_state_tx(tx, id, state, changed_at, eligible_at).await
+            postgres::dnssec_key::update_state_tx(tx, key_id, state, changed_at, eligible_at).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::dnssec_key::update_state_tx(tx, id, state, changed_at, eligible_at).await
+            sqlite::dnssec_key::update_state_tx(tx, key_id, state, changed_at, eligible_at).await
         }
     }
 }
@@ -114,28 +114,28 @@ pub async fn update_state_tx(
 /// Update the maximum TTL signed by a DNSSEC key in the current transaction.
 pub async fn update_max_signed_ttl_tx(
     tx: &mut Transaction<'_>,
-    id: DnssecKeyId,
+    key_id: DnssecKeyId,
     max_signed_ttl: Ttl,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::dnssec_key::update_max_signed_ttl_tx(tx, id, max_signed_ttl).await
+            mysql::dnssec_key::update_max_signed_ttl_tx(tx, key_id, max_signed_ttl).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::dnssec_key::update_max_signed_ttl_tx(tx, id, max_signed_ttl).await
+            postgres::dnssec_key::update_max_signed_ttl_tx(tx, key_id, max_signed_ttl).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::dnssec_key::update_max_signed_ttl_tx(tx, id, max_signed_ttl).await
+            sqlite::dnssec_key::update_max_signed_ttl_tx(tx, key_id, max_signed_ttl).await
         }
     }
 }
 
 /// Delete a DNSSEC key by ID in the current transaction.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: DnssecKeyId) -> Result<(), DatabaseError> {
+pub async fn delete_tx(tx: &mut Transaction<'_>, key_id: DnssecKeyId) -> Result<(), DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::dnssec_key::delete_tx(tx, id).await,
-        TransactionKind::Postgres(tx) => postgres::dnssec_key::delete_tx(tx, id).await,
-        TransactionKind::Sqlite(tx) => sqlite::dnssec_key::delete_tx(tx, id).await,
+        TransactionKind::MySql(tx) => mysql::dnssec_key::delete_tx(tx, key_id).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_key::delete_tx(tx, key_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_key::delete_tx(tx, key_id).await,
     }
 }
 

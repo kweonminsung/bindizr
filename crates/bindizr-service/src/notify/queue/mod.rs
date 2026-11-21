@@ -7,6 +7,7 @@ use std::time::Duration;
 use bindizr_core::dns::name::ZoneName;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::watch;
+use tokio::sync::watch::{Receiver, Sender};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time;
 use tokio::time::Instant;
@@ -34,7 +35,7 @@ impl NotifyJob {
 #[derive(Debug)]
 pub struct NotifyWorker {
     task: JoinHandle<()>,
-    stop: watch::Sender<bool>,
+    stop: Sender<bool>,
 }
 
 impl NotifyWorker {
@@ -153,7 +154,7 @@ async fn lookup_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
 async fn collect_batch(
     cx: &Context,
     jobs: &mut UnboundedReceiver<NotifyJob>,
-    stop: &mut watch::Receiver<bool>,
+    stop: &mut Receiver<bool>,
     first: NotifyJob,
 ) -> HashSet<ZoneName> {
     let mut batch = HashSet::new();

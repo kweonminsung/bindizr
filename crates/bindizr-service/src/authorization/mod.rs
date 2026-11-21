@@ -116,16 +116,10 @@ impl Caller {
     ) -> Result<(Self, ApiToken), ServiceError> {
         let token_hash = token::hash_token(bearer_token);
 
-        let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
-            Ok(Some(token)) => token,
-            Ok(None) => return Err(ServiceError::invalid_token("invalid or expired token")),
-            Err(error) => {
-                return Err(ServiceError::internal_with_source(
-                    "failed to validate token",
-                    error,
-                ));
-            }
-        };
+        let stored_token = bindizr_db::api_token::get_by_token(cx.db(), &token_hash)
+            .await
+            .map_err(|error| ServiceError::internal_with_source("failed to validate token", error))?
+            .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
 
         if stored_token.is_expired(Utc::now()) {
             return Err(ServiceError::invalid_token("token has expired"));
@@ -215,7 +209,7 @@ impl Caller {
     pub(crate) fn scope_role_id(&self) -> Option<RoleId> {
         match &self.scope {
             CallerScope::Global => None,
-            CallerScope::Role { id, .. } => Some(*id),
+            CallerScope::Role { id: role_id, .. } => Some(*role_id),
         }
     }
 

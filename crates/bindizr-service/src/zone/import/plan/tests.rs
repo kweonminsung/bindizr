@@ -28,9 +28,9 @@ fn zone() -> Zone {
 }
 
 /// Build an existing database record for import planning.
-fn existing(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
+fn existing(record_id: i32, name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
     Record {
-        id: RecordId::from(id),
+        id: RecordId::from(record_id),
         name: OwnerName::parse_in_zone(name, &zone().name).unwrap(),
         record_type,
         value: value.to_string(),

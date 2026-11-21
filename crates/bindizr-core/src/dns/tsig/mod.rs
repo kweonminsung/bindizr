@@ -4,10 +4,11 @@ mod record;
 mod response;
 mod signer;
 
+use std::str::FromStr;
 use std::sync::Arc;
 
-use base64::DecodeError;
 use base64::engine::general_purpose;
+use base64::{DecodeError, Engine};
 use domain::base::iana::{Class, Rcode, TsigRcode};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, ToName};
@@ -15,6 +16,7 @@ use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::{Algorithm, ClientTransaction, Key, KeyName, ValidationError};
 pub use response::{BuildErrorResponseError, build_error_response};
 use ring::hmac;
+use ring::hmac::Context;
 pub use signer::{ResponseSigner, SignResponseError, TransferSigner};
 use thiserror::Error;
 
@@ -202,10 +204,6 @@ pub fn verify_response(
 impl TsigKey {
     /// Decode and validate this stored key for TSIG signing and verification.
     pub fn to_signing_key(&self) -> Result<TsigSigningKey, TsigError> {
-        use std::str::FromStr;
-
-        use base64::Engine;
-
         let name = KeyName::from_str(&self.name).map_err(|error| TsigError::InvalidKeyName {
             name: self.name.clone(),
             source: Box::new(error),
@@ -379,7 +377,7 @@ fn minimum_mac_len(algorithm: Algorithm) -> usize {
 /// and error, and the Other Data after its length. Other Data is read from a
 /// TSIG record or is the six-octet server time, so its length fits Other Len.
 pub(crate) fn digest_tsig_variables(
-    digest: &mut hmac::Context,
+    digest: &mut Context,
     name: &[u8],
     algorithm: &[u8],
     time_signed: Time48,

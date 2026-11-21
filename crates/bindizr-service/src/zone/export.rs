@@ -1,5 +1,7 @@
 //! Render a zone as BIND master-file text, the inverse of `zone import`.
 
+use std::fmt::Write as _;
+
 use bindizr_core::dns::name;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
@@ -17,8 +19,6 @@ pub async fn export(
     zone_name: &ZoneName,
     view: ZoneView,
 ) -> Result<String, ServiceError> {
-    use std::fmt::Write as _;
-
     // Read the zone and records in one locked transaction so the export is a
     // single consistent view, not stale SOA metadata with newer records.
     let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;

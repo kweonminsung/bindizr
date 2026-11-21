@@ -137,16 +137,11 @@ pub async fn update(
 ) -> Result<WriteRecordResponse, ServiceError> {
     // Non-locking read for the zone_id, so the tx locks zone before record
     // (the create/bulk/import order); the reverse can deadlock.
-    let zone_id = match bindizr_db::record::get(cx.db(), record_id).await {
-        Ok(Some(record)) => record.zone_id,
-        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-        Err(error) => {
-            return Err(ServiceError::internal_with_source(
-                "failed to fetch record",
-                error,
-            ));
-        }
-    };
+    let zone_id = bindizr_db::record::get(cx.db(), record_id)
+        .await
+        .map_err(|error| ServiceError::internal_with_source("failed to fetch record", error))?
+        .ok_or_else(|| ServiceError::record_not_found(record_id))?
+        .zone_id;
 
     update_locked(cx, caller, LockTarget::Id { record_id, zone_id }, request).await
 }
@@ -187,30 +182,22 @@ async fn update_locked(
     let apply_result: Result<_, ServiceError> = async {
         let (zone, existing_record, caller) = match target {
             LockTarget::Id { record_id, zone_id } => {
-                let zone =
-                    match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
-                        Ok(Some(zone)) => zone,
-                        // The zone went with the record the request named.
-                        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-                        Err(error) => {
-                            return Err(ServiceError::internal_with_source(
-                                "failed to fetch zone",
-                                error,
-                            ));
-                        }
-                    };
+                let zone = bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive)
+                    .await
+                    .map_err(|error| {
+                        ServiceError::internal_with_source("failed to fetch zone", error)
+                    })?
+                    // The zone went with the record the request named.
+                    .ok_or_else(|| ServiceError::record_not_found(record_id))?;
                 let caller = caller.reauthenticate_tx(&mut tx).await?;
 
-                let existing_record = match bindizr_db::record::get_tx(&mut tx, record_id).await {
-                    Ok(Some(record)) if record.zone_id == zone.id => record,
-                    Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
-                    Err(error) => {
-                        return Err(ServiceError::internal_with_source(
-                            "failed to fetch record",
-                            error,
-                        ));
-                    }
-                };
+                let existing_record = bindizr_db::record::get_tx(&mut tx, record_id)
+                    .await
+                    .map_err(|error| {
+                        ServiceError::internal_with_source("failed to fetch record", error)
+                    })?
+                    .filter(|record| record.zone_id == zone.id)
+                    .ok_or_else(|| ServiceError::record_not_found(record_id))?;
 
                 // A record the caller may neither read nor update reads as
                 // 404, as it does on GET, so ids cannot be probed.

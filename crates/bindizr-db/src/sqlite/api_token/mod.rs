@@ -39,12 +39,12 @@ pub(crate) async fn create_tx(
 /// Get an API token by ID in the current transaction, share-locked.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: TokenId,
+    token_id: TokenId,
 ) -> Result<Option<ApiToken>, DatabaseError> {
     let token = sqlx::query_as::<_, ApiToken>(
         "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?",
     )
-    .bind(id)
+    .bind(token_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -101,7 +101,7 @@ pub(crate) async fn count_all(pool: &Pool<Sqlite>) -> Result<u64, DatabaseError>
 /// gives up at once rather than wait for it: nothing may block on a stamp.
 pub(crate) async fn update_last_used_at(
     pool: &Pool<Sqlite>,
-    id: TokenId,
+    token_id: TokenId,
     last_used_at: DateTime<Utc>,
 ) -> Result<bool, DatabaseError> {
     let mut stamp = StampConnection {
@@ -115,7 +115,7 @@ pub(crate) async fn update_last_used_at(
 
     let stamped = match sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
         .bind(last_used_at)
-        .bind(id)
+        .bind(token_id)
         .execute(&mut *stamp.connection)
         .await
     {
@@ -155,10 +155,10 @@ impl Drop for StampConnection {
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: TokenId,
+    token_id: TokenId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM api_tokens WHERE id = ?")
-        .bind(id)
+        .bind(token_id)
         .execute(&mut **tx)
         .await?;
 

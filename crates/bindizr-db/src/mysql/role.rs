@@ -30,13 +30,16 @@ pub(crate) async fn create_tx(
 }
 
 /// Get a role by ID.
-pub(crate) async fn get(pool: &Pool<MySql>, id: RoleId) -> Result<Option<Role>, DatabaseError> {
+pub(crate) async fn get(
+    pool: &Pool<MySql>,
+    role_id: RoleId,
+) -> Result<Option<Role>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let role = sqlx::query_as::<_, Role>(
         "SELECT id, name, description, created_at FROM roles WHERE id = ?",
     )
-    .bind(id)
+    .bind(role_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -64,10 +67,10 @@ pub(crate) async fn get_by_name(
 /// the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: RoleId,
+    role_id: RoleId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM roles WHERE id = ?")
-        .bind(id)
+        .bind(role_id)
         .execute(&mut **tx)
         .await?;
 

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rustls::{ServerConfig, version};
+use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -44,8 +45,6 @@ pub(crate) async fn run_tls_server(
     server_config: Arc<ServerConfig>,
     stop: impl Future<Output = ()>,
 ) -> Result<(), DnsError> {
-    use tokio::io::AsyncWriteExt as _;
-
     // The slot covers the handshake and every query on the session.
     let open = Arc::new(Semaphore::new(
         dns_cx.daemon().config().dns.tcp_max_connections,

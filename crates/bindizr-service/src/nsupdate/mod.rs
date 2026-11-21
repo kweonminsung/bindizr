@@ -27,12 +27,12 @@ use crate::{Context, dnssec, notify, transaction, zone};
 /// An UPDATE failure and its RFC 2136 response classification.
 #[derive(Debug, Error)]
 pub enum NsupdateError {
-    #[error("record type {0} is managed by the DNSSEC signer")]
-    ManagedType(Rtype),
-    #[error("unsupported record type: {0}")]
-    UnsupportedType(Rtype),
-    #[error("{0}")]
-    FormErr(String),
+    #[error("record type {rtype} is managed by the DNSSEC signer")]
+    ManagedType { rtype: Rtype },
+    #[error("unsupported record type: {rtype}")]
+    UnsupportedType { rtype: Rtype },
+    #[error("{message}")]
+    FormErr { message: String },
     #[error("{0}")]
     Shape(#[from] ValidateUpdateShapeError),
     #[error("{0}")]
@@ -50,20 +50,20 @@ pub enum NsupdateError {
         #[source]
         source: ParseNameError,
     },
-    #[error("{0}")]
-    YxDomain(String),
-    #[error("{0}")]
-    YxRrset(String),
-    #[error("{0}")]
-    NxDomain(String),
-    #[error("{0}")]
-    NxRrset(String),
-    #[error("{0}")]
-    NotAuth(String),
+    #[error("{message}")]
+    YxDomain { message: String },
+    #[error("{message}")]
+    YxRrset { message: String },
+    #[error("{message}")]
+    NxDomain { message: String },
+    #[error("{message}")]
+    NxRrset { message: String },
+    #[error("{message}")]
+    NotAuth { message: String },
     /// A policy refusal (RFC 2136, Section 3.3): an unsigned request where a
     /// signature is required.
-    #[error("{0}")]
-    Refused(String),
+    #[error("{message}")]
+    Refused { message: String },
     #[error("{0}")]
     Service(#[from] ServiceError),
 }
@@ -74,21 +74,22 @@ impl NsupdateError {
     pub fn rcode(&self) -> Result<Rcode, &ServiceError> {
         let rcode = match self {
             // RFC 2136, Section 3.4.1.2: an unrecognized type is a prescan failure.
-            Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) | Self::UnsupportedType(_) => {
-                Rcode::FORMERR
-            }
-            Self::RecordValue { .. } | Self::ManagedType(_) => Rcode::REFUSED,
+            Self::FormErr { .. }
+            | Self::Shape(_)
+            | Self::Parse(_)
+            | Self::UnsupportedType { .. } => Rcode::FORMERR,
+            Self::RecordValue { .. } | Self::ManagedType { .. } => Rcode::REFUSED,
             Self::Owner {
                 source: ParseNameError::OutsideZone,
                 ..
             } => Rcode::NOTZONE,
             Self::Owner { .. } => Rcode::REFUSED,
-            Self::YxDomain(_) => Rcode::YXDOMAIN,
-            Self::YxRrset(_) => Rcode::YXRRSET,
-            Self::NxDomain(_) => Rcode::NXDOMAIN,
-            Self::NxRrset(_) => Rcode::NXRRSET,
-            Self::NotAuth(_) => Rcode::NOTAUTH,
-            Self::Refused(_) => Rcode::REFUSED,
+            Self::YxDomain { .. } => Rcode::YXDOMAIN,
+            Self::YxRrset { .. } => Rcode::YXRRSET,
+            Self::NxDomain { .. } => Rcode::NXDOMAIN,
+            Self::NxRrset { .. } => Rcode::NXRRSET,
+            Self::NotAuth { .. } => Rcode::NOTAUTH,
+            Self::Refused { .. } => Rcode::REFUSED,
             Self::Service(error) => return Err(error),
         };
 
@@ -125,10 +126,12 @@ pub async fn apply(
     // Bindizr serves only IN zones; other classes lack authority even if
     // their ZNAME matches a stored zone (RFC 2136, Section 3.1.1).
     if update.zone_class != Class::IN {
-        return Err(NsupdateError::NotAuth(format!(
-            "zone '{}' in class {} is not served here",
-            update.zone_name, update.zone_class
-        )));
+        return Err(NsupdateError::NotAuth {
+            message: format!(
+                "zone '{}' in class {} is not served here",
+                update.zone_name, update.zone_class
+            ),
+        });
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
@@ -136,8 +139,8 @@ pub async fn apply(
     let apply_result: Result<_, NsupdateError> = async {
         let zone = zone::find_served_by_name_tx(&mut tx, &update.zone_name, LockLevel::Exclusive)
             .await?
-            .ok_or_else(|| {
-                NsupdateError::NotAuth(format!("zone '{}' is not served here", update.zone_name))
+            .ok_or_else(|| NsupdateError::NotAuth {
+                message: format!("zone '{}' is not served here", update.zone_name),
             })?;
 
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -145,9 +148,9 @@ pub async fn apply(
         // RFC 2136, Section 3 order: authority (NOTAUTH, above) precedes the policy
         // on unsigned requests, which is refused before anything is read.
         if caller.is_unsigned_dns() && cx.config().dns.nsupdate.tsig_required {
-            return Err(NsupdateError::Refused(
-                "unsigned NSUPDATE refused: no TSIG record present".to_string(),
-            ));
+            return Err(NsupdateError::Refused {
+                message: "unsigned NSUPDATE refused: no TSIG record present".to_string(),
+            });
         }
 
         // Prerequisites are decoded and evaluated in wire order (RFC 2136, Section 3.2.5);

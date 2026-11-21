@@ -94,7 +94,9 @@ pub async fn create(
             if !error.is_foreign_key_violation() {
                 error.into()
             } else if zone.is_some() {
-                ServiceError::ZoneNotFound("zone or role no longer exists".to_string())
+                ServiceError::ZoneNotFound {
+                    message: "zone or role no longer exists".to_string(),
+                }
             } else {
                 ServiceError::role_not_found(&role.name)
             }

@@ -2,6 +2,7 @@
 
 use std::iter;
 use std::ops::Range;
+use std::str::FromStr;
 
 use domain::base::iana::Rtype;
 use thiserror::Error;
@@ -116,8 +117,6 @@ fn append_entry(
     entry: Range<usize>,
     fields: &[Range<usize>],
 ) -> Result<(), RewriteNativeRecordsError> {
-    use std::str::FromStr;
-
     let original = &content[entry.clone()];
     let owner_fields = usize::from(!original.starts_with(char::is_whitespace));
     let is_directive = fields

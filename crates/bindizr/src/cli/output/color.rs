@@ -1,13 +1,12 @@
 //! Minimal ANSI coloring, honoring the NO_COLOR convention
 //! (<https://no-color.org>) and disabled when stdout is not a terminal.
 
+use std::io::IsTerminal;
 use std::sync::OnceLock;
 use std::{env, io};
 
 /// Return whether terminal output should use ANSI colors.
 fn is_enabled() -> bool {
-    use std::io::IsTerminal;
-
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         env::var_os("NO_COLOR").is_none_or(|value| value.is_empty()) && io::stdout().is_terminal()

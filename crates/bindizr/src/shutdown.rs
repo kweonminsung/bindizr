@@ -3,12 +3,13 @@
 use std::future::Future;
 
 use tokio::sync::watch;
+use tokio::sync::watch::Sender;
 
 /// A watch, not a broadcast, so a server that subscribes after the trigger
 /// still sees it.
 #[derive(Debug, Clone)]
 pub(crate) struct Shutdown {
-    stop_tx: watch::Sender<bool>,
+    stop_tx: Sender<bool>,
 }
 
 impl Default for Shutdown {

@@ -14,6 +14,7 @@ async fn refresh_catalog(cx: &Context) -> CatalogZone {
     let mut tx = transaction::begin_tx(cx, "failed to refresh the catalog")
         .await
         .unwrap();
+
     let refreshed = zone::refresh_catalog_tx(&mut tx, cx).await;
 
     transaction::finish_tx(tx, refreshed, "failed to refresh the catalog")

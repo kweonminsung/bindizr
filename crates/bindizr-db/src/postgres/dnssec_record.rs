@@ -96,14 +96,14 @@ pub(crate) async fn list_tx(
 /// allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Postgres>,
-    ids: &[DnssecRecordId],
+    record_ids: &[DnssecRecordId],
 ) -> Result<(), DatabaseError> {
-    if ids.is_empty() {
+    if record_ids.is_empty() {
         return Ok(());
     }
 
     sqlx::query("DELETE FROM dnssec_records WHERE id = ANY($1)")
-        .bind(ids)
+        .bind(record_ids)
         .execute(&mut **tx)
         .await?;
 

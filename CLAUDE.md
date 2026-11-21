@@ -13,10 +13,22 @@ calculation, type-owned operation, or test support. A narrowly scoped rule or
 explicit exception takes precedence over a general summary. Examples illustrate
 rules; existing names and implementations are not exemptions.
 
+Explicit user instructions take precedence over this file. Audit the rules
+themselves for contradictions and stale assumptions alongside the code. When
+they disagree, use the user's decisions, the operation's contract, and its
+implementation and call sites to decide which needs correction; a text match
+alone does not establish that the code is wrong.
+
 The [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) cover
 what this file does not. Checklist tags such as `C-GOOD-ERR` identify their rules.
 In an audit, distinguish a documented violation from a proposed convention or an
 optional wording improvement; inspect behavior and call sites before deciding.
+
+Record the audited revision and working-tree changes, cover the source inventory,
+and follow candidates through implementations, callers, and tests. Report confirmed
+violations, intentional exceptions, document ambiguities, and unverified boundaries
+separately. A passing scan or test suite does not verify an unexecuted database,
+transport, container setup, or CI run.
 
 Contents:
 
@@ -62,12 +74,15 @@ cargo +nightly fmt                                        # format
 ```
 
 - Tests run single-threaded: `.cargo/config.toml` sets `RUST_TEST_THREADS=1`.
-  The explicit CI flag provides the same guarantee.
+  The explicit CI flag provides the same guarantee within each test binary.
+  Run workspace test commands sequentially too: separate processes share the
+  daemon's Unix-socket paths, which neither setting serializes across commands.
 - Formatting requires nightly for `rustfmt.toml`'s `imports_granularity` and
   `group_imports`; stable ignores these unstable options.
 - E2E tests use temporary SQLite databases and local processes by default.
   `BINDIZR_E2E_VERIFY_DNS=true` enables DB/BIND9 Docker containers; also set
-  `BINDIZR_E2E_ARM=true` on ARM. Other crates' `--lib` tests need no external services.
+  `BINDIZR_E2E_ARM=true` on ARM. Other crates' `--lib` tests need no external services,
+  but network tests still need permission to bind local TCP, UDP, and Unix sockets.
 
 ### Benchmarks
 
@@ -76,8 +91,9 @@ build). `./benchmarks/benchmark.sh` is the entrypoint; benchmark keys are
 `b01_crud_tps` … `b09_resource_usage` (query performance is `b08_query_perf`).
 
 Every run writes to its own timestamped directory
-**`results_<YYYYmmdd_HHMMSS>/`** (e.g. `results_20260710_233856/`), created in
-[`benchmarks/lib/settings.py`](benchmarks/lib/settings.py). This is the single
+**`results_<YYYYmmdd_HHMMSS>/`** (e.g. `results_20260710_233856/`), selected by
+[`benchmarks/lib/settings.py`](benchmarks/lib/settings.py) and created by the
+reporting flow. This is the single
 canonical naming convention — never refer to a bare `results/` directory in
 code, docs, or messages. Set `BENCH_RESULTS_DIR` to reuse an existing directory
 when re-running a subset (`-b ...`) so the report is rebuilt from the full raw
@@ -173,9 +189,13 @@ code, including core and db, propagates errors to its caller.
   disabled passes `Caller::unauthenticated_api()`. Both have global access,
   but their change origins remain distinct.
   Service-internal lookups that must skip visibility are `pub(crate)` under
-  their own name (`zone::lookup_by_name`). The daemon socket
-  authenticates its peer by uid (`peer_cred` on both ends: the daemon's own
-  user or root); the socket directory's mode is a courtesy, not the boundary.
+  their own name (`zone::lookup_by_name`). The daemon socket admits a client
+  only when `peer_cred` identifies the daemon's own user or root; directory
+  permissions do not replace that check. The CLI also checks the daemon's uid.
+  A root CLI additionally trusts another user's daemon at the primary
+  `/run/bindizr` socket, relying on system control of `/run`. The `/tmp` fallback
+  always requires the CLI's own uid or root. Directory ownership and symlink checks protect
+  socket preparation separately from peer authentication.
   NOTIFY takes no caller. A transfer or an nsupdate authenticates its TSIG
   key into a `Caller` (`Caller::authenticate_tsig_key`), or takes
   `Caller::unsigned_dns()` where the address ACL or
@@ -183,10 +203,10 @@ code, including core and db, propagates errors to its caller.
   DNS plane passes the gates the API's writes do (`zone:transfer` through
   `authorize_zone_action`, the record actions through
   `authorize_record_access`).
-  So do operations with nothing to gate: pure request normalization
-  (`external_dns::adjust_records`), a token reading itself
-  (`token::get_self`, keyed by the authenticated `ApiToken`), and
-  the aggregate counts behind the unauthenticated metrics endpoint
+  No `Caller` is needed for operations with nothing to gate: pure request
+  normalization (`external_dns::adjust_records`), a token reading itself or its grants
+  (`token::get_self` and `role::grant::list_self`, keyed by the authenticated
+  `ApiToken`), and the aggregate counts behind the unauthenticated metrics endpoint
   (`count_all`), which expose no zone data.
 - **Transactions are the service's.** Service flows choose their lifetime
   through the database's transaction primitives; front ends do not open one.
@@ -201,10 +221,12 @@ code, including core and db, propagates errors to its caller.
   checks own local listener diagnostics; `secondary::check_enabled` owns the
   enabled secondaries' SOA, NOTIFY, and transfer-summary report. It remains
   distinct from the named-secondary check, which also accepts disabled targets.
-- **A body is the service's to read.** The front end parses only what
-  reaches it outside a body — a path or query parameter, a flag, the peer it
-  authenticates into a `Caller` — and hands a body over whole, as its
-  payload type: `role::grant::create(&cx, &caller, &role_name, &request)`, never
+- **A body is the service's to interpret.** The front end deserializes a body
+  into its payload type; semantic parsing, normalization, and validation of
+  its fields belong to the service. The front end parses path/query parameters
+  and flags and authenticates the peer into a `Caller`, then hands the body
+  over whole:
+  `role::grant::create(&cx, &caller, &role_name, &request)`, never
   the request's fields one by one, so both front ends pass the same value
   and neither parses for the other.
 
@@ -304,14 +326,17 @@ than returning anything.
   offers what the service allows without re-implementing grant matching.
   The e2e `responses_hide_records_outside_read_grants` sweeps every
   route as restricted roles; a new route that returns records joins it.
-- **A write-only grant learns what its write touches, never a value.** Write
+- **A write-only grant learns what its write touches, never an unread stored value.** Write
   and read stay independent, with the boundary SQL, S3, Route 53 and Vault
   draw: a write that takes its material from the stored row needs
   `record:read` (a partial update, as `SET c = c + 1` needs `SELECT`); a
   conflict within the grant's scope may say what it hit — a record exists,
   the TTL its set holds, how many a delete matched — since a role that may
-  overwrite a record holds more than knowing it is there; a value is never
-  returned without `record:read`. What a write touches is what its request
+  overwrite a record holds more than knowing it is there. Existing record values
+  require `record:read`; a response may show the caller's own proposed or written
+  content through `push_written`, including normalized input and visible defaults.
+  This does not permit copying an unread stored value into a response.
+  What a write touches is what its request
   named: a stored record behind an id, or met by a whole-zone check, is
   named only to a caller who may read it; others hear the constraint broken.
   The leak sweep marks names and values across each role shape a write
@@ -378,15 +403,20 @@ whose source address can be forged, is counted but not saved). `zone_journal` an
 
 Every log is read the same way: `GET /logs/<subject>`, `bindizr log
 <subject>`, and a paged `list` in its service module under `log:read`, an
-all-zones action. A log never stores what a request carried beyond what it
-named: no query string, body, token or secret.
+all-zones action. Keep the named target, verified actor, outcome, and explicitly
+selected non-secret change metadata, such as audited policy timings. Never store
+a raw query string or body, credential material, or record values.
+This applies to derived diagnostics too: copying a response's error message is
+not safe merely because the body itself was omitted. Keep a classified outcome
+or a diagnostic known to exclude input values; a length limit is not redaction.
 
 A log is append-only. `save_*` writes a row once the outcome is known and
 nothing updates it: the audit row inside its change's transaction, the
 transfer log on the pool, and the access log through a bounded queue to one
 writer task, so no request waits on its row; a full queue drops the row and
-counts it. A failure to save is logged and leaves the answer already given
-as it was.
+counts it. A failure to save an access or transfer log row is logged and leaves
+the answer already given as it was. An audit-log failure propagates and rolls
+back the management change; it is part of that change's transaction.
 
 Zone history has a `[history]` table and each log a `[<subject>_log]` one,
 named as its table is (`[access_log]` for `access_log`), so no log setting
@@ -439,9 +469,10 @@ One locking model covers the service layer; keep new code on it:
   takes a transaction plus the zone lock. Paginated listings run count and
   page as plain statements; drift between the two is accepted.
 - **Management writes** (tokens, TSIG keys, roles, grants, policies,
-  secondaries) are one statement in a transaction that re-authenticates the
-  caller: UNIQUE/FK constraints backstop their check-then-act races, read as
-  friendly conflicts where the service calls the statement. A delete whose
+  secondaries) run in a transaction that re-authenticates the caller and
+  commits the entity change together with its audit row. UNIQUE/FK constraints
+  backstop their check-then-act races, read as friendly conflicts where the
+  service calls the statement. A delete whose
   statement removed no row — its target went meanwhile — reports not found,
   as the zone delete's locked lookup does, and saves no audit row.
 - MySQL and PostgreSQL use READ COMMITTED with row locks and constraints.
@@ -461,6 +492,15 @@ One locking model covers the service layer; keep new code on it:
   (or SQLite writer reservation); a read-only path runs it outside and accepts drift. The duplicate
   pre-check above is an integrity check the constraint backstops, not a
   concurrency guard.
+
+### Pagination
+
+Listing services validate an explicit page limit before querying. An omitted
+limit remains unbounded; HTTP supplies its default of 50, while the daemon
+socket supplies none. An explicit limit is 1 through 1000. Collection paging and
+response metadata only apply the validated window; they do not validate input or
+choose another default. A documented use-case default is resolved by that
+service entry point.
 
 ### Mutation lifecycle
 
@@ -488,9 +528,12 @@ success. Management operations re-authenticate before locking their own rows, as
   transaction, then validates their final state before signing and versioning;
   a rejected sequence rolls back in full.
 - A dry run performs the same input, authorization and state validation as apply,
-  then returns before writes or signing. It leaves no rows, serials, versions,
-  successful-write metrics or NOTIFY behind. SQL constraints still backstop actual
-  writes; a preview cannot promise that a later request or commit will succeed.
+  then returns before changing managed data or signing. It leaves entity rows,
+  serials, journal, versions, signing state and change audit rows unchanged, with
+  no successful-write metrics or NOTIFY. Authentication may stamp credential use,
+  and access logs and request/failure metrics may record that the request occurred.
+  SQL constraints still backstop actual writes; a preview cannot promise that a
+  later request or commit will succeed.
 - Imports resolve text using the locked zone's TTL, or configured creation defaults
   for a missing zone. Parse once; AXFR passes records without rendering a master
   file. Plan and validate missing-zone imports before inserting the zone.
@@ -525,13 +568,6 @@ Encoding failures remain typed outcomes until the handler
 chooses its fallback response. UPDATE metrics describe request processing and
 the committed mutation outcome: a failed response write cannot undo a commit.
 Its TSIG error fallback is selected before that processing outcome is counted.
-
-Listing services validate an explicit page limit before querying. An omitted
-limit remains unbounded; HTTP supplies its default of 50, while the daemon
-socket supplies none. An explicit limit is 1 through 1000. Collection paging and
-response metadata only apply the validated window; they do not validate input or
-choose another default. A documented use-case default is resolved by that
-service entry point.
 
 ### Names and record values
 
@@ -640,12 +676,15 @@ defines flag meanings; DNS record validation does not restrict them to a list.
 
 ### RFC behavior and explicit exceptions
 
-Except for the explicit deviations below, the DNS plane implements the RFCs it
-cites (1034/1035, 1982, 1995, 1996,
+For the authoritative DNS operations Bindizr supports, follow the applicable
+requirements of the RFCs cited here (1034/1035, 1982, 1995, 1996,
 2136, 2181, 3225, 4034/4035, 5155, 5936, 6672, 6891, 7766, 8767, 8945, 9103, 9432, 9619), and a
 requirement one states is met as written: a MUST is implemented, a SHOULD
 is followed unless the reason not to stands in a comment beside the code,
-and a MAY is a design choice recorded here or in the docs. Interoperability
+and a MAY is a design choice recorded here or in the docs. This concerns the
+implemented protocol roles, not every role or optional feature in those RFCs.
+An RFC citation alone does not establish conformance; an audit names the paths,
+requirements, and verification it actually covered. Interoperability
 with a named server never loosens a MUST by default; where a server needs
 one relaxed, that is an operator option documented with the section and the
 server. The access-control model and the clean-install policy shape *how* a
@@ -960,7 +999,9 @@ Combining independent inputs or classifying an outcome is assembly; ownership,
 not argument count, decides whether it is a constructor or free function.
 
 Prefixes express cost (`C-CONV`): `as_` returns a borrowed view or allocation-free
-`Copy` scalar, `to_` does work and returns an owned value, `into_` consumes `self`.
+`Copy` scalar, `to_` does representation work, and `into_` consumes `self`.
+A `to_` result may be owned or borrowed; validation such as `Path::to_str` still
+does work without allocating. The prefix describes the actual conversion.
 
 ### Typed inputs
 
@@ -1013,12 +1054,16 @@ Control enums without those forms need neither text conversion nor `Display`.
 
 ### Errors
 
-Production fallible functions return `Result` with a module-owned `thiserror`
-type implementing `std::error::Error + Send + Sync`, preserving `source()`
+Production fallible functions return `Result` with a module-owned error type
+implementing `std::error::Error + Send + Sync`, preserving `source()`
 (`C-GOOD-ERR`). Foreign trait implementations use the error fixed by that trait.
 A helper doing only standard I/O with no failure classification of its own may
 return `io::Result`; choosing a kind or writing a message requires its own error
 variant, not `io::Error::new`.
+
+Use `thiserror` for error definitions. A wrapper sharing a typed cause may
+implement `Display` and `Error` directly when `source()` must expose the original
+error rather than its ownership wrapper; test that source identity and chain.
 
 - Preserve typed causes between operations. No `Result<T, String>`, `type Err = String`,
   failure-carrying `Option<String>`, or `From<String>` / `From<&str>` on
@@ -1383,13 +1428,17 @@ not `req`, `res`, `resp`, `msg`, `cfg`, `conn`, `buf`, `e`, or `err`.
 When several values coexist, qualify their roles (`parse_error`, `rollback_error`,
 `request_bytes`, `response_message`) rather than numbering them. `source` remains
 appropriate for a cause being attached to an error. A loop or closure over records
-uses `record`; one over changes uses `change`. Short conventional indices (`i`,
-`j`) and protocol names (`id`, `ip`, `ttl`, `rcode`, `rdata`) are meaningful.
+uses `record`; one over changes uses `change`. An `enumerate()` index is
+`index`; other short conventional indices (`i`, `j`) and protocol names
+(`id`, `ip`, `ttl`, `rcode`, `rdata`) are meaningful.
 The state names `cx`, `dns_cx`, `socket_cx`, and `task_cx` keep their explicit
 contracts. SQL aliases and serialized fields retain their own spelling.
 Clippy's `disallowed-names` configuration rejects the abbreviated bindings above.
 Python benchmarks use `config` and `context`; a latency accumulator is `recorder`,
 one DNS item is `record`, and a sampled resource report is `resource_usage`.
+Zone-name strings are `zone_name` and textual record types are `record_type`
+there too. Keep input and normalized forms distinct when both are used
+(`zone_name`, `fqdn_zone_name`); external JSON/config keys retain their spelling.
 Qualify simultaneous accumulators and their summaries (`create_recorder`,
 `read_recorder`, `create_summary`, `read_summary`), rather than abbreviating them
 as `cs` / `rs`. Elapsed-time measurements use descriptive bindings such as
@@ -1406,18 +1455,22 @@ A value's type decides its name wherever it is bound:
 | Value | Name |
 | --- | --- |
 | `ZoneName` or a zone-name string | `zone_name` (`other_zone_name`, `catalog_zone_name`); `zone` is a `Zone` row, or the zone JSON in e2e tests |
-| `ZoneId`, `RecordId`, … | `zone_id`, `record_id` |
+| `ZoneId`, `RecordId`, … | `zone_id`, `record_id`; `token_id`, `role_id`, `grant_id`, `secondary_id`, `tsig_key_id`, `key_id`, `policy_id`; collections pluralize the name (`record_ids`) |
 | `RecordType` | `record_type`; a wire `Rtype` is `rtype`, a question's `qtype` |
 | `TsigKey` | `tsig_key` / `tsig_keys` / `tsig_key_id`; `key` is a DNSSEC key or a signing key |
 | `SocketAddr` | `addr` / `addrs` (`server_addr` as a client parameter); `address` is an `AddressTarget` or `host[:port]` text; a datagram's sender is `peer` |
 | Request bytes / parsed request / reply bytes on the DNS plane | `query_data` / `query` / `response`; a receive buffer is `buffer` |
 | A service answer in a front-end handler | `response`; `status` is the HTTP `StatusCode` |
-| A fetched db value | its entity (`token`, `logs`), not `row` / `rows` |
+| A fetched entity or entity collection | its entity (`token`, `logs`), not `row` / `rows`; raw SQL rows and presentation rows keep their own roles |
 | A conversion's input | `value` from a primitive or text, the domain name otherwise (`fn from(zone: &Zone)`) |
 | A `#[source]` field | `source` |
 | `OwnerName` | `owner` / `owners` (bindizr-db keeps `name`, as its grammar spells) |
 | `IpAddr` | `ip` |
 | A `CatalogZone` | `catalog_zone`; its name `catalog_zone_name` |
+
+The same ID names apply in DB facades/backends, test fixtures, and CLI/socket
+pattern bindings. A stored or serialized `id` field stays `id`; bind it as
+`id: record_id` when matching a command. DNS message and task IDs remain `id`.
 
 DNS handlers order their parameters state, transport handle, peer, parsed
 `query`, raw `query_data`, then the rest; `query` and `query_data` stay
@@ -1520,11 +1573,14 @@ grep -rnoE "\b[A-Za-z0-9_]*[Rr]r(set|s)?\b" crates --include='*.rs' \
 
 ### Presentation
 
-An enum with a stored, wire, or textual representation has two spellings and no more.
-The storage and API form uses `as_str() -> &str` when it can borrow its text, or
+An enum's canonical text uses `as_str() -> &str` when it can borrow its text, or
 `to_text() -> String` when variant data must be formatted.
-Serde produces the same form; each such enum's `spells_itself_once` test holds
-them together. Rows and metric labels use that form. `Display` is the presentation
+Serde string values, textual row values, and metric labels for that same
+representation agree; each such enum's `spells_itself_once` test holds them
+together. Numeric storage and protocol codes retain their own typed mappings:
+`DnssecAlgorithm` is an IANA number in DNS and its database column, and text in
+the management API. Test the relevant mappings without changing a boundary's
+contract merely to make the representations identical. `Display` is the presentation
 form, the one a person reads in a table cell or a message, and every front end
 writes the value with `{}` rather than spelling a variant itself. The two coincide
 unless the presentation is a DNS mnemonic
@@ -1615,8 +1671,10 @@ Call a function from another module through that module (`history::prune_by_zone
 importing the module rather than its individual functions, and retain a longer
 path when short module names collide.
 
-Every path starts at the crate (`crate::…`) or at a dependency; `super::` is not
-used, not even for a parent's facade or its items. A module inside `zone` imports
+Imports from outside the current module start at the crate (`crate::…`) or
+at a dependency; re-exports of the module's own children use the child name
+(`pub use create::create`). `super::` is not used, not even for a parent's
+facade or its items. A module inside `zone` imports
 `use crate::zone;` and calls `zone::lookup_by_name`, exactly as a caller outside
 does, so one function has one spelling wherever it is called. A local of the
 module's name (`let zone = …`) does not change that: a value and a module live
@@ -1630,10 +1688,10 @@ so is a helper another module's `tests` exports.
 Functions defined or re-exported by the current module are its local API.
 
 Use explicit imports and re-exports in production; do not introduce project
-preludes. Tests may use `super::*` for the module under test, including its
-fixtures. A trait needed only for method resolution inside one function is
-imported inside that function. Keep it at module scope when several functions
-need it, or when an impl, bound, derive, or signature refers to it there.
+preludes. Place every production `use` at the top of its module, including
+traits needed only for method resolution inside one function. Tests may use
+function-local imports and `super::*` for the module under test, including its
+fixtures.
 
 A type or trait is named through its import wherever it is used, not by a path
 spelled in place (`Duration`, `FromStr`, `UdpSocket`, never
@@ -1659,7 +1717,9 @@ Where two spellings mean the same thing, the workspace writes one:
   `"{zone_name:?}"`); a positional `{}` takes an expression (`"{}", zone.name`).
 - Inside an `impl`, the type is `Self`: its variants, constructors, and
   associated items (`Self::Axfr`, `Self { .. }`), not its own name.
-- A method of a `Copy` type takes `self` by value (`fn as_str(self)`).
+- An inherent value method of a `Copy` type takes `self` by value
+  (`fn as_str(self)`). Trait implementations keep the trait's required
+  receiver, and methods that mutate the value keep `&mut self`.
 - A string literal becomes a `String` through `.to_string()`. `.into()` is for
   another target type; `String::from` and `.to_owned()` are not used for it.
 - An empty collection is `Vec::new()` (`HashMap::new()`, `String::new()`), not
@@ -1672,16 +1732,19 @@ Where two spellings mean the same thing, the workspace writes one:
 - A number of six or more digits groups them by thousands (`500_000`); a
   shorter one does not (`86400`), and a date-form serial stays whole
   (`2026072501`).
-- `const` and `use` items inside a function open its body.
+- A function-local `const` opens its body. In tests, a function-local `use`
+  also opens its body.
 - A `collect()` that ends a `let` takes its type from the binding
   (`let names: Vec<_> = …collect();`); `parse` and sqlx `query_as` /
   `query_scalar` take the turbofish.
 - A `Display` value is passed as itself (`&zone.name`, `{zone_name}`), not
   through `.as_str()`.
-- A `PartialEq` value is compared with `==` and asserted with `assert_eq!`;
-  `matches!` is for types without `PartialEq` and patterns with bindings.
-- An `Option` match lists `Some` first; a single-expression or single-`return`
-  arm is unbraced.
+- Equality of complete `PartialEq` values uses `==` and `assert_eq!`.
+  `matches!` tests structural, range, or alternative patterns, including
+  wildcards and bindings, or handles types without `PartialEq`.
+- An `Option` match lists `Some` first. Write a single-expression or
+  single-`return` arm without manual braces; keep the braces rustfmt adds for
+  multiline expressions.
 - A lossless conversion uses `From` (`char::from(byte)`); a checked narrowing
   uses `try_from`, not a bound check followed by `as`.
 - A zeroed buffer is `[0; N]`; a suffixed literal is `0u64`.
@@ -1691,12 +1754,11 @@ Where two spellings mean the same thing, the workspace writes one:
   call fails one way: the file's `unwrap()` or its `expect("…")`.
 - Every e2e test carries `#[serial_test::serial(bindizr_e2e)]`.
 - A function's first doc line starts with an imperative verb ("List …",
-  "Return …"); a predicate's with "Return whether …", an `as_str` with
-  "Return the canonical wire spelling.", a `track_*` with "Count …", an
+  "Return …"); a predicate's with "Return whether …", an `as_str` describes
+  its canonical text representation without confusing it with numeric DNS wire
+  codes, a `track_*` with "Count …", an
   unchecked `lookup_*` with "Look up …". Payload and route docs are OpenAPI
   text and keep their own wording.
-- A format string captures every bare identifier inline, also beside
-  positional expressions.
 - A transaction's `async` block types its error on the binding
   (`let apply_result: Result<_, ServiceError> = async {`), with one blank line
   after `begin_tx` and one before `finish_tx`.
@@ -1707,15 +1769,12 @@ Where two spellings mean the same thing, the workspace writes one:
 - A multi-line macro call (`format!`, log macros, `writeln!`, `assert!`,
   `assert_eq!`, `matches!`) ends without a trailing comma; bindizr-db's SQL
   `format!` builders keep theirs.
-- An `enumerate()` index is `index`.
+- An `enumerate()` index is `index`, also in Python's `enumerate`.
 - A hand-written impl of a `sqlx`, `serde` or `utoipa` trait names the trait
   by its crate path (`impl sqlx::Type<Sqlite> for`), since `Type` would collide
   with `utoipa::openapi::schema::Type`.
 - Channel halves are named for their role or qualified (`jobs`, `stop_tx`),
   never a bare `tx` / `rx`: `tx` is a `Transaction`.
-- A function-local `use` imports a trait that one function needs only for
-  method calls, and it opens the function's body; a type, module, or a trait
-  named as a path (`CanonicalOrd::canonical_cmp`) is imported at module scope.
 
 The `uninlined_format_args`, `use_self`, `map_unwrap_or`, and
 `semicolon_if_nothing_returned` Clippy lints hold the mechanical part.
@@ -1762,6 +1821,8 @@ cross-crate `pub` facade. Remove a dead DB root function and all three backends 
 ### Test names
 
 Name tests `<subject>_<expected_behavior>[_when_<condition>]` in snake_case.
+This is the Rust test convention; Python `unittest` keeps its required `test_`
+prefix, followed by the same meaningful subject and expected behavior.
 The subject is the operation or contract under test; the rest states an
 observable result (`accepts`, `rejects`, `preserves`, `returns`, or another
 precise verb). Include conditions that distinguish cases, such as transport,
@@ -1830,17 +1891,24 @@ by hand**. The source of truth is the `#[utoipa::path]` annotations listed in
 `crates/bindizr/src/api/openapi.rs` and the payload types they name. To change the
 spec, change the annotations, then regenerate the file from a bindizr serving
 the document (`api.openapi_enabled = true`, off by default since it describes
-the whole API surface):
+the whole API surface). Use an explicitly selected running instance, or start
+one with a temporary configuration and database after checking the shared Unix
+socket is free. Wait for readiness with a bounded deadline. Set `api_port` to
+that instance's port, then fetch to a temporary file:
 
 ```sh
-bindizr start -c <config> &   # config with api.openapi_enabled = true
-curl -s http://127.0.0.1:<api_port>/openapi.yaml > docs/openapi.yaml
-bindizr stop
+openapi_tmp=$(mktemp)
+curl --fail --silent --show-error \
+  "http://127.0.0.1:${api_port}/openapi.yaml" --output "$openapi_tmp"
 ```
 
-Stop it with `bindizr stop` and check that no `bindizr start` process is
-left before running the e2e suite: a leftover daemon holds the shared Unix
-socket and every test fails with "Bindizr is already running".
+Parse the downloaded YAML and check its OpenAPI structure and expected paths
+and schemas before replacing `docs/openapi.yaml`; a failed fetch or validation
+leaves the existing artifact intact. Remove the temporary file when done.
+Stop and wait for an instance this task
+started, using its owned process handle. Leave a pre-existing instance under
+its owner's control. Run E2E only after the shared Unix socket is free; a daemon
+left serving there makes tests fail with "Bindizr is already running".
 
 Pages CI rebuilds the hosted API docs when `docs/openapi.yaml` changes on
 `main`.
@@ -1883,8 +1951,13 @@ one as `../bindizr-ui`. It tracks this repository through two copies: its
 git-ignored `openapi.yaml`, a copy of `docs/openapi.yaml` that
 `ui/src/lib/api.ts` and `ui/src/lib/types.ts` must match, and the grant
 picker's `ACTION_DESCRIPTIONS` in `types.ts`. A change here that touches
-either — a route, a payload, an action's meaning — is finished by a pull
-request there, after copying the regenerated spec over. The two repositories
+either — a route, a payload, an action's meaning — includes checking whether the
+UI consumes the affected contract and identifying any required synchronization.
+When the UI is affected and that repository is in scope, copy the regenerated
+spec and update its consumers. Otherwise report the remaining UI work and its
+validation boundary. Cross-repository edits and publication follow the user's
+requested scope and the [Git](#git) rules; a reference here is not authorization
+to commit, push, or open a pull request. The two repositories
 release independently; enabling the chart's optional UI requires setting
 `bindizrUi.image.tag` to a compatible image the UI repository has already
 pushed.

@@ -200,16 +200,10 @@ pub async fn get(
     caller: &Caller,
     record_id: RecordId,
 ) -> Result<RecordResponse, ServiceError> {
-    let record = match bindizr_db::record::get_with_zone(cx.db(), record_id).await {
-        Ok(Some(record)) => record,
-        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-        Err(error) => {
-            return Err(ServiceError::internal_with_source(
-                "failed to fetch record",
-                error,
-            ));
-        }
-    };
+    let record = bindizr_db::record::get_with_zone(cx.db(), record_id)
+        .await
+        .map_err(|error| ServiceError::internal_with_source("failed to fetch record", error))?
+        .ok_or_else(|| ServiceError::record_not_found(record_id))?;
 
     if !caller.sees_record(
         record.record.zone_id,

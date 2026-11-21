@@ -7,6 +7,7 @@ mod server;
 mod upstream;
 mod wire;
 
+use std::future::IntoFuture;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{io, process};
@@ -14,10 +15,12 @@ use std::{io, process};
 use bindizr_core::config::{LogFormat, LoggingConfig};
 use bindizr_core::errln;
 use bindizr_core::logger::Logger;
+use clap::Parser;
 use tokio::net::TcpListener;
 use tokio::signal::unix;
 use tokio::signal::unix::SignalKind;
 use tokio::sync::watch;
+use tokio::sync::watch::Receiver;
 use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tokio::{signal, time};
 
@@ -45,10 +48,6 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<io::Result<
 
 /// Parse arguments, start both listeners, and serve until interrupted.
 pub async fn execute() {
-    use std::future::IntoFuture;
-
-    use clap::Parser;
-
     let cli = Cli::parse();
     let adapter_config = AdapterConfig::load(cli).unwrap_or_else(|error| {
         errln!("Error: {error}");
@@ -158,7 +157,7 @@ pub async fn execute() {
 }
 
 /// Resolve once the adapter is asked to stop.
-async fn wait_for_stop(mut stop: watch::Receiver<bool>) {
+async fn wait_for_stop(mut stop: Receiver<bool>) {
     while !*stop.borrow_and_update() {
         if stop.changed().await.is_err() {
             break;

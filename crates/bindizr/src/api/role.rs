@@ -81,8 +81,8 @@ pub(crate) async fn create_role(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRoleRequest>,
 ) -> Result<Response, ApiError> {
-    let role = role::create(&cx, &caller, &body).await?;
-    let response = SingleRoleResponse { role };
+    let response = role::create(&cx, &caller, &body).await?;
+    let response = SingleRoleResponse { role: response };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -109,8 +109,8 @@ pub(crate) async fn get_role(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let role = role::get(&cx, &caller, &params.name).await?;
-    let response = SingleRoleResponse { role };
+    let response = role::get(&cx, &caller, &params.name).await?;
+    let response = SingleRoleResponse { role: response };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -201,8 +201,10 @@ pub(crate) async fn create_role_grant(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<CreateRoleGrantRequest>,
 ) -> Result<Response, ApiError> {
-    let role_grant = grant::create(&cx, &caller, &params.name, &body).await?;
-    let response = SingleRoleGrantResponse { role_grant };
+    let response = grant::create(&cx, &caller, &params.name, &body).await?;
+    let response = SingleRoleGrantResponse {
+        role_grant: response,
+    };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 

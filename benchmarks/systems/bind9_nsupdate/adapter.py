@@ -53,10 +53,10 @@ class Bind9NsupdateAdapter(NsupdateAdapter):
         """Stop the benchmark system and release its resources."""
         self.compose.down()
 
-    async def create_zone(self, zone: str) -> None:
+    async def create_zone(self, zone_name: str) -> None:
         """Create the zone used by the benchmark."""
         return  # primary zone already exists
 
-    async def delete_zone(self, zone: str) -> None:
+    async def delete_zone(self, zone_name: str) -> None:
         """Remove the benchmark zone and its records."""
         return

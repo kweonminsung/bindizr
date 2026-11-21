@@ -118,7 +118,7 @@ def _aggregate(rows: list[dict]) -> list[dict]:
     return aggregated
 
 
-def _display_metric(row: dict, key: str, prec: int = 1, default: Any = "-") -> str:
+def _display_metric(row: dict, key: str, precision: int = 1, default: Any = "-") -> str:
     """Render a metric as `mean ± std` (std omitted when 0 / single run)."""
     mean = row.get(key)
 
@@ -128,9 +128,9 @@ def _display_metric(row: dict, key: str, prec: int = 1, default: Any = "-") -> s
     std = row.get(f"{key}_std", 0) or 0
 
     if std:
-        return f"{mean:.{prec}f} ± {std:.{prec}f}"
+        return f"{mean:.{precision}f} ± {std:.{precision}f}"
 
-    return f"{mean:.{prec}f}"
+    return f"{mean:.{precision}f}"
 
 
 def _render_bulk_linearity_note(rows: list[dict]) -> str:

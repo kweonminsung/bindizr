@@ -15,10 +15,10 @@ pub(crate) async fn create_role(
     cx: &Context,
     request: &CreateRoleRequest,
 ) -> Result<DaemonResponse<SingleRoleResponse>, ServiceError> {
-    let role = role::create(cx, &Caller::socket(), request).await?;
+    let response = role::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "Role created successfully".to_string(),
-        data: SingleRoleResponse { role },
+        data: SingleRoleResponse { role: response },
     })
 }
 
@@ -39,10 +39,10 @@ pub(crate) async fn get_role(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<SingleRoleResponse>, ServiceError> {
-    let role = role::get(cx, &Caller::socket(), name).await?;
+    let response = role::get(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "Role retrieved successfully".to_string(),
-        data: SingleRoleResponse { role },
+        data: SingleRoleResponse { role: response },
     })
 }
 
@@ -65,10 +65,12 @@ pub(crate) async fn create_role_grant(
     role_name: &str,
     request: &CreateRoleGrantRequest,
 ) -> Result<DaemonResponse<SingleRoleGrantResponse>, ServiceError> {
-    let role_grant = grant::create(cx, &Caller::socket(), role_name, request).await?;
+    let response = grant::create(cx, &Caller::socket(), role_name, request).await?;
     Ok(DaemonResponse {
         message: "Role grant created successfully".to_string(),
-        data: SingleRoleGrantResponse { role_grant },
+        data: SingleRoleGrantResponse {
+            role_grant: response,
+        },
     })
 }
 
@@ -89,9 +91,9 @@ pub(crate) async fn list_role_grants(
 pub(crate) async fn delete_role_grant(
     cx: &Context,
     role_name: &str,
-    id: RoleGrantId,
+    grant_id: RoleGrantId,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    let response = grant::revoke(cx, &Caller::socket(), role_name, id).await?;
+    let response = grant::revoke(cx, &Caller::socket(), role_name, grant_id).await?;
 
     Ok(DaemonResponse {
         message: response.message.clone(),

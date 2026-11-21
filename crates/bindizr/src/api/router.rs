@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::DefaultBodyLimit;
+use axum::handler::Handler as _;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json, Router, middleware, routing};
@@ -21,8 +22,6 @@ use crate::api::{
 /// Build the full axum router with auth, CORS, and the optional route groups,
 /// every handler reading the daemon's state through `State`.
 pub(crate) fn routes(cx: Arc<Context>) -> Router {
-    use axum::handler::Handler as _;
-
     let config = cx.config();
     let api_config = &config.api;
 
@@ -139,16 +138,16 @@ async fn handle_home() -> Response {
 
 /// Return the API error for an unsupported HTTP method.
 async fn handle_method_not_allowed() -> Response {
-    ApiError(ServiceError::MethodNotAllowed(
-        "this path does not take that method".to_string(),
-    ))
+    ApiError(ServiceError::MethodNotAllowed {
+        message: "this path does not take that method".to_string(),
+    })
     .into_response()
 }
 
 /// Return the API error for an unknown route.
 async fn handle_not_found() -> Response {
-    ApiError(ServiceError::EndpointNotFound(
-        "no route matches this path".to_string(),
-    ))
+    ApiError(ServiceError::EndpointNotFound {
+        message: "no route matches this path".to_string(),
+    })
     .into_response()
 }

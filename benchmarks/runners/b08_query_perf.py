@@ -15,28 +15,28 @@ from lib import dnsquery, dig  # noqa: E402
 
 async def run(adapter, config, context) -> dict:
     """Measure DNS query throughput and latency for the benchmark system."""
-    zone = context["zone"]
+    zone_name = context["zone"]
     query_config = config["query"]
     size = query_config["zone_size"]
 
-    await adapter.create_zone(zone)
+    await adapter.create_zone(zone_name)
 
     # Use only A records so every queried name has an answer of a known type.
-    records = [record for record in generate(size * 2, config["seed"], zone)
+    records = [record for record in generate(size * 2, config["seed"], zone_name)
                if record["type"] == "A"][:size]
 
-    await adapter.import_records(zone, records)
+    await adapter.import_records(zone_name, records)
     if adapter.bulk_errors:
         raise RuntimeError(f"preparing the query zone failed for {adapter.bulk_errors} records")
 
-    names = [f'{record["name"]}.{zone.rstrip(".")}' for record in records]
+    names = [f'{record["name"]}.{zone_name.rstrip(".")}' for record in records]
     endpoint = adapter.dns_endpoint()
 
     # Exclude propagation wait from the query workload's warmup and measurements.
     propagation_config = config["propagation"]
 
     missing = await dig.first_unqueryable(
-        records, zone, endpoint.host, endpoint.port,
+        records, zone_name, endpoint.host, endpoint.port,
         propagation_config["poll_interval_ms"], propagation_config["timeout_secs"])
 
     if missing is not None:

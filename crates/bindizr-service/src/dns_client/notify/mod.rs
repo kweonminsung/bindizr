@@ -17,6 +17,7 @@ use bindizr_core::dns::{message, query, tsig};
 use thiserror::Error;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::oneshot::{Receiver, Sender};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::time;
 use tokio::time::Instant;
@@ -95,7 +96,7 @@ struct PendingNotify {
     waiting: bool,
     sent: bool,
     qname: WireName,
-    reply: oneshot::Sender<Result<(), SendNotifyError>>,
+    reply: Sender<Result<(), SendNotifyError>>,
 }
 
 impl NotifyClient {
@@ -188,7 +189,7 @@ impl NotifyClient {
 #[derive(Debug)]
 pub(crate) struct NotifyHandle {
     target: Arc<TargetSocket>,
-    response: oneshot::Receiver<Result<(), SendNotifyError>>,
+    response: Receiver<Result<(), SendNotifyError>>,
 }
 
 impl NotifyHandle {

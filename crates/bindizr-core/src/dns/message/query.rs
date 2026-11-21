@@ -2,7 +2,6 @@
 
 use std::time::Duration;
 
-use domain::base::Message;
 pub use domain::base::iana::exterr::ExtendedErrorCode;
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
@@ -10,6 +9,7 @@ use domain::base::opt::exterr::ExtendedError;
 use domain::base::opt::keepalive::{IdleTimeout, TcpKeepalive};
 use domain::base::opt::{Opt, OptRecord};
 use domain::base::wire::Composer;
+use domain::base::{Message, ToName};
 use domain::rdata::Soa;
 use thiserror::Error;
 
@@ -250,8 +250,6 @@ pub struct ParsedQuery {
 impl ParsedQuery {
     /// Parse a DNS question and its optional IXFR serial.
     pub fn parse(query_data: &[u8], keepalive: Keepalive) -> Result<Self, ParseQueryError> {
-        use domain::base::ToName;
-
         let message = Message::from_octets(query_data)
             .map_err(|error| ParseQueryError::Malformed(Box::new(error)))?;
 

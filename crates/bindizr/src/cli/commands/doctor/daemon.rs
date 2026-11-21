@@ -10,6 +10,7 @@ use bindizr_core::config::Config;
 use bindizr_core::dns::{Serial, address};
 use bindizr_service::types::SecondaryStatus;
 use thiserror::Error;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time;
 
@@ -91,8 +92,6 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
 /// Send a minimal HTTP GET and return the status line; a plain-HTTP API needs
 /// no full HTTP client dependency here.
 async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiError> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
     let exchange = async {
         let mut stream = TcpStream::connect(addr).await?;
 

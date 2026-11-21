@@ -73,14 +73,14 @@ pub(crate) async fn create_many_tx(
 /// Get a record by ID.
 pub(crate) async fn get(
     pool: &Pool<Postgres>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let record = sqlx::query_as::<_, Record>(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1",
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -90,7 +90,7 @@ pub(crate) async fn get(
 /// Get a record with its zone metadata.
 pub(crate) async fn get_with_zone(
     pool: &Pool<Postgres>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<RecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -103,7 +103,7 @@ pub(crate) async fn get_with_zone(
         WHERE r.id = $1
         "#,
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -113,12 +113,12 @@ pub(crate) async fn get_with_zone(
 /// Get a record by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
     let record = sqlx::query_as::<_, Record>(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1 FOR UPDATE",
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -475,14 +475,14 @@ pub(crate) async fn update_tx(
 /// Delete many records in as few statements as the backend's bind limit allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Postgres>,
-    ids: &[RecordId],
+    record_ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
-    if ids.is_empty() {
+    if record_ids.is_empty() {
         return Ok(());
     }
 
     sqlx::query("DELETE FROM records WHERE id = ANY($1)")
-        .bind(ids)
+        .bind(record_ids)
         .execute(&mut **tx)
         .await?;
 

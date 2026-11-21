@@ -37,14 +37,14 @@ pub(crate) async fn create_tx(
 /// Get a TSIG key by ID.
 pub(crate) async fn get(
     pool: &Pool<Sqlite>,
-    id: TsigKeyId,
+    tsig_key_id: TsigKeyId,
 ) -> Result<Option<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let tsig_key = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = ?",
     )
-    .bind(id)
+    .bind(tsig_key_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -54,13 +54,13 @@ pub(crate) async fn get(
 /// Get a TSIG key by ID in the current transaction, locked at `lock_level`.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: TsigKeyId,
+    tsig_key_id: TsigKeyId,
     _lock_level: LockLevel,
 ) -> Result<Option<TsigKey>, DatabaseError> {
     let tsig_key = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = ?",
     )
-    .bind(id)
+    .bind(tsig_key_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -88,10 +88,10 @@ pub(crate) async fn get_by_name(
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: TsigKeyId,
+    tsig_key_id: TsigKeyId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM tsig_keys WHERE id = ?")
-        .bind(id)
+        .bind(tsig_key_id)
         .execute(&mut **tx)
         .await?;
 

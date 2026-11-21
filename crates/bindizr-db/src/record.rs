@@ -48,20 +48,23 @@ pub async fn create_many_tx(
 }
 
 /// Get a record by ID.
-pub async fn get(db: &Db, id: RecordId) -> Result<Option<Record>, DatabaseError> {
+pub async fn get(db: &Db, record_id: RecordId) -> Result<Option<Record>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::record::get(pool, id).await,
-        Backend::Postgres(pool) => postgres::record::get(pool, id).await,
-        Backend::Sqlite(pool) => sqlite::record::get(pool, id).await,
+        Backend::MySql(pool) => mysql::record::get(pool, record_id).await,
+        Backend::Postgres(pool) => postgres::record::get(pool, record_id).await,
+        Backend::Sqlite(pool) => sqlite::record::get(pool, record_id).await,
     }
 }
 
 /// Get a record with its zone metadata.
-pub async fn get_with_zone(db: &Db, id: RecordId) -> Result<Option<RecordWithZone>, DatabaseError> {
+pub async fn get_with_zone(
+    db: &Db,
+    record_id: RecordId,
+) -> Result<Option<RecordWithZone>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::record::get_with_zone(pool, id).await,
-        Backend::Postgres(pool) => postgres::record::get_with_zone(pool, id).await,
-        Backend::Sqlite(pool) => sqlite::record::get_with_zone(pool, id).await,
+        Backend::MySql(pool) => mysql::record::get_with_zone(pool, record_id).await,
+        Backend::Postgres(pool) => postgres::record::get_with_zone(pool, record_id).await,
+        Backend::Sqlite(pool) => sqlite::record::get_with_zone(pool, record_id).await,
     }
 }
 
@@ -69,12 +72,12 @@ pub async fn get_with_zone(db: &Db, id: RecordId) -> Result<Option<RecordWithZon
 /// (`FOR UPDATE` on MySQL/PostgreSQL).
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::record::get_tx(tx, id).await,
-        TransactionKind::Postgres(tx) => postgres::record::get_tx(tx, id).await,
-        TransactionKind::Sqlite(tx) => sqlite::record::get_tx(tx, id).await,
+        TransactionKind::MySql(tx) => mysql::record::get_tx(tx, record_id).await,
+        TransactionKind::Postgres(tx) => postgres::record::get_tx(tx, record_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::record::get_tx(tx, record_id).await,
     }
 }
 
@@ -200,11 +203,11 @@ pub async fn update_tx(tx: &mut Transaction<'_>, record: Record) -> Result<Recor
 /// Delete many records in as few statements as the backend's bind limit allows.
 pub async fn delete_many_tx(
     tx: &mut Transaction<'_>,
-    ids: &[RecordId],
+    record_ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::record::delete_many_tx(tx, ids).await,
-        TransactionKind::Postgres(tx) => postgres::record::delete_many_tx(tx, ids).await,
-        TransactionKind::Sqlite(tx) => sqlite::record::delete_many_tx(tx, ids).await,
+        TransactionKind::MySql(tx) => mysql::record::delete_many_tx(tx, record_ids).await,
+        TransactionKind::Postgres(tx) => postgres::record::delete_many_tx(tx, record_ids).await,
+        TransactionKind::Sqlite(tx) => sqlite::record::delete_many_tx(tx, record_ids).await,
     }
 }

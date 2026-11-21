@@ -188,15 +188,17 @@ pub async fn delete(
         bindizr_db::secondary::count_by_notify_tsig_key_id(cx.db(), tsig_key.id).await?;
 
     if secondary_count > 0 {
-        return Err(ServiceError::TsigKeyInUse(format!(
-            "TSIG key '{}' still signs NOTIFY for {secondary_count} secondar{}",
-            tsig_key.name,
-            if secondary_count == 1 {
-                "y"
-            } else {
-                "ies"
-            }
-        )));
+        return Err(ServiceError::TsigKeyInUse {
+            message: format!(
+                "TSIG key '{}' still signs NOTIFY for {secondary_count} secondar{}",
+                tsig_key.name,
+                if secondary_count == 1 {
+                    "y"
+                } else {
+                    "ies"
+                }
+            ),
+        });
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete TSIG key").await?;
@@ -212,9 +214,9 @@ pub async fn delete(
                 // A secondary that took the key between the count above and this
                 // delete trips the FK: the same in-use conflict.
                 if error.is_foreign_key_violation() {
-                    ServiceError::TsigKeyInUse(
-                        "TSIG key still signs NOTIFY for a secondary".to_string(),
-                    )
+                    ServiceError::TsigKeyInUse {
+                        message: "TSIG key still signs NOTIFY for a secondary".to_string(),
+                    }
                 } else {
                     error.into()
                 }

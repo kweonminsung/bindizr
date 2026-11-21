@@ -86,11 +86,11 @@ pub(crate) async fn list_tx(
 /// allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, MySql>,
-    ids: &[DnssecRecordId],
+    record_ids: &[DnssecRecordId],
 ) -> Result<(), DatabaseError> {
     const CHUNK: usize = 2000;
 
-    for chunk in ids.chunks(CHUNK) {
+    for chunk in record_ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM dnssec_records WHERE id IN (".to_string();
 
         sql.push_str(&sql::placeholders(chunk.len()));
@@ -99,8 +99,8 @@ pub(crate) async fn delete_many_tx(
 
         let mut query = sqlx::query(AssertSqlSafe(sql));
 
-        for id in chunk {
-            query = query.bind(id);
+        for record_id in chunk {
+            query = query.bind(record_id);
         }
 
         query.execute(&mut **tx).await?;

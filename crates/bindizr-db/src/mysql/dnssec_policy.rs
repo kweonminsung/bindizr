@@ -38,12 +38,12 @@ pub(crate) async fn create_tx(
 /// Get a DNSSEC policy by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: PolicyId,
+    policy_id: PolicyId,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(
         "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = ?",
     )
-    .bind(id)
+    .bind(policy_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -111,10 +111,10 @@ pub(crate) async fn update_tx(
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: PolicyId,
+    policy_id: PolicyId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM dnssec_policies WHERE id = ?")
-        .bind(id)
+        .bind(policy_id)
         .execute(&mut **tx)
         .await?;
 

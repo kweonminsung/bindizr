@@ -291,9 +291,9 @@ pub async fn delete(
                 // A zone enabled between the count above and this delete trips
                 // the FK; it reads as the in-use conflict.
                 if error.is_foreign_key_violation() {
-                    ServiceError::DnssecPolicyInUse(
-                        "DNSSEC policy is still used by signed zones".to_string(),
-                    )
+                    ServiceError::DnssecPolicyInUse {
+                        message: "DNSSEC policy is still used by signed zones".to_string(),
+                    }
                 } else {
                     error.into()
                 }

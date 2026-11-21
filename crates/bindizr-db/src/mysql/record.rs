@@ -70,13 +70,16 @@ pub(crate) async fn create_many_tx(
 }
 
 /// Get a record by ID.
-pub(crate) async fn get(pool: &Pool<MySql>, id: RecordId) -> Result<Option<Record>, DatabaseError> {
+pub(crate) async fn get(
+    pool: &Pool<MySql>,
+    record_id: RecordId,
+) -> Result<Option<Record>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let record = sqlx::query_as::<_, Record>(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?",
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -86,7 +89,7 @@ pub(crate) async fn get(pool: &Pool<MySql>, id: RecordId) -> Result<Option<Recor
 /// Get a record with its zone metadata.
 pub(crate) async fn get_with_zone(
     pool: &Pool<MySql>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<RecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -99,7 +102,7 @@ pub(crate) async fn get_with_zone(
         WHERE r.id = ?
         "#,
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -109,12 +112,12 @@ pub(crate) async fn get_with_zone(
 /// Get a record by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, MySql>,
-    id: RecordId,
+    record_id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
     let record = sqlx::query_as::<_, Record>(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ? FOR UPDATE",
     )
-    .bind(id)
+    .bind(record_id)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -463,11 +466,11 @@ pub(crate) async fn update_tx(
 /// Delete many records in as few statements as the backend's bind limit allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, MySql>,
-    ids: &[RecordId],
+    record_ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
     const CHUNK: usize = 2000;
 
-    for chunk in ids.chunks(CHUNK) {
+    for chunk in record_ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM records WHERE id IN (".to_string();
 
         sql.push_str(&sql::placeholders(chunk.len()));
@@ -476,8 +479,8 @@ pub(crate) async fn delete_many_tx(
 
         let mut query = sqlx::query(AssertSqlSafe(sql));
 
-        for id in chunk {
-            query = query.bind(id);
+        for record_id in chunk {
+            query = query.bind(record_id);
         }
 
         query.execute(&mut **tx).await?;
