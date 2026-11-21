@@ -2,10 +2,9 @@
 
 use std::time::{Duration, Instant};
 
+use domain::base::MessageBuilder;
 use domain::base::iana::{Class, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
-use domain::base::{MessageBuilder, Serial, Ttl};
-use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
 use rustls::pki_types::CertificateDer;
 use rustls::{ClientConfig, RootCertStore, SupportedProtocolVersion, version};
@@ -26,36 +25,6 @@ pub(crate) async fn read_counter(app: &TestApp, name: &str, labels: &[&str]) -> 
         .find(|line| labels.iter().all(|label| line.contains(label)))
         .and_then(|line| line.rsplit(' ').next()?.parse::<f64>().ok())
         .unwrap_or_else(|| panic!("{name} {labels:?} missing from the scrape"))
-}
-
-/// Build an IXFR query carrying the client's SOA serial.
-pub(crate) fn build_ixfr_query(zone_name: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
-    let qname = dns::parse_name(zone_name).unwrap();
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(1995);
-    let mut question = builder.question();
-    question.push((&qname, Rtype::IXFR, Class::IN)).unwrap();
-    let mut authority = question.authority();
-
-    // RFC 1995, Section 3: the client's SOA belongs in the authority section.
-    authority
-        .push((
-            &qname,
-            Class::IN,
-            Ttl::ZERO,
-            Soa::new(
-                qname.clone(),
-                qname.clone(),
-                Serial::from(serial),
-                Ttl::ZERO,
-                Ttl::ZERO,
-                Ttl::ZERO,
-                Ttl::ZERO,
-            ),
-        ))
-        .unwrap();
-
-    authority.additional()
 }
 
 /// Build a two-question QUERY with optional EDNS.

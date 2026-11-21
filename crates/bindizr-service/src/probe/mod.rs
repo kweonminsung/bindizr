@@ -125,14 +125,15 @@ pub async fn probe_secondary(
     attach_last_transfer(cx, zone_name, status, &probe.clients).await
 }
 
-/// Attach the latest zone transfer matching the probe's resolved IPs.
+/// Attach the latest zone transfer matching the probe's resolved IPs. The
+/// catalog has none: it is virtual, with no zone row a log row could name.
 async fn attach_last_transfer(
     cx: &Context,
     zone_name: &ZoneName,
     mut status: SecondaryStatusResponse,
     clients: &[IpAddr],
 ) -> Result<SecondaryStatusResponse, ServiceError> {
-    if clients.is_empty() {
+    if clients.is_empty() || zone_name == &cx.config().dns.catalog_zone_name {
         return Ok(status);
     }
 

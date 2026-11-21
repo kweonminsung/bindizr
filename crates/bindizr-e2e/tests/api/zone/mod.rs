@@ -1,10 +1,10 @@
 mod history;
 mod import;
-mod mailbox;
-mod primary_name;
 mod status;
 
-use domain::base::iana::Rcode;
+use domain::base::iana::{Rcode, Rtype};
+use domain::base::{Message, MessageBuilder, UnknownRecordData};
+use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
@@ -1206,4 +1206,300 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
 
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
     }
+}
+
+/// Verify that accepted domain octets are preserved when importing an export and restoring a stored version.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn mailbox_domain_octets_survive_import_and_rollback() {
+    let app = TestApp::start_local().await;
+
+    for (index, domain) in [
+        r"\255.example.com",
+        r"\000.example.com",
+        r"dot\046label.example",
+        r"back\\slash.example",
+        r"last\046",
+        r"last\\",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let zone_name = app.zone_name(&format!("mailbox-{index}.example"));
+        let rname = format!("first.last@{domain}");
+
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/zones",
+                Some(json!({
+                    "name": zone_name, "mname": "ns.example.com", "rname": rname, "serial": 1
+                })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert_eq!(body["zone"]["rname"], rname);
+
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "zone_name": zone_name, "name": "www", "type": "A", "value": "192.0.2.1"
+                })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert_eq!(app.read_zone_serial(&zone_name).await, 2);
+
+        let (status, body) = app
+            .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+            .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let imported_zone_name = app.zone_name(&format!("imported-{index}.example"));
+        let content = body
+            .as_str()
+            .unwrap()
+            .replace(&format!("{zone_name}."), &format!("{imported_zone_name}."));
+
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{imported_zone_name}/import"),
+                Some(json!({ "content": content, "create": true })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::OK, "{rname}: {body}");
+
+        let (status, body) = app
+            .send_request(Method::GET, &format!("/zones/{imported_zone_name}"), None)
+            .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["zone"]["rname"], rname);
+
+        for dry_run in [true, false] {
+            let (status, body) = app
+                .send_request(
+                    Method::POST,
+                    &format!("/zones/{zone_name}/versions/1/rollback?dry_run={dry_run}"),
+                    None,
+                )
+                .await;
+
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(
+                app.read_zone_serial(&zone_name).await,
+                if dry_run {
+                    2
+                } else {
+                    3
+                }
+            );
+        }
+
+        let (status, body) = app
+            .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+            .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["zone"]["rname"], rname);
+        assert!(
+            app.list_records(&zone_name)
+                .await
+                .iter()
+                .all(|record| record["type"] != "A")
+        );
+    }
+}
+
+/// Verify that a root MNAME survives creation, preview, update, history and wire/export encoding.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn root_primary_name_round_trips_through_management_and_dns() {
+    let app = TestApp::start_local().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+
+    let zone_name = app.zone_name("root-primary.example");
+
+    for dry_run in [true, false] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/zones",
+                Some(json!({
+                    "name": zone_name, "mname": ".", "rname": "admin@example.net", "dry_run": dry_run
+                })),
+            )
+            .await;
+
+        assert_eq!(
+            status,
+            if dry_run {
+                StatusCode::OK
+            } else {
+                StatusCode::CREATED
+            },
+            "{body}"
+        );
+        assert_eq!(body["zone"]["mname"], ".");
+    }
+
+    let sets = dns::fetch_exported_record_sets(&app, &zone_name).await;
+
+    assert_eq!(sets[&(format!("{zone_name}."), Rtype::NS)], [vec![0]]);
+    assert_eq!(sets[&(format!("{zone_name}."), Rtype::SOA)][0][0], 0);
+
+    for rtype in [Rtype::SOA, Rtype::AXFR] {
+        let mut question = MessageBuilder::new_vec().question();
+        question
+            .push((dns::parse_name(&zone_name).unwrap(), rtype))
+            .unwrap();
+        let query = question.finish();
+        let response = dns::exchange_tcp(app.dns_port(), &query).unwrap();
+        let response = Message::from_octets(response).unwrap();
+        let soa = response
+            .answer()
+            .unwrap()
+            .limit_to::<Soa<_>>()
+            .next()
+            .unwrap()
+            .unwrap();
+
+        assert!(soa.data().mname().is_root());
+
+        if rtype == Rtype::AXFR {
+            let ns = response
+                .answer()
+                .unwrap()
+                .map(Result::unwrap)
+                .find(|record| record.rtype() == Rtype::NS)
+                .unwrap();
+
+            assert_eq!(
+                ns.to_record::<UnknownRecordData<_>>()
+                    .unwrap()
+                    .unwrap()
+                    .data()
+                    .data(),
+                &[0]
+            );
+        }
+    }
+
+    let target_serial = app.read_zone_serial(&zone_name).await;
+
+    let path = format!("/zones/{zone_name}");
+
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &path,
+            Some(json!({ "mname": "ns.example.net" })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let base_serial = app.read_zone_serial(&zone_name).await;
+
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &path,
+            Some(json!({ "mname": ".", "dry_run": true })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial);
+
+    for dry_run in [true, false] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("{path}/versions/{target_serial}/rollback?dry_run={dry_run}"),
+                None,
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["applied"], !dry_run);
+    }
+
+    let (status, body) = app.send_request(Method::GET, &path, None).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["zone"]["mname"], ".");
+
+    for invalid in ["", ".."] {
+        let (status, body) = app
+            .send_request(Method::PUT, &path, Some(json!({ "mname": invalid })))
+            .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+}
+
+/// Verify that a root primary does not enable a preparation zone or permit managing the root zone.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn root_primary_name_preserves_zone_policy_and_import_creation() {
+    let app = TestApp::start_local().await;
+    let zone_name = app.zone_name("root-preparation.example");
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name, "mname": ".", "rname": "admin@example.net", "apex_ns": false
+            })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["zone"]["enabled"], false);
+    assert!(app.list_records(&zone_name).await.is_empty());
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": ".", "mname": ".", "rname": "admin@example.net"
+            })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    let zone_name = app.zone_name("root-import.example");
+    let content = "@ IN SOA . admin.example.net. 1 3600 3600 604800 60\n@ IN NS .\n";
+
+    for dry_run in [true, false] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{zone_name}/import"),
+                Some(json!({
+                    "content": content, "create": true, "dry_run": dry_run
+                })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["applied"], !dry_run);
+    }
+
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["zone"]["mname"], ".");
 }

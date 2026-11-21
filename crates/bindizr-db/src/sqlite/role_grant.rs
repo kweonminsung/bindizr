@@ -4,7 +4,7 @@ use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
 use crate::error::DatabaseError;
-use crate::{LockLevel, sqlite};
+use crate::sqlite;
 
 /// Insert a role grant.
 pub(crate) async fn create_tx(
@@ -81,12 +81,11 @@ pub(crate) async fn list_by_role_id(
     Ok(grants)
 }
 
-/// List every grant of a role in the current transaction, locked at
-/// `lock_level`, for a mutation to authorize against.
+/// List every grant of a role in the current transaction, share-locked,
+/// for a mutation to authorize against.
 pub(crate) async fn list_by_role_id_tx(
     tx: &mut Transaction<'_, Sqlite>,
     role_id: RoleId,
-    _lock_level: LockLevel,
 ) -> Result<Vec<RoleGrant>, DatabaseError> {
     let grants = sqlx::query_as::<_, RoleGrant>(
         "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants WHERE role_id = ? ORDER BY id",

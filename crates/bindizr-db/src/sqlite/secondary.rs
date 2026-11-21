@@ -5,7 +5,7 @@ use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
 use crate::error::DatabaseError;
-use crate::{LockLevel, sqlite};
+use crate::sqlite;
 
 /// Insert a secondary.
 pub(crate) async fn create_tx(
@@ -55,7 +55,6 @@ pub(crate) async fn get_by_name(
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, Sqlite>,
     name: &str,
-    _lock_level: LockLevel,
 ) -> Result<Option<Secondary>, DatabaseError> {
     let secondary = sqlx::query_as::<_, Secondary>(
         "SELECT id, name, address, enabled, notify_tsig_key_id, created_at FROM secondaries WHERE name = ?",

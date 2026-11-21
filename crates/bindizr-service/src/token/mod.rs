@@ -15,7 +15,9 @@ use ring::digest::SHA256;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::text::MAX_COLUMN_TEXT_LEN;
-use crate::types::{CreateTokenRequest, PaginatedResponse, TokenFilter, TokenResponse};
+use crate::types::{
+    CreateTokenRequest, MessageResponse, PaginatedResponse, TokenFilter, TokenResponse,
+};
 use crate::{Context, audit, pagination, role, text, transaction};
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
@@ -163,7 +165,11 @@ pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
 
 /// Delete the API token with the given name, returning `NotFound` if it
 /// is absent.
-pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
+pub async fn delete(
+    cx: &Context,
+    caller: &Caller,
+    name: &str,
+) -> Result<MessageResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let token = lookup_by_name(cx, name).await?;
@@ -193,7 +199,11 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, apply_result, "failed to delete token").await
+    transaction::finish_tx(tx, apply_result, "failed to delete token").await?;
+
+    Ok(MessageResponse {
+        message: format!("Token '{}' deleted successfully", token.name),
+    })
 }
 
 /// Look up an API token by name or return a not-found error.

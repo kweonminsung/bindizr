@@ -141,6 +141,20 @@ pub(crate) async fn list_by_filter(
     Ok(versions)
 }
 
+/// Count the versions a zone holds, in the current transaction.
+pub(crate) async fn count_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    zone_id: ZoneId,
+) -> Result<u64, DatabaseError> {
+    let count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM zone_versions WHERE zone_id = ?")
+            .bind(zone_id)
+            .fetch_one(&mut **tx)
+            .await?;
+
+    Ok(count as u64)
+}
+
 /// Count the versions of a zone that `filter` covers.
 pub(crate) async fn count_by_filter(
     pool: &Pool<Sqlite>,

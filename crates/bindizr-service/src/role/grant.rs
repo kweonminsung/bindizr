@@ -14,7 +14,9 @@ use chrono::Utc;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::types::{CreateRoleGrantRequest, PageRequest, PaginatedResponse, RoleGrantResponse};
+use crate::types::{
+    CreateRoleGrantRequest, MessageResponse, PageRequest, PaginatedResponse, RoleGrantResponse,
+};
 use crate::{Context, audit, grant_pattern, pagination, role, transaction, zone};
 
 /// Grant `role_name` the request's actions in its zone, or in all zones
@@ -91,11 +93,14 @@ pub async fn create(
         .await
         .map_err(|error| {
             // The zone or role can go between the lookups above and this insert;
-            // the FK reports it.
-            if error.is_foreign_key_violation() {
+            // the FK reports it. An all-zones grant names no zone, so only the
+            // role can be gone.
+            if !error.is_foreign_key_violation() {
+                error.into()
+            } else if zone.is_some() {
                 ServiceError::ZoneNotFound("zone or role no longer exists".to_string())
             } else {
-                error.into()
+                ServiceError::role_not_found(&role.name)
             }
         })?;
         audit::save_tx(
@@ -157,7 +162,7 @@ pub async fn revoke(
     caller: &Caller,
     role_name: &str,
     grant_id: RoleGrantId,
-) -> Result<(), ServiceError> {
+) -> Result<MessageResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let role = role::lookup_by_name(cx, role_name).await?;
@@ -203,7 +208,14 @@ pub async fn revoke(
     }
     .await;
 
-    transaction::finish_tx(tx, apply_result, "failed to revoke role grant").await
+    transaction::finish_tx(tx, apply_result, "failed to revoke role grant").await?;
+
+    Ok(MessageResponse {
+        message: format!(
+            "Grant {} of role '{}' revoked successfully",
+            grant.id, role.name
+        ),
+    })
 }
 
 /// Describe a grant for its audit detail, in the request's field names.

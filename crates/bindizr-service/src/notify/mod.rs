@@ -99,6 +99,6 @@ pub(crate) async fn notify_after_update(cx: &Context, zone_name: &ZoneName) {
     }
 
     if let Err(error) = send::send_zone_notify(cx, zone_name).await {
-        log::warn!("Failed to send NOTIFY for zone {zone_name}: {error}");
+        log::warn!("Failed to send NOTIFY for zone {zone_name}: {error:?}");
     }
 }

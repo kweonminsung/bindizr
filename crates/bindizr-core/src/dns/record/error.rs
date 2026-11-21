@@ -44,8 +44,6 @@ pub enum ParseRecordValueError {
     UnterminatedQuote { field: &'static str },
     #[error("{field} must be 255 bytes or less")]
     CharStringTooLong { field: &'static str },
-    #[error("{field} must not contain whitespace or control characters")]
-    Whitespace { field: &'static str },
     #[error("{field} {source}")]
     Name {
         field: &'static str,

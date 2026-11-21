@@ -6,7 +6,6 @@ use bindizr_core::dns::{Serial, Ttl};
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
-use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use crate::authorization::{Caller, RecordAccess};
@@ -99,9 +98,7 @@ pub(crate) async fn apply_record_operation_tx(
                     })?
             };
 
-            let records_at_name =
-                bindizr_db::record::list_by_name_tx(tx, zone.id, owner, LockLevel::Exclusive)
-                    .await?;
+            let records_at_name = bindizr_db::record::list_by_name_tx(tx, zone.id, owner).await?;
 
             // RFC 2136, Section 3.4.2.2: a CNAME beside other data (the apex
             // holds the SOA) or data beside a CNAME is ignored.
@@ -246,8 +243,7 @@ async fn delete_matching_tx(
     new_serial: Serial,
 ) -> Result<bool, NsupdateError> {
     // Only records at the owner name can match, so lock just those.
-    let records_at_name =
-        bindizr_db::record::list_by_name_tx(tx, zone.id, owner, LockLevel::Exclusive).await?;
+    let records_at_name = bindizr_db::record::list_by_name_tx(tx, zone.id, owner).await?;
 
     let mut matched: Vec<Record> = records_at_name
         .iter()

@@ -80,7 +80,7 @@ pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) -> Scheduler
             if let Err(error) =
                 tokio::spawn(async move { run_scheduler_pass(&pass_cx).await }).await
             {
-                log::error!("Scheduler pass did not finish: {error}");
+                log::error!("Scheduler pass did not finish: {error:?}");
                 cx.metrics()
                     .track_dnssec_scheduler(SchedulerResult::Panicked);
             }
@@ -127,7 +127,7 @@ async fn run_scheduler_pass(cx: &Context) {
                         Err(error) => {
                             failed = true;
                             log::error!(
-                                "Zone history pruning for zone id {} failed: {error}",
+                                "Zone history pruning for zone id {} failed: {error:?}",
                                 zone.id
                             );
                         }
@@ -142,7 +142,7 @@ async fn run_scheduler_pass(cx: &Context) {
             }
             Err(error) => {
                 failed = true;
-                log::error!("Zone history pruning scan failed: {error}");
+                log::error!("Zone history pruning scan failed: {error:?}");
             }
         }
     }
@@ -162,7 +162,7 @@ async fn run_scheduler_pass(cx: &Context) {
             }
             Err(error) => {
                 failed = true;
-                log::error!("Audit log pruning failed: {error}");
+                log::error!("Audit log pruning failed: {error:?}");
             }
         }
     }
@@ -182,7 +182,7 @@ async fn run_scheduler_pass(cx: &Context) {
             }
             Err(error) => {
                 failed = true;
-                log::error!("Access log pruning failed: {error}");
+                log::error!("Access log pruning failed: {error:?}");
             }
         }
     }
@@ -203,7 +203,7 @@ async fn run_scheduler_pass(cx: &Context) {
             }
             Err(error) => {
                 failed = true;
-                log::error!("Transfer log pruning failed: {error}");
+                log::error!("Transfer log pruning failed: {error:?}");
             }
         }
     }
@@ -222,14 +222,14 @@ async fn run_scheduler_pass(cx: &Context) {
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!("Re-signing zone id {zone_id} failed: {error}");
+                        log::error!("Re-signing zone id {zone_id} failed: {error:?}");
                     }
                 }
             }
         }
         Err(error) => {
             failed = true;
-            log::error!("Re-signing scan failed: {error}");
+            log::error!("Re-signing scan failed: {error:?}");
         }
     }
 
@@ -253,14 +253,16 @@ async fn run_scheduler_pass(cx: &Context) {
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!("Scheduled ZSK rollover for zone id {zone_id} failed: {error}");
+                        log::error!(
+                            "Scheduled ZSK rollover for zone id {zone_id} failed: {error:?}"
+                        );
                     }
                 }
             }
         }
         Err(error) => {
             failed = true;
-            log::error!("ZSK lifetime scan failed: {error}");
+            log::error!("ZSK lifetime scan failed: {error:?}");
         }
     }
 
@@ -290,7 +292,7 @@ async fn run_scheduler_pass(cx: &Context) {
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!("ZSK promotion for zone id {zone_id} failed: {error}");
+                        log::error!("ZSK promotion for zone id {zone_id} failed: {error:?}");
                     }
                 }
             }
@@ -315,14 +317,14 @@ async fn run_scheduler_pass(cx: &Context) {
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!("SEP key promotion for zone id {zone_id} failed: {error}");
+                        log::error!("SEP key promotion for zone id {zone_id} failed: {error:?}");
                     }
                 }
             }
         }
         Err(error) => {
             failed = true;
-            log::error!("Rollover promotion scan failed: {error}");
+            log::error!("Rollover promotion scan failed: {error:?}");
         }
     }
 
@@ -348,14 +350,14 @@ async fn run_scheduler_pass(cx: &Context) {
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!("Retired-key removal for zone id {zone_id} failed: {error}");
+                        log::error!("Retired-key removal for zone id {zone_id} failed: {error:?}");
                     }
                 }
             }
         }
         Err(error) => {
             failed = true;
-            log::error!("Retired-key scan failed: {error}");
+            log::error!("Retired-key scan failed: {error:?}");
         }
     }
 

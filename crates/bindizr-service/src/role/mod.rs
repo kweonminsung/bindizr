@@ -12,7 +12,9 @@ use chrono::Utc;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::text::MAX_COLUMN_TEXT_LEN;
-use crate::types::{CreateRoleRequest, PageRequest, PaginatedResponse, RoleResponse};
+use crate::types::{
+    CreateRoleRequest, MessageResponse, PageRequest, PaginatedResponse, RoleResponse,
+};
 use crate::{Context, audit, pagination, text, transaction};
 
 /// Create a role holding no grants yet.
@@ -163,7 +165,11 @@ pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<RoleRespon
 }
 
 /// Delete a role and its grants; refused for the built-in role and while a credential holds it.
-pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
+pub async fn delete(
+    cx: &Context,
+    caller: &Caller,
+    name: &str,
+) -> Result<MessageResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let role = lookup_by_name(cx, name).await?;
@@ -229,7 +235,11 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, apply_result, "failed to delete role").await
+    transaction::finish_tx(tx, apply_result, "failed to delete role").await?;
+
+    Ok(MessageResponse {
+        message: format!("Role '{}' deleted successfully", role.name),
+    })
 }
 
 /// Look up a role by name or return a not-found error.

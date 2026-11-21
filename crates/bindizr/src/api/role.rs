@@ -136,10 +136,7 @@ pub(crate) async fn delete_role(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    role::delete(&cx, &caller, &params.name).await?;
-    let response = MessageResponse {
-        message: "Role deleted successfully".to_string(),
-    };
+    let response = role::delete(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -228,9 +225,6 @@ pub(crate) async fn delete_role_grant(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameIdParams>,
 ) -> Result<Response, ApiError> {
-    grant::revoke(&cx, &caller, &params.name, params.id).await?;
-    let response = MessageResponse {
-        message: "Role grant revoked successfully".to_string(),
-    };
+    let response = grant::revoke(&cx, &caller, &params.name, params.id).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

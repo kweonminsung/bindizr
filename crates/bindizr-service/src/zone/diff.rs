@@ -79,62 +79,47 @@ pub(crate) fn build_record_diff(
     before: &ReadableRecords<RecordData>,
     after: &ReadableRecords<RecordData>,
 ) -> RecordDiffResponse {
-    let mut before_record_sets = group_record_sets(zone, before.as_slice());
+    let before_record_sets = group_record_sets(zone, before.as_slice());
     let mut after_record_sets = group_record_sets(zone, after.as_slice());
 
-    let mut keys: Vec<RecordSetKey> = before_record_sets.keys().cloned().collect();
-    keys.extend(
-        after_record_sets
-            .keys()
-            .filter(|record_set_key| !before_record_sets.contains_key(*record_set_key))
-            .cloned(),
-    );
-    keys.sort();
+    // Each record set before is removed or changed; what is left after is added.
+    let mut changes = Vec::new();
 
-    let mut entries = Vec::new();
-    let (mut added, mut removed, mut changed) = (0u64, 0u64, 0u64);
-
-    for key in keys {
-        // Both maps are drained here, so each record set can be moved into its entry.
-        let before = before_record_sets.remove(&key);
-        let after = after_record_sets.remove(&key);
-        let RecordSetKey { name, record_type } = key;
-
-        match (before, after) {
-            (None, Some(after)) => {
-                added += 1;
-                entries.push(RecordDiffEntryResponse {
-                    change: RecordChange::Added,
-                    name,
-                    record_type,
-                    from: Vec::new(),
-                    to: record_set_values(after),
-                });
-            }
-            (Some(before), None) => {
-                removed += 1;
-                entries.push(RecordDiffEntryResponse {
-                    change: RecordChange::Removed,
-                    name,
-                    record_type,
-                    from: record_set_values(before),
-                    to: Vec::new(),
-                });
-            }
-            (Some(before), Some(after)) => {
+    for (key, before) in before_record_sets {
+        match after_record_sets.remove(&key) {
+            Some(after) => {
                 if record_set_identities(&before) != record_set_identities(&after) {
-                    changed += 1;
-                    entries.push(RecordDiffEntryResponse {
-                        change: RecordChange::Changed,
-                        name,
-                        record_type,
-                        from: record_set_values(before),
-                        to: record_set_values(after),
-                    });
+                    changes.push((key, RecordChange::Changed, before, after));
                 }
             }
-            (None, None) => unreachable!("keys come from one of the two maps"),
+            None => changes.push((key, RecordChange::Removed, before, Vec::new())),
         }
+    }
+
+    changes.extend(
+        after_record_sets
+            .into_iter()
+            .map(|(key, after)| (key, RecordChange::Added, Vec::new(), after)),
+    );
+    changes.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut entries = Vec::with_capacity(changes.len());
+    let (mut added, mut removed, mut changed) = (0u64, 0u64, 0u64);
+
+    for (RecordSetKey { name, record_type }, change, before, after) in changes {
+        match change {
+            RecordChange::Added => added += 1,
+            RecordChange::Removed => removed += 1,
+            RecordChange::Changed => changed += 1,
+        }
+
+        entries.push(RecordDiffEntryResponse {
+            change,
+            name,
+            record_type,
+            from: record_set_values(before),
+            to: record_set_values(after),
+        });
     }
 
     RecordDiffResponse {

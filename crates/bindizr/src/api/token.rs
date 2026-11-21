@@ -150,9 +150,6 @@ pub(crate) async fn delete_token(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    token::delete(&cx, &caller, &params.name).await?;
-    let response = MessageResponse {
-        message: "Token deleted successfully".to_string(),
-    };
+    let response = token::delete(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

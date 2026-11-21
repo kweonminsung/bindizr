@@ -5,10 +5,15 @@ use bindizr_core::model::role_grant::Action;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
+use crate::types::MessageResponse;
 use crate::{Context, audit, secondary, transaction};
 
 /// Delete a secondary by name.
-pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
+pub async fn delete(
+    cx: &Context,
+    caller: &Caller,
+    name: &str,
+) -> Result<MessageResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
     // Unlocked read to learn the row to delete; a row gone meanwhile reads as not found below.
@@ -39,5 +44,9 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, apply_result, "failed to delete secondary").await
+    transaction::finish_tx(tx, apply_result, "failed to delete secondary").await?;
+
+    Ok(MessageResponse {
+        message: format!("Secondary '{}' deleted successfully", secondary.name),
+    })
 }

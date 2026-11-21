@@ -170,7 +170,7 @@ impl ParsedZoneFile {
                         &origin_fqdn,
                         record.owner().to_string(),
                         record.rtype(),
-                        record.ttl().as_secs(),
+                        Ttl::from(record.ttl()),
                         record.data(),
                     );
                 }
@@ -243,7 +243,7 @@ impl ParsedZoneFile {
         origin_fqdn: &str,
         owner: String,
         rtype: Rtype,
-        ttl_secs: u32,
+        ttl: Ttl,
         data: &ZoneRecordData<Octs, N>,
     ) {
         use domain::base::rdata::ComposeRecordData;
@@ -257,7 +257,7 @@ impl ParsedZoneFile {
             let mut parser = Parser::from_ref(unknown.data().as_ref());
             return match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(rtype, &mut parser) {
                 Ok(Some(typed)) if parser.remaining() == 0 => {
-                    self.push_record(origin_fqdn, owner, rtype, ttl_secs, &typed);
+                    self.push_record(origin_fqdn, owner, rtype, ttl, &typed);
                 }
                 _ => self
                     .errors
@@ -299,8 +299,6 @@ impl ParsedZoneFile {
                 }
             },
         };
-
-        let ttl = Ttl::from_secs(ttl_secs);
 
         let (value, priority) = if record_type == RecordType::Wks {
             let mut bytes = Vec::new();
@@ -416,7 +414,7 @@ fn to_zone_file_soa<N: ToName + fmt::Display>(
         refresh: interval(soa.refresh())?,
         retry: interval(soa.retry())?,
         expire: interval(soa.expire())?,
-        minimum_ttl: Ttl::from_secs(soa.minimum().as_secs()),
+        minimum_ttl: Ttl::from(soa.minimum()),
     })
 }
 

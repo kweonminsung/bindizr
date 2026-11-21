@@ -62,11 +62,11 @@ pub(crate) async fn delete_secondary(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    secondary::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("Secondary '{name}' deleted successfully");
+    let response = secondary::delete(cx, &Caller::socket(), name).await?;
+
     Ok(DaemonResponse {
-        message: message.clone(),
-        data: MessageResponse { message },
+        message: response.message.clone(),
+        data: response,
     })
 }
 

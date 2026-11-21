@@ -162,7 +162,9 @@ pub async fn update(
         // Check rename conflicts without locks to avoid ordering deadlocks.
         // UNIQUE(name) catches races and maps to the same conflict.
         if candidate.name != existing_zone.name {
-            match bindizr_db::zone::get_by_name(cx.db(), &candidate.name).await {
+            match bindizr_db::zone::get_by_name_tx(&mut tx, &candidate.name, LockLevel::Unlocked)
+                .await
+            {
                 Ok(Some(zone)) if zone.id != zone_id => {
                     return Err(ServiceError::zone_conflict(format!(
                         "zone with name '{}' already exists",

@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::slice;
 
+use bindizr_core::dns::Ttl;
 use bindizr_core::dns::message::Rcode;
 use bindizr_core::dns::name::ParseNameError;
 
@@ -12,7 +13,7 @@ fn record(class: Class, rtype: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRecord {
         name: "host.example.com.".to_string(),
         record_type: rtype,
         class,
-        ttl,
+        ttl: Ttl::from_secs(ttl),
         rdata: rdata.to_vec(),
         rdata_start: 0,
     }
@@ -126,7 +127,7 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
             }
 
             let mut malformed = valid;
-            malformed.ttl = 1;
+            malformed.ttl = Ttl::from_secs(1);
             let error = decode_updates(&[malformed], &zone_name, data).unwrap_err();
 
             assert_eq!(error.rcode().ok(), Some(Rcode::FORMERR), "{error}");

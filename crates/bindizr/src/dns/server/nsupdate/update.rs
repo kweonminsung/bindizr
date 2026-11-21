@@ -21,8 +21,9 @@ pub(crate) enum UpdateError {
     /// Malformed OPT or unsupported EDNS version (RFC 6891, Section 6.1).
     #[error("unacceptable EDNS: {rcode}")]
     Edns { rcode: OptRcode },
-    #[error("{reason}")]
-    NotAuth { reason: String },
+    /// A zone name no zone can carry (RFC 2136, Section 3.1.2).
+    #[error("{0}")]
+    NotAuth(#[source] ServiceError),
     #[error("{0}")]
     Tsig(#[from] TsigError),
     #[error("{0}")]
@@ -72,9 +73,7 @@ pub(crate) async fn apply_update(
         };
 
         // A name no zone can carry is not served (RFC 2136, Section 3.1.2).
-        let zone_name = zone_name.map_err(|error| UpdateError::NotAuth {
-            reason: error.to_string(),
-        })?;
+        let zone_name = zone_name.map_err(UpdateError::NotAuth)?;
 
         let update = Update {
             zone_name,

@@ -7,6 +7,7 @@ use domain::dep::octseq::parse::Parser;
 use domain::rdata::{A, Aaaa, Caa, Ds, Mx, Naptr, Soa, Srv, Sshfp, Tlsa};
 use thiserror::Error;
 
+use crate::dns::Ttl;
 use crate::dns::nsupdate::parser;
 use crate::dns::nsupdate::parser::ParseUpdateError;
 use crate::dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue, WksRecordValue};
@@ -19,7 +20,7 @@ pub struct UpdateRecord {
     pub name: String,
     pub record_type: Rtype,
     pub class: Class,
-    pub ttl: u32,
+    pub ttl: Ttl,
     pub rdata: Vec<u8>,
     pub rdata_start: usize,
 }
@@ -56,7 +57,7 @@ impl UpdateRecord {
                 record_type: self.record_type,
             });
         }
-        if self.class != Class::IN && self.ttl != 0 {
+        if self.class != Class::IN && self.ttl.as_secs() != 0 {
             return Err(ValidateUpdateShapeError::NonzeroTtl);
         }
 

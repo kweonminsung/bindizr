@@ -110,7 +110,6 @@ pub(crate) async fn get_with_zone(
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
     id: RecordId,
-    _lock_level: LockLevel,
 ) -> Result<Option<Record>, DatabaseError> {
     let record = sqlx::query_as::<_, Record>(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?",
@@ -143,7 +142,6 @@ pub(crate) async fn list_by_name_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
     name: &OwnerName,
-    _lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
     // Bind the canonical stored form as given: re-folding it here would miss
     // its own row, and the bare column lets idx_records_zone_name apply.

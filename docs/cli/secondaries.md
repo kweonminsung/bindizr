@@ -133,7 +133,9 @@ list, `--since` and `--until` bound it in time (a span ago such as `7d`, a
 UTC date, or RFC 3339), and `--limit` and `--offset` page it. Newest first
 by default; `--sort` takes `at`, `address`, `zone_name`, `kind`, or
 `result`, and `--order` `desc` or `asc`. A transfer of
-a zone Bindizr does not have leaves no row. The rows are in the database, so
+a zone Bindizr does not have leaves no row, and neither does a transfer of
+the catalog zone, which is virtual: a check's catalog status has no last
+transfer. The rows are in the database, so
 a restart keeps them and deleting a zone drops them. Reading the log needs
 `log:read`, like the [other logs](access-control.md#logs).
 

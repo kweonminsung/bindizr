@@ -106,13 +106,13 @@ async fn zone_dnssec_supports_enable_sign_and_disable() {
         .run_cli_success(&["dnssec", "sign", &zone_name], None)
         .await;
 
-    assert!(signed.contains("Zone signed successfully"));
+    assert!(signed.contains("signed successfully"));
 
     let disabled = app
         .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;
 
-    assert!(disabled.contains("DNSSEC disabled successfully"));
+    assert!(disabled.contains("DNSSEC disabled for zone"));
 
     let status = app
         .run_cli_success(&["dnssec", "status", &zone_name], None)

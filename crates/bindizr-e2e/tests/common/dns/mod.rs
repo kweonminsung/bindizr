@@ -19,7 +19,7 @@ pub(crate) use parent::{DsRecord, FakeParent};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::time;
-pub(crate) use transfer::{TransferResult, fetch_axfr_tcp, fetch_axfr_tls};
+pub(crate) use transfer::{TransferResult, build_ixfr_query, fetch_axfr_tcp, fetch_axfr_tls};
 pub(crate) use transport::{
     connect_tcp, connect_tls, exchange_request, exchange_tcp, exchange_tls, exchange_udp,
     read_frame, write_frame,

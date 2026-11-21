@@ -162,10 +162,7 @@ pub(crate) async fn delete_secondary(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    secondary::delete(&cx, &caller, &params.name).await?;
-    let response = MessageResponse {
-        message: "Secondary deleted successfully".to_string(),
-    };
+    let response = secondary::delete(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

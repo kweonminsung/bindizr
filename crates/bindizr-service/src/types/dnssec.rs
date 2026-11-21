@@ -242,7 +242,6 @@ pub struct DnssecStatusResponse {
     pub ds_records: Vec<DnssecDsResponse>,
     /// Whether the RFC 8078 delete CDS/CDNSKEY pair is published, asking the
     /// parent to drop the zone's DS.
-    #[serde(default)]
     #[schema(example = false)]
     pub withdrawing: bool,
     /// Configured parent nameservers; may also be set while the zone is unsigned.

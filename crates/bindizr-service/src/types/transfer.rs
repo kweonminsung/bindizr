@@ -10,39 +10,29 @@ use utoipa::{IntoParams, ToSchema};
 
 /// Query parameters of the transfer log listing: which transfers, their order,
 /// and the page.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct TransferLogFilter {
     /// Only transfers answered to the addresses this secondary resolves to now.
-    #[schema(example = "ns2")]
     pub secondary_name: Option<String>,
     /// Only transfers answered to this client IP address.
-    #[schema(example = "10.0.0.14")]
     pub address: Option<String>,
     /// Only the transfers of this zone.
-    #[schema(example = "example.com")]
     pub zone_name: Option<String>,
     /// Only transfers that turned out this way: `ok`, `refused`, or `failed`.
-    #[schema(example = "refused")]
     pub result: Option<String>,
     /// Only transfers answered at or after this time (RFC 3339).
-    #[schema(example = "2026-10-01T00:00:00Z")]
     pub since: Option<DateTime<Utc>>,
     /// Only transfers answered before this time (RFC 3339).
-    #[schema(example = "2026-11-01T00:00:00Z")]
     pub until: Option<DateTime<Utc>>,
     /// `at` (the default), `address`, `zone_name`, `kind`, or `result`.
-    #[schema(example = "at")]
     pub sort: Option<String>,
     /// `desc` (the default) or `asc`.
-    #[schema(example = "desc")]
     pub order: Option<String>,
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
-    #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
-    #[schema(example = 0)]
     pub offset: Option<u64>,
 }
 

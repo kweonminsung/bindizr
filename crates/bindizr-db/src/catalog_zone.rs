@@ -3,23 +3,23 @@ use bindizr_core::dns::name::ZoneName;
 
 use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
-use crate::{LockLevel, Transaction, mysql, postgres, sqlite};
+use crate::{Transaction, mysql, postgres, sqlite};
 
-/// Find the catalog's stored serial, locking its row at `lock_level`.
+/// Find the catalog's stored serial, locking its row for update (`FOR UPDATE`
+/// on MySQL/PostgreSQL).
 pub async fn find_serial_tx(
     tx: &mut Transaction<'_>,
     catalog_zone_name: &ZoneName,
-    lock_level: LockLevel,
 ) -> Result<Option<Serial>, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::catalog_zone::find_serial_tx(tx, catalog_zone_name, lock_level).await
+            mysql::catalog_zone::find_serial_tx(tx, catalog_zone_name).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::catalog_zone::find_serial_tx(tx, catalog_zone_name, lock_level).await
+            postgres::catalog_zone::find_serial_tx(tx, catalog_zone_name).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::catalog_zone::find_serial_tx(tx, catalog_zone_name, lock_level).await
+            sqlite::catalog_zone::find_serial_tx(tx, catalog_zone_name).await
         }
     }
 }

@@ -61,7 +61,7 @@ pub async fn update(
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::SecondaryManage)?;
-        let secondary = bindizr_db::secondary::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
+        let secondary = bindizr_db::secondary::get_by_name_tx(&mut tx, &name)
             .await?
             .ok_or_else(|| ServiceError::secondary_not_found(&name))?;
 

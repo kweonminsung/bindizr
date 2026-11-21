@@ -71,10 +71,10 @@ pub(crate) async fn delete_dnssec_policy(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    dnssec_policy::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("DNSSEC policy '{name}' deleted successfully");
+    let response = dnssec_policy::delete(cx, &Caller::socket(), name).await?;
+
     Ok(DaemonResponse {
-        message: message.clone(),
-        data: MessageResponse { message },
+        message: response.message.clone(),
+        data: response,
     })
 }

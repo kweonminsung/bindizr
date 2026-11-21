@@ -10,10 +10,10 @@ use domain::base::{Message, MessageBuilder};
 use domain::rdata::{A, Ds, Soa};
 
 use super::*;
-use crate::dns::Ttl;
 use crate::dns::dnssec::KeyTag;
 use crate::dns::message::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::name::WireName;
+use crate::dns::{Serial, Ttl};
 
 /// Parse a DNS wire-format name for the test.
 fn name(value: &str) -> WireName {
@@ -586,7 +586,10 @@ fn responses_accept_advertised_edns_versions() {
     for version in [0, 1, 255] {
         let mut response = build_soa_response(42, &child, Class::IN);
         append_opt(&mut response, OptRcode::NOERROR, version);
-        assert_eq!(extract_soa_serial(42, &child, &response).unwrap(), 2026);
+        assert_eq!(
+            extract_soa_serial(42, &child, &response).unwrap(),
+            Serial::from(2026)
+        );
     }
 }
 
@@ -779,7 +782,7 @@ fn extract_soa_serial_reads_the_answer_serial() {
     let response = build_flagged_soa_response(42, 0x8400, "example.com", true, 2026);
     assert_eq!(
         extract_soa_serial(42, &name("example.com"), &response).unwrap(),
-        2026
+        Serial::from(2026)
     );
 }
 

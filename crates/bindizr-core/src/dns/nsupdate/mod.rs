@@ -45,7 +45,7 @@ pub fn build_response(
         .map_err(|error| BuildResponseError::Malformed(Box::new(error)))?;
     let readable = message::has_readable_sections(query_data);
 
-    for minimal in [false, true] {
+    let build = |minimal: bool| -> Result<Vec<u8>, BuildResponseError> {
         let rcode = if minimal {
             OptRcode::NOERROR
         } else {
@@ -88,16 +88,21 @@ pub fn build_response(
                 .map_err(|error| EncodeMessageError::Sign(Box::new(error)))?;
         }
 
-        let response = additional.finish().into_target();
+        Ok(additional.finish().into_target())
+    };
 
-        match limit.validate_len(response.len()) {
-            Ok(()) => return Ok(response),
-            Err(error) if minimal || !limit.is_udp() => return Err(error.into()),
-            Err(_) => {}
+    let response = build(false)?;
+
+    // A UDP overflow is answered NOERROR with TC; a stream overflow is an error.
+    match limit.validate_len(response.len()) {
+        Ok(()) => Ok(response),
+        Err(_) if limit.is_udp() => {
+            let response = build(true)?;
+            limit.validate_len(response.len())?;
+            Ok(response)
         }
+        Err(error) => Err(error.into()),
     }
-
-    unreachable!()
 }
 
 #[cfg(test)]

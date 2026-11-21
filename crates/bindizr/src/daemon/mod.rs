@@ -17,7 +17,7 @@ use bindizr_db::Db;
 use bindizr_db::error::DatabaseError;
 use bindizr_service::access::AccessLogWorker;
 use bindizr_service::context::ReloadConfigError;
-use bindizr_service::error::ServiceError;
+use bindizr_service::error::{ErrorCode, ServiceError};
 use bindizr_service::notify::queue;
 use bindizr_service::notify::queue::NotifyWorker;
 use bindizr_service::scheduler::SchedulerWorker;
@@ -90,7 +90,13 @@ impl DaemonError {
     /// Return whether running the same thing again would fail the same way: the
     /// exit class a supervisor stops retrying on.
     pub(crate) fn is_configuration(&self) -> bool {
-        matches!(self, Self::Config(_) | Self::Tls(_))
+        // A catalog name that clashes with a stored zone stays clashing until
+        // the configuration changes; a database fault from that check does not.
+        match self {
+            Self::Config(_) | Self::Tls(_) => true,
+            Self::CatalogZone(error) => error.code() == ErrorCode::ZoneConflict,
+            _ => false,
+        }
     }
 }
 

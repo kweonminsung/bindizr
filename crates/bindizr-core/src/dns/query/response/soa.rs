@@ -3,6 +3,7 @@
 use domain::base::iana::{Class, OptRcode, Rtype};
 use domain::rdata::Soa;
 
+use crate::dns::Serial;
 use crate::dns::name::WireName;
 use crate::dns::query::response;
 use crate::dns::query::response::ParseResponseError;
@@ -12,7 +13,7 @@ pub fn extract_soa_serial(
     query_id: u16,
     qname: &WireName,
     response: &[u8],
-) -> Result<u32, ParseResponseError> {
+) -> Result<Serial, ParseResponseError> {
     use domain::base::ToName;
 
     let message = response::parse_authoritative_response(query_id, qname, Rtype::SOA, response)?;
@@ -38,7 +39,7 @@ pub fn extract_soa_serial(
                 });
             }
 
-            return Ok(record.data().serial().into_int());
+            return Ok(Serial::from(record.data().serial().into_int()));
         }
     }
 

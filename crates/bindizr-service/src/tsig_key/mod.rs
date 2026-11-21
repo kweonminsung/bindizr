@@ -15,7 +15,9 @@ use rand::RngExt;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::text::MAX_COLUMN_TEXT_LEN;
-use crate::types::{CreateTsigKeyRequest, PaginatedResponse, TsigKeyFilter, TsigKeyResponse};
+use crate::types::{
+    CreateTsigKeyRequest, MessageResponse, PaginatedResponse, TsigKeyFilter, TsigKeyResponse,
+};
 use crate::{Context, audit, pagination, role, transaction};
 
 /// Imported secrets must contain at least 128 bits. RFC 8945, Section 8
@@ -182,7 +184,11 @@ pub async fn find_by_wire_name(cx: &Context, name: &str) -> Result<Option<TsigKe
 }
 
 /// Delete a TSIG key by name; refused while it signs a secondary's NOTIFY.
-pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
+pub async fn delete(
+    cx: &Context,
+    caller: &Caller,
+    name: &str,
+) -> Result<MessageResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let tsig_key = lookup_by_name(cx, name).await?;
@@ -240,7 +246,11 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, apply_result, "failed to delete TSIG key").await
+    transaction::finish_tx(tx, apply_result, "failed to delete TSIG key").await?;
+
+    Ok(MessageResponse {
+        message: format!("TSIG key '{}' deleted successfully", tsig_key.name),
+    })
 }
 
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so

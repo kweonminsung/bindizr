@@ -10,7 +10,7 @@ use thiserror::Error;
 use crate::dns::message::{DNS_HEADER_LEN, Edns};
 use crate::dns::record::{ParseRdataError, ParseRecordValueError};
 use crate::dns::tsig::{RequestSignature, RequestTsig};
-use crate::dns::{name, tsig};
+use crate::dns::{Ttl, name, tsig};
 use crate::model::record::ParseRecordTypeError;
 
 /// Why an UPDATE message could not be parsed into its sections.
@@ -146,9 +146,11 @@ fn parse_record(
             .parse_u16_be()
             .map_err(|_| ParseUpdateError::InvalidRecord)?,
     );
-    let ttl = parser
-        .parse_u32_be()
-        .map_err(|_| ParseUpdateError::InvalidRecord)?;
+    let ttl = Ttl::from_secs(
+        parser
+            .parse_u32_be()
+            .map_err(|_| ParseUpdateError::InvalidRecord)?,
+    );
     let rdlen = usize::from(
         parser
             .parse_u16_be()

@@ -129,9 +129,6 @@ pub(crate) async fn delete_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    tsig_key::delete(&cx, &caller, &params.name).await?;
-    let response = MessageResponse {
-        message: "TSIG key deleted successfully".to_string(),
-    };
+    let response = tsig_key::delete(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

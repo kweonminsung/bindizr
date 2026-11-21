@@ -52,7 +52,8 @@ pub(crate) async fn probe_addresses(
             });
         }
     };
-    let clients = addrs.iter().map(SocketAddr::ip).collect();
+    // Transfer rows store an IPv4-mapped client as IPv4.
+    let clients = addrs.iter().map(|addr| addr.ip().to_canonical()).collect();
     let mut probe = SoaProbe {
         address: target.to_string(),
         serial: Err(ProbeSoaError::Resolve(ResolveAddressError::NoAddresses)),
@@ -94,9 +95,7 @@ async fn probe_address(
     let response =
         dns_client::exchange_with_tcp_fallback(server_addr, timeout, &query, "SOA probe").await?;
 
-    Ok(Serial::from(query::extract_soa_serial(
-        query_id, qname, &response,
-    )?))
+    Ok(query::extract_soa_serial(query_id, qname, &response)?)
 }
 
 #[cfg(test)]

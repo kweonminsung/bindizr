@@ -64,6 +64,15 @@ pub async fn list_by_filter(
     }
 }
 
+/// Count the versions a zone holds, in the current transaction.
+pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::zone_version::count_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::zone_version::count_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::zone_version::count_tx(tx, zone_id).await,
+    }
+}
+
 /// Count the versions of a zone that `filter` covers.
 pub async fn count_by_filter(
     db: &Db,

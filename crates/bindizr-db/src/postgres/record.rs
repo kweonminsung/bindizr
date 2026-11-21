@@ -116,12 +116,10 @@ pub(crate) async fn get_with_zone(
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: RecordId,
-    lock_level: LockLevel,
 ) -> Result<Option<Record>, DatabaseError> {
-    let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!(
-        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1{}",
-        lock_level.clause(),
-    )))
+    let record = sqlx::query_as::<_, Record>(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1 FOR UPDATE",
+    )
     .bind(id)
     .fetch_optional(&mut **tx)
     .await?;
@@ -151,14 +149,12 @@ pub(crate) async fn list_by_name_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
     name: &OwnerName,
-    lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
     // Bind the canonical stored form as given: re-folding it here would miss
     // its own row, and the bare column lets idx_records_zone_name apply.
-    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(format!(
-        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name, id{}",
-        lock_level.clause(),
-    )))
+    let records = sqlx::query_as::<_, Record>(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name, id FOR UPDATE",
+    )
     .bind(zone_id)
     .bind(name)
     .fetch_all(&mut **tx)

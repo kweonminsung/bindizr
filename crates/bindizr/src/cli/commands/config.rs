@@ -34,7 +34,8 @@ pub(crate) enum ConfigCommand {
     /// Re-read the configuration file in the running daemon
     #[command(after_help = "\
 Settings bound to something built at startup — the `api` section, the
-`database` section, and the DNS listen address and port — are fixed while
+`database` section, the DNS listen address and port, `dns.tls`,
+`dns.tcp_max_connections`, and `dns.catalog_zone_name` — are fixed while
 bindizr runs. A file that changes one of them is refused whole, so the
 running configuration always describes the running process.")]
     Reload {

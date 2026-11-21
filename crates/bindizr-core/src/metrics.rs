@@ -307,12 +307,12 @@ impl Metrics {
             dnssec_scheduler_runs_total.with_label_values(&[result.label()]);
         }
 
-        for table in ["journal", "version", "audit", "access", "transfer"] {
-            pruned_rows_total.with_label_values(&[table]);
+        for table in PrunedTable::ALL {
+            pruned_rows_total.with_label_values(&[table.label()]);
         }
 
-        for result in ["hit", "miss"] {
-            zone_cache_lookups_total.with_label_values(&[result]);
+        for result in ZoneCacheLookup::ALL {
+            zone_cache_lookups_total.with_label_values(&[result.label()]);
         }
 
         Ok(Self {
@@ -419,7 +419,7 @@ pub enum NsupdateResult {
 }
 
 impl NsupdateResult {
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 12] = [
         Self::TsigFailed,
         Self::Rcode(OptRcode::NOERROR),
         Self::Rcode(OptRcode::FORMERR),
@@ -431,7 +431,6 @@ impl NsupdateResult {
         Self::Rcode(OptRcode::NOTAUTH),
         Self::Rcode(OptRcode::NOTZONE),
         Self::Rcode(OptRcode::SERVFAIL),
-        Self::Rcode(OptRcode::NOTIMP),
         Self::Rcode(OptRcode::BADVERS),
     ];
 
@@ -503,6 +502,56 @@ impl SchedulerResult {
     }
 }
 
+/// The table a retention pass pruned rows from, as the pruned-rows counter labels it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrunedTable {
+    Journal,
+    Version,
+    Audit,
+    Access,
+    Transfer,
+}
+
+impl PrunedTable {
+    const ALL: [Self; 5] = [
+        Self::Journal,
+        Self::Version,
+        Self::Audit,
+        Self::Access,
+        Self::Transfer,
+    ];
+
+    /// Return the metric label value of this table.
+    fn label(self) -> &'static str {
+        match self {
+            Self::Journal => "journal",
+            Self::Version => "version",
+            Self::Audit => "audit",
+            Self::Access => "access",
+            Self::Transfer => "transfer",
+        }
+    }
+}
+
+/// Whether a zone-cache lookup found its entry, as the lookup counter labels it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ZoneCacheLookup {
+    Hit,
+    Miss,
+}
+
+impl ZoneCacheLookup {
+    const ALL: [Self; 2] = [Self::Hit, Self::Miss];
+
+    /// Return the metric label value of this lookup outcome.
+    fn label(self) -> &'static str {
+        match self {
+            Self::Hit => "hit",
+            Self::Miss => "miss",
+        }
+    }
+}
+
 impl Metrics {
     /// Count a zone transfer's outcome by its kind and transport.
     pub fn track_xfr(&self, kind: TransferKind, transport: TransferTransport, result: XfrResult) {
@@ -537,24 +586,24 @@ impl Metrics {
     /// history.
     pub fn track_pruned_rows(&self, journal_rows: u64, version_rows: u64) {
         self.pruned_rows_total
-            .with_label_values(&["journal"])
+            .with_label_values(&[PrunedTable::Journal.label()])
             .inc_by(journal_rows);
         self.pruned_rows_total
-            .with_label_values(&["version"])
+            .with_label_values(&[PrunedTable::Version.label()])
             .inc_by(version_rows);
     }
 
     /// Count the audit log rows the retention pass pruned.
     pub fn track_pruned_audit_log_rows(&self, rows: u64) {
         self.pruned_rows_total
-            .with_label_values(&["audit"])
+            .with_label_values(&[PrunedTable::Audit.label()])
             .inc_by(rows);
     }
 
     /// Count the access log rows the retention pass pruned.
     pub fn track_pruned_access_log_rows(&self, rows: u64) {
         self.pruned_rows_total
-            .with_label_values(&["access"])
+            .with_label_values(&[PrunedTable::Access.label()])
             .inc_by(rows);
     }
 
@@ -566,7 +615,7 @@ impl Metrics {
     /// Count the transfer log rows the retention pass pruned.
     pub fn track_pruned_transfer_log_rows(&self, rows: u64) {
         self.pruned_rows_total
-            .with_label_values(&["transfer"])
+            .with_label_values(&[PrunedTable::Transfer.label()])
             .inc_by(rows);
     }
 
@@ -597,10 +646,11 @@ impl Metrics {
     pub fn track_zone_cache_lookup(&self, hit: bool) {
         self.zone_cache_lookups_total
             .with_label_values(&[if hit {
-                "hit"
+                ZoneCacheLookup::Hit
             } else {
-                "miss"
-            }])
+                ZoneCacheLookup::Miss
+            }
+            .label()])
             .inc();
     }
 
