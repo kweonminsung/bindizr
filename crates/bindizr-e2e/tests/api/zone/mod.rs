@@ -436,7 +436,7 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
     let ns = records
         .iter()
         .find(|record| record["type"] == "NS")
-        .expect("apex NS row");
+        .unwrap();
 
     for spelling in ["@", zone_name] {
         let (status, body) = app

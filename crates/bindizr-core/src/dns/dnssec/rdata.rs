@@ -68,7 +68,7 @@ impl TryFrom<u8> for DsDigestType {
 }
 
 /// The DNSKEY protocol field, which must be 3 (RFC 4034, Section 2.1.2).
-const DNSKEY_PROTOCOL: u8 = 3;
+pub(crate) const DNSKEY_PROTOCOL: u8 = 3;
 
 /// A stored key whose RDATA could not be rebuilt.
 #[derive(Debug, Error)]

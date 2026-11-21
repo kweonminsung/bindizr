@@ -51,7 +51,7 @@ pub async fn export(
     // SOA carries names as absolute FQDNs so they are not read as relative
     // to $ORIGIN; a mailbox is one already, its local part escaped by the name codec.
     let mailbox = zone.soa_mailbox().map_err(|error| {
-        ServiceError::internal_with_source(format!("failed to render SOA mailbox: {error}"), error)
+        ServiceError::internal_with_source("failed to render SOA mailbox", error)
     })?;
     out.push_str(&format!(
         "@\t{}\tIN\tSOA\t{} {} {} {} {} {} {}\n",

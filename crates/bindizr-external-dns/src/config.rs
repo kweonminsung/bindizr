@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 use std::{fs, io};
 
-use bindizr_core::config::{ConfigError, LogLevel};
+use bindizr_core::config::{LogLevel, ParseConfigValueError};
 use clap::Parser;
 use reqwest::Url;
 use thiserror::Error;
@@ -77,7 +77,7 @@ pub(crate) enum LoadAdapterConfigError {
     InvalidLogLevel {
         value: String,
         #[source]
-        source: ConfigError,
+        source: ParseConfigValueError,
     },
 }
 

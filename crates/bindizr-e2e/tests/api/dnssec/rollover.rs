@@ -71,17 +71,11 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
     let keys = dnssec["keys"].as_array().unwrap();
 
     assert_eq!(keys.len(), 2);
-    let published = keys
-        .iter()
-        .find(|key| key["state"] == "published")
-        .expect("rollover start pre-publishes the replacement key");
+    let published = keys.iter().find(|key| key["state"] == "published").unwrap();
 
     assert_eq!(published["role"], "csk");
     let new_key_id = published["id"].as_i64().unwrap();
-    let active = keys
-        .iter()
-        .find(|key| key["state"] == "active")
-        .expect("the old key keeps signing during the rollover");
+    let active = keys.iter().find(|key| key["state"] == "active").unwrap();
 
     assert_eq!(active["id"], old_key_id);
 

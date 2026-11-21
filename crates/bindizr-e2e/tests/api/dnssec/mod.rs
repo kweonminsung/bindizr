@@ -325,10 +325,7 @@ async fn dnssec_enable_supports_nsec3_with_split_keys() {
     let keys = body["keys"].as_array().unwrap();
 
     assert_eq!(keys.len(), 3);
-    let published = keys
-        .iter()
-        .find(|key| key["state"] == "published")
-        .expect("rollover start pre-publishes the replacement key");
+    let published = keys.iter().find(|key| key["state"] == "published").unwrap();
 
     assert_eq!(published["role"], "zsk");
 

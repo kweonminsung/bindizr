@@ -18,7 +18,7 @@ pub(crate) async fn read_counter(app: &TestApp, name: &str, labels: &[&str]) -> 
     let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    let text = body.as_str().expect("metrics body is prometheus text");
+    let text = body.as_str().unwrap();
 
     text.lines()
         .filter(|line| line.starts_with(&format!("{name}{{")))
@@ -99,7 +99,7 @@ pub(crate) fn xot_client(
     alpn: &[&[u8]],
 ) -> ClientConfig {
     let mut roots = RootCertStore::empty();
-    roots.add(cert.clone()).expect("trust the test certificate");
+    roots.add(cert.clone()).unwrap();
     let mut client = ClientConfig::builder_with_protocol_versions(versions)
         .with_root_certificates(roots)
         .with_no_client_auth();

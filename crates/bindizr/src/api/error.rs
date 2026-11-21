@@ -130,6 +130,14 @@ impl From<JsonRejection> for ApiError {
                     MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
                 ))
             }
+            // A body the client broke off or framed badly is the client's
+            // mistake, which axum already classes as 4xx.
+            JsonRejection::BytesRejection(_) if rejection.status().is_client_error() => {
+                ServiceError::invalid_input(format!(
+                    "failed to read request body: {}",
+                    rejection.body_text()
+                ))
+            }
             _ => ServiceError::internal_with_source("failed to read request body", rejection),
         };
 

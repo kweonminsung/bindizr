@@ -1685,7 +1685,7 @@ async fn catalog_import_ignores_repeated_records() {
                     )
                     .await;
 
-                serde_json::from_str(&imported).expect("CLI did not return valid JSON")
+                serde_json::from_str(&imported).unwrap()
             } else {
                 let (status, body) = app
                     .send_request(
@@ -2047,8 +2047,7 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                     args.push("--dry-run");
                 }
 
-                serde_json::from_str(&app.run_cli_success(&args, None).await)
-                    .expect("CLI did not return valid JSON")
+                serde_json::from_str(&app.run_cli_success(&args, None).await).unwrap()
             } else {
                 let (status, body) = app
                     .send_request(

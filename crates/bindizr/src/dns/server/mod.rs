@@ -348,6 +348,8 @@ async fn refuse_tcp_xfr(
 
 /// Answer a caller-checked UDP AXFR with TC; defer zone grants to the TCP retry.
 /// Sign even truncated replies under the request's key (RFC 8945, Section 5.3).
+/// A UDP refusal is counted but not saved to the transfer log: a datagram's
+/// source address can be forged, so saving it would let anyone fill the log.
 pub(crate) async fn handle_udp_xfr(
     dns_cx: &DnsContext,
     socket: &UdpSocket,

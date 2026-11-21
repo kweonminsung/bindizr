@@ -78,7 +78,8 @@ pub(crate) async fn handle_udp_soa(
 }
 
 /// Answer an IXFR over UDP with the zone's SOA alone, counted as a
-/// `truncated` transfer since the transfer itself follows over TCP.
+/// `truncated` transfer since the transfer itself follows over TCP. A UDP
+/// refusal, like a UDP AXFR's, is counted but not saved to the transfer log.
 pub(crate) async fn handle_udp_ixfr(
     dns_cx: &DnsContext,
     socket: &UdpSocket,
@@ -221,12 +222,12 @@ async fn handle_soa_request(
         };
         let (catalog_zone, _) = match access {
             Ok(content) => content,
-            Err(reason) => {
+            Err(refusal) => {
                 log::warn!(
-                    "Refused {} query for {zone_name_str:?} from {client_ip}: {reason}",
+                    "Refused {} query for {zone_name_str:?} from {client_ip}: {refusal}",
                     query.qtype
                 );
-                return TransferRefusal::refused(reason, identity.signer)
+                return TransferRefusal::refused(refusal.to_string(), identity.signer)
                     .into_response(&QueryMetadata::from(query), query_data)
                     .map(|response| (response, SoaResult::Refused));
             }

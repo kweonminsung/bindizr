@@ -104,9 +104,10 @@ fn build_delegation_response(
     ds_key_tags.sort_unstable();
     ds_key_tags.dedup();
 
-    let apex = zone.name.to_wire_name().map_err(|error| {
-        ServiceError::internal_with_source(format!("invalid zone apex: {error}"), error)
-    })?;
+    let apex = zone
+        .name
+        .to_wire_name()
+        .map_err(|error| ServiceError::internal_with_source("invalid zone apex", error))?;
 
     let mut delegation_keys = Vec::new();
 

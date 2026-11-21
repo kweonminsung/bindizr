@@ -57,14 +57,8 @@ pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Valu
 
 /// Extract the DNS owner and type used to identify a record.
 pub(crate) fn extract_record_key(record: &Value) -> (String, u16) {
-    let name = record["name"]
-        .as_str()
-        .expect("record did not contain a name")
-        .to_string();
-    let record_type = record["type"]
-        .as_str()
-        .and_then(parse_record_type)
-        .expect("record contained an unsupported DNS type");
+    let name = record["name"].as_str().unwrap().to_string();
+    let record_type = record["type"].as_str().and_then(parse_record_type).unwrap();
 
     (name, record_type)
 }

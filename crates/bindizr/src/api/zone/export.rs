@@ -38,6 +38,7 @@ pub(crate) struct ExportZoneQuery {
         responses(
             (status = 200, description = "The zone as master-file text", content_type = "text/plain", body = String),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

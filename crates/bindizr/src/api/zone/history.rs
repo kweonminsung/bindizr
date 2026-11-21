@@ -50,6 +50,7 @@ pub(crate) struct ListZoneVersionsQuery {
         responses(
             (status = 200, description = "A list of zone versions", body = PaginatedResponse<ZoneVersionResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -95,6 +96,7 @@ pub(crate) struct ZoneVersionParams {
         responses(
             (status = 200, description = "The version and its reconstructed records", body = GetZoneVersionResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone or version not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -182,6 +184,7 @@ pub(crate) struct DiffZoneVersionsQuery {
         responses(
             (status = 200, description = "The record differences between the two serials", body = DiffZoneVersionsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone or version not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

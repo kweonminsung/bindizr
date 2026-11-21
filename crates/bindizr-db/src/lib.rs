@@ -370,9 +370,7 @@ impl Backend {
                         .execute(&mut *connection)
                         .await?;
 
-                    // Set the busy timeout before WAL locks too; short timeouts starve
-                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY.
-                    sqlx::query("PRAGMA busy_timeout = 15000")
+                    sqlx::query(sqlite::BUSY_TIMEOUT_PRAGMA)
                         .execute(&mut *connection)
                         .await?;
 

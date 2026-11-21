@@ -459,7 +459,7 @@ async fn zone_versions_record_who_made_each_change() {
             None,
         )
         .await;
-    let history: Value = serde_json::from_str(&history).expect("CLI did not return valid JSON");
+    let history: Value = serde_json::from_str(&history).unwrap();
 
     assert_eq!(
         history["items"][0]["changed_by"],

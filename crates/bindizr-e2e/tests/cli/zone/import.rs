@@ -114,7 +114,7 @@ async fn zone_import_reads_zone_file_from_stdin() {
             None,
         )
         .await;
-    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let listed: Value = serde_json::from_str(&listed).unwrap();
 
     assert_eq!(listed["items"].as_array().unwrap().len(), 2);
 }
@@ -142,7 +142,7 @@ async fn zone_import_dry_run_shows_the_diff() {
     let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let listed: Value = serde_json::from_str(&listed).unwrap();
 
     // Only the apex NS seeded at creation exists.
     let names: Vec<&str> = listed["items"]
@@ -320,7 +320,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
             Some(&format!("{first_zone_name}\n{second_zone_name}\n")),
         )
         .await;
-    let previewed: Value = serde_json::from_str(&previewed).expect("CLI did not return valid JSON");
+    let previewed: Value = serde_json::from_str(&previewed).unwrap();
 
     assert_eq!(previewed["dry_run"], true);
     assert_eq!(previewed["summary"]["zones"], 2, "{previewed}");
@@ -349,7 +349,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
             None,
         )
         .await;
-    let imported: Value = serde_json::from_str(&imported).expect("CLI did not return valid JSON");
+    let imported: Value = serde_json::from_str(&imported).unwrap();
     let names: Vec<&str> = imported["zones"]
         .as_array()
         .unwrap()

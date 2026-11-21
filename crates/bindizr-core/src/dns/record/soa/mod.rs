@@ -5,9 +5,9 @@ use std::{fmt, str};
 
 use thiserror::Error;
 
-use crate::dns::name;
 use crate::dns::name::{EncodeNameError, ParseNameError};
 use crate::dns::record::{EncodeRdataError, Rdata};
+use crate::dns::{Serial, Ttl, name};
 
 /// An email that does not encode as an SOA mailbox, or a mailbox that does
 /// not decode back.
@@ -31,11 +31,13 @@ pub enum ParseMailboxError {
 pub struct SoaRecordValue<N> {
     pub mname: N,
     pub rname: N,
-    pub serial: u32,
+    pub serial: Serial,
+    /// REFRESH, RETRY and EXPIRE as the wire carries them; the service
+    /// narrows them to `SoaInterval`.
     pub refresh: u32,
     pub retry: u32,
     pub expire: u32,
-    pub minimum: u32,
+    pub minimum: Ttl,
 }
 
 impl<N: AsRef<str>> SoaRecordValue<N> {
@@ -45,11 +47,11 @@ impl<N: AsRef<str>> SoaRecordValue<N> {
         rdata.extend_from_slice(&name::encode_name(self.rname.as_ref())?);
 
         for field in [
-            self.serial,
+            self.serial.as_u32(),
             self.refresh,
             self.retry,
             self.expire,
-            self.minimum,
+            self.minimum.as_secs(),
         ] {
             rdata.extend_from_slice(&field.to_be_bytes());
         }

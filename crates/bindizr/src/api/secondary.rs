@@ -181,7 +181,7 @@ pub(crate) async fn delete_secondary(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
-            (status = 500, description = "Internal server error, including Bindizr's own DNS listener not answering", body = ErrorResponse)
+            (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 pub(crate) async fn check_secondary(

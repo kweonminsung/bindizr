@@ -33,10 +33,17 @@ pub(crate) async fn check_installation(
                 config.database.database_type
             ),
         },
-        Ok(Err(error)) => DoctorCheckResponse {
-            status: DoctorCheckStatus::Failed,
-            message: format!("Database not reachable: {error}"),
-        },
+        Ok(Err(error)) => {
+            // Reported as a finding, not returned, so the fault is logged here.
+            if error.code().is_internal() {
+                log::error!("Doctor could not read the database: {error:?}");
+            }
+
+            DoctorCheckResponse {
+                status: DoctorCheckStatus::Failed,
+                message: format!("Database not reachable: {error}"),
+            }
+        }
         Err(_) => DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
             message: format!(

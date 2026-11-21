@@ -6,10 +6,8 @@ mod send;
 use std::sync::Arc;
 
 use bindizr_core::dns::name::ZoneName;
-pub(crate) use send::send_zone_notify;
-pub use send::{
-    NotifyZoneError, SendNotifyError, send_notify_to_secondaries, send_notify_to_secondary,
-};
+pub(crate) use send::{NotifyZoneError, send_zone_notify};
+pub use send::{send_notify_to_secondaries, send_notify_to_secondary};
 use thiserror::Error;
 use tokio::task::JoinSet;
 
@@ -28,7 +26,7 @@ pub enum NotifyTarget<'a> {
 
 /// Why a NOTIFY round did not reach every secondary.
 #[derive(Debug, Error)]
-pub enum NotifyError {
+pub(crate) enum NotifyError {
     #[error(transparent)]
     Service(#[from] ServiceError),
     #[error(transparent)]

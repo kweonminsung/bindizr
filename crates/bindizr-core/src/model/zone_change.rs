@@ -111,7 +111,7 @@ where
 
 /// A journal row's record type: the column spans both the user plane
 /// (`RecordType`) and the derived DNSSEC plane, stored as one mnemonic text.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JournalRecordType {
     User(RecordType),
     Derived(DnssecRecordType),
@@ -124,12 +124,12 @@ impl JournalRecordType {
     /// Return whether this is a signer-generated DNSSEC change, served by IXFR
     /// but skipped during rewind and diffs: rollback re-signs the restored
     /// user records.
-    pub fn is_derived(&self) -> bool {
+    pub fn is_derived(self) -> bool {
         matches!(self, Self::Derived(_))
     }
 
     /// Return the canonical wire spelling.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::User(record_type) => record_type.as_str(),
             Self::Derived(record_type) => record_type.as_str(),

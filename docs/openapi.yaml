@@ -1134,10 +1134,13 @@ paths:
           type: string
       - name: value
         in: query
-        description: 'Canonical value match: one string or TXT segments, as in a create request. Requires `type`.'
+        description: |-
+          Canonical value match, as in a create request; requires `type`. A query
+          string carries one string, so a TXT value of several segments is matched
+          by the daemon socket's JSON form, or its record deleted by id.
         required: false
         schema:
-          $ref: '#/components/schemas/RecordValue'
+          type: string
       - name: priority
         in: query
         description: |-
@@ -2116,7 +2119,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Internal server error, including Bindizr's own DNS listener not answering
+          description: Internal server error
           content:
             application/json:
               schema:
@@ -2166,6 +2169,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Role not found
           content:
             application/json:
               schema:
@@ -2406,6 +2415,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Role not found
           content:
             application/json:
               schema:
@@ -3592,6 +3607,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
           content:
@@ -3756,6 +3777,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
           content:
@@ -3814,6 +3841,12 @@ paths:
                 $ref: '#/components/schemas/PaginatedResponse_ZoneVersionResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -3879,6 +3912,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone or version not found
           content:
@@ -3925,6 +3964,12 @@ paths:
                 $ref: '#/components/schemas/GetZoneVersionResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:

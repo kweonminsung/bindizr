@@ -23,7 +23,14 @@ pub(crate) async fn get_daemon_status(
     };
     let (zones, secondaries, database_error) = match time::timeout(DB_PROBE_TIMEOUT, counts).await {
         Ok(Ok((zones, secondaries))) => (Some(zones), Some(secondaries), None),
-        Ok(Err(error)) => (None, None, Some(error.to_string())),
+        Ok(Err(error)) => {
+            // Reported as text, not returned, so the fault is logged here.
+            if error.code().is_internal() {
+                log::error!("Daemon status could not read the database: {error:?}");
+            }
+
+            (None, None, Some(error.to_string()))
+        }
         Err(_) => (
             None,
             None,

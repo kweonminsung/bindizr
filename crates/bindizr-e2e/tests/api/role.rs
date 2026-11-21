@@ -1639,6 +1639,8 @@ async fn responses_hide_records_outside_read_grants() {
     .await;
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token);
+    // The transfer ACL admits the bulk import's AXFR from this daemon itself.
+    app.create_secondary("loopback", "127.0.0.1").await;
 
     let zone_name = app.zone_name("example.com");
 
@@ -1852,6 +1854,17 @@ async fn responses_hide_records_outside_read_grants() {
                     "$ORIGIN {zone_name}.\n$TTL 3600\n_acme-challenge IN TXT \"fresh\"\n"
                 ),
                 "mode": "append",
+                "dry_run": true
+            })),
+        ),
+        (
+            Method::POST,
+            "/import".to_string(),
+            Some(json!({
+                // The zone transferred from this daemon diffs against itself.
+                "from_server": format!("127.0.0.1:{}", app.dns_port()),
+                "zone_names": [zone_name],
+                "mode": "replace",
                 "dry_run": true
             })),
         ),

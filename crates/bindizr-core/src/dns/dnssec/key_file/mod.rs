@@ -9,6 +9,7 @@ use domain::rdata::Dnskey;
 use thiserror::Error;
 
 use crate::dns::dnssec::KeyTag;
+use crate::dns::dnssec::rdata::DNSKEY_PROTOCOL;
 use crate::dns::{LibraryError, Ttl};
 use crate::model::dnssec_key::{
     DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
@@ -207,7 +208,7 @@ impl DnssecKey {
             value: flags.to_string(),
         })?;
 
-        if *protocol != "3" {
+        if protocol.parse::<u8>() != Ok(DNSKEY_PROTOCOL) {
             return Err(ImportKeyError::Protocol {
                 value: protocol.to_string(),
             });
@@ -236,7 +237,7 @@ impl DnssecKey {
         // Reconstruct the pair to reject a private key for a different DNSKEY.
         let dnskey = Dnskey::new(
             flags,
-            3,
+            DNSKEY_PROTOCOL,
             SecurityAlgorithm::from_int(algorithm.as_u8()),
             public_key,
         )

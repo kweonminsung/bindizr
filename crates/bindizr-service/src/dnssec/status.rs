@@ -127,9 +127,10 @@ pub(crate) async fn lookup_status_tx(
 
 /// Build the key's DS form from the same digest the CDS records carry.
 fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, ServiceError> {
-    let apex = zone.name.to_wire_name().map_err(|error| {
-        ServiceError::internal_with_source(format!("invalid zone apex: {error}"), error)
-    })?;
+    let apex = zone
+        .name
+        .to_wire_name()
+        .map_err(|error| ServiceError::internal_with_source("invalid zone apex", error))?;
     let ds = key
         .to_ds(&apex, DS_DIGEST_TYPE)
         .map_err(ServiceError::dnssec_signing_failed)?;

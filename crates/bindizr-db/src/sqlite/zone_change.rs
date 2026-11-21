@@ -37,7 +37,7 @@ pub(crate) async fn create_many_tx(
                 .bind(change.serial)
                 .bind(change.operation)
                 .bind(&change.record_name)
-                .bind(&change.record_type)
+                .bind(change.record_type)
                 .bind(&change.record_value)
                 .bind(&change.record_rdata)
                 .bind(change.record_ttl)

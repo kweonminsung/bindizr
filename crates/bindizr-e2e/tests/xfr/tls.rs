@@ -42,7 +42,7 @@ fn exchange_signed_boundary_transfer<S: io::Read + io::Write>(
     let mut soa_count = 0;
 
     while soa_count < 2 {
-        let response = dns::read_frame(stream).unwrap().expect("closing SOA");
+        let response = dns::read_frame(stream).unwrap().unwrap();
         let mut response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
@@ -377,11 +377,11 @@ async fn tls_transfer_requires_key_and_registered_address() {
         Some(&key),
         common::dot_client(&app),
     )
-    .expect("XoT");
+    .unwrap();
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).unwrap();
 
     assert!(outcome.records() >= 3);
 
@@ -394,7 +394,7 @@ async fn tls_transfer_requires_key_and_registered_address() {
         None,
         common::dot_client(&app),
     )
-    .expect("XoT");
+    .unwrap();
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
@@ -405,7 +405,7 @@ async fn tls_transfer_requires_key_and_registered_address() {
         Some(&key),
         common::dot_client(&app),
     )
-    .expect("XoT");
+    .unwrap();
 
     assert!(outcome.records() >= 3);
 
@@ -715,7 +715,7 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
     app.create_secondary("loopback", "127.0.0.1").await;
 
     // RFC 8945, Section 5.3: the refusal of a signed request is signed.
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).unwrap();
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
     assert!(outcome.refusal_signed());
@@ -751,7 +751,7 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
         Some(&key),
         common::dot_client(&app),
     )
-    .expect("XoT");
+    .unwrap();
 
     assert!(outcome.records() >= 3);
 }
@@ -773,7 +773,7 @@ async fn config_reload_replaces_dns_tls_certificate() {
         Some(&key),
         common::dot_client(&app),
     )
-    .expect("XoT");
+    .unwrap();
 
     assert!(outcome.records() >= 3);
 
@@ -784,8 +784,7 @@ async fn config_reload_replaces_dns_tls_certificate() {
     assert!(reloaded.contains("dns.tls certificate"), "{reloaded}");
 
     let client = common::xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
-    let outcome =
-        dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");
+    let outcome = dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), client).unwrap();
 
     assert!(outcome.records() >= 3);
 
@@ -809,8 +808,7 @@ async fn config_reload_replaces_dns_tls_certificate() {
     crate::common::assert_cli_failure_contains(&args, &refused, "nothing was reloaded");
 
     let client = common::xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
-    let outcome =
-        dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");
+    let outcome = dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), client).unwrap();
 
     assert!(outcome.records() >= 3);
 }
@@ -1099,11 +1097,11 @@ fn extended_error_code(response: &[u8]) -> ExtendedErrorCode {
     Message::from_octets(response)
         .unwrap()
         .opt()
-        .expect("the refusal carries an OPT")
+        .unwrap()
         .opt()
         .iter::<ExtendedError<_>>()
         .next()
-        .expect("the refusal names its reason")
+        .unwrap()
         .unwrap()
         .code()
 }

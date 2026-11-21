@@ -107,8 +107,9 @@ pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<ApiToken>, Datab
     Ok(tokens)
 }
 
-/// Stamp when the token was last used, returning whether it was stamped.
-/// SQLite holds no row locks, so nothing is skipped.
+/// Stamp when the token was last used, returning whether it was stamped. A
+/// mutation holds the database writer for its whole transaction, so the stamp
+/// gives up at once rather than wait for it: nothing may block on a stamp.
 pub(crate) async fn update_last_used_at(
     pool: &Pool<Sqlite>,
     id: TokenId,
@@ -116,13 +117,31 @@ pub(crate) async fn update_last_used_at(
 ) -> Result<bool, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
+    sqlx::query("PRAGMA busy_timeout = 0")
+        .execute(&mut *connection)
+        .await?;
+
     let result = sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
         .bind(last_used_at)
         .bind(id)
         .execute(&mut *connection)
-        .await?;
+        .await;
 
-    Ok(result.rows_affected() > 0)
+    // The connection goes back to the pool, so it takes back the pool's wait;
+    // one that cannot is closed rather than reused without it.
+    if let Err(error) = sqlx::query(sqlite::BUSY_TIMEOUT_PRAGMA)
+        .execute(&mut *connection)
+        .await
+    {
+        connection.close_on_drop();
+        return Err(error.into());
+    }
+
+    match result {
+        Ok(result) => Ok(result.rows_affected() > 0),
+        Err(sqlx::Error::Database(error)) if sqlite::is_busy(error.as_ref()) => Ok(false),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Delete an API token by ID.
@@ -154,4 +173,74 @@ pub(crate) async fn list_by_role_id(
     .await?;
 
     Ok(tokens)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+
+    use super::*;
+    use crate::schema;
+
+    /// Verify that the stamp gives up rather than wait while another
+    /// connection holds the database writer, and stamps once it is free.
+    #[tokio::test]
+    async fn update_last_used_at_skips_a_held_writer() {
+        let directory = tempfile::tempdir().unwrap();
+        let options = SqliteConnectOptions::new()
+            .filename(directory.path().join("stamp.sqlite"))
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(2)
+            .after_connect(|connection, _| {
+                Box::pin(async move {
+                    sqlx::query(sqlite::BUSY_TIMEOUT_PRAGMA)
+                        .execute(&mut *connection)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect_with(options)
+            .await
+            .unwrap();
+
+        for query in schema::sqlite::table_creation_queries() {
+            sqlx::query(query).execute(&pool).await.unwrap();
+        }
+
+        sqlx::query("INSERT INTO roles (id, name, created_at) VALUES (1, 'r', ?)")
+            .bind(Utc::now())
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO api_tokens (id, name, token, role_id, created_at) VALUES (1, 't', 'h', 1, ?)",
+        )
+        .bind(Utc::now())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut writer = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        let started = Instant::now();
+
+        assert!(
+            !update_last_used_at(&pool, TokenId::from(1), Utc::now())
+                .await
+                .unwrap()
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+
+        sqlx::query("SELECT 1").execute(&mut *writer).await.unwrap();
+        writer.rollback().await.unwrap();
+
+        assert!(
+            update_last_used_at(&pool, TokenId::from(1), Utc::now())
+                .await
+                .unwrap()
+        );
+    }
 }

@@ -104,7 +104,7 @@ async fn config_reload_replaces_api_certificate() {
         .get(format!("{}/health", app.base_url()))
         .send()
         .await
-        .expect("the renewed certificate is served");
+        .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
 

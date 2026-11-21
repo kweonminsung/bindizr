@@ -42,7 +42,7 @@ async fn tsig_key_supports_create_read_and_delete() {
         .unwrap()
         .iter()
         .find(|tsig_key| tsig_key["name"] == "update-key")
-        .expect("the key is listed");
+        .unwrap();
 
     assert!(tsig_key.get("secret").is_none());
 

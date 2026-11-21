@@ -36,6 +36,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
             (status = 200, description = "All TSIG keys", body = PaginatedResponse<TsigKeyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
+            (status = 404, description = "Role not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]

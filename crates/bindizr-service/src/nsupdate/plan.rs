@@ -2,7 +2,7 @@
 
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::dns::record::{SoaMailbox, SoaRecordValue};
-use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::dns::{SoaInterval, Ttl};
 use bindizr_core::model::zone::Zone;
 
 use crate::error::ServiceError;
@@ -51,9 +51,7 @@ impl UpdatePlan {
                 } => {
                     // RFC 2136, Section 3.4.2.2: SOA exists only at the apex;
                     // equal, older, and RFC 1982-undefined serials cannot replace it.
-                    if !owner.is_apex()
-                        || !Serial::from(value.serial).is_newer_than(plan.zone.serial)
-                    {
+                    if !owner.is_apex() || !value.serial.is_newer_than(plan.zone.serial) {
                         continue;
                     }
 
@@ -77,7 +75,7 @@ impl UpdatePlan {
 
 /// Apply the existing zone-write policy to an advancing wire SOA.
 fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Zone, ServiceError> {
-    let serial = Serial::from(value.serial);
+    let serial = value.serial;
     let interval = |secs: u32, field: &str| {
         SoaInterval::try_from(secs)
             .map_err(|error| ServiceError::invalid_zone_field(format!("{field}: {error}")))
@@ -94,7 +92,7 @@ fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Z
         refresh: interval(value.refresh, "refresh")?,
         retry: interval(value.retry, "retry")?,
         expire: interval(value.expire, "expire")?,
-        minimum_ttl: Ttl::from(value.minimum),
+        minimum_ttl: value.minimum,
         ..zone.clone()
     })
 }

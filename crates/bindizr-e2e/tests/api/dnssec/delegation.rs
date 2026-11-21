@@ -11,11 +11,8 @@ use crate::common::dns::{DsRecord, FakeParent};
 
 /// Return a `host:port` nothing listens on, standing in for an unreachable parent.
 fn closed_parent_addr() -> String {
-    let socket = UdpSocket::bind(("127.0.0.1", 0)).expect("failed to bind an ephemeral port");
-    socket
-        .local_addr()
-        .expect("failed to read the ephemeral port")
-        .to_string()
+    let socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+    socket.local_addr().unwrap().to_string()
 }
 
 /// Verify that invalid parent response codes or classes cannot remove DNSSEC state.
@@ -157,7 +154,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             .unwrap()
             .iter()
             .find(|key| key["state"] == "published")
-            .expect("rollover start pre-publishes the replacement key")["key_tag"]
+            .unwrap()["key_tag"]
             .as_u64()
             .unwrap(),
     )
@@ -503,7 +500,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
             .unwrap()
             .iter()
             .find(|key| key["state"] == "published")
-            .expect("rollover start pre-publishes the replacement key")["key_tag"]
+            .unwrap()["key_tag"]
             .as_u64()
             .unwrap(),
     )
@@ -517,7 +514,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
             .unwrap()
             .iter()
             .find(|key| key["key_tag"] == new_key_tag)
-            .expect("the replacement key is a delegation key")["ds_published"]
+            .unwrap()["ds_published"]
             .clone()
     };
 
@@ -630,7 +627,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
             .unwrap()
             .iter()
             .find(|key| key["state"] == "published")
-            .expect("rollover start pre-publishes the replacement key")["key_tag"]
+            .unwrap()["key_tag"]
             .as_u64()
             .unwrap(),
     )
@@ -655,7 +652,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
             .unwrap()
             .iter()
             .find(|key| key["key_tag"] == new_key_tag)
-            .expect("the replacement key is a delegation key")["ds_published"],
+            .unwrap()["ds_published"],
         true,
         "{body}"
     );
@@ -732,7 +729,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
             .unwrap()
             .iter()
             .find(|key| key["state"] == "published")
-            .expect("rollover start pre-publishes the replacement key")["key_tag"]
+            .unwrap()["key_tag"]
             .as_u64()
             .unwrap(),
     )
@@ -756,7 +753,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
         .unwrap()
         .iter()
         .find(|key| key["key_tag"] == new_key_tag)
-        .expect("the replacement key is a delegation key")
+        .unwrap()
         .clone();
 
     assert_eq!(key["ds_published"], false, "{body}");
@@ -832,7 +829,7 @@ async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server
         .unwrap()
         .iter()
         .find(|key| key["key_tag"] == key_tag)
-        .expect("the signing key is a delegation key")
+        .unwrap()
         .clone();
 
     assert_eq!(key["ds_published"], false, "{body}");

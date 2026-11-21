@@ -372,7 +372,8 @@ type and db module carry that name (`audit_log`, `AuditLog`;
 every management API request and nsupdate answered, by the front end, client
 address and verified credential; the transfer log every transfer Bindizr
 answered, refused, or failed, by client address and zone (an IXFR answered
-with the current SOA alone moved nothing and is none). `zone_journal` and
+with the current SOA alone moved nothing and is none, and a UDP refusal,
+whose source address can be forged, is counted but not saved). `zone_journal` and
 `zone_versions` are not logs: IXFR, diff, and rollback are served from them.
 
 Every log is read the same way: `GET /logs/<subject>`, `bindizr log

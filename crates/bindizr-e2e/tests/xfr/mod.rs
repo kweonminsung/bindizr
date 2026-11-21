@@ -237,7 +237,7 @@ async fn tsig_algorithm_names_match_regardless_of_case() {
     let index = query
         .windows(label.len())
         .rposition(|window| window == label)
-        .expect("the TSIG names its algorithm");
+        .unwrap();
     query[index..index + label.len()].make_ascii_uppercase();
 
     for response in [
@@ -302,13 +302,13 @@ async fn unsigned_transfer_requires_registered_secondary() {
     let zone_name = zone["name"].as_str().unwrap();
 
     // Nobody is registered yet, so the address admits nothing.
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).unwrap();
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
     app.create_secondary("loopback", "127.0.0.1").await;
 
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).unwrap();
 
     assert!(outcome.records() >= 3);
 
@@ -319,7 +319,7 @@ async fn unsigned_transfer_requires_registered_secondary() {
     )
     .await;
 
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).unwrap();
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
@@ -329,14 +329,14 @@ async fn unsigned_transfer_requires_registered_secondary() {
     )
     .await;
 
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).unwrap();
 
     assert!(outcome.records() >= 3);
 
     app.run_cli_success(&["secondary", "delete", "loopback"], None)
         .await;
 
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).unwrap();
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 }
@@ -351,7 +351,7 @@ async fn transfer_returns_notauth_for_invalid_zone_name() {
     // RFC 5936, Section 2.2.1: a refusal is an RCODE, not a dropped
     // connection; the underscore label is one the zone type refuses.
     for zone_name in ["nozone.example.", "_foo.example."] {
-        let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+        let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).unwrap();
 
         assert_eq!(outcome.refusal(), Rcode::NOTAUTH, "zone {zone_name}");
     }
@@ -579,7 +579,7 @@ async fn unsigned_transfer_enforces_address_acl() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).unwrap();
 
     assert!(
         outcome.records() >= 3,
@@ -599,7 +599,7 @@ async fn signed_transfer_replies_with_request_key() {
 
     // `axfr` verifies every envelope's MAC, so an unsigned answer — which BIND
     // discards as "expected a TSIG" — fails here rather than passing silently.
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("signed AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).unwrap();
 
     assert!(outcome.records() >= 3);
 }
@@ -649,13 +649,12 @@ async fn signed_transfer_limits_zones_to_key_role_grants() {
     )
     .await;
 
-    let outcome =
-        dns::fetch_axfr_tcp(app.dns_port(), granted_zone_name, Some(&key)).expect("granted AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), granted_zone_name, Some(&key)).unwrap();
 
     assert!(outcome.records() >= 3);
 
     for zone_name in [&narrowed_zone_name, &ungranted_zone_name] {
-        let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
+        let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).unwrap();
 
         assert_eq!(outcome.refusal(), Rcode::REFUSED, "zone {zone_name}");
     }
@@ -684,8 +683,7 @@ async fn transfer_only_grant_reads_zone_without_write_access() {
     )
     .await;
 
-    let outcome =
-        dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("transfer-only AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).unwrap();
 
     assert!(outcome.records() >= 3);
 
@@ -701,7 +699,7 @@ async fn transfer_only_grant_reads_zone_without_write_access() {
         }],
         Some(&key),
     )
-    .expect("signed update");
+    .unwrap();
 
     assert_eq!(rcode, Rcode::REFUSED);
 }
@@ -882,6 +880,61 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
     }
 }
 
+/// Verify that an IXFR across a forced serial bump of an unsigned zone is answered
+/// as a delta: the bump journals its SOA pair, so the step is no gap.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn ixfr_steps_across_a_forced_serial_bump() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // Enough records that the bump's two journal rows are smaller than the zone
+    // (RFC 1995, Section 2 lets a larger delta go out as AXFR).
+    for index in 0..4 {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": format!("host{index}"), "type": "A", "value": "192.0.2.1",
+                    "zone_name": zone_name
+                })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+
+    let before = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/notify?bump_serial=true"),
+            None,
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Registered after the bump, whose NOTIFY no listener here would answer.
+    app.create_secondary("loopback", "127.0.0.1").await;
+
+    let response =
+        dns::exchange_request(dns::build_ixfr_query(zone_name, before), None, |message| {
+            dns::exchange_tcp(app.dns_port(), message)
+        })
+        .unwrap();
+
+    assert_eq!(response.header().rcode(), Rcode::NOERROR);
+
+    let body = common::wait_for_transfer_log(&app, "secondary_name=loopback", 1).await;
+
+    assert_eq!(body["items"][0]["kind"], "ixfr", "{body}");
+    assert_eq!(body["items"][0]["incremental"], true, "{body}");
+}
+
 /// Verify that the transfer log lists served and refused transfers by address and by
 /// secondary, a refusal to an address no secondary had included.
 #[tokio::test]
@@ -892,7 +945,7 @@ async fn transfer_log_lists_transfers_by_address_and_secondary() {
     let zone_name = zone["name"].as_str().unwrap();
 
     // Refused while no secondary has the address; the log shows it by address.
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).unwrap();
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
@@ -906,7 +959,7 @@ async fn transfer_log_lists_transfers_by_address_and_secondary() {
 
     app.create_secondary("loopback", "127.0.0.1").await;
 
-    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).unwrap();
 
     assert!(outcome.records() >= 3);
 
@@ -1053,7 +1106,8 @@ async fn malformed_tsig_returns_unsigned_formerr() {
     let short_mac = additional.finish();
 
     for (label, query) in [("not last", not_last), ("short MAC", short_mac)] {
-        let response = dns::exchange_tcp(app.dns_port(), &query).expect(label);
+        let response = dns::exchange_tcp(app.dns_port(), &query)
+            .unwrap_or_else(|error| panic!("{label}: {error}"));
         let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::FORMERR, "{label}");
@@ -1537,12 +1591,7 @@ async fn edns_query_returns_opt() {
     assert_eq!(response.header().rcode(), Rcode::NOERROR);
 
     // RFC 7828, Section 3.3.2: over TCP the OPT carries the idle timeout.
-    let keepalive = response
-        .opt()
-        .unwrap()
-        .opt()
-        .tcp_keepalive()
-        .expect("a TCP answer advertises its idle timeout");
+    let keepalive = response.opt().unwrap().opt().tcp_keepalive().unwrap();
 
     assert_eq!(keepalive.timeout().map(u16::from), Some(300));
     assert!(edns.opt().unwrap().opt().tcp_keepalive().is_none());
@@ -1634,9 +1683,7 @@ async fn tcp_connection_completes_pipelined_transfers() {
     let mut soas: HashMap<u16, usize> = HashMap::new();
 
     while soas.values().filter(|&&seen| seen >= 2).count() < 2 {
-        let response = dns::read_frame(&mut stream)
-            .unwrap()
-            .expect("the server closed before both transfers ended");
+        let response = dns::read_frame(&mut stream).unwrap().unwrap();
         let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
@@ -1672,9 +1719,7 @@ async fn rejected_queries_keep_the_tcp_connection_usable() {
     malformed.truncate(12);
     malformed[4..6].copy_from_slice(&2u16.to_be_bytes());
     dns::write_frame(&mut stream, &malformed).unwrap();
-    let response = dns::read_frame(&mut stream)
-        .unwrap()
-        .expect("FORMERR response");
+    let response = dns::read_frame(&mut stream).unwrap().unwrap();
 
     assert_eq!(
         Message::from_octets(response).unwrap().header().rcode(),
@@ -1694,9 +1739,7 @@ async fn rejected_queries_keep_the_tcp_connection_usable() {
             .push((&dns::parse_name(zone_name).unwrap(), qtype, qclass))
             .unwrap();
         dns::write_frame(&mut stream, &question.finish()).unwrap();
-        let response = dns::read_frame(&mut stream)
-            .unwrap()
-            .expect("refusal response");
+        let response = dns::read_frame(&mut stream).unwrap().unwrap();
         let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().id(), 1234);
@@ -1710,9 +1753,7 @@ async fn rejected_queries_keep_the_tcp_connection_usable() {
 
         let query = common::build_edns_query(zone_name, Rtype::SOA, &[]).finish();
         dns::write_frame(&mut stream, &query).unwrap();
-        let response = dns::read_frame(&mut stream)
-            .unwrap()
-            .expect("SOA response after refusal");
+        let response = dns::read_frame(&mut stream).unwrap().unwrap();
         let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::NOERROR);

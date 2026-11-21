@@ -47,14 +47,14 @@ impl ExternalDnsAdapter {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .expect("failed to start bindizr-external-dns binary");
+            .unwrap();
 
         let base_url = format!("http://127.0.0.1:{webhook_port}");
         let health_url = format!("http://127.0.0.1:{health_port}");
         let client = Client::new();
 
         for _ in 0..100 {
-            if let Some(status) = child.try_wait().expect("failed to check adapter status") {
+            if let Some(status) = child.try_wait().unwrap() {
                 panic!("bindizr-external-dns exited before it was ready: {status}");
             }
 
@@ -103,11 +103,11 @@ async fn grant_zone(app: &TestApp, zone_name: &str, role_name: &str) {
 fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
     body["records"]
         .as_array()
-        .expect("records array")
+        .unwrap()
         .iter()
         .filter(|record| record["name"] == name && record["type"] == record_type)
-        .flat_map(|record| record["values"].as_array().expect("record values").iter())
-        .map(|value| value.as_str().expect("record value").to_string())
+        .flat_map(|record| record["values"].as_array().unwrap().iter())
+        .map(|value| value.as_str().unwrap().to_string())
         .collect()
 }
 
@@ -158,7 +158,7 @@ async fn external_dns_domain_listing_reflects_role_grants() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    let domains = body["domains"].as_array().expect("domains array");
+    let domains = body["domains"].as_array().unwrap();
 
     assert!(domains.contains(&json!(granted_zone_name)));
     assert!(domains.contains(&json!(other_zone_name)));
@@ -711,12 +711,12 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
     let endpoints: Value = response.json().await.unwrap();
     let endpoint = endpoints
         .as_array()
-        .expect("endpoints array")
+        .unwrap()
         .iter()
         .find(|endpoint| {
             endpoint["dnsName"] == format!("app.{zone_name}") && endpoint["recordType"] == "A"
         })
-        .expect("created endpoint is listed");
+        .unwrap();
 
     assert_eq!(endpoint["targets"], json!(["192.0.2.1"]));
     assert_eq!(endpoint["recordTTL"], 300);
@@ -813,7 +813,7 @@ async fn external_dns_record_listing_spans_read_pages() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    let listed = body["records"].as_array().expect("records array");
+    let listed = body["records"].as_array().unwrap();
     let a_records = listed.iter().filter(|record| record["type"] == "A").count();
 
     assert_eq!(a_records, RECORDS, "{}", listed.len());
