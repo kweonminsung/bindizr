@@ -105,7 +105,7 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
     // An error reply is an `ErrorResponse` instead of a `DaemonResponse`,
     // so only a failed command parses here.
     if let Ok(error) = serde_json::from_str::<ErrorResponse>(&response) {
-        return Err(CliError::from_daemon(Some(error.code), error.error));
+        return Err(CliError::from_daemon(error.code, error.error));
     }
 
     serde_json::from_str(&response).map_err(|error| {

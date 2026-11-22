@@ -1672,6 +1672,18 @@ async fn write_only_grant_changes_matching_records() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(!leaks(&body), "a dry run revealed a neighbour: {body}");
+    assert_eq!(
+        body["diff"]["summary"],
+        json!({ "added": 1, "removed": 0, "changed": 0 }),
+        "the caller's own proposal must remain visible: {body}"
+    );
+    assert_eq!(body["diff"]["entries"][0]["from"], json!([]));
+    assert!(
+        body["diff"]["entries"][0]["to"]
+            .to_string()
+            .contains("probe"),
+        "{body}"
+    );
 
     // Reading stays refused; changing what the grant covers does not.
     let (status, _) = app
@@ -1698,18 +1710,36 @@ async fn write_only_grant_changes_matching_records() {
         "{body}"
     );
 
-    let (status, body) = app
-        .send_request(
-            Method::PUT,
-            &format!("/records/{record_id}"),
-            Some(json!({
-                "name": "_acme-challenge", "type": "TXT", "value": "token-2", "ttl": 3600
-            })),
-        )
-        .await;
+    for dry_run in [true, false] {
+        let (status, body) = app
+            .send_request(
+                Method::PUT,
+                &format!("/records/{record_id}"),
+                Some(json!({
+                    "name": "_acme-challenge", "type": "TXT", "value": "token-2", "ttl": 3600,
+                    "dry_run": dry_run
+                })),
+            )
+            .await;
 
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(!leaks(&body), "update revealed a neighbour: {body}");
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(!leaks(&body), "update revealed a neighbour: {body}");
+
+        if dry_run {
+            assert_eq!(
+                body["diff"]["summary"],
+                json!({ "added": 1, "removed": 0, "changed": 0 }),
+                "the unread stored value must stay outside the diff: {body}"
+            );
+            assert_eq!(body["diff"]["entries"][0]["from"], json!([]));
+            assert!(
+                body["diff"]["entries"][0]["to"]
+                    .to_string()
+                    .contains("token-2"),
+                "{body}"
+            );
+        }
+    }
 
     let (status, body) = app
         .send_request(Method::DELETE, &format!("/records/{record_id}"), None)

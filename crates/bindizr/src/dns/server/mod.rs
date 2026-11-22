@@ -20,6 +20,7 @@ use bindizr_core::dns::message::{
 };
 use bindizr_core::metrics::XfrResult;
 use bindizr_core::model::transfer::{TransferKind, TransferTransport};
+use bindizr_service::transfer::TransferLogErrorCode;
 use bindizr_service::{Context, transfer};
 
 use crate::dns::error::DnsError;
@@ -295,7 +296,7 @@ async fn refuse_tcp_xfr(
     let response = match refusal.into_response(&QueryMetadata::from(query), query_data) {
         Err(DnsError::TsigResponse(error)) => {
             outcome = XfrResult::Failed;
-            error_code = "TSIG_RESPONSE_ENCODING_FAILED".to_string();
+            error_code = TransferLogErrorCode::TsigResponseEncodingFailed;
             reason = error.to_string();
             query
                 .build_signed_error_response(OptRcode::SERVFAIL, None, None)

@@ -308,7 +308,7 @@ async fn update_locked(
         if request.dry_run {
             // The owner's rows frame the diff. A move spans two, and the record
             // sits at the one it leaves, so that name's rows come along too.
-            let mut framed = records_at_name.clone();
+            let mut framed = records_at_name;
 
             if candidate.name != existing_record.name {
                 framed.extend(
@@ -317,21 +317,14 @@ async fn update_locked(
                 );
             }
 
-            let before = caller.readable_records(
-                framed
-                    .iter()
-                    .cloned()
-                    .map(|record| (zone.id, RecordData::from(record))),
+            let existing =
+                caller.readable_records(framed.into_iter().map(|record| (zone.id, record)));
+            let diff = diff::build_record_preview(
+                &zone,
+                existing,
+                slice::from_ref(&existing_record),
+                [RecordData::from(candidate.clone())],
             );
-            let mut after = caller.readable_records(
-                framed
-                    .iter()
-                    .filter(|record| record.id != existing_record.id)
-                    .cloned()
-                    .map(|record| (zone.id, RecordData::from(record))),
-            );
-            after.push_written(RecordData::from(candidate.clone()));
-            let diff = diff::build_record_diff(&zone, &before, &after);
 
             return Ok((candidate, zone.name, diff, actions));
         }

@@ -107,7 +107,7 @@ impl DnssecRecordType {
         Rtype::from(self).to_int()
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Rrsig => "RRSIG",

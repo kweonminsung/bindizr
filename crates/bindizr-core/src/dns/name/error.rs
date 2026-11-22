@@ -6,7 +6,7 @@ use crate::dns::LibraryError;
 use crate::dns::name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN};
 
 /// Why a name could not be parsed. Callers phrase these for their own layer.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ParseNameError {
     #[error("must not be empty")]
     Empty,

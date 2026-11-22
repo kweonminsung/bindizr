@@ -32,7 +32,7 @@ Bindizr owns the zone data and the transfer path; any secondary that consumes a 
 
 - **Zone and Record Management** — full CRUD through the HTTP API, documented by OpenAPI, or the CLI, including bulk inserts, BIND master-file import/export, and dry-run diff previews.
 - **Multiple Database Backends** — MySQL, PostgreSQL, or SQLite.
-- **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and a per-serial transfer cache, on by default. A zone served elsewhere moves over in one command.
+- **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and a transfer cache keyed by zone version, on by default. A zone served elsewhere moves over in one command.
 - **Transfers over TLS** — XoT (RFC 9103) to the BIND, Knot DNS, and NSD versions that speak it.
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.

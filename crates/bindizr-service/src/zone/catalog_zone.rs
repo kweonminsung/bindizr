@@ -63,12 +63,17 @@ pub(crate) async fn refresh_catalog_tx(
         .filter(|zone| zone.enabled)
         .collect();
 
+    let base_serial = zones
+        .iter()
+        .map(|zone| zone.serial)
+        .max()
+        .unwrap_or(Serial::from(1));
+
     // The catalog zone is not a member of itself.
     let member_zone_names: Vec<ZoneName> = zones
-        .iter()
-        .map(|zone| &zone.name)
-        .filter(|zone_name| *zone_name != catalog_zone_name)
-        .cloned()
+        .into_iter()
+        .map(|zone| zone.name)
+        .filter(|zone_name| zone_name != catalog_zone_name)
         .collect();
 
     log::info!(
@@ -78,12 +83,6 @@ pub(crate) async fn refresh_catalog_tx(
 
     // The catalog zone is virtual (no DB row).
     let digest = catalog_digest(&member_zone_names);
-    let base_serial = zones
-        .iter()
-        .map(|zone| zone.serial)
-        .max()
-        .unwrap_or(Serial::from(1));
-
     let serial =
         bindizr_db::catalog_zone::upsert_tx(tx, catalog_zone_name, &digest, base_serial).await?;
 
@@ -104,7 +103,7 @@ pub(crate) async fn refresh_catalog_tx(
 /// Exclude member serials: record writes do not require catalog re-provisioning.
 fn catalog_digest(member_zone_names: &[ZoneName]) -> String {
     // Names are canonical, so sorting needs no case folding.
-    let mut zone_names = member_zone_names.to_vec();
+    let mut zone_names: Vec<&ZoneName> = member_zone_names.iter().collect();
     zone_names.sort();
 
     let mut hasher = digest::Context::new(&SHA256);

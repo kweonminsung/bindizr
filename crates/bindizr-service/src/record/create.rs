@@ -89,15 +89,14 @@ pub async fn create(
         // The record is validated and authorized, so a dry run stops here
         // with its preview; the owner's rows frame the diff.
         if request.dry_run {
-            let before = caller.readable_records(
-                records_at_name
-                    .iter()
-                    .cloned()
-                    .map(|record| (zone.id, RecordData::from(record))),
+            let existing = caller
+                .readable_records(records_at_name.into_iter().map(|record| (zone.id, record)));
+            let diff = diff::build_record_preview(
+                &zone,
+                existing,
+                &[],
+                [RecordData::from(candidate.clone())],
             );
-            let mut after = before.clone();
-            after.push_written(RecordData::from(candidate.clone()));
-            let diff = diff::build_record_diff(&zone, &before, &after);
 
             return Ok((candidate, zone.name, diff, actions));
         }

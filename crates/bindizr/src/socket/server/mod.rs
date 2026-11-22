@@ -21,7 +21,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bindizr_service::Context;
-use bindizr_service::error::ServiceError;
+use bindizr_service::error::{ErrorCode, ServiceError};
 use bindizr_service::types::ErrorResponse;
 use serde::Serialize;
 use thiserror::Error;
@@ -558,7 +558,10 @@ fn encode_error(error: &ServiceError) -> String {
     }
 
     serde_json::to_string(&ErrorResponse::from(error)).unwrap_or_else(|_| {
-        r#"{"error":"failed to serialize error response","code":"INTERNAL"}"#.to_string()
+        format!(
+            r#"{{"error":"failed to serialize error response","code":"{}"}}"#,
+            ErrorCode::Internal.as_str()
+        )
     })
 }
 

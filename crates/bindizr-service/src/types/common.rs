@@ -29,7 +29,7 @@ impl Run {
         self == Self::DryRun
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Apply => "apply",
@@ -54,7 +54,7 @@ pub enum HealthStatus {
 }
 
 impl HealthStatus {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Healthy => "healthy",

@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::time::Duration;
 use std::{fs, io};
 
-use reqwest::{Certificate, Client, Method, RequestBuilder, Response};
+use reqwest::{Certificate, Client, Method, RequestBuilder, Response, StatusCode};
 use rustls::crypto::ring;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ use crate::wire::{ApplyExternalDnsChangesRequest, BindizrRecord};
 pub(crate) enum UpstreamError {
     /// The error body bindizr answered with, under its status.
     #[error("{message}")]
-    Rejected { status: u16, message: String },
+    Rejected { status: StatusCode, message: String },
     /// Connect error or timeout.
     #[error("bindizr is unreachable: {0}")]
     Unreachable(#[source] reqwest::Error),
@@ -200,16 +200,13 @@ impl UpstreamClient {
             |body| body.error,
         );
 
-        if status.as_u16() == 401 || status.as_u16() == 403 {
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
             log::error!(
                 "bindizr rejected the request with {} ({message}); check the API token and its grants",
                 status.as_u16()
             );
         }
 
-        Err(UpstreamError::Rejected {
-            status: status.as_u16(),
-            message,
-        })
+        Err(UpstreamError::Rejected { status, message })
     }
 }

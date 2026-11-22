@@ -7,8 +7,9 @@ use axum::extract::{ConnectInfo, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::Response;
-use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
+use bindizr_core::model::access_log::{AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
+use bindizr_service::access::{AccessLogEntry, AccessLogErrorCode};
 use bindizr_service::error::ErrorCode;
 use bindizr_service::{Context, access};
 use chrono::Utc;
@@ -51,7 +52,7 @@ pub(crate) async fn save_access_log(
 
     access::save(
         &cx,
-        AccessLog {
+        AccessLogEntry {
             source: AccessSource::Api,
             // An IPv4-mapped peer of a dual-stack listener reads as IPv4.
             client_addr: peer.ip().to_canonical().to_string(),
@@ -63,7 +64,8 @@ pub(crate) async fn save_access_log(
             error: response
                 .extensions()
                 .get::<ErrorCode>()
-                .map(|code| code.as_str().to_string()),
+                .copied()
+                .map(AccessLogErrorCode::Service),
             requested_at,
         },
     );

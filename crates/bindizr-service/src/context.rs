@@ -5,13 +5,13 @@ use std::sync::{Arc, OnceLock, RwLock};
 use bindizr_core::config::{Config, ConfigError};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::metrics::Metrics;
-use bindizr_core::model::access_log::AccessLog;
 use bindizr_db::Db;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 use tokio::sync::mpsc::{Sender, UnboundedSender};
 use tokio::sync::{Semaphore, watch};
 
+use crate::access::AccessLogEntry;
 use crate::dns_client::notify::NotifyClient;
 use crate::error::ServiceError;
 use crate::notify;
@@ -50,7 +50,7 @@ pub struct Context {
     notify_client: NotifyClient,
     notify_preparations: Semaphore,
     /// The access log writer's queue, bounded so a request never waits on its row.
-    access_logs: Sender<AccessLog>,
+    access_logs: Sender<AccessLogEntry>,
     /// The scheduler's period, so a reload reaches it without waiting the
     /// old one out; zero stands the scheduler down.
     scheduler_period: watch::Sender<u64>,
@@ -66,7 +66,7 @@ impl Context {
         db: Db,
         metrics: Metrics,
         notify_jobs: UnboundedSender<NotifyJob>,
-        access_logs: Sender<AccessLog>,
+        access_logs: Sender<AccessLogEntry>,
         scheduler_period: watch::Sender<u64>,
     ) -> Self {
         Self {
@@ -156,7 +156,7 @@ impl Context {
 
     /// Queue an access log row for the writer without waiting. `false` when
     /// the queue is full or the writer has stopped, and the row is dropped.
-    pub(crate) fn enqueue_access_log(&self, log: AccessLog) -> bool {
+    pub(crate) fn enqueue_access_log(&self, log: AccessLogEntry) -> bool {
         self.access_logs.try_send(log).is_ok()
     }
 

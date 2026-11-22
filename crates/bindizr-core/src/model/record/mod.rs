@@ -243,7 +243,7 @@ impl RecordType {
         Self::Wks,
     ];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::A => "A",

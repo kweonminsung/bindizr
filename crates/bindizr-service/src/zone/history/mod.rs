@@ -253,13 +253,14 @@ pub async fn rollback(
 
         to_add.extend(target_by_key.into_values().flatten());
 
-        let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
+        let deleted_record_ids: HashSet<RecordId> =
+            deletes.iter().map(|record| record.id).collect();
 
         // Validate the post-delete state and extend it only with accepted additions.
         let mut constraints = record::RecordConstraintIndex::new(
             current_records
                 .iter()
-                .filter(|record| !deleted_ids.contains(&record.id)),
+                .filter(|record| !deleted_record_ids.contains(&record.id)),
         );
 
         let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());

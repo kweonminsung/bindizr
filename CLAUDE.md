@@ -143,6 +143,27 @@ closed collection of implementations used only as boxed trait objects. Do not
 introduce repository factories, boxed repository traits, or `async-trait` for
 the three backends. Tests use a real `Context` over in-memory SQLite.
 
+### Ownership across module boundaries
+
+Choose ownership from a module's responsibility and lifetime contract before
+considering allocation cost. A copy that establishes an independent snapshot,
+authorized result, command, or retained state can be intentional separation;
+the source remaining readable does not make that copy redundant.
+
+Keep data owned when the receiving module must retain, return, or queue it
+independently of its caller. Do not replace that contract with borrowed views,
+propagate caller lifetimes, or broaden APIs with `Borrow`, `Cow`, or reference
+trait implementations solely to remove a clone. A permission-filtered record
+snapshot owns its rows; making it hold references just to avoid their copies
+weakens that independence.
+
+Short-lived read-only arguments (`&T`, `&[T]`), accessors, and local iterators
+remain normal when their borrows do not escape into independently owned results
+or state. A renderer may borrow its strings for the duration of its call. Prefer
+moving an already-owned value when the ownership contract stays the same. During
+cleanup, distinguish local redundant copies from copies that establish a module
+boundary; justify a change to that boundary by its contract, not clone counts.
+
 ### State and process lifecycle
 
 `bootstrap` builds one `bindizr_service::Context` in dependency order:
@@ -208,6 +229,12 @@ code, including core and db, propagates errors to its caller.
   (`token::get_self` and `role::grant::list_self`, keyed by the authenticated
   `ApiToken`), and the aggregate counts behind the unauthenticated metrics endpoint
   (`count_all`), which expose no zone data.
+- **DNS-plane reads form their own interface.** Enabled-zone and
+  enabled-secondary listings supply serving and propagation; TSIG key lookup
+  and the registered-address list supply signature and ACL checks before a
+  caller exists. These are not management reads and must not be reused to
+  bypass a management caller. Apply [Visibility](#visibility) by contract,
+  including operations currently called only by background tasks.
 - **Transactions are the service's.** Service flows choose their lifetime
   through the database's transaction primitives; front ends do not open one.
   `Db` is a private field of `Context`, read by `cx.db()` inside the service crate
@@ -1066,9 +1093,9 @@ implement `Display` and `Error` directly when `source()` must expose the origina
 error rather than its ownership wrapper; test that source identity and chain.
 
 - Preserve typed causes between operations. No `Result<T, String>`, `type Err = String`,
-  failure-carrying `Option<String>`, or `From<String>` / `From<&str>` on
-  error types. Variant fields carry site-specific details. Response/diagnostic
-  text is presentation at the boundary.
+  `Option<String>` standing in for an operation's failure, or `From<String>` /
+  `From<&str>` on error types. Variant fields carry site-specific details.
+  Response/diagnostic text is presentation at the boundary; see [Error codes](#error-codes).
 - Cross layers with `From` and `?`. Use `map_err` only to add classification or
   context absent from the cause (UNIQUE to `zone_conflict`, `internal_with_source`);
   never flatten a source into a formatted message.
@@ -1105,6 +1132,37 @@ error rather than its ownership wrapper; test that source identity and chain.
 Error names follow [Type naming principles](#type-naming-principles). Authored
 error prose starts lowercase without a trailing period; protocol tokens, proper
 names, and wrapped errors keep their original spelling.
+
+### Error codes
+
+A code is a stable machine-readable classification, separate from the error's
+message and typed cause. Use an enum at the operation's owning layer; a local
+error that nobody classifies outside its layer needs no additional code enum.
+
+- Management failures carry `ErrorCode` through `ErrorResponse.code` over HTTP
+  and the daemon socket. The CLI takes a required code from a daemon error;
+  local configuration, transport, or response-decoding failures may have none.
+  Branch on typed codes, protocol codes, or transport status, never message text.
+- Keep codes typed until their output boundary. Do not pass `String`, `&str`, or
+  formatted diagnostics where a classification belongs. Serialization fallbacks
+  use the enum's canonical spelling too, rather than a second literal code.
+  Upstream HTTP errors retain `StatusCode` instead of a `u16` a handler parses back.
+- `access::save` takes `AccessLogEntry` with `AccessLogErrorCode`; its queue keeps
+  that type until the writer converts it to the row. `transfer::save_refused`
+  and `save_failed` take `TransferLogErrorCode`. These codes carry classifications
+  alone, never rejected input or a source message. Their sets differ, so keep
+  their enums separate rather than merging them because some spellings overlap.
+- Row and log-response `error` strings are the stored representation; they do
+  not need to be parsed back into an operational error. Health and diagnostic
+  reports keep their typed outcome and response shape; details in import
+  validation reports, probes, and doctor output may remain text. Foreign protocols,
+  including the ExternalDNS webhook, retain their own response shape and status
+  semantics; an adapter need not decode an upstream code it does not use.
+- Preserve code namespaces: a DNS `OptRcode` and a `TsigRcode` with the same
+  number are different classifications (`BADVERS` and `BADSIG(16)`). Never
+  reinterpret one through the other's numeric value. Canonical text follows
+  [Presentation](#presentation); test serde/storage spellings and namespace
+  distinctions where the boundary uses them.
 
 ## Naming
 
@@ -1591,6 +1649,10 @@ unless the presentation is a DNS mnemonic
 one cell assembled from several fields — and every command reuses them rather than
 formatting inline.
 
+A metric bucket that intentionally groups distinct values is not their canonical
+text (`NsupdateResult` groups unlisted RCODEs as `other`). Keep that projection
+as `metric_label`; one-to-one enum spellings still use `as_str`.
+
 ## Code organization and style
 
 ### Module layout
@@ -1629,6 +1691,9 @@ are evidence of the contract, not a separate visibility rule for each member.
   `OwnerName::is_apex` / `is_same_or_under`, `Rdata::as_bytes` / `into_bytes`,
   `ServiceError` constructors, and `probe_secondary` / `probe_secondaries`.
   A public enum's canonical `as_str` or `to_text` belongs to this value API too.
+  Corresponding API groups across modules follow the same rule:
+  `zone::list` and `secondary::list_enabled` are public DNS-plane listings,
+  regardless of which currently has cross-crate callers.
 - **`pub(crate)` — an internal interface.** Apply the same grouping within a
   crate, including shared implementation types and their operations. A private
   module or crate-internal type does not gain `pub` members just to resemble

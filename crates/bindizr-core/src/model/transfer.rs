@@ -47,7 +47,7 @@ impl TransferKind {
         }
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Axfr => "axfr",
@@ -104,7 +104,7 @@ impl TransferResult {
     /// Every TransferResult value, in declaration order.
     pub const ALL: [Self; 3] = [Self::Ok, Self::Refused, Self::Failed];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -165,7 +165,7 @@ impl TransferTransport {
     /// Every transport, for the metric series registered up front.
     pub const ALL: [Self; 3] = [Self::Udp, Self::Tcp, Self::Tls];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Udp => "udp",

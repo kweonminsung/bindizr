@@ -1,9 +1,44 @@
-//! Validate stored identifiers and descriptions against their column constraints.
+//! Normalize service text inputs and validate their field constraints.
+
+use std::fmt;
+use std::net::IpAddr;
+use std::str::FromStr;
 
 use crate::error::ServiceError;
 
 /// The width of a VARCHAR(255) column, in characters.
 pub(crate) const MAX_COLUMN_TEXT_LEN: usize = 255;
+
+/// Parse a trimmed optional value, treating empty input as absent and invalid input as a policy error.
+pub(crate) fn parse_optional<T>(value: Option<&str>) -> Result<Option<T>, ServiceError>
+where
+    T: FromStr,
+    T::Err: fmt::Display,
+{
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::parse::<T>)
+        .transpose()
+        .map_err(ServiceError::invalid_input)
+}
+
+/// Parse an optional IP filter, ignoring blank input and canonicalizing IPv4-mapped addresses.
+pub(crate) fn normalize_ip_address(value: Option<&str>) -> Result<Option<IpAddr>, ServiceError> {
+    value
+        .map(str::trim)
+        .filter(|address| !address.is_empty())
+        .map(|address| {
+            // Log rows store an IPv4-mapped client as IPv4, so filter keys must too.
+            address
+                .parse::<IpAddr>()
+                .map(|ip| ip.to_canonical())
+                .map_err(|_| {
+                    ServiceError::invalid_input(format!("address '{address}' is not an IP address"))
+                })
+        })
+        .transpose()
+}
 
 /// Trim and lowercase a single URL path segment for consistent backend matching.
 /// `field` names the field in errors.

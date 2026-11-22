@@ -8,6 +8,16 @@ import statistics
 from dataclasses import dataclass, field
 
 
+def _percentile(data: list[float], percent: float) -> float:
+    """Interpolate a percentile from sorted samples, returning zero when no sample exists."""
+    if not data:
+        return 0.0
+    position = (len(data) - 1) * (percent / 100.0)
+    lower = int(position)
+    upper = min(lower + 1, len(data) - 1)
+    return data[lower] + (data[upper] - data[lower]) * (position - lower)
+
+
 @dataclass
 class LatencyRecorder:
     latencies_ms: list[float] = field(default_factory=list)
@@ -16,7 +26,7 @@ class LatencyRecorder:
     ended_at: float | None = None
 
     def track_latency(self, latency_secs: float, ok: bool = True) -> None:
-        """Record a successful latency sample or increment the error count."""
+        """Count a request, retaining its successful latency or incrementing errors."""
         if ok:
             self.latencies_ms.append(latency_secs * 1000.0)
         else:
@@ -39,21 +49,10 @@ class LatencyRecorder:
             return 0.0
         return max(self.ended_at - self.started_at, 1e-9)
 
-    def percentile(self, percent: float) -> float:
-        """Interpolate a latency percentile from successful request samples."""
-        if not self.latencies_ms:
-            return 0.0
-
-        data = sorted(self.latencies_ms)
-        position = (len(data) - 1) * (percent / 100.0)
-        lower = int(position)
-        upper = min(lower + 1, len(data) - 1)
-
-        return data[lower] + (data[upper] - data[lower]) * (position - lower)
-
     def summary(self) -> dict[str, float]:
         """Summarize throughput, error rate, and successful-request latency."""
         tps = self.count / self.elapsed_secs if self.elapsed_secs else 0.0
+        samples = sorted(self.latencies_ms)
 
         return {
             "count": self.count,
@@ -61,9 +60,9 @@ class LatencyRecorder:
             "tps": round(tps, 2),
             "rps": round(self.total / self.elapsed_secs, 2) if self.elapsed_secs else 0.0,
             "error_rate": round(self.errors / self.total, 5) if self.total else 0.0,
-            "p50_ms": round(self.percentile(50), 3),
-            "p95_ms": round(self.percentile(95), 3),
-            "p99_ms": round(self.percentile(99), 3),
+            "p50_ms": round(_percentile(samples, 50), 3),
+            "p95_ms": round(_percentile(samples, 95), 3),
+            "p99_ms": round(_percentile(samples, 99), 3),
             "max_ms": round(max(self.latencies_ms), 3) if self.latencies_ms else 0.0,
             "mean_ms": round(statistics.fmean(self.latencies_ms), 3) if self.latencies_ms else 0.0,
         }

@@ -77,7 +77,7 @@ impl DnssecAlgorithm {
         Self::Ed448,
     ];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::RsaSha256 => "rsasha256",
@@ -153,7 +153,7 @@ impl DnssecKeyRole {
     /// Every DnssecKeyRole value, in declaration order.
     pub const ALL: [Self; 3] = [Self::Csk, Self::Ksk, Self::Zsk];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Csk => "csk",
@@ -231,7 +231,7 @@ pub enum DnssecKeyState {
 }
 
 impl DnssecKeyState {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Published => "published",

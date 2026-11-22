@@ -43,7 +43,7 @@ class ZoneFileAdapter(DnsAdapter):
         """Publish a record and return its name-and-type handle on success."""
         handle = f'{record["name"]}|{record["type"]}'
         async with self._write_lock:
-            if not await self._publish({**self.records, handle: record}):
+            if not await self._publish({**self.records, handle: dict(record)}):
                 raise RuntimeError(f"creating {self.server_name} record {handle} failed")
         return handle
 
@@ -53,7 +53,7 @@ class ZoneFileAdapter(DnsAdapter):
             self.bulk_errors = 0
             candidate = dict(self.records)
             for record in records:
-                candidate[f'{record["name"]}|{record["type"]}'] = record
+                candidate[f'{record["name"]}|{record["type"]}'] = dict(record)
             if not await self._publish(candidate):
                 self.bulk_errors = len(records)
 

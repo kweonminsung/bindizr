@@ -8,6 +8,7 @@ use bindizr_core::dns::tsig::{RequestSignature, RequestTsig, TransferSigner, Tsi
 use bindizr_core::dns::{message, tsig};
 use bindizr_core::model::transfer::TransferTransport;
 use bindizr_service::authorization::Caller;
+use bindizr_service::transfer::TransferLogErrorCode;
 use bindizr_service::tsig_key;
 use thiserror::Error;
 
@@ -39,12 +40,12 @@ pub(crate) enum TransferRefusal {
 
 impl TransferRefusal {
     /// Return a fixed log classification without the detailed refusal or its cause.
-    pub(crate) fn to_log_code(&self) -> String {
+    pub(crate) fn to_log_code(&self) -> TransferLogErrorCode {
         match self {
-            Self::Dns { rcode, .. } => rcode.to_string(),
-            Self::Failed { .. } => "SERVFAIL".to_string(),
-            Self::Tsig(TsigError::Rejected { rcode, .. }) => rcode.to_string(),
-            Self::Tsig(_) => "TSIG_AUTHENTICATION_FAILED".to_string(),
+            Self::Dns { rcode, .. } => TransferLogErrorCode::Dns(*rcode),
+            Self::Failed { .. } => TransferLogErrorCode::Dns(OptRcode::SERVFAIL),
+            Self::Tsig(TsigError::Rejected { rcode, .. }) => TransferLogErrorCode::Tsig(*rcode),
+            Self::Tsig(_) => TransferLogErrorCode::TsigAuthenticationFailed,
         }
     }
 

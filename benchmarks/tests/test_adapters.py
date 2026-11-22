@@ -42,6 +42,51 @@ class AdapterTests(IsolatedAsyncioTestCase):
                 self.assertEqual(adapter.bulk_errors, 1)
                 self.assertEqual(adapter.records, {"old|A": self.old})
 
+    async def test_file_adapters_own_records_after_create_and_import(self):
+        """Verify that caller mutations cannot change accepted snapshots or later TTL-only writes."""
+        from lib import zonefile
+
+        for operation in ("create", "import"):
+            for during_publication in (False, True):
+                for adapter in self.adapters():
+                    record = dict(self.record)
+                    published = []
+                    entered, release = asyncio.Event(), asyncio.Event()
+
+                    async def publish(candidate):
+                        """Capture the published bytes before allowing the snapshot to advance."""
+                        published.append(zonefile.build_zone_file(
+                            "bench.example", adapter.serial, candidate.values()))
+                        entered.set()
+                        if during_publication:
+                            await release.wait()
+                        return True
+
+                    with self.subTest(adapter=adapter.key, operation=operation,
+                                      during_publication=during_publication), \
+                            patch.object(adapter, "_flush_and_reload", side_effect=publish):
+                        mutation = (adapter.create_record("bench.example", record)
+                                    if operation == "create"
+                                    else adapter.import_records("bench.example", [record]))
+                        if during_publication:
+                            task = asyncio.create_task(mutation)
+                            try:
+                                await asyncio.wait_for(entered.wait(), 2)
+                                record["value"] = "192.0.2.99"
+                            finally:
+                                release.set()
+                            await task
+                        else:
+                            await mutation
+                            record["value"] = "192.0.2.99"
+
+                        self.assertEqual(adapter.records["new|A"]["value"], "192.0.2.1")
+                        self.assertEqual(len(published), 1)
+                        self.assertIn("new 60 IN A 192.0.2.1", published[0])
+                        self.assertTrue(await adapter.update_record(
+                            "bench.example", "new|A", {"ttl": 120}))
+                        self.assertIn("new 120 IN A 192.0.2.1", published[1])
+
     async def test_failed_bulk_reload_yields_zero_throughput(self):
         """Verify that a failed reload counts as an import error with zero throughput."""
         sampler = Mock(summary=lambda: {})

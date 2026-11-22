@@ -35,7 +35,7 @@ impl DnssecDenial {
     /// Every DnssecDenial value, in declaration order.
     pub const ALL: [Self; 2] = [Self::Nsec, Self::Nsec3];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Nsec => "nsec",

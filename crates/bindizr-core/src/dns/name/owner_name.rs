@@ -45,12 +45,16 @@ impl OwnerName {
             return Ok(Self::apex());
         }
 
-        let (labels, absolute) = name::decode_name_labels(trimmed)?;
+        let (mut labels, absolute) = name::decode_name_labels(trimmed)?;
         let zone_labels = zone_name.labels();
 
         // A relative name that happens to end in the zone was already absolute.
-        match relative_labels(&labels, &zone_labels) {
-            Some(owner) => Ok(Self(owner)),
+        match relative_label_count(&labels, &zone_labels) {
+            Some(count) => {
+                labels.truncate(count);
+                labels.shrink_to_fit();
+                Ok(Self(labels))
+            }
             None if absolute => Err(ParseNameError::OutsideZone),
             // Relative input grows by the zone it is qualified with, which is
             // what can push it past the length `decode_name_labels` checked.
@@ -75,11 +79,13 @@ impl OwnerName {
         }
 
         // `@` is client shorthand, not a name: here it is one label like any other.
-        let (labels, _) = name::decode_name_labels(trimmed)?;
+        let (mut labels, _) = name::decode_name_labels(trimmed)?;
 
-        relative_labels(&labels, &zone_name.labels())
-            .map(Self)
-            .ok_or(ParseNameError::OutsideZone)
+        let count = relative_label_count(&labels, &zone_name.labels())
+            .ok_or(ParseNameError::OutsideZone)?;
+        labels.truncate(count);
+        labels.shrink_to_fit();
+        Ok(Self(labels))
     }
 
     /// Wrap a name already in stored form, as read from a row.
@@ -202,8 +208,7 @@ impl fmt::Display for OwnerName {
     }
 }
 
-/// Return the labels left after removing `zone` from the end of `name`, or
-/// `None` when `name` does not sit inside `zone`.
-fn relative_labels(name: &[Vec<u8>], zone: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
-    name::is_label_suffix(name, zone).then(|| name[..name.len() - zone.len()].to_vec())
+/// Count the labels before `zone` in `name`, or return `None` for a name outside it.
+fn relative_label_count(name: &[Vec<u8>], zone: &[Vec<u8>]) -> Option<usize> {
+    name::is_label_suffix(name, zone).then(|| name.len() - zone.len())
 }

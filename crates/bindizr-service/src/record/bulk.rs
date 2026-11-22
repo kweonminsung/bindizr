@@ -113,14 +113,6 @@ pub async fn create_bulk(
 
         let new_serial = serial::generate_serial(Some(zone.serial));
 
-        // The diff is only shown on a dry-run preview, so keep the `before`
-        // copy (and pay for building the diff) off the apply hot path.
-        let before_records = if request.dry_run {
-            existing_records.clone()
-        } else {
-            Vec::new()
-        };
-
         // Index existing identities once; accepted candidates extend the same state.
         let started = Instant::now();
         let mut constraints = record::RecordConstraintIndex::new(existing_records.iter());
@@ -165,18 +157,14 @@ pub async fn create_bulk(
         let (created_records, diff) = if request.dry_run {
             // `after` = existing plus the inserts, so an insert into an
             // existing record set reads as `changed`, not a bare `added`.
-            let before = caller.readable_records(
-                before_records
-                    .into_iter()
-                    .map(|record| (zone.id, RecordData::from(record))),
+            let existing = caller
+                .readable_records(existing_records.into_iter().map(|record| (zone.id, record)));
+            let diff = diff::build_record_preview(
+                &zone,
+                existing,
+                &[],
+                to_insert.iter().cloned().map(RecordData::from),
             );
-            let mut after = before.clone();
-
-            for record in &to_insert {
-                after.push_written(RecordData::from(record.clone()));
-            }
-
-            let diff = diff::build_record_diff(&zone, &before, &after);
 
             (to_insert, diff)
         } else {

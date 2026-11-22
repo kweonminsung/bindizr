@@ -54,7 +54,7 @@ impl AuditEntity {
         Self::Zone,
     ];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Token => "token",
@@ -113,7 +113,7 @@ pub enum AuditOperation {
 }
 
 impl AuditOperation {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Create => "create",

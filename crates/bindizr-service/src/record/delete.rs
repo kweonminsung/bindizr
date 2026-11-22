@@ -1,7 +1,6 @@
-use std::collections::HashSet;
 use std::slice;
 
-use bindizr_core::model::record::{Record, RecordData, RecordId};
+use bindizr_core::model::record::{Record, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
@@ -72,21 +71,10 @@ pub async fn delete(
             let records_at_name =
                 bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &existing_record.name)
                     .await?;
-            let before = caller.readable_records(
-                records_at_name
-                    .iter()
-                    .cloned()
-                    .map(|record| (zone.id, RecordData::from(record))),
-            );
-            let after = caller.readable_records(
-                records_at_name
-                    .iter()
-                    .filter(|record| record.id != existing_record.id)
-                    .cloned()
-                    .map(|record| (zone.id, RecordData::from(record))),
-            );
+            let existing = caller
+                .readable_records(records_at_name.into_iter().map(|record| (zone.id, record)));
 
-            diff::build_record_diff(&zone, &before, &after)
+            diff::build_record_preview(&zone, existing, slice::from_ref(&existing_record), [])
         } else {
             RecordDiffResponse::default()
         };
@@ -208,22 +196,10 @@ pub async fn delete_matching(
         // Only a preview carries the diff, built from the validated rows; dry
         // runs and empty matches return before any records or serials are written.
         let diff = if request.dry_run {
-            let before = caller.readable_records(
-                records_at_name
-                    .iter()
-                    .cloned()
-                    .map(|record| (zone.id, RecordData::from(record))),
-            );
-            let deleted_ids: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
-            let after = caller.readable_records(
-                records_at_name
-                    .iter()
-                    .filter(|record| !deleted_ids.contains(&record.id))
-                    .cloned()
-                    .map(|record| (zone.id, RecordData::from(record))),
-            );
+            let existing = caller
+                .readable_records(records_at_name.into_iter().map(|record| (zone.id, record)));
 
-            diff::build_record_diff(&zone, &before, &after)
+            diff::build_record_preview(&zone, existing, &matched, [])
         } else {
             RecordDiffResponse::default()
         };

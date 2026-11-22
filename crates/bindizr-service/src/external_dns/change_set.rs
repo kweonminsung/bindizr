@@ -157,11 +157,12 @@ impl ZoneChangeSet {
 
         // Validate each insert against the post-delete state plus earlier inserts,
         // so CNAME exclusivity and record set TTL rules see the state they will land in.
-        let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
+        let deleted_record_ids: HashSet<RecordId> =
+            deletes.iter().map(|record| record.id).collect();
         let mut constraints = record::RecordConstraintIndex::new(
             existing_records
                 .iter()
-                .filter(|record| !deleted_ids.contains(&record.id)),
+                .filter(|record| !deleted_record_ids.contains(&record.id)),
         );
 
         for record in &creates {

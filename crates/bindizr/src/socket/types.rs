@@ -271,7 +271,7 @@ pub(crate) enum DoctorCheckStatus {
 }
 
 impl DoctorCheckStatus {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",

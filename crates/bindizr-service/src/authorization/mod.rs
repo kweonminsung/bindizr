@@ -1,10 +1,12 @@
 //! Authorize [`Caller`] through role grants: invisible zones yield 404, denied actions 403.
 //! Socket callers are unrestricted; DNS callers use TSIG or explicitly admitted unsigned access.
 
+use std::collections::HashSet;
+
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::api_token::{ApiToken, TokenId};
 use bindizr_core::model::change::{ChangeActor, ChangeSource};
-use bindizr_core::model::record::{Record, RecordData, RecordType};
+use bindizr_core::model::record::{Record, RecordData, RecordId, RecordType};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrants};
 use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
@@ -508,6 +510,18 @@ impl<T> ReadableRecords<T> {
     /// Return the readable records.
     pub(crate) fn as_slice(&self) -> &[T] {
         &self.0
+    }
+}
+
+impl ReadableRecords<Record> {
+    /// Remove the selected row ids while retaining the remaining records' read authorization.
+    pub(crate) fn remove_ids(&mut self, record_ids: &HashSet<RecordId>) {
+        self.0.retain(|record| !record_ids.contains(&record.id));
+    }
+
+    /// Drop row metadata without changing any record's authorized name, type or value.
+    pub(crate) fn into_data(self) -> ReadableRecords<RecordData> {
+        ReadableRecords(self.0.into_iter().map(RecordData::from).collect())
     }
 }
 

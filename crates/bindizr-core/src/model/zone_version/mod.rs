@@ -27,7 +27,7 @@ impl VersionFilter {
         }
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ExcludePastSignerOnly => "exclude_past_signer_only",

@@ -11,7 +11,7 @@ use crate::change::ChangeOrigin;
 use crate::error::ServiceError;
 use crate::types::{AuditLogFilter, AuditLogResponse, PaginatedResponse};
 use crate::{
-    Context, Transaction, dnssec_policy, pagination, role, secondary, token, tsig_key, zone,
+    Context, Transaction, dnssec_policy, pagination, role, secondary, text, token, tsig_key, zone,
 };
 
 /// Audit a management write before commit; `detail` describes changes without secrets.
@@ -77,14 +77,7 @@ pub async fn list(
 fn normalize_filter(
     filter: &AuditLogFilter,
 ) -> Result<bindizr_db::audit_log::AuditLogFilter, ServiceError> {
-    let entity = filter
-        .entity
-        .as_deref()
-        .map(str::trim)
-        .filter(|entity| !entity.is_empty())
-        .map(str::parse::<AuditEntity>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
+    let entity = text::parse_optional::<AuditEntity>(filter.entity.as_deref())?;
     let entity_name = filter
         .entity_name
         .as_deref()

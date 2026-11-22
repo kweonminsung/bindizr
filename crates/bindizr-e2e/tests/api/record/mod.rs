@@ -11,6 +11,89 @@ use crate::common::dns::tsig::KeyRole;
 use crate::common::dns::{nsupdate, tsig};
 use crate::common::{TestApp, dns};
 
+/// Verify that a move preview preserves neighbours at both names without changing stored records.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_move_preview_preserves_both_owner_record_sets() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let mut record_ids = Vec::new();
+
+    for (name, value) in [
+        ("source", "192.0.2.1"),
+        ("source", "192.0.2.2"),
+        ("destination", "192.0.2.9"),
+    ] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({ "zone_name": zone_name, "name": name, "type": "A", "value": value })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        record_ids.push(body["record"]["id"].as_i64().unwrap());
+    }
+
+    let record_id = record_ids[0];
+    let serial = app.read_zone_serial(zone_name).await;
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/records/{record_id}"),
+            Some(json!({ "name": "destination", "value": "192.0.2.3", "dry_run": true })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["applied"], false);
+    assert_eq!(
+        body["diff"]["summary"],
+        json!({ "added": 0, "removed": 0, "changed": 2 }),
+        "both populated owner names must remain in the preview: {body}"
+    );
+
+    for (name, before, after) in [
+        ("source", vec!["192.0.2.1", "192.0.2.2"], vec!["192.0.2.2"]),
+        (
+            "destination",
+            vec!["192.0.2.9"],
+            vec!["192.0.2.3", "192.0.2.9"],
+        ),
+    ] {
+        let entry = body["diff"]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["name"] == format!("{name}.{zone_name}."))
+            .unwrap();
+        let values = |side: &str| {
+            let mut values: Vec<_> = entry[side]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|record| record["value"].as_str().unwrap())
+                .collect();
+            values.sort();
+            values
+        };
+
+        assert_eq!(values("from"), before, "{entry}");
+        assert_eq!(values("to"), after, "{entry}");
+    }
+
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/records/{record_id}"), None)
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["record"]["name"], format!("source.{zone_name}."));
+    assert_eq!(body["record"]["value"], "192.0.2.1");
+}
+
 /// Verify that root targets can be created and replaced, and malformed names are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -514,6 +597,16 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["deleted"], 3, "{body}");
     assert_eq!(body["applied"], false, "{body}");
+    assert_eq!(
+        body["diff"]["summary"],
+        json!({ "added": 0, "removed": 1, "changed": 0 }),
+        "the three A records form one removed record set: {body}"
+    );
+    assert_eq!(
+        body["diff"]["entries"][0]["from"].as_array().unwrap().len(),
+        3
+    );
+    assert_eq!(body["diff"]["entries"][0]["to"], json!([]));
     assert_eq!(
         serial_of(&app).await,
         base_serial,

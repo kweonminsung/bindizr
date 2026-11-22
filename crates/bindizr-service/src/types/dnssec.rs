@@ -30,7 +30,7 @@ impl DsCheck {
         }
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Probe => "probe",
@@ -58,7 +58,7 @@ impl Holddown {
         }
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Wait => "wait",
@@ -130,7 +130,7 @@ pub enum DsState {
 }
 
 impl DsState {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Published => "published",

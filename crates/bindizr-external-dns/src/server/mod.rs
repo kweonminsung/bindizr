@@ -64,21 +64,19 @@ impl IntoResponse for UpstreamError {
     fn into_response(self) -> Response {
         match self {
             Self::Rejected {
-                status: 401,
+                status: StatusCode::UNAUTHORIZED,
                 message,
             } => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("bindizr rejected the adapter's token: {message}"),
             )
                 .into_response(),
-            Self::Rejected { status, message } if status < 500 => (
-                StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST),
-                message,
-            )
-                .into_response(),
+            Self::Rejected { status, message } if status.as_u16() < 500 => {
+                (status, message).into_response()
+            }
             Self::Rejected { status, .. } => (
                 StatusCode::BAD_GATEWAY,
-                format!("bindizr responded with status {status}"),
+                format!("bindizr responded with status {}", status.as_u16()),
             )
                 .into_response(),
             error @ (Self::Unreachable(_) | Self::InvalidResponse(_)) => {
@@ -289,7 +287,7 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
         Ok(_) => (StatusCode::OK, "ok").into_response(),
         Err(UpstreamError::Rejected { status, message }) => (
             StatusCode::SERVICE_UNAVAILABLE,
-            format!("bindizr answered {status}: {message}"),
+            format!("bindizr answered {}: {message}", status.as_u16()),
         )
             .into_response(),
         Err(error @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_))) => {

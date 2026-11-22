@@ -116,11 +116,15 @@ pub(crate) async fn apply_record_operation_tx(
 
             // RFC 2136, Section 3.4.2.2 and RFC 6672, Section 5.2: a second
             // CNAME or DNAME replaces the first; WKS replaces its address/protocol match.
-            let replaced: Vec<Record> = records_at_name
-                .iter()
-                .filter(|record| record.is_replaced_by(*record_type, &value, *priority))
-                .cloned()
-                .collect();
+            let mut replaced = Vec::new();
+            let mut retimed = Vec::new();
+            for record in records_at_name {
+                if record.is_replaced_by(*record_type, &value, *priority) {
+                    replaced.push(record);
+                } else if record.record_type == *record_type && record.ttl != *ttl {
+                    retimed.push(record);
+                }
+            }
             let mut changed = false;
 
             if !replaced.is_empty() {
@@ -142,16 +146,6 @@ pub(crate) async fn apply_record_operation_tx(
 
             // RFC 2136, Section 3.4.2.2 and RFC 2181, Section 5.2:
             // retime the name/type's records through delete/add journal changes.
-            let retimed: Vec<Record> = records_at_name
-                .iter()
-                .filter(|record| {
-                    record.record_type == *record_type
-                        && record.ttl != *ttl
-                        && !replaced.iter().any(|gone| gone.id == record.id)
-                })
-                .cloned()
-                .collect();
-
             if !retimed.is_empty() {
                 // Retiming rewrites the set that stood there: an update.
                 caller.authorize_record_access(
@@ -245,20 +239,20 @@ async fn delete_matching_tx(
     // Only records at the owner name can match, so lock just those.
     let records_at_name = bindizr_db::record::list_by_name_tx(tx, zone.id, owner).await?;
 
+    let ns_total = owner.is_apex().then(|| {
+        records_at_name
+            .iter()
+            .filter(|record| record.record_type == RecordType::Ns)
+            .count()
+    });
     let mut matched: Vec<Record> = records_at_name
-        .iter()
+        .into_iter()
         .filter(|record| record.matches(record_type, value, priority))
-        .cloned()
         .collect();
 
     // RFC 2136, Sections 3.4.2.3 and 3.4.2.4: at the apex the NS set outlives
     // a delete, and one NS goes only while another remains; the SOA is no row.
-    if owner.is_apex() {
-        let ns_total = records_at_name
-            .iter()
-            .filter(|record| record.record_type == RecordType::Ns)
-            .count();
-
+    if let Some(ns_total) = ns_total {
         match value {
             Some(_) if ns_total <= 1 => {
                 matched.retain(|record| record.record_type != RecordType::Ns);

@@ -13,7 +13,7 @@ pub(crate) const MEDIA_TYPE: &str = "application/external.dns.webhook+json;versi
 /// Why an endpoint is not one this provider can write; the message becomes a
 /// permanent (4xx) error body. Record rules are the server's, whose 400 the
 /// adapter passes through; only what the webhook shape alone shows is here.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub(crate) enum ValidateEndpointError {
     #[error("setIdentifier is not supported by this provider")]
     SetIdentifier,

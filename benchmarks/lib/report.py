@@ -76,8 +76,9 @@ def write_report(env: dict, config: dict) -> None:
             writer.writeheader()
             writer.writerows(csv_rows)
 
-    (RESULTS_DIR / "performance.md").write_text(_render_markdown(env, data))
-    _write_graphs(data)
+    aggregated = {name: _aggregate(payload["results"]) for name, payload in data.items()}
+    (RESULTS_DIR / "performance.md").write_text(_render_markdown(env, aggregated))
+    _write_graphs(aggregated)
 
 
 # Fields that identify a distinct measurement (not metrics to average over).
@@ -278,9 +279,10 @@ def _render_b07(rows: list[dict]) -> str:
     return "".join(lines)
 
 
-def _rows(data: dict, key: str) -> list[dict]:
-    """Return aggregated rows for one benchmark when results exist."""
-    return _aggregate(data[key]["results"]) if key in data else []
+def _has_reportable_metric(row: dict, key: str) -> bool:
+    """Select non-failed measurements with a numeric metric, including a measured zero."""
+    value = row.get(key)
+    return row.get("status") != "FAILED" and isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _union_headers(results: list[dict]) -> list[str]:
@@ -293,8 +295,8 @@ def _union_headers(results: list[dict]) -> list[str]:
     return headers
 
 
-def _render_markdown(env: dict, data: dict) -> str:
-    """Render the environment and benchmark results as a Markdown report."""
+def _render_markdown(env: dict, data: dict[str, list[dict]]) -> str:
+    """Render the environment and aggregated benchmark results as a Markdown report."""
     hardware = env["hardware"]
     lines = ["# Bindizr Benchmark Results\n"]
     lines.append("## Test Environment\n")
@@ -319,7 +321,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         lines.append("\n## Benchmark 1 — Record CRUD TPS\n")
         rows = []
 
-        for row in _rows(data, "b01_crud_tps"):
+        for row in data["b01_crud_tps"]:
             rows.append([
                 row["system"], _display_metric(row, "create_tps"), _display_metric(row, "update_tps"),
                 _display_metric(row, "delete_tps"), _display_metric(row, "read_tps"),
@@ -333,7 +335,7 @@ def _render_markdown(env: dict, data: dict) -> str:
 
     # Curated table: mean ± std on time / throughput.
     if "b02_bulk_import" in data:
-        results = sorted(_rows(data, "b02_bulk_import"),
+        results = sorted(data["b02_bulk_import"],
                          key=lambda row: (row["system"], row.get("size", 0)))
         lines.append("\n## Benchmark 2 — Bulk Import\n")
         rows = []
@@ -363,7 +365,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         if key not in data:
             continue
 
-        results = _rows(data, key)
+        results = data[key]
 
         if not results:
             continue
@@ -374,17 +376,12 @@ def _render_markdown(env: dict, data: dict) -> str:
         lines.append(_render_markdown_table(headers, rows))
 
     if "b07_database" in data:
-        lines.append(_render_b07(_rows(data, "b07_database")))
+        lines.append(_render_b07(data["b07_database"]))
 
     if "b08_query_perf" in data:
-        results = _rows(data, "b08_query_perf")
-
-        def _has_reportable_qps(row):
-            """Select non-failed runs with QPS; failures are reported outside numeric comparisons."""
-            return row.get("status") != "FAILED" and row.get("qps") is not None
-
-        failed = [row for row in results if not _has_reportable_qps(row)]
-        ok = [row for row in results if _has_reportable_qps(row)]
+        results = data["b08_query_perf"]
+        failed = [row for row in results if not _has_reportable_metric(row, "qps")]
+        ok = [row for row in results if _has_reportable_metric(row, "qps")]
         # A run whose every timed query failed reports qps 0.0 without being
         # FAILED; it is listed, but cannot anchor or receive a comparison.
         comparable = {row["system"]: row for row in ok if row["qps"] > 0}
@@ -408,7 +405,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         lines.append(_render_b08_conclusion(comparable))
 
     if "b09_resource_usage" in data:
-        results = _rows(data, "b09_resource_usage")
+        results = data["b09_resource_usage"]
         if results:
             lines.append("\n## Benchmark 9 — Resource Usage\n")
             headers = _union_headers(results)
@@ -418,8 +415,8 @@ def _render_markdown(env: dict, data: dict) -> str:
     return "\n".join(lines)
 
 
-def _write_graphs(data: dict) -> None:
-    """Write the comparison graph images when the plotting dependency is available."""
+def _write_graphs(data: dict[str, list[dict]]) -> None:
+    """Write measured comparison graphs from aggregated results when plotting is available."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -427,14 +424,14 @@ def _write_graphs(data: dict) -> None:
     except Exception:
         return
 
-    def write_bar_chart(fname: str, title: str, labels: list[str],
-                        values: list[float], ylabel: str):
-        """Write one benchmark metric's bar chart to a PNG."""
-        if not labels:
+    def write_bar_chart(fname: str, title: str, rows: list[dict], metric: str, ylabel: str):
+        """Write measured values of one benchmark metric to a PNG, omitting failed or missing data."""
+        rows = [row for row in rows if _has_reportable_metric(row, metric)]
+        if not rows:
             return
 
         fig, ax = plt.subplots(figsize=(8, 4.5))
-        ax.bar(labels, values, color="#3b82f6")
+        ax.bar([row["system"] for row in rows], [row[metric] for row in rows], color="#3b82f6")
         ax.set_title(title)
         ax.set_ylabel(ylabel)
         ax.grid(axis="y", alpha=0.3)
@@ -443,32 +440,29 @@ def _write_graphs(data: dict) -> None:
         plt.close(fig)
 
     if "b01_crud_tps" in data:
-        rows = _rows(data, "b01_crud_tps")
-        write_bar_chart("b01_create_tps.png", "Record Create TPS",
-            [row["system"] for row in rows], [row.get("create_tps", 0) for row in rows], "TPS")
-        write_bar_chart("b01_read_tps.png", "Record Read TPS",
-            [row["system"] for row in rows], [row.get("read_tps", 0) for row in rows], "TPS")
+        rows = data["b01_crud_tps"]
+        write_bar_chart("b01_create_tps.png", "Record Create TPS", rows, "create_tps", "TPS")
+        write_bar_chart("b01_read_tps.png", "Record Read TPS", rows, "read_tps", "TPS")
 
     if "b08_query_perf" in data:
-        rows = _rows(data, "b08_query_perf")
         write_bar_chart("b08_qps.png", "DNS Query Throughput (QPS)",
-            [row["system"] for row in rows], [row.get("qps", 0) for row in rows], "QPS")
+                        data["b08_query_perf"], "qps", "QPS")
 
     if "b03_propagation" in data:
-        rows = _rows(data, "b03_propagation")
         write_bar_chart("b03_visible_p95.png", "DNS-Visible Latency p95 (create -> answerable)",
-            [row["system"] for row in rows], [row.get("visible_p95_ms", 0) for row in rows], "ms")
+                        data["b03_propagation"], "visible_p95_ms", "ms")
 
     if "b02_bulk_import" in data:
-        # Largest-size row per system.
+        # Largest measured size per system; a larger failed run has no throughput to compare.
         by_sys: dict[str, dict] = {}
 
-        for row in _rows(data, "b02_bulk_import"):
+        for row in data["b02_bulk_import"]:
+            if not _has_reportable_metric(row, "records_per_sec"):
+                continue
             prev = by_sys.get(row["system"])
             if prev is None or row.get("size", 0) >= prev.get("size", 0):
                 by_sys[row["system"]] = row
 
         rows = list(by_sys.values())
         write_bar_chart("b02_records_per_sec.png", "Bulk Import Throughput (records/sec)",
-            [row["system"] for row in rows], [row.get("records_per_sec", 0) for row in rows],
-            "records/sec")
+                        rows, "records_per_sec", "records/sec")

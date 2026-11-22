@@ -433,7 +433,7 @@ pub enum DatabaseType {
 }
 
 impl DatabaseType {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MySql => "mysql",
@@ -530,7 +530,7 @@ pub enum DatabaseTlsMode {
 }
 
 impl DatabaseTlsMode {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Disable => "disable",
@@ -746,7 +746,7 @@ impl Default for NotifyConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransferConfig {
-    /// Record budget for serial-keyed transfer caches, evicting least-recently-used zones.
+    /// Record budget for transfer caches keyed by zone version, evicting least-recently-used zones.
     /// Oversized zones are served uncached; `0` disables caching.
     #[serde(default = "default_transfer_cache_max_records")]
     pub cache_max_records: u64,
@@ -1111,7 +1111,7 @@ pub enum SavedRequests {
 }
 
 impl SavedRequests {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::All => "all",
@@ -1186,7 +1186,7 @@ pub enum SavedTransfers {
 }
 
 impl SavedTransfers {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::All => "all",
@@ -1240,7 +1240,7 @@ pub enum LogFormat {
 }
 
 impl LogFormat {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Text => "text",
@@ -1284,7 +1284,7 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Trace => "trace",

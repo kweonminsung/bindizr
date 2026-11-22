@@ -66,10 +66,10 @@ impl CliError {
         }
     }
 
-    /// Build the error of a daemon's error reply, carrying whatever code it sent.
-    pub(crate) fn from_daemon(code: Option<ErrorCode>, message: String) -> Self {
+    /// Build the daemon's error reply with its required machine-readable code.
+    pub(crate) fn from_daemon(code: ErrorCode, message: String) -> Self {
         Self {
-            code,
+            code: Some(code),
             failure: Failure::Request,
             message,
             source: None,
@@ -289,15 +289,7 @@ mod tests {
     /// Verify that exit codes separate the classes a script branches on.
     #[test]
     fn exit_codes_distinguish_failure_classes() {
-        let code = |code| {
-            CliError {
-                code: Some(code),
-                failure: Failure::Request,
-                message: String::new(),
-                source: None,
-            }
-            .exit_code()
-        };
+        let code = |code| CliError::from_daemon(code, String::new()).exit_code();
 
         assert_eq!(code(ErrorCode::ZoneNotFound), EXIT_NOT_FOUND);
         assert_eq!(code(ErrorCode::RecordConflict), EXIT_CONFLICT);

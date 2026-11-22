@@ -52,7 +52,7 @@ pub(crate) fn zone_name_to_member_id(zone_name: &ZoneName) -> String {
 }
 
 /// Why a transferred catalog zone could not be read as one.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ExtractMemberZonesError {
     #[error("the catalog carries no apex NS record (RFC 9432, Section 4)")]
     MissingApexNs,
@@ -104,15 +104,12 @@ pub fn extract_member_zones(
 
         match record.rtype {
             Rtype::NS if owner.is_apex() => apex_ns = true,
-            Rtype::TXT if labels == [b"version".to_vec()] => {
-                if version
-                    .as_deref()
-                    .is_some_and(|value| value != record.rdata.as_bytes())
-                {
+            Rtype::TXT if labels.len() == 1 && labels[0].as_slice() == b"version" => {
+                if version.is_some_and(|value| value != record.rdata.as_bytes()) {
                     return Err(ExtractMemberZonesError::VersionNotSingular);
                 }
 
-                version = Some(record.rdata.as_bytes().to_vec());
+                version = Some(record.rdata.as_bytes());
             }
             Rtype::PTR if labels.len() == 2 && labels[1] == MEMBER_SUBTREE.as_bytes() => {
                 let target = WireName::from_octets(record.rdata.as_bytes().to_vec())
@@ -149,8 +146,8 @@ pub fn extract_member_zones(
         Some(rdata) => {
             // The whole value, every character-string of it, as a zone file
             // spells it; RDATA no TXT reading accepts is shown as it came.
-            let found = TxtRecordValue::from_rdata(&rdata).map_or_else(
-                |_| String::from_utf8_lossy(&rdata).into_owned(),
+            let found = TxtRecordValue::from_rdata(rdata).map_or_else(
+                |_| String::from_utf8_lossy(rdata).into_owned(),
                 |txt| txt.to_presentation(),
             );
             return Err(ExtractMemberZonesError::UnsupportedVersion { found });

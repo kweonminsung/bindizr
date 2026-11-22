@@ -3,6 +3,7 @@
 use bindizr_core::dns::dnssec::{DsDigestType, KeyTag};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecordSet;
+use bindizr_core::dns::record::Rdata;
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyState};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
@@ -21,7 +22,7 @@ use crate::types::{
 use crate::{Context, dnssec, transaction};
 
 /// Why the zone's configuration prevents a delegation check.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 enum ProbeDelegationError {
     #[error("the zone names no parent nameservers")]
     NoParentNameservers,
@@ -141,7 +142,7 @@ fn build_delegation_response(
             .iter()
             .map(|digest_type| {
                 key.ds_rdata(&apex, *digest_type)
-                    .map(|rdata| rdata.as_bytes().to_vec())
+                    .map(Rdata::into_bytes)
                     .map_err(ServiceError::dnssec_signing_failed)
             })
             .collect::<Result<_, ServiceError>>()?;

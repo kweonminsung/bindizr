@@ -11,11 +11,12 @@ use bindizr_core::dns::message::{
 use bindizr_core::dns::nsupdate::DEFAULT_FUDGE;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
 use bindizr_core::dns::nsupdate::parser::UpdateRequest;
-use bindizr_core::dns::tsig::{RequestSignature, RequestTsig, TsigError};
+use bindizr_core::dns::tsig::{RequestSignature, RequestTsig, TsigError, TsigRcode};
 use bindizr_core::dns::{nsupdate, tsig};
 use bindizr_core::metrics::NsupdateResult;
-use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
+use bindizr_core::model::access_log::{AccessResult, AccessSource};
 use bindizr_core::model::change::ChangeActor;
+use bindizr_service::access::{AccessLogEntry, AccessLogErrorCode};
 use bindizr_service::error::ErrorCode;
 use bindizr_service::nsupdate::NsupdateError;
 use bindizr_service::{Context, access, zone};
@@ -73,7 +74,7 @@ async fn handle_nsupdate_request(
     let cx = dns_cx.daemon();
 
     // Filled in as the request is read; its fields say how far it got.
-    let mut access_log = AccessLog {
+    let mut access_log = AccessLogEntry {
         source: AccessSource::Nsupdate,
         client_addr: client_addr.ip().to_string(),
         method: "UPDATE".to_string(),
@@ -89,7 +90,7 @@ async fn handle_nsupdate_request(
         Ok(request) => request,
         Err(error) => {
             log::warn!("NSUPDATE parse error from {client_addr}: {error}");
-            access_log.error = Some(OptRcode::FORMERR.to_string());
+            access_log.error = Some(AccessLogErrorCode::Dns(OptRcode::FORMERR));
             let mut response_rcode = OptRcode::FORMERR;
 
             // RFC 8945, Section 5.2: a request whose key verifies is answered
@@ -116,7 +117,7 @@ async fn handle_nsupdate_request(
                                         "NSUPDATE TSIG rejected from {client_addr}: {rcode}"
                                     );
                                     cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
-                                    save_tsig_rejected(cx, access_log, rcode.to_string());
+                                    save_tsig_rejected(cx, access_log, rcode);
 
                                     return Ok(response);
                                 }
@@ -126,7 +127,7 @@ async fn handle_nsupdate_request(
                                     );
                                     response_rcode = OptRcode::SERVFAIL;
                                     access_log.error =
-                                        Some("TSIG_RESPONSE_ENCODING_FAILED".to_string());
+                                        Some(AccessLogErrorCode::TsigResponseEncodingFailed);
 
                                     (None, DEFAULT_FUDGE)
                                 }
@@ -140,7 +141,7 @@ async fn handle_nsupdate_request(
                             );
 
                             response_rcode = OptRcode::SERVFAIL;
-                            access_log.error = Some("TSIG_AUTHENTICATION_FAILED".to_string());
+                            access_log.error = Some(AccessLogErrorCode::TsigAuthenticationFailed);
 
                             (None, DEFAULT_FUDGE)
                         }
@@ -192,25 +193,25 @@ async fn handle_nsupdate_request(
                 Ok(response) => {
                     log::warn!("NSUPDATE TSIG rejected from {client_addr}: {rcode}");
                     cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
-                    save_tsig_rejected(cx, access_log, rcode.to_string());
+                    save_tsig_rejected(cx, access_log, rcode);
 
                     return Ok(response);
                 }
                 Err(error) => {
                     log::warn!("NSUPDATE TSIG error encoding failed from {client_addr}: {error}");
-                    access_log.error = Some("TSIG_RESPONSE_ENCODING_FAILED".to_string());
+                    access_log.error = Some(AccessLogErrorCode::TsigResponseEncodingFailed);
                     (OptRcode::SERVFAIL, None)
                 }
             }
         }
         Err(UpdateError::Edns { rcode }) => {
             log::info!("Refusing the EDNS of an NSUPDATE from {client_addr}");
-            access_log.error = Some(rcode.to_string());
+            access_log.error = Some(AccessLogErrorCode::Dns(rcode));
             (rcode, None)
         }
         Err(error @ UpdateError::NotAuth(_)) => {
             log::warn!("NSUPDATE notauth from {client_addr}: {error}");
-            access_log.error = Some(OptRcode::NOTAUTH.to_string());
+            access_log.error = Some(AccessLogErrorCode::Dns(OptRcode::NOTAUTH));
             (
                 OptRcode::NOTAUTH,
                 Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
@@ -235,15 +236,15 @@ async fn handle_nsupdate_request(
                 log::warn!("NSUPDATE {rcode} from {client_addr}: {error}");
             }
             access_log.error = Some(match &error {
-                NsupdateError::Service(error) => error.code().as_str().to_string(),
-                _ => rcode.to_string(),
+                NsupdateError::Service(error) => AccessLogErrorCode::Service(error.code()),
+                _ => AccessLogErrorCode::Dns(rcode.into()),
             });
 
             (rcode.into(), ede)
         }
         Err(error @ (UpdateError::LoadTsigKey(_) | UpdateError::Tsig(_))) => {
             log::error!("NSUPDATE from {client_addr} failed with a server fault: {error:?}");
-            access_log.error = Some("TSIG_AUTHENTICATION_FAILED".to_string());
+            access_log.error = Some(AccessLogErrorCode::TsigAuthenticationFailed);
             (OptRcode::SERVFAIL, None)
         }
     };
@@ -306,16 +307,16 @@ fn update_rcode(code: ErrorCode) -> Rcode {
 }
 
 /// Save a TSIG rejection's fixed code; an unverified key names no caller.
-fn save_tsig_rejected(cx: &Context, mut access_log: AccessLog, rcode: String) {
-    access_log.error = Some(rcode.clone());
-    access_log.status = rcode;
+fn save_tsig_rejected(cx: &Context, mut access_log: AccessLogEntry, rcode: TsigRcode) {
+    access_log.error = Some(AccessLogErrorCode::Tsig(rcode));
+    access_log.status = rcode.to_string();
     access_log.result = AccessResult::Denied;
     access::save(cx, access_log);
 }
 
 /// Save an UPDATE answered with `rcode`: REFUSED is a denial, any other error
 /// a failure, and so is a response that could not be encoded.
-fn save_answered(cx: &Context, mut access_log: AccessLog, rcode: OptRcode, encoded: bool) {
+fn save_answered(cx: &Context, mut access_log: AccessLogEntry, rcode: OptRcode, encoded: bool) {
     access_log.status = rcode.to_string();
     access_log.result = if !encoded {
         AccessResult::Failed
@@ -328,7 +329,7 @@ fn save_answered(cx: &Context, mut access_log: AccessLog, rcode: OptRcode, encod
     };
 
     if !encoded {
-        access_log.error = Some("RESPONSE_ENCODING_FAILED".to_string());
+        access_log.error = Some(AccessLogErrorCode::ResponseEncodingFailed);
     }
 
     access::save(cx, access_log);
