@@ -4,24 +4,28 @@ use sqlx::{MySql, Transaction};
 
 use crate::error::DatabaseError;
 
-/// Find the catalog's stored serial, locking its row for update.
-pub(crate) async fn find_serial_tx(
+/// Lock the catalog row, creating it if missing. The duplicate-key update
+/// takes an exclusive lock even when it does not change the existing row.
+pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, MySql>,
     catalog_zone_name: &ZoneName,
-) -> Result<Option<Serial>, DatabaseError> {
-    let serial = sqlx::query_scalar::<_, Serial>(
-        "SELECT serial FROM catalog_zones WHERE name = ? FOR UPDATE",
+) -> Result<(), DatabaseError> {
+    sqlx::query(
+        r#"
+        INSERT INTO catalog_zones (name, digest, serial)
+        VALUES (?, '', 0)
+        ON DUPLICATE KEY UPDATE serial = serial
+        "#,
     )
     .bind(catalog_zone_name)
-    .fetch_optional(&mut **tx)
+    .execute(&mut **tx)
     .await?;
 
-    Ok(serial)
+    Ok(())
 }
 
-/// Upsert the catalog digest, advancing the serial only when `digest` changed;
-/// return the serial in effect after the upsert.
-pub(crate) async fn upsert_tx(
+/// Store the digest and return the resulting serial on the locked row.
+pub(crate) async fn update_tx(
     tx: &mut Transaction<'_, MySql>,
     catalog_zone_name: &ZoneName,
     digest: &str,
@@ -31,16 +35,21 @@ pub(crate) async fn upsert_tx(
     // re-transfer on real changes; past the maximum it wraps to one (RFC 2136, Section 7.11).
     sqlx::query(
         r#"
-        INSERT INTO catalog_zones (name, digest, serial)
-        VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            serial = IF(digest = VALUES(digest), serial, IF(serial = 4294967295, 1, serial + 1)),
-            digest = VALUES(digest)
+        UPDATE catalog_zones
+        SET serial = CASE
+                WHEN digest = '' THEN ?
+                WHEN digest = ? THEN serial
+                WHEN serial = 4294967295 THEN 1
+                ELSE serial + 1
+            END,
+            digest = ?
+        WHERE name = ?
         "#,
     )
-    .bind(catalog_zone_name)
-    .bind(digest)
     .bind(base_serial)
+    .bind(digest)
+    .bind(digest)
+    .bind(catalog_zone_name)
     .execute(&mut **tx)
     .await?;
 

@@ -70,7 +70,7 @@ bindizr:
       existingSecret: ""
       port: 853
     transfer:
-      # Zone records cached per serial, so repeated transfers skip the
+      # Zone records cached by immutable version, so repeated transfers skip the
       # database; a larger zone is served uncached, 0 caches nothing.
       cacheMaxRecords: 500000
       # true | false; true refuses AXFR and IXFR over plain TCP and UDP once

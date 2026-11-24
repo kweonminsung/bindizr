@@ -81,7 +81,7 @@ impl<'a> CaaRecordValue<'a> {
     }
 
     /// Render the CAA value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn to_text(&self) -> String {
         format!(
             "{} {} {}",
             self.flags,

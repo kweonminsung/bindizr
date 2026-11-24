@@ -81,7 +81,7 @@ impl QueryMetadata {
     }
 
     /// Build a bounded TC response with the request's optional signature.
-    pub(crate) fn build_signed_truncated_response(
+    pub fn build_signed_truncated_response(
         &self,
         signer: Option<&mut TransferSigner>,
     ) -> Result<Vec<u8>, EncodeMessageError> {

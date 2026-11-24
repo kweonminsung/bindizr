@@ -67,10 +67,14 @@ pub enum ParseZoneFileError {
     UnsupportedClass { class: Class, owner: String },
     #[error("$INCLUDE directives are not supported")]
     Include,
-    /// The scanner keeps its position private, so its message, renumbered to
-    /// the submitted text, is all there is.
+    /// The scanner's typed failure, with its displayed position mapped back
+    /// to the submitted text.
     #[error("failed to parse zone file: {reason}")]
-    Syntax { reason: String },
+    Syntax {
+        reason: String,
+        #[source]
+        source: inplace::Error,
+    },
     #[error("{owner}: trailing RDATA bytes")]
     TrailingRdata { owner: String },
     #[error("{owner}: {source}")]
@@ -178,9 +182,10 @@ impl ParsedZoneFile {
                     parsed.errors.push(ParseZoneFileError::Include);
                 }
                 Ok(None) => break,
-                Err(error) => {
+                Err(source) => {
                     parsed.errors.push(ParseZoneFileError::Syntax {
-                        reason: to_input_line_message(&error),
+                        reason: to_input_line_message(&source),
+                        source,
                     });
                     // domain documents the scanner as invalid once an entry fails.
                     break;
@@ -303,7 +308,7 @@ impl ParsedZoneFile {
             let Ok(()) = data.compose_rdata(&mut bytes);
 
             match WksRecordValue::from_rdata(&bytes) {
-                Ok(value) => (ZoneFileValue::Rdata(value.canonical()), None),
+                Ok(value) => (ZoneFileValue::Rdata(value.to_text()), None),
                 Err(source) => {
                     self.errors.push(ParseZoneFileError::Wks { owner, source });
                     return;
@@ -336,7 +341,7 @@ impl ParsedZoneFile {
                     naptr.regexp().as_slice(),
                     &naptr.replacement().to_string(),
                 )
-                .map(|value| value.canonical())
+                .map(|value| value.to_text())
                 {
                     Ok(text) => (ZoneFileValue::Rdata(text), None),
                     Err(source) => {

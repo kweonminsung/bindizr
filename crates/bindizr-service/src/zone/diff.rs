@@ -1,10 +1,10 @@
 //! Record-set-level diffing of two serials' records: what an import, a bulk apply, or a
 //! rollback would add, remove, or change.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use bindizr_core::dns::Ttl;
-use bindizr_core::model::record::{RecordData, RecordSetKey};
+use bindizr_core::model::record::{Record, RecordData, RecordSetKey, RecordValueKey};
 use bindizr_core::model::zone::Zone;
 
 use crate::authorization::ReadableRecords;
@@ -14,10 +14,10 @@ use crate::types::{
     RecordDiffValueResponse,
 };
 
-/// What makes two records of one record set the same: canonical rdata and TTL.
+/// What makes two records of one record set the same: value identity and TTL.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct MemberIdentity {
-    rdata: String,
+    value_key: RecordValueKey<'static>,
     ttl: Ttl,
 }
 
@@ -27,6 +27,25 @@ struct MemberIdentity {
 struct RecordSetMember {
     identity: MemberIdentity,
     value: RecordDiffValueResponse,
+}
+
+/// Preview deletions and the caller's own writes against authorized existing records.
+pub(crate) fn build_record_preview(
+    zone: &Zone,
+    mut existing: ReadableRecords<Record>,
+    deleted: &[Record],
+    written: impl IntoIterator<Item = RecordData>,
+) -> RecordDiffResponse {
+    let before = existing.clone().into_data();
+    let deleted_record_ids: HashSet<_> = deleted.iter().map(|record| record.id).collect();
+    existing.remove_ids(&deleted_record_ids);
+    let mut after = existing.into_data();
+
+    for record in written {
+        after.push_written(record);
+    }
+
+    build_record_diff(zone, &before, &after)
 }
 
 /// Group records into record sets. Two records are the same iff their canonical
@@ -44,9 +63,9 @@ fn group_record_sets(
         };
         record_sets.entry(key).or_default().push(RecordSetMember {
             identity: MemberIdentity {
-                rdata: record
+                value_key: record
                     .record_type
-                    .canonical_value(&record.value, record.priority)
+                    .to_comparison_key(&record.value, record.priority)
                     .into_owned(),
                 ttl: record.ttl,
             },

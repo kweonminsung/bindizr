@@ -105,7 +105,7 @@ pub(crate) async fn get_secondary(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let secondary = secondary::get(&cx, &caller, &params.name).await?;
+    let secondary = secondary::get_by_name(&cx, &caller, &params.name).await?;
     let response = SingleSecondaryResponse { secondary };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

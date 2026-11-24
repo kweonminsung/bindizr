@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use base64::engine::general_purpose;
 use base64::{DecodeError, Engine};
-use domain::base::iana::{Class, Rcode, TsigRcode};
+pub use domain::base::iana::TsigRcode;
+use domain::base::iana::{Class, Rcode};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, ToName};
 use domain::rdata::tsig::{Time48, Tsig};

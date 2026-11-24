@@ -221,12 +221,12 @@ pub struct DeleteRecordsRequest {
 /// Deleted records or their preview; no matches leave the serial unchanged and send no NOTIFY.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DeleteRecordsResponse {
-    /// Whether this call wrote; a filter that matched nothing still ran, and
-    /// says so with `deleted: 0`.
+    /// Whether the request completed in apply mode. An empty match still applies.
     #[schema(example = true)]
     pub applied: bool,
     #[schema(example = false)]
     pub dry_run: bool,
+    /// Records selected for removal, including in a dry run.
     #[schema(example = 3)]
     pub deleted: u64,
     pub records: Vec<RecordResponse>,
@@ -352,6 +352,7 @@ pub struct CreateBulkRecordsResponse {
     pub applied: bool,
     #[schema(example = false)]
     pub dry_run: bool,
+    /// Records persisted by this request. A dry run persists zero records.
     #[schema(example = 3)]
     pub added: u64,
     pub records: Vec<RecordResponse>,
@@ -369,7 +370,7 @@ pub enum ServedRecordType {
 }
 
 impl ServedRecordType {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::User(record_type) => record_type.as_str(),

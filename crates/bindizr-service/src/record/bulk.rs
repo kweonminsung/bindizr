@@ -35,15 +35,10 @@ pub async fn create_bulk(
     let zone_name = zone::normalize_name(&request.zone_name)?;
     let records = &request.records;
 
-    if records.is_empty() {
-        return Err(ServiceError::invalid_input(
-            "no records provided for bulk insert",
-        ));
-    }
-
     let total_started = Instant::now();
 
-    // Validate types and values up front so a malformed record fails fast.
+    // Parse outside the lock, keeping target types apart from field errors
+    // so the authorization gate can run before a malformed value is reported.
     let started = Instant::now();
     let prepared: Vec<_> = records
         .iter()
@@ -55,7 +50,7 @@ pub async fn create_bulk(
                 record.priority,
             )
         })
-        .collect::<Result<_, _>>()?;
+        .collect();
     let owners: Vec<_> = records
         .iter()
         .map(|record| record::normalize_record_owner_name(&record.name, &zone_name))
@@ -76,19 +71,31 @@ pub async fn create_bulk(
 
         // Authorize before loading existing record rows so an ungranted caller
         // gets 404 instead of constraint details; dry runs included.
-        // A name that will not parse lists no write; validation reports it.
+        // An unparseable owner or type does not identify a write.
         let writes: Vec<RecordAccess> = prepared
             .iter()
             .zip(&owners)
-            .filter_map(|(prepared_record, owner)| {
-                owner.as_ref().ok().map(|owner| RecordAccess {
-                    action: Action::RecordCreate,
-                    relative_name: owner.clone(),
-                    record_type: Some(prepared_record.record_type),
-                })
+            .filter_map(|((record_type, _), owner)| {
+                record_type
+                    .zip(owner.as_ref().ok())
+                    .map(|(record_type, owner)| RecordAccess {
+                        action: Action::RecordCreate,
+                        relative_name: owner.clone(),
+                        record_type: Some(record_type),
+                    })
             })
             .collect();
         caller.authorize_record_access(&zone, &writes)?;
+
+        if records.is_empty() {
+            return Err(ServiceError::invalid_input(
+                "no records provided for bulk insert",
+            ));
+        }
+        let prepared: Vec<_> = prepared
+            .into_iter()
+            .map(|(_, fields)| fields)
+            .collect::<Result<_, _>>()?;
 
         // Only records whose owner name appears in the batch can conflict, so
         // load just those instead of the whole zone.
@@ -112,14 +119,6 @@ pub async fn create_bulk(
         timings.load_existing_ms = time::elapsed_ms(started);
 
         let new_serial = serial::generate_serial(Some(zone.serial));
-
-        // The diff is only shown on a dry-run preview, so keep the `before`
-        // copy (and pay for building the diff) off the apply hot path.
-        let before_records = if request.dry_run {
-            existing_records.clone()
-        } else {
-            Vec::new()
-        };
 
         // Index existing identities once; accepted candidates extend the same state.
         let started = Instant::now();
@@ -165,18 +164,14 @@ pub async fn create_bulk(
         let (created_records, diff) = if request.dry_run {
             // `after` = existing plus the inserts, so an insert into an
             // existing record set reads as `changed`, not a bare `added`.
-            let before = caller.readable_records(
-                before_records
-                    .into_iter()
-                    .map(|record| (zone.id, RecordData::from(record))),
+            let existing = caller
+                .readable_records(existing_records.into_iter().map(|record| (zone.id, record)));
+            let diff = diff::build_record_preview(
+                &zone,
+                existing,
+                &[],
+                to_insert.iter().cloned().map(RecordData::from),
             );
-            let mut after = before.clone();
-
-            for record in &to_insert {
-                after.push_written(RecordData::from(record.clone()));
-            }
-
-            let diff = diff::build_record_diff(&zone, &before, &after);
 
             (to_insert, diff)
         } else {

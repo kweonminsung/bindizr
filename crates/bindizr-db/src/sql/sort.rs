@@ -38,7 +38,7 @@ impl ZoneSortField {
     /// Every field, in the order an error lists them.
     pub const ALL: [Self; 4] = [Self::Name, Self::Serial, Self::DefaultTtl, Self::CreatedAt];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Name => "name",
@@ -104,7 +104,7 @@ impl RecordSortField {
         Self::CreatedAt,
     ];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Name => "name",
@@ -179,7 +179,7 @@ impl AuditLogSortField {
         Self::Operation,
     ];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::CreatedAt => "created_at",
@@ -247,7 +247,7 @@ impl AccessLogSortField {
         Self::Address,
     ];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::RequestedAt => "requested_at",
@@ -317,7 +317,7 @@ impl TransferLogSortField {
         Self::Result,
     ];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::At => "at",
@@ -376,7 +376,7 @@ impl SortOrder {
     /// Every direction, in the order an error lists them.
     pub const ALL: [Self; 2] = [Self::Asc, Self::Desc];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Asc => "asc",

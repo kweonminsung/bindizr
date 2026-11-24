@@ -74,14 +74,14 @@ pub async fn list_managed_domains(
             .collect());
     };
 
-    // Deduplicate grant domains and require sync actions for every writable type.
+    // Each contributed subtree needs all sync actions for at least one supported type.
     let mut domains = BTreeSet::new();
 
     for zone in &zones {
         for pattern in grants.patterns_holding(zone.id, &SYNC_ACTIONS, RECORD_TYPES) {
-            domains.insert(policy::normalize_lookup_name(
-                &grant_pattern::pattern_domain(pattern, &zone.name),
-            )?);
+            if let Some(domain) = grant_pattern::pattern_domain(pattern, &zone.name)? {
+                domains.insert(domain);
+            }
         }
     }
 
@@ -118,9 +118,14 @@ pub async fn list_records(
         )
         .await?;
         let read = records_with_zones.len();
+        let readable_records = caller.readable_records(
+            records_with_zones
+                .into_iter()
+                .map(|record| (record.record.zone_id, record)),
+        );
 
-        for record_with_zone in records_with_zones {
-            let record = record_with_zone.record;
+        for record_with_zone in readable_records.as_slice() {
+            let record = &record_with_zone.record;
 
             if !RECORD_TYPES.contains(&record.record_type) {
                 continue;

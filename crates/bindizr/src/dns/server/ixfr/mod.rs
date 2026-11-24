@@ -13,7 +13,7 @@ use bindizr_service::zone::{IxfrPlan, TransferAccess};
 use bindizr_service::{transfer, zone};
 
 use crate::dns::error::DnsError;
-use crate::dns::server::auth::TransferIdentity;
+use crate::dns::server::auth::QueryIdentity;
 use crate::dns::server::ixfr::send::SendIxfrError;
 use crate::dns::server::{DnsContext, axfr};
 use crate::dns::stream::ResponseWriter;
@@ -24,9 +24,10 @@ pub(crate) async fn handle_ixfr(
     writer: &ResponseWriter,
     client_ip: IpAddr,
     query: &ParsedQuery,
-    identity: &mut TransferIdentity,
+    identity: &mut QueryIdentity,
 ) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
+    let kind = TransferKind::Ixfr;
     let zone_name_str = query.zone_name.as_str();
 
     log::info!(
@@ -36,12 +37,12 @@ pub(crate) async fn handle_ixfr(
 
     // Catalogs select their response from the generated snapshot.
     if cx.config().dns.is_catalog_zone(zone_name_str) {
-        return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
+        return axfr::handle_axfr(dns_cx, writer, client_ip, query, kind, identity).await;
     }
 
     let Some(client_serial) = query.client_serial else {
         log::warn!("IXFR: No client serial provided, falling back to AXFR");
-        return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
+        return axfr::handle_axfr(dns_cx, writer, client_ip, query, kind, identity).await;
     };
 
     // Authorize and select a response atomically; invalid names receive NOTAUTH.
@@ -75,13 +76,13 @@ pub(crate) async fn handle_ixfr(
         // The client is current, so nothing moves: no transfer, no transfer-log row.
         IxfrPlan::SoaOnly => {
             log::info!("IXFR: Answering with current SOA (serial={current_serial})");
-            return send::send_soa_response(writer, query, &zone, identity.signer.take()).await;
+            return send::send_soa_response(writer, query, &zone, &mut identity.signer).await;
         }
         IxfrPlan::Full => {
             log::info!(
                 "IXFR: No incremental answer from serial {client_serial} to {current_serial}, falling back to AXFR"
             );
-            return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
+            return axfr::handle_axfr(dns_cx, writer, client_ip, query, kind, identity).await;
         }
         IxfrPlan::Changes { changes, versions } => (changes, versions),
     };
@@ -122,7 +123,7 @@ pub(crate) async fn handle_ixfr(
             );
             identity.signer = signer.map(|signer| *signer);
 
-            return axfr::handle_axfr(dns_cx, writer, client_ip, query, identity).await;
+            return axfr::handle_axfr(dns_cx, writer, client_ip, query, kind, identity).await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
         Err(SendIxfrError::Partial {
@@ -142,7 +143,7 @@ pub(crate) async fn handle_ixfr(
         cx,
         client_ip,
         zone.id,
-        TransferKind::Ixfr,
+        kind,
         writer.transport(),
         true,
         current_serial,

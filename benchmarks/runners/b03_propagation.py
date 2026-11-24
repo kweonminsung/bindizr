@@ -4,13 +4,10 @@ Bindizr's path is API -> serial bump -> NOTIFY -> AXFR/IXFR -> secondary -> dig.
 """
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lib import dig  # noqa: E402
-from lib.metrics import LatencyRecorder  # noqa: E402
+from lib import dig
+from lib.metrics import LatencyRecorder
 
 
 async def run(adapter, config, context) -> dict:

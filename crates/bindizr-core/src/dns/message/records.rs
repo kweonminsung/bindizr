@@ -122,7 +122,7 @@ impl DnsMessageBuilder {
     ) -> Result<(), EncodeMessageError> {
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_record_parts(
-            &OwnerName::from_row("version"),
+            &OwnerName::from_row("version").expect("version is a valid DNS label"),
             &catalog_zone.name,
             RecordType::Txt,
             &TxtRecordValue::from_string("2").to_presentation(),

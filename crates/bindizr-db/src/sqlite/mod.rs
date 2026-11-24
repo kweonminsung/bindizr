@@ -35,7 +35,7 @@ const SQLITE_BUSY: i32 = 5;
 /// truncated past `i32`.
 pub(crate) fn last_insert_id(result: &SqliteQueryResult) -> Result<i32, DatabaseError> {
     let id = result.last_insert_rowid();
-    i32::try_from(id).map_err(|_| DatabaseError::IdOutOfRange { id })
+    i32::try_from(id).map_err(|source| DatabaseError::IdOutOfRange { id, source })
 }
 
 /// Return whether SQLite refused for want of the writer it would have waited for.

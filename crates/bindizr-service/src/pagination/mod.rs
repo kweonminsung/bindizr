@@ -6,6 +6,7 @@ use bindizr_db::ParseSortError;
 use chrono::{DateTime, Utc};
 
 use crate::error::ServiceError;
+use crate::text;
 use crate::types::{PaginatedResponse, PaginationResponse};
 
 /// Maximum explicitly requested page size. An omitted limit remains unbounded.
@@ -44,10 +45,7 @@ pub(crate) fn parse_setting<T>(value: Option<&str>, default: T) -> Result<T, Ser
 where
     T: FromStr<Err = ParseSortError>,
 {
-    match value.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(value) => value.parse::<T>().map_err(ServiceError::invalid_input),
-        None => Ok(default),
-    }
+    Ok(text::parse_optional(value)?.unwrap_or(default))
 }
 
 /// Build a page already limited and offset at the query layer; an omitted limit

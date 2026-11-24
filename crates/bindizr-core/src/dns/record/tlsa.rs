@@ -68,7 +68,7 @@ impl TlsaRecordValue {
     }
 
     /// Render the TLSA value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn to_text(&self) -> String {
         format!(
             "{} {} {} {}",
             self.cert_usage,
@@ -103,7 +103,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            parsed.canonical(),
+            parsed.to_text(),
             "3 1 1 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383"
         );
     }

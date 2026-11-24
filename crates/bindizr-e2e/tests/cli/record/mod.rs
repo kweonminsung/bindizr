@@ -1,5 +1,6 @@
 mod bulk;
 
+use domain::base::iana::Rtype;
 use serde_json::{Value, json};
 
 use crate::common;
@@ -431,6 +432,11 @@ async fn record_delete_by_name_narrows_by_type() {
 
     assert!(types.contains(&"TXT"), "{types:?}");
     assert!(!types.contains(&"A"), "{types:?}");
+
+    let owner_name = format!("www.{zone_name}.");
+    for port in app.dns_secondary_ports() {
+        common::dns::wait_for_dns_records(*port, &owner_name, Rtype::A.to_int(), &[]).await;
+    }
 }
 
 /// Verify that a TXT record is deleted by the value it was created with.
@@ -519,22 +525,96 @@ async fn record_get_by_name_lists_every_record_at_the_name() {
 
     // A name holds a record per type, so the name form answers with all of
     // them rather than failing the way a single-record lookup would.
-    let listed = app
+    let absolute_name = format!("WWW.{zone_name}.");
+    for (owner_name, expected_types) in [
+        ("www", &["A", "TXT"][..]),
+        (absolute_name.as_str(), &["A", "TXT"][..]),
+        ("@", &["NS"][..]),
+    ] {
+        let response = app
+            .run_cli_success(
+                &["record", "get", &zone_name, owner_name, "--output", "json"],
+                None,
+            )
+            .await;
+        let response: Value =
+            serde_json::from_str(&response).expect("record get did not print JSON");
+        let mut types: Vec<&str> = response["items"]
+            .as_array()
+            .expect("record get items")
+            .iter()
+            .map(|record| record["type"].as_str().expect("record type"))
+            .collect();
+        types.sort_unstable();
+
+        assert_eq!(types, expected_types, "{owner_name}: {response}");
+    }
+
+    for owner_name in ["", " ", "a..b", "outside.example."] {
+        let args = ["record", "get", &zone_name, owner_name, "--output", "json"];
+        let refused = app.run_cli(&args, None).await;
+        common::assert_cli_failure_contains(&args, &refused, "invalid record name");
+        assert!(refused.stdout.is_empty());
+    }
+}
+
+/// Verify that table output identifies a preview and keeps the proposed record.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_writes_mark_table_previews() {
+    let app = TestApp::start_local().await;
+    let zone_name = app.zone_name("record-preview.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    let create = [
+        "record",
+        "create",
+        &zone_name,
+        "www",
+        "--type",
+        "A",
+        "--value",
+        "192.0.2.1",
+    ];
+    let mut preview = create.to_vec();
+    preview.push("--dry-run");
+    let response = app.run_cli_success(&preview, None).await;
+    assert!(response.contains("Record would be created"), "{response}");
+    assert!(response.contains("192.0.2.1"), "{response}");
+
+    let response = app.run_cli_success(&create, None).await;
+    assert!(!response.contains("would be created"), "{response}");
+
+    let record = app
         .run_cli_success(
             &["record", "get", &zone_name, "www", "--output", "json"],
             None,
         )
         .await;
-    let listed: Value = serde_json::from_str(&listed).expect("record get did not print JSON");
-    let mut types: Vec<&str> = listed["items"]
-        .as_array()
-        .expect("items")
-        .iter()
-        .map(|record| record["type"].as_str().expect("type"))
-        .collect();
-    types.sort_unstable();
+    let record: Value = serde_json::from_str(&record).expect("record get did not print JSON");
+    let record_id = record["items"][0]["id"]
+        .as_i64()
+        .expect("record ID")
+        .to_string();
 
-    assert_eq!(types, ["A", "TXT"], "{listed}");
+    for selector in [["--id", record_id.as_str()], [zone_name.as_str(), "www"]] {
+        let response = app
+            .run_cli_success(
+                &[
+                    "record",
+                    "update",
+                    selector[0],
+                    selector[1],
+                    "--value",
+                    "192.0.2.2",
+                    "--dry-run",
+                ],
+                None,
+            )
+            .await;
+        assert!(response.contains("Record would be updated"), "{response}");
+        assert!(response.contains("192.0.2.2"), "{response}");
+    }
 }
 
 /// Verify that `record update` takes an owner name when the name holds one record.

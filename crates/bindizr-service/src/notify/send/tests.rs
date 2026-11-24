@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::sync::Arc;
 
 use bindizr_core::config::Config;
 use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
@@ -104,7 +105,7 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     assert_eq!(failures[0].0, failed_address);
     assert!(matches!(
         &failures[0].1,
-        SendNotifyError::Send(dns_client::notify::SendNotifyError::Response(
+        NotifyTargetError::Send(dns_client::notify::SendNotifyError::Response(
             ParseResponseError::Rcode {
                 rcode: OptRcode::SERVFAIL
             }
@@ -129,7 +130,10 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
         format!("NOTIFY failed: {failed_address}: {expected_message}")
     );
 
-    let reports = send_notify_to_secondaries(&cx, &zone_name).await.unwrap();
+    let targets = secondary::resolve_enabled(&cx).await.unwrap();
+    let reports = send_notify_to_targets(&cx, &zone_name, &targets)
+        .await
+        .unwrap();
 
     assert_eq!(reports.len(), 2);
     assert_eq!(
@@ -158,7 +162,7 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
 #[test]
 fn notify_resolution_error_exposes_original_cause() {
     let error =
-        SendNotifyError::Resolve(Arc::new(dns_client::ResolveAddressError::NoAddresses).into());
+        NotifyTargetError::Resolve(Arc::new(dns_client::ResolveAddressError::NoAddresses).into());
     assert!(
         error
             .source()

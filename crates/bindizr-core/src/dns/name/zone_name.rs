@@ -24,13 +24,13 @@ impl ZoneName {
         Ok(Self(name::labels_to_presentation(&labels)))
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// Return the zone's decoded, case-folded octet labels.
-    pub fn labels(&self) -> Vec<Vec<u8>> {
+    /// Decode the zone's case-folded octet labels.
+    pub fn to_labels(&self) -> Vec<Vec<u8>> {
         name::decode_name_labels(&self.0)
             .expect("validated zone name")
             .0
@@ -43,7 +43,7 @@ impl ZoneName {
 
     /// Encode the zone name as an absolute DNS wire-format name.
     pub fn to_wire(&self) -> Result<Vec<u8>, ParseNameError> {
-        name::labels_to_wire(self.labels().iter().map(Vec::as_slice))
+        name::labels_to_wire(self.to_labels().iter().map(Vec::as_slice))
     }
 
     /// Convert the zone apex into the `domain` crate's name form.

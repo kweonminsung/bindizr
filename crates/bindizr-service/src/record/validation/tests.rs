@@ -162,7 +162,7 @@ fn validate_add(
 ) -> Result<(), ServiceError> {
     validate_record_constraints(
         records,
-        &OwnerName::from_row(stored_name),
+        &OwnerName::from_row(stored_name).unwrap(),
         record_type,
         value,
         Ttl::try_from(ttl).unwrap(),
@@ -370,7 +370,7 @@ fn test_record(
 ) -> Record {
     Record {
         id: RecordId::from(record_id),
-        name: OwnerName::from_row(name),
+        name: OwnerName::from_row(name).unwrap(),
         record_type,
         value: value.to_string(),
         ttl: Ttl::try_from(RECORD_SET_TTL).unwrap(),

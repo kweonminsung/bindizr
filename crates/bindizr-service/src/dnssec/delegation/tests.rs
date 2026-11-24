@@ -92,11 +92,15 @@ fn record_set(records: Vec<DsRecord>) -> Option<DsRecordSet> {
 }
 
 /// Build a parent DS probe result from the supplied server answers.
-fn parent(answers: Vec<Option<DsRecordSet>>) -> ParentDs {
-    ParentDs {
-        ns_addrs: vec!["192.0.2.1".to_string(), "192.0.2.2".to_string()],
-        answers,
-    }
+fn parent(answers: Vec<Option<DsRecordSet>>) -> Vec<ParentDsAnswer> {
+    answers
+        .into_iter()
+        .enumerate()
+        .map(|(index, records)| ParentDsAnswer {
+            server: format!("192.0.2.{}", index + 1),
+            records,
+        })
+        .collect()
 }
 
 /// Compute delegation information for a key and simulated parent answers.

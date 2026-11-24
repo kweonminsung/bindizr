@@ -134,9 +134,9 @@ async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
     );
 
     time::advance(Duration::from_millis(1)).await;
-    let batch = task.await.unwrap();
+    let zone_names = task.await.unwrap();
 
-    assert_eq!(batch, HashSet::from([catalog_zone_name]));
+    assert_eq!(zone_names, HashSet::from([catalog_zone_name]));
 }
 
 /// Verify that backlogged jobs retain their original age and that the catalog uses its
@@ -163,14 +163,14 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
     let (_jobs_tx, mut jobs) = mpsc::unbounded_channel();
     let (_stop_tx, mut stop) = watch::channel(false);
 
-    let batch = collect_batch(&cx, &mut jobs, &mut stop, first).await;
+    let zone_names = collect_batch(&cx, &mut jobs, &mut stop, first).await;
 
     assert_eq!(
         Instant::now(),
         started,
         "an expired batching window must flush without starting a new wait"
     );
-    assert_eq!(batch.len(), 1);
+    assert_eq!(zone_names.len(), 1);
 }
 
 /// Verify that a shorter delay advances a pending deadline and that shutdown flushes
@@ -209,9 +209,9 @@ async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
     let mut stop = stop_tx.subscribe();
     stop_tx.send(true).unwrap();
 
-    let batch = collect_batch(&cx, &mut jobs, &mut stop, first).await;
+    let zone_names = collect_batch(&cx, &mut jobs, &mut stop, first).await;
 
-    assert_eq!(batch.len(), 2);
+    assert_eq!(zone_names.len(), 2);
     assert_eq!(
         Instant::now(),
         started,

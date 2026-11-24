@@ -13,7 +13,7 @@ pub(crate) const MEDIA_TYPE: &str = "application/external.dns.webhook+json;versi
 /// Why an endpoint is not one this provider can write; the message becomes a
 /// permanent (4xx) error body. Record rules are the server's, whose 400 the
 /// adapter passes through; only what the webhook shape alone shows is here.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub(crate) enum ValidateEndpointError {
     #[error("setIdentifier is not supported by this provider")]
     SetIdentifier,
@@ -26,6 +26,14 @@ pub(crate) enum ConvertChangesError {
     UnpairedUpdates { old: usize, new: usize },
     #[error(transparent)]
     Endpoint(#[from] ValidateEndpointError),
+}
+
+/// The upstream answer did not provide one record per endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("bindizr adjusted {records} of {endpoints} records")]
+pub(crate) struct AdjustedRecordCountError {
+    records: usize,
+    endpoints: usize,
 }
 
 /// JSON shape of external-dns `endpoint.Endpoint` (all fields omitempty).
@@ -192,8 +200,15 @@ pub(crate) fn to_bindizr_records(
 pub(crate) fn build_adjusted_endpoints(
     endpoints: Vec<Endpoint>,
     adjusted: Vec<BindizrRecord>,
-) -> Vec<Endpoint> {
-    endpoints
+) -> Result<Vec<Endpoint>, AdjustedRecordCountError> {
+    if adjusted.len() != endpoints.len() {
+        return Err(AdjustedRecordCountError {
+            records: adjusted.len(),
+            endpoints: endpoints.len(),
+        });
+    }
+
+    Ok(endpoints
         .into_iter()
         .zip(adjusted)
         .map(|(endpoint, record)| Endpoint {
@@ -201,7 +216,7 @@ pub(crate) fn build_adjusted_endpoints(
             labels: endpoint.labels,
             ..Endpoint::from(record)
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]

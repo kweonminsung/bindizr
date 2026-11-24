@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from adapters import registry  # noqa: E402
 from datasets.gen_dataset import generate  # noqa: E402
+from lib import docker  # noqa: E402
 
 ZONE = "bench.example."
 RECORDS = 10_000
@@ -70,7 +71,7 @@ def axfr_from_bind9(cid: str, transfer_key: str) -> tuple[float | None, int]:
 async def run_variant(transfer_cache: bool) -> dict:
     """Run the transfer workload with one transfer-cache configuration."""
     label = "on" if transfer_cache else "off"
-    project = f"bench-zc-{label}"
+    project = docker.project_name("zc")
     adapter = registry.build_adapter("bindizr", {"resources": {"sample_interval_secs": 1}}, project,
                              notify_after_update=False, transfer_cache=transfer_cache)
 

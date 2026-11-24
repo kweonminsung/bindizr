@@ -194,27 +194,22 @@ async fn history_ranges_wrap_and_prune_to_the_unambiguous_half_range() {
 #[tokio::test]
 async fn catalog_serial_wraps_to_one_when_the_digest_changes_past_max() {
     let (pool, _) = fixture().await;
-    let mut tx = pool.begin().await.unwrap();
     let from = Serial::from(u32::MAX);
     let catalog_zone_name = ZoneName::parse("catalog.example").unwrap();
 
-    assert_eq!(
-        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name, "one", from)
+    for (digest, expected) in [
+        ("one", from),
+        ("two", Serial::from(1)),
+        ("two", Serial::from(1)),
+    ] {
+        let mut tx = pool.begin().await.unwrap();
+        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name)
             .await
-            .unwrap(),
-        from
-    );
-
-    assert_eq!(
-        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name, "two", from)
+            .unwrap();
+        let serial = catalog_zone::update_tx(&mut tx, &catalog_zone_name, digest, from)
             .await
-            .unwrap(),
-        Serial::from(1)
-    );
-    assert_eq!(
-        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name, "two", from)
-            .await
-            .unwrap(),
-        Serial::from(1)
-    );
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(serial, expected);
+    }
 }

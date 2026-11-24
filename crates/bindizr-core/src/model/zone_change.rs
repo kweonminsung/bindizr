@@ -48,7 +48,7 @@ pub enum ChangeOperation {
 }
 
 impl ChangeOperation {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Add => "ADD",
@@ -128,7 +128,7 @@ impl JournalRecordType {
         matches!(self, Self::Derived(_))
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::User(record_type) => record_type.as_str(),

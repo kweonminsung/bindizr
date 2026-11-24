@@ -6,11 +6,12 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::http::StatusCode;
+use axum::http::status::InvalidStatusCode;
 use bindizr_core::config::Config;
 use bindizr_core::dns::{Serial, address};
 use bindizr_service::types::SecondaryStatus;
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::time;
 
@@ -23,6 +24,7 @@ use crate::socket::types::{
 
 /// An API that does not answer must become a failed check, not a hang.
 const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_STATUS_LINE_BYTES: u64 = 1024;
 
 /// Why the API did not answer a probe as a reachable API.
 #[derive(Debug, Error)]
@@ -30,9 +32,11 @@ enum ProbeApiError {
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error("timed out")]
-    TimedOut,
-    #[error("unexpected response: {line}")]
-    UnexpectedResponse { line: String },
+    TimedOut(#[source] time::error::Elapsed),
+    #[error("invalid or incomplete HTTP status line")]
+    InvalidStatusLine,
+    #[error("invalid HTTP status code")]
+    StatusCode(#[source] InvalidStatusCode),
     /// The API answers but cannot serve; the status line says why.
     #[error("{line}")]
     ServerFault { line: String },
@@ -99,54 +103,54 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiErro
 
         stream.write_all(request.as_bytes()).await?;
 
-        // TCP may split the response; read until the status line is complete.
-        let mut buffer = Vec::new();
-        let mut chunk = [0; 256];
+        let mut response = Vec::new();
 
-        loop {
-            let read = stream.read(&mut chunk).await?;
+        BufReader::new(stream)
+            .take(MAX_STATUS_LINE_BYTES)
+            .read_until(b'\n', &mut response)
+            .await?;
 
-            if read == 0 {
-                break;
-            }
-
-            buffer.extend_from_slice(&chunk[..read]);
-
-            if buffer.contains(&b'\n') || buffer.len() >= 1024 {
-                break;
-            }
-        }
-
-        Ok::<_, ProbeApiError>(String::from_utf8_lossy(&buffer).to_string())
+        parse_http_status_line(&response)
     };
-    let response = time::timeout(API_CHECK_TIMEOUT, exchange)
+    time::timeout(API_CHECK_TIMEOUT, exchange)
         .await
-        .map_err(|_| ProbeApiError::TimedOut)??;
+        .map_err(ProbeApiError::TimedOut)?
+}
 
-    let status_line = response.lines().next().unwrap_or_default().trim();
+/// Validate the final HTTP/1.x status line and display its standard status.
+fn parse_http_status_line(response: &[u8]) -> Result<String, ProbeApiError> {
+    let line = response
+        .strip_suffix(b"\r\n")
+        .ok_or(ProbeApiError::InvalidStatusLine)?;
+    let mut fields = line.splitn(3, |byte| *byte == b' ');
+    let version = match fields.next() {
+        Some(b"HTTP/1.0") => "HTTP/1.0",
+        Some(b"HTTP/1.1") => "HTTP/1.1",
+        _ => return Err(ProbeApiError::InvalidStatusLine),
+    };
+    let code = fields.next().ok_or(ProbeApiError::InvalidStatusLine)?;
+    let reason = fields.next().ok_or(ProbeApiError::InvalidStatusLine)?;
 
-    if !status_line.starts_with("HTTP/") {
-        return Err(ProbeApiError::UnexpectedResponse {
-            line: status_line.to_string(),
-        });
+    if reason
+        .iter()
+        .any(|byte| *byte != b'\t' && byte.is_ascii_control())
+    {
+        return Err(ProbeApiError::InvalidStatusLine);
     }
 
-    // A 5xx to this request means the API is answering but cannot serve, which
-    // is a failing check rather than a reachable API.
-    let answered_5xx = status_line
-        .split_whitespace()
-        .nth(1)
-        .and_then(|code| code.parse::<u16>().ok())
-        .and_then(|code| StatusCode::from_u16(code).ok())
-        .is_some_and(|status| status.is_server_error());
+    let status = StatusCode::from_bytes(code).map_err(ProbeApiError::StatusCode)?;
 
-    if answered_5xx {
-        return Err(ProbeApiError::ServerFault {
-            line: status_line.to_string(),
-        });
+    if status.is_informational() || status.as_u16() > 599 {
+        return Err(ProbeApiError::InvalidStatusLine);
     }
 
-    Ok(status_line.to_string())
+    let line = format!("{version} {status}");
+
+    if status.is_server_error() {
+        return Err(ProbeApiError::ServerFault { line });
+    }
+
+    Ok(line)
 }
 
 /// Check database, DNS listener, and secondary status through the daemon.
@@ -234,5 +238,36 @@ pub(crate) async fn check_services(report: &mut Report) {
         } else {
             report.ok(line);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that the probe checks framing and a valid status before reporting reachability.
+    #[test]
+    fn probe_requires_a_complete_http_status_line() {
+        for malformed in [
+            &b"HTTP/1.1"[..],
+            b"HTTP/1.1 200 OK\n",
+            b"HTTP/1.1 200\r\n",
+            b"HTTP/1.1 20 OK\r\n",
+            b"HTTP/1.1 100 Continue\r\n",
+            b"HTTP/1.1 999 Invalid\r\n",
+            b"HTTP/1.0 200 O\x00K\r\n",
+            b"HTTP/2.0 200 OK\r\n",
+        ] {
+            assert!(parse_http_status_line(malformed).is_err(), "{malformed:?}");
+        }
+
+        assert_eq!(
+            parse_http_status_line(b"HTTP/1.0 401 \r\n").unwrap(),
+            "HTTP/1.0 401 Unauthorized"
+        );
+        assert!(matches!(
+            parse_http_status_line(b"HTTP/1.1 503 Service Unavailable\r\n"),
+            Err(ProbeApiError::ServerFault { line }) if line == "HTTP/1.1 503 Service Unavailable"
+        ));
     }
 }

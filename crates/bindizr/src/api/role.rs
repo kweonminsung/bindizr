@@ -109,7 +109,7 @@ pub(crate) async fn get_role(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let response = role::get(&cx, &caller, &params.name).await?;
+    let response = role::get_by_name(&cx, &caller, &params.name).await?;
     let response = SingleRoleResponse { role: response };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

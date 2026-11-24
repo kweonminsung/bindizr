@@ -15,6 +15,9 @@ the role's grants (`bindizr role grant`) hold all of `record:read`, `record:crea
 bindizr-external-dns --bindizr-url http://bindizr:8000 --token-file /run/secrets/bindizr-token
 ```
 
+The base URL may include a path prefix. Pass credentials through the token file
+or token option. URLs carrying user information, a query, or a fragment are rejected.
+
 ## Documentation
 
 - Documentation site: <https://kweonminsung.github.io/bindizr/>

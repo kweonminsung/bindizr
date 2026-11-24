@@ -66,7 +66,7 @@ impl SshfpRecordValue {
     }
 
     /// Render the SSHFP value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn to_text(&self) -> String {
         format!(
             "{} {} {}",
             self.algorithm,
@@ -95,7 +95,7 @@ mod tests {
     fn parse_drops_rfc1035_parens_around_the_fingerprint() {
         // The form `domain`'s Display emits, fed back by nsupdate and import.
         let parsed = SshfpRecordValue::parse(&format!("4 2 ( {} )", "ab".repeat(32))).unwrap();
-        assert_eq!(parsed.canonical(), format!("4 2 {}", "AB".repeat(32)));
+        assert_eq!(parsed.to_text(), format!("4 2 {}", "AB".repeat(32)));
     }
 
     /// Verify that `parse` joins spaced hex and canonicalizes.
@@ -106,7 +106,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(
-            parsed.canonical(),
+            parsed.to_text(),
             "4 1 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D"
         );
     }

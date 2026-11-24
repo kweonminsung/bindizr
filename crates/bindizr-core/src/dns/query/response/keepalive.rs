@@ -27,7 +27,7 @@ pub fn extract_tcp_keepalive_timeout(
         return Ok(None);
     };
     let timeout = keepalive
-        .map_err(|_| ParseResponseError::MalformedEdns)?
+        .map_err(ParseResponseError::MalformedKeepalive)?
         .timeout()
         .ok_or(ParseResponseError::MalformedEdns)?;
 

@@ -186,9 +186,12 @@ fn parse_update_request_rejects_truncated_zone_class() {
     let query_data = build_minimal_update_with_ztype(6);
 
     for missing in [1, 2] {
-        assert_eq!(
-            UpdateRequest::parse(&query_data[..query_data.len() - missing]),
-            Err(ParseUpdateError::InvalidZoneSection)
+        let error = UpdateRequest::parse(&query_data[..query_data.len() - missing]).unwrap_err();
+        assert!(matches!(error, ParseUpdateError::TruncatedZoneSection(_)));
+        assert!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .is::<ShortInput>()
         );
     }
 }
@@ -365,11 +368,18 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
 
     for message in [&forward[..], &self_referential[..]] {
         let record = update_record(Rtype::CNAME, Class::IN, 300, message[..2].to_vec());
-        assert_eq!(
-            record.to_record_value(message),
-            Err(ParseUpdateError::Rdata {
+        let error = record.to_record_value(message).unwrap_err();
+        assert!(matches!(
+            error,
+            ParseUpdateError::MalformedRdata {
                 record_type: "CNAME",
-            })
+                ..
+            }
+        ));
+        assert!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .is::<ParseError>()
         );
     }
 }

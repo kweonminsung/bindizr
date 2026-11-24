@@ -74,7 +74,7 @@ fn role_grants_answer_over_their_union() {
             "A",
         ),
     ]);
-    let host = OwnerName::from_row("host.dyn");
+    let host = OwnerName::from_row("host.dyn").unwrap();
 
     assert!(grants.permits(Action::RecordRead, other_zone_id));
     assert!(grants.permits(Action::RecordCreate, zone_id));

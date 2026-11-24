@@ -9,18 +9,11 @@ use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::secondary::Secondary;
 use tokio::task::JoinSet;
 
-use crate::dns_client::probe::{ProbeSoaError, SoaProbe};
+use crate::dns_client::soa::{ProbeSoaError, SoaProbe};
 use crate::error::ServiceError;
 use crate::secondary::SecondaryTarget;
 use crate::types::{SecondaryStatus, SecondaryStatusResponse, TransferLogResponse};
 use crate::{Context, dns_client, secondary, transfer};
-
-impl From<ProbeSoaError> for ServiceError {
-    /// Preserve probe setup failures as internal error sources.
-    fn from(error: ProbeSoaError) -> Self {
-        Self::internal_with_source("the SOA probe could not start", error)
-    }
-}
 
 /// Classify SOA results; failed probes are unreachable, incomparable serials reachable.
 fn build_secondary_status(
@@ -80,14 +73,12 @@ pub(crate) async fn probe_targets(
     let timeout = cx.config().dns.notify.timeout();
 
     let mut tasks = JoinSet::new();
-    let mut task_targets = HashMap::new();
+    let mut target_indices = HashMap::new();
 
     for (index, target) in targets.iter().cloned().enumerate() {
         let zone_name = zone_name.clone();
-        let address = target.secondary.address.to_string();
-
         let task = tasks.spawn(async move { probe_resolved(&zone_name, &target, timeout).await });
-        task_targets.insert(task.id(), (index, address));
+        target_indices.insert(task.id(), index);
     }
 
     let mut statuses = Vec::new();
@@ -99,22 +90,23 @@ pub(crate) async fn probe_targets(
             Err(error) => error.id(),
         };
         // Every id belongs to this set and was registered before joining.
-        let (index, address) = &task_targets[&id];
+        let index = target_indices[&id];
+        let target = &targets[index];
         let status = match result {
             Ok((_, Ok(probe))) => {
                 let status = build_secondary_status(probe.address, expected_serial, probe.serial);
-                attach_last_transfer(cx, zone_name, status, &probe.clients).await?
+                attach_last_transfer(cx, zone_name, status, &target.client_ips()).await?
             }
-            Ok((_, Err(error))) => return Err(error.into()),
+            Ok((_, Err(error))) => return Err(error),
             Err(error) => SecondaryStatusResponse {
-                address: address.clone(),
+                address: target.secondary.address.to_string(),
                 status: SecondaryStatus::Unreachable,
                 visible_serial: None,
                 error: Some(format!("probe task failed: {error}")),
                 last_transfer: None,
             },
         };
-        statuses.push((*index, status));
+        statuses.push((index, status));
     }
 
     statuses.sort_unstable_by_key(|(index, _)| *index);
@@ -142,7 +134,7 @@ pub(crate) async fn probe_target(
 ) -> Result<SecondaryStatusResponse, ServiceError> {
     let probe = probe_resolved(zone_name, target, cx.config().dns.notify.timeout()).await?;
     let status = build_secondary_status(probe.address, expected_serial, probe.serial);
-    attach_last_transfer(cx, zone_name, status, &probe.clients).await
+    attach_last_transfer(cx, zone_name, status, &target.client_ips()).await
 }
 
 /// Probe the request's addresses or report its original resolution failure.
@@ -150,16 +142,18 @@ async fn probe_resolved(
     zone_name: &ZoneName,
     target: &SecondaryTarget,
     timeout: Duration,
-) -> Result<SoaProbe, ProbeSoaError> {
+) -> Result<SoaProbe, ServiceError> {
     match &target.addresses {
         Ok(addrs) => {
-            dns_client::probe::probe_addresses(zone_name, &target.secondary.address, addrs, timeout)
+            dns_client::soa::probe_addresses(zone_name, &target.secondary.address, addrs, timeout)
                 .await
+                .map_err(|error| {
+                    ServiceError::internal_with_source("the SOA probe could not start", error)
+                })
         }
         Err(error) => Ok(SoaProbe {
             address: target.secondary.address.to_string(),
             serial: Err(ProbeSoaError::Resolve(error.clone().into())),
-            clients: Vec::new(),
         }),
     }
 }

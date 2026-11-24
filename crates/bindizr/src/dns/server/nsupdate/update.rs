@@ -4,16 +4,16 @@
 use bindizr_core::dns::message::OptRcode;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::nsupdate::parser::UpdateRequest;
-use bindizr_core::dns::tsig;
 use bindizr_core::dns::tsig::{ResponseSigner, TsigError};
 use bindizr_core::model::tsig_key::TsigKey;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
+use bindizr_service::nsupdate;
 use bindizr_service::nsupdate::{NsupdateError, Update};
-use bindizr_service::{nsupdate, tsig_key};
 use thiserror::Error;
 
 use crate::dns::server::DnsContext;
+use crate::dns::server::auth::{self, VerifyRequestTsigError};
 
 /// Why an UPDATE was not applied, classified for the RCODE it answers.
 #[derive(Debug, Error)]
@@ -30,6 +30,16 @@ pub(crate) enum UpdateError {
     Nsupdate(#[from] NsupdateError),
     #[error("failed to load TSIG key: {0}")]
     LoadTsigKey(#[source] ServiceError),
+}
+
+impl From<VerifyRequestTsigError> for UpdateError {
+    /// Keep key lookup and TSIG protocol failures distinct.
+    fn from(error: VerifyRequestTsigError) -> Self {
+        match error {
+            VerifyRequestTsigError::LoadKey(source) => Self::LoadTsigKey(source),
+            VerifyRequestTsigError::Tsig(error) => Self::Tsig(error),
+        }
+    }
 }
 
 /// Apply UPDATE and report whether data changed, retaining a verified signer
@@ -53,7 +63,7 @@ pub(crate) async fn apply_update(
         // keys are zone-independent, and every refusal below is then signed.
         if let Some(tsig) = &request.tsig {
             let (tsig_key, verified) =
-                authenticate_tsig_key(dns_cx, query_data, &tsig.name).await?;
+                auth::verify_request_tsig(dns_cx, query_data, &tsig.name).await?;
             signer = Some(verified);
             verified_key = Some(tsig_key);
         }
@@ -88,26 +98,6 @@ pub(crate) async fn apply_update(
     .await;
 
     (result, signer, verified_key)
-}
-
-/// Authenticate the request by the key `key_name` names: its TSIG verified,
-/// the key comes back with the context that signs the response.
-pub(crate) async fn authenticate_tsig_key(
-    dns_cx: &DnsContext,
-    query_data: &[u8],
-    key_name: &str,
-) -> Result<(TsigKey, ResponseSigner), UpdateError> {
-    let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), key_name)
-        .await
-        .map_err(UpdateError::LoadTsigKey)?;
-    let Some(tsig_key) = tsig_key else {
-        // An unknown key is answered BADKEY, signed by nothing (RFC 8945, Section 5.2).
-        return Err(tsig::reject_unknown_key(query_data).into());
-    };
-
-    let signer = tsig::verify_tsig(query_data, tsig_key.to_signing_key()?)?;
-
-    Ok((tsig_key, signer))
 }
 
 #[cfg(test)]

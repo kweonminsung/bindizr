@@ -17,7 +17,7 @@ impl ARecordValue {
     }
 
     /// Render the A value in canonical text form.
-    pub fn canonical(self) -> String {
+    pub fn to_text(self) -> String {
         self.0.to_string()
     }
 

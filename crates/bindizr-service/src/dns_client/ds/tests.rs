@@ -329,18 +329,23 @@ async fn probe_parent_ds_reports_each_server_apart() {
     .await
     .unwrap();
 
-    assert_eq!(parent.ns_addrs, [first.to_string(), second.to_string()]);
     assert_eq!(
-        parent.answers,
+        parent,
         [
-            Some(DsRecordSet {
-                records: vec![parsed_ds_record(34217)],
-                ttl: Ttl::from_secs(3600),
-            }),
-            Some(DsRecordSet {
-                records: vec![parsed_ds_record(2371), parsed_ds_record(34217)],
-                ttl: Ttl::from_secs(3600),
-            }),
+            ParentDsAnswer {
+                server: first.to_string(),
+                records: Some(DsRecordSet {
+                    records: vec![parsed_ds_record(34217)],
+                    ttl: Ttl::from_secs(3600),
+                }),
+            },
+            ParentDsAnswer {
+                server: second.to_string(),
+                records: Some(DsRecordSet {
+                    records: vec![parsed_ds_record(2371), parsed_ds_record(34217)],
+                    ttl: Ttl::from_secs(3600),
+                }),
+            },
         ]
     );
 }
@@ -368,10 +373,13 @@ async fn query_ds_retries_a_truncated_response_over_tcp() {
 
     assert_eq!(
         answers,
-        [Some(DsRecordSet {
-            records: vec![parsed_ds_record(34217)],
-            ttl: Ttl::from_secs(3600),
-        })]
+        [ParentDsAnswer {
+            server: server.to_string(),
+            records: Some(DsRecordSet {
+                records: vec![parsed_ds_record(34217)],
+                ttl: Ttl::from_secs(3600),
+            }),
+        }]
     );
 }
 
@@ -398,7 +406,8 @@ async fn query_ds_reports_absence_per_server() {
     .await
     .unwrap();
 
-    assert_eq!(answers, [None, None]);
+    assert!(answers.iter().all(|answer| answer.records.is_none()));
+    assert_eq!(answers.len(), 2);
 
     // A lagging server still serving the DS stays visible to the caller.
     let answers = query_ds(
@@ -412,7 +421,7 @@ async fn query_ds_reports_absence_per_server() {
     assert_eq!(
         answers
             .iter()
-            .map(|answer| answer.as_ref().map(DsRecordSet::key_tags))
+            .map(|answer| answer.records.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
         vec![None, Some(vec![KeyTag::from(1)])]
     );
@@ -472,7 +481,7 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
     assert_eq!(
         answers
             .iter()
-            .map(|answer| answer.as_ref().map(DsRecordSet::key_tags))
+            .map(|answer| answer.records.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
         vec![Some(vec![KeyTag::from(7)])]
     );

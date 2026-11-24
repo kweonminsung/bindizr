@@ -1,12 +1,14 @@
 //! Prepare NOTIFY targets and collect per-address send results.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::time::Duration;
 
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::name::{WireName, ZoneName};
+use bindizr_core::dns::tsig::TsigSigningKey;
 use bindizr_core::metrics::NotifyResult;
 use bindizr_core::model::secondary::Secondary;
 use thiserror::Error;
+use tokio::sync::SemaphorePermit;
 use tokio::task::JoinSet;
 
 use crate::dns_client::SharedResolveAddressError;
@@ -18,12 +20,14 @@ use crate::{Context, dns_client, secondary, zone};
 
 /// Why a NOTIFY target could not be reached or acknowledged.
 #[derive(Debug, Error)]
-pub(crate) enum SendNotifyError {
+pub(crate) enum NotifyTargetError {
     #[error(transparent)]
     Resolve(SharedResolveAddressError),
     #[error("{0}")]
     Send(#[source] dns_client::notify::SendNotifyError),
 }
+
+type NotifyOutcome = (String, Result<(), NotifyTargetError>);
 
 /// Sending a zone's NOTIFY requests failed.
 #[derive(Debug, Error)]
@@ -34,7 +38,7 @@ pub(crate) enum NotifyZoneError {
     /// the zone.
     #[error("NOTIFY failed: {}", failures.iter().map(|(address, error)| format!("{address}: {error}")).collect::<Vec<_>>().join("; "))]
     TargetsFailed {
-        failures: Vec<(String, SendNotifyError)>,
+        failures: Vec<(String, NotifyTargetError)>,
     },
 }
 
@@ -70,7 +74,7 @@ pub(crate) async fn send_zone_notify(
         return Ok(());
     }
 
-    let failures: Vec<(String, SendNotifyError)> = results
+    let failures: Vec<_> = results
         .into_iter()
         .filter_map(|(address, result)| result.err().map(|error| (address, error)))
         .collect();
@@ -82,100 +86,33 @@ pub(crate) async fn send_zone_notify(
     }
 }
 
-/// Notify enabled secondaries and report each resolved address.
-pub async fn send_notify_to_secondaries(
-    cx: &Context,
-    zone_name: &ZoneName,
-) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
-    let secondaries = secondary::list_enabled(cx).await?;
-    Ok(build_notify_reports(
-        send_notify(cx, zone_name, secondaries).await?,
-    ))
-}
-
-/// Notify one secondary's addresses using its configured signing key.
-pub async fn send_notify_to_secondary(
-    cx: &Context,
-    zone_name: &ZoneName,
-    secondary: &Secondary,
-) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
-    Ok(build_notify_reports(
-        send_notify(cx, zone_name, vec![secondary.clone()]).await?,
-    ))
-}
-
 /// Notify the addresses already resolved by one diagnostic request.
 pub(crate) async fn send_notify_to_targets<'a>(
     cx: &Context,
     zone_name: &ZoneName,
     targets: impl IntoIterator<Item = &'a SecondaryTarget>,
 ) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
-    let qname = zone_name
-        .to_wire_name()
-        .map_err(|error| ServiceError::internal_with_source("invalid zone name", error))?;
-    let config = cx.config();
-    let timeout = config.dns.notify.timeout();
-    let retries = config.dns.notify.retries;
-    let permit = cx.notify_preparations().acquire().await.map_err(|error| {
-        ServiceError::internal_with_source("NOTIFY preparation queue closed", error)
-    })?;
-    let mut handles = Vec::new();
-    let mut results = Vec::new();
+    let mut requests = NotifyRequests::begin(cx, zone_name).await?;
     let mut prepared = Vec::new();
     // A later key failure must precede every send, just as in the normal path.
     for target in targets {
-        let key = match secondary::find_notify_signing_key(cx, &target.secondary).await {
-            Ok(key) => key,
-            Err(error) => {
-                cx.metrics().track_notify(NotifyResult::Failed);
-                return Err(error);
-            }
-        };
+        let key = find_signing_key(cx, &target.secondary).await?;
         prepared.push((target, key));
     }
-    for (target, key) in prepared {
-        let addrs = match &target.addresses {
-            Ok(addrs) => addrs,
-            Err(error) => {
-                cx.metrics().track_notify(NotifyResult::ResolveFailed);
-                results.push((
-                    target.secondary.address.to_string(),
-                    Err(SendNotifyError::Resolve(error.clone().into())),
-                ));
-                continue;
-            }
-        };
-        for &addr in addrs {
-            match cx
-                .notify_client()
-                .send(&qname, addr, timeout, retries, key.as_ref())
-                .await
-            {
-                Ok(handle) => handles.push((addr, handle)),
-                Err(error) => {
-                    cx.metrics().track_notify(NotifyResult::Failed);
-                    results.push((addr.to_string(), Err(SendNotifyError::Send(error))));
-                }
-            }
-        }
-    }
-    drop(permit);
-    Ok(build_notify_reports(
-        complete_requests(cx, handles, results).await,
-    ))
-}
 
-/// Format send results for a diagnostic response.
-fn build_notify_reports(
-    results: Vec<(String, Result<(), SendNotifyError>)>,
-) -> Vec<CheckNotifyResponse> {
-    results
+    for (target, key) in prepared {
+        requests.send(cx, target, key.as_ref()).await;
+    }
+
+    Ok(requests
+        .complete(cx)
+        .await
         .into_iter()
         .map(|(address, result)| CheckNotifyResponse {
             address,
             error: result.err().map(|error| error.to_string()),
         })
-        .collect()
+        .collect())
 }
 
 /// Send NOTIFY to selected secondaries and collect per-address outcomes.
@@ -183,99 +120,120 @@ async fn send_notify(
     cx: &Context,
     zone_name: &ZoneName,
     secondaries: Vec<Secondary>,
-) -> Result<Vec<(String, Result<(), SendNotifyError>)>, ServiceError> {
-    // An invalid stored zone name is a server fault.
-    let qname = zone_name
-        .to_wire_name()
-        .map_err(|error| ServiceError::internal_with_source("invalid zone name", error))?;
-    let timeout = cx.config().dns.notify.timeout();
-    let retries = cx.config().dns.notify.retries;
-
-    let permit = cx.notify_preparations().acquire().await.map_err(|error| {
-        ServiceError::internal_with_source("NOTIFY preparation queue closed", error)
-    })?;
-
+) -> Result<Vec<NotifyOutcome>, ServiceError> {
+    let mut requests = NotifyRequests::begin(cx, zone_name).await?;
+    let timeout = requests.timeout;
     let mut preparations = JoinSet::new();
-    let mut results = Vec::new();
 
     for secondary in secondaries {
-        // A stored key that will not load is a server fault, not a target's
-        // outcome: returned whole, so where it ends logs it.
-        let key = match secondary::find_notify_signing_key(cx, &secondary).await {
-            Ok(key) => key,
-            Err(error) => {
-                cx.metrics().track_notify(NotifyResult::Failed);
-                return Err(error);
-            }
-        };
-        preparations.spawn(async move {
-            let addrs = dns_client::resolve_address_entry(&secondary.address, timeout).await;
-            (secondary.address, key, addrs)
-        });
+        let key = find_signing_key(cx, &secondary).await?;
+        preparations
+            .spawn(async move { (SecondaryTarget::resolve(secondary, timeout).await, key) });
     }
 
-    let mut handles = Vec::new();
-
     while let Some(result) = preparations.join_next().await {
-        let (address, key, addrs) = result.map_err(|error| {
+        let (target, key) = result.map_err(|error| {
             ServiceError::internal_with_source("NOTIFY address resolution task failed", error)
         })?;
-        let addrs = match addrs {
+        requests.send(cx, &target, key.as_ref()).await;
+    }
+
+    Ok(requests.complete(cx).await)
+}
+
+/// An unusable stored key fails the whole round before any target receives a request.
+async fn find_signing_key(
+    cx: &Context,
+    secondary: &Secondary,
+) -> Result<Option<TsigSigningKey>, ServiceError> {
+    secondary::find_notify_signing_key(cx, secondary)
+        .await
+        .inspect_err(|_| cx.metrics().track_notify(NotifyResult::Failed))
+}
+
+/// Prepared sends and results for one zone, holding a preparation slot until all sends are queued.
+#[derive(Debug)]
+struct NotifyRequests<'a> {
+    permit: SemaphorePermit<'a>,
+    qname: WireName,
+    timeout: Duration,
+    retries: u32,
+    handles: Vec<(SocketAddr, NotifyHandle)>,
+    results: Vec<NotifyOutcome>,
+}
+
+impl<'a> NotifyRequests<'a> {
+    /// Reserve a preparation slot and encode the NOTIFY question.
+    async fn begin(cx: &'a Context, zone_name: &ZoneName) -> Result<Self, ServiceError> {
+        let qname = zone_name
+            .to_wire_name()
+            .map_err(|error| ServiceError::internal_with_source("invalid zone name", error))?;
+        let config = cx.config();
+        let permit = cx.notify_preparations().acquire().await.map_err(|error| {
+            ServiceError::internal_with_source("NOTIFY preparation queue closed", error)
+        })?;
+
+        Ok(Self {
+            permit,
+            qname,
+            timeout: config.dns.notify.timeout(),
+            retries: config.dns.notify.retries,
+            handles: Vec::new(),
+            results: Vec::new(),
+        })
+    }
+
+    /// Queue a NOTIFY for every resolved address or record the preparation failure.
+    async fn send(&mut self, cx: &Context, target: &SecondaryTarget, key: Option<&TsigSigningKey>) {
+        let addrs = match &target.addresses {
             Ok(addrs) => addrs,
             Err(error) => {
                 cx.metrics().track_notify(NotifyResult::ResolveFailed);
-                results.push((
-                    address.to_string(),
-                    Err(SendNotifyError::Resolve(Arc::new(error).into())),
+                self.results.push((
+                    target.secondary.address.to_string(),
+                    Err(NotifyTargetError::Resolve(error.clone().into())),
                 ));
-                continue;
+                return;
             }
         };
 
-        for addr in addrs {
+        for &addr in addrs {
             match cx
                 .notify_client()
-                .send(&qname, addr, timeout, retries, key.as_ref())
+                .send(&self.qname, addr, self.timeout, self.retries, key)
                 .await
             {
-                Ok(handle) => handles.push((addr, handle)),
+                Ok(handle) => self.handles.push((addr, handle)),
                 Err(error) => {
                     cx.metrics().track_notify(NotifyResult::Failed);
-                    results.push((addr.to_string(), Err(SendNotifyError::Send(error))));
+                    self.results
+                        .push((addr.to_string(), Err(NotifyTargetError::Send(error))));
                 }
             }
         }
     }
 
-    // Release preparation slots before waiting for ACKs.
-    drop(permit);
+    /// Release the preparation slot before waiting for every enqueued request.
+    async fn complete(mut self, cx: &Context) -> Vec<NotifyOutcome> {
+        drop(self.permit);
+        for (addr, handle) in self.handles {
+            let result = match handle.wait().await {
+                Ok(()) => {
+                    log::info!("NOTIFY sent successfully to {addr}");
+                    cx.metrics().track_notify(NotifyResult::Ok);
+                    Ok(())
+                }
+                // Returned, not logged: the caller that ends the failure reports it.
+                Err(error) => {
+                    cx.metrics().track_notify(NotifyResult::Failed);
+                    Err(NotifyTargetError::Send(error))
+                }
+            };
+            self.results.push((addr.to_string(), result));
+        }
 
-    Ok(complete_requests(cx, handles, results).await)
-}
-
-/// Wait for every enqueued request and account for its final result.
-async fn complete_requests(
-    cx: &Context,
-    handles: Vec<(SocketAddr, NotifyHandle)>,
-    mut results: Vec<(String, Result<(), SendNotifyError>)>,
-) -> Vec<(String, Result<(), SendNotifyError>)> {
-    for (addr, handle) in handles {
-        let result = match handle.wait().await {
-            Ok(()) => {
-                log::info!("NOTIFY sent successfully to {addr}");
-                cx.metrics().track_notify(NotifyResult::Ok);
-                Ok(())
-            }
-            // Returned, not logged: the caller that ends the failure reports it.
-            Err(error) => {
-                cx.metrics().track_notify(NotifyResult::Failed);
-                Err(SendNotifyError::Send(error))
-            }
-        };
-        results.push((addr.to_string(), result));
+        self.results
     }
-
-    results
 }
 
 #[cfg(test)]

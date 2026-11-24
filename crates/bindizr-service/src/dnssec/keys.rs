@@ -70,16 +70,12 @@ pub async fn import_keys(
     zone_name: &ZoneName,
     request: &ImportDnssecKeysRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    if request.keys.is_empty() {
-        return Err(ServiceError::invalid_input("no key pair to import"));
-    }
-
     let policy_name = dnssec_policy::normalize_name(
         request
             .policy_name
             .as_deref()
             .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME),
-    )?;
+    );
 
     let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
 
@@ -87,6 +83,11 @@ pub async fn import_keys(
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
+
+        if request.keys.is_empty() {
+            return Err(ServiceError::invalid_input("no key pair to import"));
+        }
+        let policy_name = policy_name?;
 
         if !bindizr_db::dnssec_key::list_tx(&mut tx, zone.id)
             .await?

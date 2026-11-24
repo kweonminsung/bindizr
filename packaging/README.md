@@ -63,8 +63,11 @@ covers the toolchain and the dynamic build in more detail.
 ## Building Packages
 
 A helper script is provided to build the `.deb`, `.rpm`, and `.apk` packages.
-The `.apk` is built by `abuild` in an `alpine` container, so Docker must be
-running; fpm's own Alpine output is refused by apk-tools 3.
+The `.apk` is built by `abuild` in an Alpine container, so Docker must be
+running. Python 3.9 or newer converts the Cargo prerelease to an Alpine package version
+while preserving prerelease order and names such as `1.2.3_rc1`.
+Other prerelease identifiers use Alpine's hexadecimal version suffix in package
+metadata and keep the Cargo version in the release asset filename.
 
 ```bash
 # Clone the repository
@@ -75,7 +78,7 @@ $ cd bindizr
 $ ./packaging/scripts/build_packages.sh
 
 # The generated packages will be in the root directory
-$ ls bindizr*.{deb,rpm}
+$ ls bindizr*.{deb,rpm,apk}
 ```
 
 The script builds `x86_64-unknown-linux-musl` by default. On an arm64 host,

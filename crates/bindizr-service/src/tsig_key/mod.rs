@@ -139,7 +139,7 @@ pub async fn list(
 }
 
 /// Get one TSIG key by name, including its secret.
-pub async fn get(
+pub async fn get_by_name(
     cx: &Context,
     caller: &Caller,
     name: &str,

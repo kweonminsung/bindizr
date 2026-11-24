@@ -37,7 +37,7 @@ pub(crate) async fn get_tsig_key(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<SingleTsigKeyResponse>, ServiceError> {
-    let (tsig_key, secret) = tsig_key::get(cx, &Caller::socket(), name).await?;
+    let (tsig_key, secret) = tsig_key::get_by_name(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),
         data: SingleTsigKeyResponse { tsig_key, secret },
@@ -51,8 +51,5 @@ pub(crate) async fn delete_tsig_key(
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     let response = tsig_key::delete(cx, &Caller::socket(), name).await?;
 
-    Ok(DaemonResponse {
-        message: response.message.clone(),
-        data: response,
-    })
+    Ok(response.into())
 }

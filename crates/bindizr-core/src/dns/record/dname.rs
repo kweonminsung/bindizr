@@ -15,7 +15,7 @@ impl<'a> DnameRecordValue<'a> {
     }
 
     /// Render the DNAME value in canonical text form.
-    pub fn canonical(self) -> String {
+    pub fn to_text(self) -> String {
         name::to_fqdn(self.target)
     }
 }
@@ -29,7 +29,7 @@ mod tests {
     fn dname_accepts_root_target_and_preserves_literal_dot() {
         for (input, expected) in [(".", vec![0]), (r"\.", vec![1, b'.', 0])] {
             let value = DnameRecordValue::parse(input).unwrap();
-            assert_eq!(name::encode_name(&value.canonical()).unwrap(), expected);
+            assert_eq!(name::encode_name(&value.to_text()).unwrap(), expected);
         }
 
         for invalid in ["", ".."] {
@@ -43,7 +43,7 @@ mod tests {
         assert_eq!(
             DnameRecordValue::parse("Target.Example.COM")
                 .unwrap()
-                .canonical(),
+                .to_text(),
             "Target.Example.COM."
         );
     }

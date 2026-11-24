@@ -1,14 +1,28 @@
 //! The daemon's Prometheus registry, held by its `Context` and shared by the
 //! HTTP API and DNS layers.
 
-use domain::base::iana::OptRcode;
+mod notify_result;
+mod nsupdate_result;
+mod pruned_table;
+mod scheduler_result;
+mod soa_result;
+mod xfr_result;
+mod zone_cache_lookup;
+
+pub use notify_result::NotifyResult;
+pub use nsupdate_result::NsupdateResult;
 use prometheus::core::Collector;
 use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
     Registry, TextEncoder,
 };
+pub use scheduler_result::SchedulerResult;
+pub use soa_result::SoaResult;
 use thiserror::Error;
+pub use xfr_result::XfrResult;
 
+use crate::metrics::pruned_table::PrunedTable;
+use crate::metrics::zone_cache_lookup::ZoneCacheLookup;
 use crate::model::transfer::{TransferKind, TransferTransport};
 
 /// Content type of the Prometheus text exposition format.
@@ -289,7 +303,7 @@ impl Metrics {
                 for transport in TransferTransport::ALL {
                     xfr_total.with_label_values(&[
                         kind.as_str(),
-                        result.label(),
+                        result.as_str(),
                         transport.as_str(),
                     ]);
                 }
@@ -297,27 +311,27 @@ impl Metrics {
         }
 
         for result in SoaResult::ALL {
-            soa_queries_total.with_label_values(&[result.label()]);
+            soa_queries_total.with_label_values(&[result.as_str()]);
         }
 
         for result in NsupdateResult::ALL {
-            nsupdate_requests_total.with_label_values(&[result.label()]);
+            nsupdate_requests_total.with_label_values(&[result.metric_label()]);
         }
 
         for result in NotifyResult::ALL {
-            notify_sent_total.with_label_values(&[result.label()]);
+            notify_sent_total.with_label_values(&[result.as_str()]);
         }
 
         for result in SchedulerResult::ALL {
-            dnssec_scheduler_runs_total.with_label_values(&[result.label()]);
+            dnssec_scheduler_runs_total.with_label_values(&[result.as_str()]);
         }
 
         for table in PrunedTable::ALL {
-            pruned_rows_total.with_label_values(&[table.label()]);
+            pruned_rows_total.with_label_values(&[table.as_str()]);
         }
 
         for result in ZoneCacheLookup::ALL {
-            zone_cache_lookups_total.with_label_values(&[result.label()]);
+            zone_cache_lookups_total.with_label_values(&[result.as_str()]);
         }
 
         Ok(Self {
@@ -356,212 +370,11 @@ impl Metrics {
     }
 }
 
-/// How a zone transfer request ended, as the transfer counter labels it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum XfrResult {
-    Ok,
-    Refused,
-    NotAuth,
-    /// Answered over UDP with TC set, or an IXFR with the zone's SOA alone;
-    /// the transfer follows over TCP.
-    Truncated,
-    Failed,
-}
-
-impl XfrResult {
-    const ALL: [Self; 5] = [
-        Self::Ok,
-        Self::Refused,
-        Self::NotAuth,
-        Self::Truncated,
-        Self::Failed,
-    ];
-
-    /// Return the metric label value of this xfr result.
-    fn label(self) -> &'static str {
-        match self {
-            Self::Ok => "ok",
-            Self::Refused => "refused",
-            Self::NotAuth => "notauth",
-            Self::Truncated => "truncated",
-            Self::Failed => "failed",
-        }
-    }
-}
-
-/// How an SOA query ended, as the SOA counter labels it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SoaResult {
-    Ok,
-    Refused,
-    NotAuth,
-    Failed,
-}
-
-impl SoaResult {
-    const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Failed];
-
-    /// Return the metric label value of this SOA result.
-    fn label(self) -> &'static str {
-        match self {
-            Self::Ok => "ok",
-            Self::Refused => "refused",
-            Self::NotAuth => "notauth",
-            Self::Failed => "failed",
-        }
-    }
-}
-
-/// How an UPDATE request ended, as the nsupdate counter labels it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NsupdateResult {
-    /// A TSIG failure answers with its own NOTAUTH, so it is kept apart from
-    /// the NOTAUTH an update refused on its merits gets.
-    TsigFailed,
-    /// Every other outcome is named by the response code, extended ones such
-    /// as BADVERS included: a bounded set, never the free-form message.
-    Rcode(OptRcode),
-}
-
-impl NsupdateResult {
-    const ALL: [Self; 12] = [
-        Self::TsigFailed,
-        Self::Rcode(OptRcode::NOERROR),
-        Self::Rcode(OptRcode::FORMERR),
-        Self::Rcode(OptRcode::REFUSED),
-        Self::Rcode(OptRcode::YXDOMAIN),
-        Self::Rcode(OptRcode::YXRRSET),
-        Self::Rcode(OptRcode::NXDOMAIN),
-        Self::Rcode(OptRcode::NXRRSET),
-        Self::Rcode(OptRcode::NOTAUTH),
-        Self::Rcode(OptRcode::NOTZONE),
-        Self::Rcode(OptRcode::SERVFAIL),
-        Self::Rcode(OptRcode::BADVERS),
-    ];
-
-    /// Return the metric label value of this nsupdate result.
-    fn label(self) -> &'static str {
-        let Self::Rcode(rcode) = self else {
-            return "tsig_failed";
-        };
-
-        match rcode {
-            OptRcode::NOERROR => "noerror",
-            OptRcode::FORMERR => "formerr",
-            OptRcode::REFUSED => "refused",
-            OptRcode::YXDOMAIN => "yxdomain",
-            OptRcode::YXRRSET => "yxrrset",
-            OptRcode::NXDOMAIN => "nxdomain",
-            OptRcode::NXRRSET => "nxrrset",
-            OptRcode::NOTAUTH => "notauth",
-            OptRcode::NOTZONE => "notzone",
-            OptRcode::SERVFAIL => "servfail",
-            OptRcode::BADVERS => "badvers",
-            _ => "other",
-        }
-    }
-}
-
-/// How an outbound NOTIFY ended, as the NOTIFY counter labels it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NotifyResult {
-    Ok,
-    Failed,
-    /// Nothing was sent, so it is kept apart from the send failures it would
-    /// otherwise inflate.
-    ResolveFailed,
-}
-
-impl NotifyResult {
-    const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::ResolveFailed];
-
-    /// Return the metric label value of this notify result.
-    fn label(self) -> &'static str {
-        match self {
-            Self::Ok => "ok",
-            Self::Failed => "failed",
-            Self::ResolveFailed => "resolve_failed",
-        }
-    }
-}
-
-/// How a scheduler pass ended, as the scheduler counter labels it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SchedulerResult {
-    Ok,
-    Failed,
-    /// The pass unwound; the scheduler itself survived.
-    Panicked,
-}
-
-impl SchedulerResult {
-    const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::Panicked];
-
-    /// Return the metric label value of this scheduler result.
-    fn label(self) -> &'static str {
-        match self {
-            Self::Ok => "ok",
-            Self::Failed => "failed",
-            Self::Panicked => "panic",
-        }
-    }
-}
-
-/// The table a retention pass pruned rows from, as the pruned-rows counter labels it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PrunedTable {
-    Journal,
-    Version,
-    Audit,
-    Access,
-    Transfer,
-}
-
-impl PrunedTable {
-    const ALL: [Self; 5] = [
-        Self::Journal,
-        Self::Version,
-        Self::Audit,
-        Self::Access,
-        Self::Transfer,
-    ];
-
-    /// Return the metric label value of this table.
-    fn label(self) -> &'static str {
-        match self {
-            Self::Journal => "journal",
-            Self::Version => "version",
-            Self::Audit => "audit",
-            Self::Access => "access",
-            Self::Transfer => "transfer",
-        }
-    }
-}
-
-/// Whether a zone-cache lookup found its entry, as the lookup counter labels it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ZoneCacheLookup {
-    Hit,
-    Miss,
-}
-
-impl ZoneCacheLookup {
-    const ALL: [Self; 2] = [Self::Hit, Self::Miss];
-
-    /// Return the metric label value of this lookup outcome.
-    fn label(self) -> &'static str {
-        match self {
-            Self::Hit => "hit",
-            Self::Miss => "miss",
-        }
-    }
-}
-
 impl Metrics {
     /// Count a zone transfer's outcome by its kind and transport.
     pub fn track_xfr(&self, kind: TransferKind, transport: TransferTransport, result: XfrResult) {
         self.xfr_total
-            .with_label_values(&[kind.as_str(), result.label(), transport.as_str()])
+            .with_label_values(&[kind.as_str(), result.as_str(), transport.as_str()])
             .inc();
     }
 
@@ -569,21 +382,21 @@ impl Metrics {
     /// the question bindizr answers most; the result says whether they are getting a serial.
     pub fn track_soa(&self, result: SoaResult) {
         self.soa_queries_total
-            .with_label_values(&[result.label()])
+            .with_label_values(&[result.as_str()])
             .inc();
     }
 
     /// Count an nsupdate result.
     pub fn track_nsupdate(&self, result: NsupdateResult) {
         self.nsupdate_requests_total
-            .with_label_values(&[result.label()])
+            .with_label_values(&[result.metric_label()])
             .inc();
     }
 
     /// Count a NOTIFY send result.
     pub fn track_notify(&self, result: NotifyResult) {
         self.notify_sent_total
-            .with_label_values(&[result.label()])
+            .with_label_values(&[result.as_str()])
             .inc();
     }
 
@@ -591,24 +404,24 @@ impl Metrics {
     /// history.
     pub fn track_pruned_rows(&self, journal_rows: u64, version_rows: u64) {
         self.pruned_rows_total
-            .with_label_values(&[PrunedTable::Journal.label()])
+            .with_label_values(&[PrunedTable::Journal.as_str()])
             .inc_by(journal_rows);
         self.pruned_rows_total
-            .with_label_values(&[PrunedTable::Version.label()])
+            .with_label_values(&[PrunedTable::Version.as_str()])
             .inc_by(version_rows);
     }
 
     /// Count the audit log rows the retention pass pruned.
     pub fn track_pruned_audit_log_rows(&self, rows: u64) {
         self.pruned_rows_total
-            .with_label_values(&[PrunedTable::Audit.label()])
+            .with_label_values(&[PrunedTable::Audit.as_str()])
             .inc_by(rows);
     }
 
     /// Count the access log rows the retention pass pruned.
     pub fn track_pruned_access_log_rows(&self, rows: u64) {
         self.pruned_rows_total
-            .with_label_values(&[PrunedTable::Access.label()])
+            .with_label_values(&[PrunedTable::Access.as_str()])
             .inc_by(rows);
     }
 
@@ -620,7 +433,7 @@ impl Metrics {
     /// Count the transfer log rows the retention pass pruned.
     pub fn track_pruned_transfer_log_rows(&self, rows: u64) {
         self.pruned_rows_total
-            .with_label_values(&[PrunedTable::Transfer.label()])
+            .with_label_values(&[PrunedTable::Transfer.as_str()])
             .inc_by(rows);
     }
 
@@ -632,7 +445,7 @@ impl Metrics {
     /// Count a DNSSEC scheduler pass result.
     pub fn track_dnssec_scheduler(&self, result: SchedulerResult) {
         self.dnssec_scheduler_runs_total
-            .with_label_values(&[result.label()])
+            .with_label_values(&[result.as_str()])
             .inc();
     }
 
@@ -655,7 +468,7 @@ impl Metrics {
             } else {
                 ZoneCacheLookup::Miss
             }
-            .label()])
+            .as_str()])
             .inc();
     }
 
@@ -663,5 +476,32 @@ impl Metrics {
     pub fn track_zone_cache_store(&self, records: usize, evicted: usize) {
         self.zone_cache_records.set(records as i64);
         self.zone_cache_evictions_total.inc_by(evicted as u64);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+
+    /// Collect one label's distinct values from the actual Prometheus exposition.
+    pub(crate) fn metric_labels(metric_name: &str, label_name: &str) -> Vec<String> {
+        let output = Metrics::new().unwrap().encode().unwrap();
+        let prefix = format!("{metric_name}{{");
+        let label_prefix = format!("{label_name}=\"");
+        let mut labels = BTreeSet::new();
+
+        for line in output.lines().filter(|line| line.starts_with(&prefix)) {
+            let (_, fields) = line.split_once('{').unwrap();
+            let (fields, _) = fields.split_once('}').unwrap();
+            for field in fields.split(',') {
+                if let Some(value) = field.strip_prefix(&label_prefix) {
+                    labels.insert(value.strip_suffix('"').unwrap().to_string());
+                }
+            }
+        }
+
+        labels.into_iter().collect()
     }
 }

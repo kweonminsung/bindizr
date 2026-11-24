@@ -69,7 +69,7 @@ impl<'a> NaptrRecordValue<'a> {
     }
 
     /// Render the NAPTR value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn to_text(&self) -> String {
         format!(
             "{} {} {} {} {} {}",
             self.order,

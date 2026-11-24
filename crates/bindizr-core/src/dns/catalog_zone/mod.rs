@@ -4,6 +4,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 use domain::base::iana::Rtype;
+use domain::base::name::NameError;
 use ring::digest;
 use ring::digest::SHA256;
 use thiserror::Error;
@@ -42,6 +43,7 @@ pub struct CatalogZone {
 pub(crate) fn catalog_member_owner_name(zone_name: &ZoneName) -> OwnerName {
     let member_id = zone_name_to_member_id(zone_name);
     OwnerName::from_row(&format!("{member_id}.{MEMBER_SUBTREE}"))
+        .expect("catalog member ID and subtree are valid relative labels")
 }
 
 /// Build a stable member label from truncated SHA-256 (RFC 9432, Section 4.1).
@@ -52,7 +54,7 @@ pub(crate) fn zone_name_to_member_id(zone_name: &ZoneName) -> String {
 }
 
 /// Why a transferred catalog zone could not be read as one.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ExtractMemberZonesError {
     #[error("the catalog carries no apex NS record (RFC 9432, Section 4)")]
     MissingApexNs,
@@ -69,7 +71,11 @@ pub enum ExtractMemberZonesError {
         source: ParseNameError,
     },
     #[error("member record at '{name}' does not hold a name")]
-    MemberRdata { name: String },
+    MemberRdata {
+        name: String,
+        #[source]
+        source: NameError,
+    },
     #[error("member '{name}' is not a zone name: {source}")]
     MemberName {
         name: String,
@@ -104,20 +110,18 @@ pub fn extract_member_zones(
 
         match record.rtype {
             Rtype::NS if owner.is_apex() => apex_ns = true,
-            Rtype::TXT if labels == [b"version".to_vec()] => {
-                if version
-                    .as_deref()
-                    .is_some_and(|value| value != record.rdata.as_bytes())
-                {
+            Rtype::TXT if labels.len() == 1 && labels[0].as_slice() == b"version" => {
+                if version.is_some_and(|value| value != record.rdata.as_bytes()) {
                     return Err(ExtractMemberZonesError::VersionNotSingular);
                 }
 
-                version = Some(record.rdata.as_bytes().to_vec());
+                version = Some(record.rdata.as_bytes());
             }
             Rtype::PTR if labels.len() == 2 && labels[1] == MEMBER_SUBTREE.as_bytes() => {
                 let target = WireName::from_octets(record.rdata.as_bytes().to_vec())
-                    .map_err(|_| ExtractMemberZonesError::MemberRdata {
+                    .map_err(|source| ExtractMemberZonesError::MemberRdata {
                         name: record.name.clone(),
+                        source,
                     })?
                     .to_string();
                 let member_zone_name = ZoneName::parse(&target).map_err(|source| {
@@ -149,8 +153,8 @@ pub fn extract_member_zones(
         Some(rdata) => {
             // The whole value, every character-string of it, as a zone file
             // spells it; RDATA no TXT reading accepts is shown as it came.
-            let found = TxtRecordValue::from_rdata(&rdata).map_or_else(
-                |_| String::from_utf8_lossy(&rdata).into_owned(),
+            let found = TxtRecordValue::from_rdata(rdata).map_or_else(
+                |_| String::from_utf8_lossy(rdata).into_owned(),
                 |txt| txt.to_presentation(),
             );
             return Err(ExtractMemberZonesError::UnsupportedVersion { found });

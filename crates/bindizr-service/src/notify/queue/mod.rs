@@ -69,9 +69,9 @@ pub fn spawn(cx: Arc<Context>, mut jobs: UnboundedReceiver<NotifyJob>) -> Notify
                 Some(collect_batch(&cx, &mut jobs, &mut stop, first).await)
             };
             tokio::pin!(collect);
-            let batch = loop {
+            let zone_names = loop {
                 tokio::select! {
-                    batch = &mut collect => break batch,
+                    zone_names = &mut collect => break zone_names,
 
                     result = tasks.join_next(), if !tasks.is_empty() => {
                         if let Some(Err(error)) = result {
@@ -80,11 +80,11 @@ pub fn spawn(cx: Arc<Context>, mut jobs: UnboundedReceiver<NotifyJob>) -> Notify
                     }
                 }
             };
-            let Some(batch) = batch else {
+            let Some(zone_names) = zone_names else {
                 break;
             };
 
-            start_batch(&cx, batch, &mut tasks).await;
+            start_batch(&cx, zone_names, &mut tasks).await;
         }
 
         // Reject new jobs before draining so racing callers fall back to inline NOTIFY.
@@ -157,11 +157,11 @@ async fn collect_batch(
     stop: &mut Receiver<bool>,
     first: NotifyJob,
 ) -> HashSet<ZoneName> {
-    let mut batch = HashSet::new();
+    let mut zone_names = HashSet::new();
 
     let mut deadline = lookup_batch_deadline(cx, &first).await;
 
-    batch.insert(first.zone_name);
+    zone_names.insert(first.zone_name);
 
     loop {
         if *stop.borrow() {
@@ -178,7 +178,7 @@ async fn collect_batch(
                 Some(job) => {
                     // Later writes may shorten the window, never extend it.
                     deadline = deadline.min(lookup_batch_deadline(cx, &job).await);
-                    batch.insert(job.zone_name);
+                    zone_names.insert(job.zone_name);
                 }
                 None => break,
             },
@@ -188,16 +188,16 @@ async fn collect_batch(
     // Drain a fixed backlog so producers cannot postpone a ready batch.
     for _ in 0..jobs.len() {
         if let Ok(job) = jobs.try_recv() {
-            batch.insert(job.zone_name);
+            zone_names.insert(job.zone_name);
         }
     }
 
-    batch
+    zone_names
 }
 
 /// Start a batch without holding collection behind an earlier ACK/retry wait.
-async fn start_batch(cx: &Arc<Context>, batch: HashSet<ZoneName>, tasks: &mut JoinSet<()>) {
-    for zone_name in batch {
+async fn start_batch(cx: &Arc<Context>, zone_names: HashSet<ZoneName>, tasks: &mut JoinSet<()>) {
+    for zone_name in zone_names {
         let cx = cx.clone();
         tasks.spawn(async move {
             if let Err(error) = notify::send_zone_notify(&cx, &zone_name).await {

@@ -251,7 +251,7 @@ fn encoding_splits_overflowing_answers_into_frames() {
         let frame = builder
             .add_answer_or_overflow(|builder| {
                 builder.add_record_parts(
-                    &OwnerName::from_row(&format!("host-{index}")),
+                    &OwnerName::from_row(&format!("host-{index}")).unwrap(),
                     &ZoneName::parse("example.com").unwrap(),
                     RecordType::A,
                     &format!("192.0.2.{}", index % 255),
@@ -467,7 +467,7 @@ fn signed_transfer_authenticates_every_envelope() {
         let frame = builder
             .add_answer_or_overflow(|builder| {
                 builder.add_record_parts(
-                    &OwnerName::from_row(&format!("host-{index}")),
+                    &OwnerName::from_row(&format!("host-{index}")).unwrap(),
                     &ZoneName::parse("example.com").unwrap(),
                     RecordType::A,
                     &format!("192.0.2.{}", index % 255),

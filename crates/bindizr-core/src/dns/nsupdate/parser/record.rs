@@ -3,6 +3,7 @@
 
 use domain::base::iana::{Class, Rtype};
 use domain::base::name::ParsedName;
+use domain::base::wire::ParseError;
 use domain::dep::octseq::parse::Parser;
 use domain::rdata::{A, Aaaa, Caa, Ds, Mx, Naptr, Soa, Srv, Sshfp, Tlsa};
 use thiserror::Error;
@@ -85,7 +86,7 @@ impl UpdateRecord {
 
     /// Decode SOA fields without applying zone storage policy.
     pub fn to_soa_value(&self, message: &[u8]) -> Result<SoaRecordValue<String>, ParseUpdateError> {
-        let data = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
+        let data = self.parse_rdata(message, "SOA", Soa::parse)?;
         Ok(SoaRecordValue {
             mname: parser::to_presentation_name(data.mname()),
             rname: parser::to_presentation_name(data.rname()),
@@ -102,21 +103,26 @@ impl UpdateRecord {
         &self,
         message: &'a [u8],
         record_type: &'static str,
-        parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
+        parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Result<T, ParseError>,
     ) -> Result<T, ParseUpdateError> {
-        let refused = || ParseUpdateError::Rdata { record_type };
+        let invalid = |source| ParseUpdateError::MalformedRdata {
+            record_type,
+            source,
+        };
 
         // RDLENGTH bounds the value while compression retains message offsets
         // (RFC 1035, Sections 4.1.3–4.1.4).
         let mut parser = Parser::from_ref(message);
-        parser.advance(self.rdata_start).map_err(|_| refused())?;
+        parser
+            .advance(self.rdata_start)
+            .map_err(|source| invalid(source.into()))?;
         let mut rdata = parser
             .parse_parser(self.rdata.len())
-            .map_err(|_| refused())?;
-        let value = parse(&mut rdata).ok_or_else(refused)?;
+            .map_err(|source| invalid(source.into()))?;
+        let value = parse(&mut rdata).map_err(invalid)?;
 
         if rdata.remaining() != 0 {
-            return Err(refused());
+            return Err(ParseUpdateError::Rdata { record_type });
         }
 
         Ok(value)
@@ -131,24 +137,22 @@ impl UpdateRecord {
         match RecordType::try_from(self.record_type)? {
             RecordType::Wks => Ok((
                 RecordType::Wks,
-                WksRecordValue::from_rdata(&self.rdata)?.canonical(),
+                WksRecordValue::from_rdata(&self.rdata)?.to_text(),
                 None,
             )),
             RecordType::A => {
-                let data = self.parse_rdata(message, "A", |parser| A::parse(parser).ok())?;
+                let data = self.parse_rdata(message, "A", A::parse)?;
                 Ok((RecordType::A, data.addr().to_string(), None))
             }
             RecordType::Aaaa => {
-                let data = self.parse_rdata(message, "AAAA", |parser| Aaaa::parse(parser).ok())?;
+                let data = self.parse_rdata(message, "AAAA", Aaaa::parse)?;
                 Ok((RecordType::Aaaa, data.addr().to_string(), None))
             }
             record_type @ (RecordType::Cname
             | RecordType::Dname
             | RecordType::Ns
             | RecordType::Ptr) => {
-                let name = self.parse_rdata(message, record_type.as_str(), |parser| {
-                    ParsedName::parse(parser).ok()
-                })?;
+                let name = self.parse_rdata(message, record_type.as_str(), ParsedName::parse)?;
                 let value = parser::to_presentation_name(&name);
 
                 Ok((record_type, value, None))
@@ -158,16 +162,15 @@ impl UpdateRecord {
                 Ok((RecordType::Txt, value, None))
             }
             RecordType::Caa => {
-                let data = self.parse_rdata(message, "CAA", |parser| Caa::parse(parser).ok())?;
+                let data = self.parse_rdata(message, "CAA", Caa::parse)?;
                 Ok((RecordType::Caa, data.to_string(), None))
             }
             RecordType::Ds => {
-                let data = self.parse_rdata(message, "DS", |parser| Ds::parse(parser).ok())?;
+                let data = self.parse_rdata(message, "DS", Ds::parse)?;
                 Ok((RecordType::Ds, data.to_string(), None))
             }
             RecordType::Naptr => {
-                let data =
-                    self.parse_rdata(message, "NAPTR", |parser| Naptr::parse(parser).ok())?;
+                let data = self.parse_rdata(message, "NAPTR", Naptr::parse)?;
                 let replacement = parser::to_presentation_name(data.replacement());
                 let value = NaptrRecordValue::from_wire(
                     data.order(),
@@ -177,27 +180,26 @@ impl UpdateRecord {
                     data.regexp().as_slice(),
                     &replacement,
                 )?
-                .canonical();
+                .to_text();
 
                 Ok((RecordType::Naptr, value, None))
             }
             RecordType::Sshfp => {
-                let data =
-                    self.parse_rdata(message, "SSHFP", |parser| Sshfp::parse(parser).ok())?;
+                let data = self.parse_rdata(message, "SSHFP", Sshfp::parse)?;
                 Ok((RecordType::Sshfp, data.to_string(), None))
             }
             RecordType::Tlsa => {
-                let data = self.parse_rdata(message, "TLSA", |parser| Tlsa::parse(parser).ok())?;
+                let data = self.parse_rdata(message, "TLSA", Tlsa::parse)?;
                 Ok((RecordType::Tlsa, data.to_string(), None))
             }
             RecordType::Mx => {
-                let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
+                let data = self.parse_rdata(message, "MX", Mx::parse)?;
                 let host = parser::to_presentation_name(data.exchange());
 
                 Ok((RecordType::Mx, host, Some(i32::from(data.preference()))))
             }
             RecordType::Srv => {
-                let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
+                let data = self.parse_rdata(message, "SRV", Srv::parse)?;
                 let target = parser::to_presentation_name(data.target());
 
                 // Priority lives in its own column, so the value holds the rest.

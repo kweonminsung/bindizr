@@ -12,7 +12,7 @@ use crate::error::ErrorCode;
 
 /// Build service state over a disposable database whose access log queue
 /// holds `capacity` rows, returning the queue's receiving end.
-async fn context(save: SavedRequests, capacity: usize) -> (Arc<Context>, Receiver<AccessLog>) {
+async fn context(save: SavedRequests, capacity: usize) -> (Arc<Context>, Receiver<AccessLogEntry>) {
     let mut config: Config = serde_json::from_str("{}").unwrap();
     config.database.sqlite.file_path = "sqlite::memory:".to_string();
     config.access_log.save = save;
@@ -38,8 +38,8 @@ fn test_log(
     status: &str,
     caller: Option<&str>,
     requested_at: DateTime<Utc>,
-) -> AccessLog {
-    AccessLog {
+) -> AccessLogEntry {
+    AccessLogEntry {
         source: AccessSource::Api,
         client_addr: "192.0.2.1".to_string(),
         method: "GET".to_string(),
@@ -55,7 +55,11 @@ fn test_log(
 }
 
 /// Save `logs` through the writer and wait until it has written them all.
-async fn save_all(cx: &Arc<Context>, access_rx: Receiver<AccessLog>, logs: Vec<AccessLog>) {
+async fn save_all(
+    cx: &Arc<Context>,
+    access_rx: Receiver<AccessLogEntry>,
+    logs: Vec<AccessLogEntry>,
+) {
     let worker = spawn(cx.clone(), access_rx);
 
     for log in logs {
@@ -97,6 +101,72 @@ async fn save_writes_every_queued_row_before_the_worker_stops() {
         list_statuses(&cx, AccessLogFilter::default()).await,
         ["404", "401", "200"]
     );
+}
+
+/// Verify that typed service, DNS, TSIG and encoding errors retain their codes through queueing and storage.
+#[tokio::test]
+async fn save_preserves_error_codes_through_the_queue() {
+    let (cx, access_rx) = context(SavedRequests::All, 16).await;
+    let now = Utc::now();
+    let cases = [
+        (
+            AccessSource::Api,
+            AccessLogErrorCode::Service(ErrorCode::InvalidRecordValue),
+            "INVALID_RECORD_VALUE",
+        ),
+        (
+            AccessSource::Nsupdate,
+            AccessLogErrorCode::Dns(OptRcode::BADVERS),
+            "BADVERS",
+        ),
+        (
+            AccessSource::Nsupdate,
+            AccessLogErrorCode::Tsig(TsigRcode::BADSIG),
+            "BADSIG(16)",
+        ),
+        (
+            AccessSource::Nsupdate,
+            AccessLogErrorCode::TsigAuthenticationFailed,
+            "TSIG_AUTHENTICATION_FAILED",
+        ),
+        (
+            AccessSource::Nsupdate,
+            AccessLogErrorCode::TsigResponseEncodingFailed,
+            "TSIG_RESPONSE_ENCODING_FAILED",
+        ),
+        (
+            AccessSource::Nsupdate,
+            AccessLogErrorCode::ResponseEncodingFailed,
+            "RESPONSE_ENCODING_FAILED",
+        ),
+    ];
+    let logs = cases
+        .iter()
+        .map(|(source, code, _)| {
+            let mut log = test_log(AccessResult::Failed, "failure", Some("deploy"), now);
+            log.source = *source;
+            log.error = Some(*code);
+            log
+        })
+        .collect();
+
+    save_all(&cx, access_rx, logs).await;
+
+    let logs = list(&cx, &Caller::socket(), &AccessLogFilter::default())
+        .await
+        .unwrap();
+    let codes: Vec<_> = logs
+        .items
+        .iter()
+        .map(|log| (log.source, log.error.as_deref().unwrap()))
+        .collect();
+    let expected: Vec<_> = cases
+        .iter()
+        .rev()
+        .map(|(source, _, text)| (*source, *text))
+        .collect();
+
+    assert_eq!(codes, expected);
 }
 
 /// Verify that `access_log.save = "denied"` saves denials alone.
@@ -249,6 +319,44 @@ async fn list_applies_result_caller_address_window_order_and_page() {
     }
 }
 
+/// Verify that selectors ignore case and surrounding space, mapped addresses match IPv4, and blanks stay absent.
+#[test]
+fn normalize_filter_preserves_selector_and_address_semantics() {
+    let defaults = bindizr_db::access_log::AccessLogFilter::default();
+    for (address, expected) in [
+        (None, None),
+        (Some(" \t "), None),
+        (Some(" ::ffff:192.0.2.1 "), Some("192.0.2.1")),
+        (Some(" 2001:0db8::0001 "), Some("2001:db8::1")),
+    ] {
+        let filter = normalize_filter(&AccessLogFilter {
+            source: Some(" ApI ".to_string()),
+            result: Some(" oK ".to_string()),
+            address: address.map(str::to_string),
+            sort: Some(" ".to_string()),
+            order: Some("\t".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(filter.source, Some(AccessSource::Api));
+        assert_eq!(filter.result, Some(AccessResult::Ok));
+        assert_eq!(filter.client_addr.as_deref(), expected, "{address:?}");
+        assert_eq!(filter.sort, defaults.sort);
+        assert_eq!(filter.order, defaults.order);
+    }
+
+    let filter = normalize_filter(&AccessLogFilter {
+        source: Some(" ".to_string()),
+        result: Some(String::new()),
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(filter.source, None);
+    assert_eq!(filter.result, None);
+}
+
 /// Verify that `normalize_filter` rejects unknown values and sorts, a non-IP address and an empty window.
 #[test]
 fn normalize_filter_rejects_unknown_values_and_inverted_window() {
@@ -264,7 +372,7 @@ fn normalize_filter_rejects_unknown_values_and_inverted_window() {
             ..Default::default()
         },
         AccessLogFilter {
-            address: Some("ns2.example.net".to_string()),
+            address: Some(" ns2.example.net ".to_string()),
             ..Default::default()
         },
         AccessLogFilter {
@@ -280,5 +388,11 @@ fn normalize_filter_rejects_unknown_values_and_inverted_window() {
         let error = normalize_filter(&filter).unwrap_err();
 
         assert_eq!(error.code(), ErrorCode::InvalidInput, "{filter:?}");
+        if filter.address.is_some() {
+            assert_eq!(
+                error.to_string(),
+                "address 'ns2.example.net' is not an IP address"
+            );
+        }
     }
 }

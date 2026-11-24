@@ -38,7 +38,8 @@ zero (RFC 2136, Section 7.11): `2026091601` becomes `2026091602`, and
 
 `--from-server` pulls over AXFR instead of reading a file, and `--mode
 replace` makes the zone match the source exactly. `--dry-run` reports what
-would change and writes nothing, not even the zone:
+would change without creating the zone, modifying its records, or advancing
+its serial. Authentication and access accounting still run.
 
 ```bash
 bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create --dry-run

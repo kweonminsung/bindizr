@@ -6,17 +6,15 @@ from __future__ import annotations
 
 import asyncio
 import io
-import sys
 import tarfile
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent))
-from adapters.base import Endpoint  # noqa: E402
-from adapters.zonefile import ZoneFileAdapter  # noqa: E402
-from lib import docker, process, zonefile  # noqa: E402
+from adapters.base import Endpoint
+from adapters.zonefile import ZoneFileAdapter
+from lib import docker, process, zonefile
 
+HERE = Path(__file__).resolve().parent
 DNS_PORT = 15359
 ZONE = "bench.example"
 SERVER = "127.0.0.1"
@@ -35,13 +33,12 @@ class CoreDnsAdapter(ZoneFileAdapter):
         """Initialize the adapter with its benchmark configuration and project."""
         super().__init__(config, project, Endpoint(SERVER, DNS_PORT), ZONE)
         self.compose = docker.Compose(HERE / "compose.yml", project)
-        self.cid: str | None = None
+        self.container_id: str | None = None
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
-        self.compose.down()
-        self.compose.up("coredns", wait=False)
-        self.cid = self.compose.resolve_container_id("coredns")
+        await self.compose.up("coredns", wait=False)
+        self.container_id = self.compose.resolve_container_id("coredns")
         await self._wait_dns()
 
     async def _wait_dns(self, timeout: int = 60) -> None:
@@ -54,15 +51,15 @@ class CoreDnsAdapter(ZoneFileAdapter):
 
     async def teardown(self) -> None:
         """Stop the benchmark system and release its resources."""
-        self.compose.down()
+        await self.compose.down()
 
     async def _dig(self, name: str, record_type: str) -> str:
         """Query a record through the system DNS endpoint."""
-        proc = await process.run(
+        result = await process.run(
             "dig", f"@{SERVER}", "-p", str(DNS_PORT), name, record_type, "+short",
             "+tries=1", "+time=3",
             timeout=5, stderr=asyncio.subprocess.DEVNULL)
-        return proc.stdout.decode().strip()
+        return result.stdout.decode().strip()
 
     async def _query_soa_serial(self) -> int | None:
         """Query the current zone serial from the zone's SOA."""
@@ -93,11 +90,11 @@ class CoreDnsAdapter(ZoneFileAdapter):
                 archive.addfile(member, io.BytesIO(data))
             payload = stream.getvalue()
 
-        proc = await process.run(
-            "docker", "cp", "-", f"{self.cid}:{Path(ZONE_PATH).parent}", input=payload,
+        result = await process.run(
+            "docker", "cp", "-", f"{self.container_id}:{Path(ZONE_PATH).parent}", input=payload,
             timeout=60, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
 
-        if proc.returncode != 0:
+        if result.returncode != 0:
             return False
 
         loop = asyncio.get_event_loop()

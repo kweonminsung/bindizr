@@ -2,12 +2,11 @@
 
 use std::net::IpAddr;
 
-use bindizr_core::model::secondary::Secondary;
 use bindizr_core::model::transfer::{TransferKind, TransferLogWithZone, TransferResult};
 
 use crate::error::ServiceError;
 use crate::types::TransferSummaryResponse;
-use crate::{Context, dns_client, transfer};
+use crate::{Context, transfer};
 
 /// Summarize transfers using the same client IPs a diagnostic request already resolved.
 pub(crate) async fn summarize_transfers_by_clients(
@@ -40,15 +39,4 @@ fn build_transfer_summary(latest: &[TransferLogWithZone]) -> TransferSummaryResp
     }
 
     summary
-}
-
-/// Resolve the addresses the secondary resolves to now, which key the transfer log
-/// rows; none when it does not resolve.
-pub(crate) async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
-    let timeout = cx.config().dns.notify.timeout();
-    match dns_client::resolve_address_entry(&secondary.address, timeout).await {
-        // Transfer rows store an IPv4-mapped client as IPv4.
-        Ok(addrs) => addrs.iter().map(|addr| addr.ip().to_canonical()).collect(),
-        Err(_) => Vec::new(),
-    }
 }

@@ -138,7 +138,7 @@ pub(crate) async fn handle_openapi_yaml() -> Response {
             openapi_yaml,
         )
             .into_response(),
-        Err(error) => ApiError(ServiceError::internal_with_source(
+        Err(error) => ApiError::from(ServiceError::internal_with_source(
             "failed to generate OpenAPI YAML",
             error,
         ))
@@ -148,7 +148,7 @@ pub(crate) async fn handle_openapi_yaml() -> Response {
 
 /// Return the API error for the OpenAPI document while it is not served.
 pub(crate) async fn handle_openapi_disabled() -> Response {
-    ApiError(ServiceError::EndpointNotFound {
+    ApiError::from(ServiceError::EndpointNotFound {
         message: "the OpenAPI document is not served; set api.openapi_enabled = true to serve it"
             .to_string(),
     })

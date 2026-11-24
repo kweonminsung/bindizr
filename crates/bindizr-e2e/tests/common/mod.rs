@@ -22,7 +22,7 @@ use tempfile::TempDir;
 use tokio::time;
 
 /// The most a listing returns in one call; the HTTP API refuses more.
-const RECORD_PAGE_LIMIT: u32 = 1000;
+const PAGE_LIMIT: u32 = 1000;
 
 /// The switch that runs the suite against the Docker Compose DNS stack.
 const DNS_VERIFICATION_ENV: &str = "BINDIZR_E2E_VERIFY_DNS";
@@ -250,7 +250,12 @@ impl TestApp {
     ) -> (StatusCode, Value) {
         let should_verify_dns = method != Method::GET;
 
-        let previous_record_key = self.read_previous_record_key(&method, path).await;
+        let previous_record_key =
+            if matches!(method, Method::PUT | Method::DELETE) && path.starts_with("/records/") {
+                self.read_previous_record_key(path).await
+            } else {
+                None
+            };
 
         let (status, body) = self.send_http(method, path, request).await;
 
@@ -298,38 +303,45 @@ impl TestApp {
 
     /// Fetch all API record pages for a zone.
     pub(crate) async fn list_records(&self, zone_name: &str) -> Vec<Value> {
-        let mut records = Vec::new();
+        self.list_all_items(&format!("/records?zone_name={zone_name}"))
+            .await
+    }
+
+    /// Collect every page of an already filtered API listing.
+    async fn list_all_items(&self, path: &str) -> Vec<Value> {
+        let mut items = Vec::new();
         let mut offset = 0u64;
 
         loop {
             let (status, body) = self
-                .send_request(
+                .send_http(
                     Method::GET,
-                    &format!(
-                        "/records?zone_name={zone_name}&limit={RECORD_PAGE_LIMIT}&offset={offset}"
-                    ),
+                    &format!("{path}&limit={PAGE_LIMIT}&offset={offset}"),
                     None,
                 )
                 .await;
 
-            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(status, StatusCode::OK, "listing {path}: {body}");
             let page = body["items"]
                 .as_array()
-                .expect("record list response did not contain items")
-                .clone();
-            let read = page.len();
-            records.extend(page);
+                .unwrap_or_else(|| panic!("listing {path} did not return items: {body}"));
             let total = body["pagination"]["total"]
                 .as_u64()
-                .expect("record list response did not contain a total");
-            offset += read as u64;
+                .unwrap_or_else(|| panic!("listing {path} did not return a total: {body}"));
 
-            if read == 0 || offset >= total {
+            items.extend(page.iter().cloned());
+            offset += page.len() as u64;
+
+            if offset >= total {
                 break;
             }
+            assert!(
+                !page.is_empty(),
+                "listing {path} stopped at {offset} of {total}: {body}"
+            );
         }
 
-        records
+        items
     }
 
     /// Read one series of a counter from `/metrics`, picked by its labels.
@@ -428,10 +440,10 @@ impl TestApp {
     pub(crate) async fn run_cli(&self, args: &[&str], input: Option<&str>) -> Output {
         use std::io::Write;
 
-        // Remember deleted names before the API can no longer return their identity.
+        // Remember the old RRset for record writes addressed by ID.
         let previous_record_key = match args {
-            ["record", "delete", "--id", record_id, ..] => {
-                self.read_previous_record_key(&Method::DELETE, &format!("/records/{record_id}"))
+            ["record", "update" | "delete", "--id", record_id, ..] => {
+                self.read_previous_record_key(&format!("/records/{record_id}"))
                     .await
             }
             _ => None,

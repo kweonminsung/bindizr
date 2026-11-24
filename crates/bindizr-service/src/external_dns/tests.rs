@@ -12,7 +12,9 @@ use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::error::ErrorCode;
-use crate::external_dns::change_set::{RecordSetOperation, ZoneChangeSet, ZoneOperations};
+use crate::external_dns::change_set::{
+    RecordSetOperation, ZoneChangeSet, ZoneOperations, ZoneRecordSet,
+};
 use crate::types::{
     ApplyExternalDnsChangesRequest, CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest,
     CreateTokenRequest, CreateZoneRequest, ExternalDnsRecordUpdate, RecordValue, RoleGrantResponse,
@@ -102,6 +104,104 @@ async fn grant(cx: &Context, zone_name: &str, actions: &[&str]) -> RoleGrantResp
     )
     .await
     .unwrap()
+}
+
+/// Verify that a grant projects a 255-byte domain and omits it at 256 bytes.
+#[tokio::test]
+async fn list_managed_domains_skips_grants_too_long_for_a_zone() {
+    let cx = context().await;
+    let short_zone = "example.com";
+    let long_zone = "examples.com";
+    create_zone(&cx, short_zone).await;
+    create_zone(&cx, long_zone).await;
+
+    let secret = credential(&cx).await;
+    let owner = [
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(49),
+    ]
+    .join(".");
+    role::grant::create(
+        &cx,
+        &Caller::socket(),
+        "external-dns",
+        &CreateRoleGrantRequest {
+            zone_name: None,
+            actions: SYNC_ACTIONS.iter().map(ToString::to_string).collect(),
+            record_name_pattern: Some(format!("*.{owner}")),
+            record_types: None,
+        },
+    )
+    .await
+    .unwrap();
+    let caller = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
+
+    let domains = list_managed_domains(&cx, &caller).await.unwrap();
+
+    assert_eq!(domains, vec![format!("{owner}.{short_zone}")]);
+}
+
+/// Verify that SQL may narrow a read page but cannot extend the caller's grants.
+#[tokio::test]
+async fn list_records_requires_the_callers_read_evidence() {
+    let cx = context().await;
+    create_zone(&cx, "a.example.test").await;
+    create_zone(&cx, "b.example.test").await;
+    let request = ApplyExternalDnsChangesRequest {
+        creates: vec![
+            record_set("app.a.example.test", "A", None, &["192.0.2.1"]),
+            record_set("app.b.example.test", "A", None, &["192.0.2.2"]),
+        ],
+        updates: Vec::new(),
+        deletes: Vec::new(),
+    };
+    apply_changes(&cx, &Caller::socket(), &request)
+        .await
+        .unwrap();
+
+    let secret = credential(&cx).await;
+    grant(&cx, "a.example.test", &["record:read"]).await;
+    let before_grant = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
+    grant(&cx, "b.example.test", &["record:read"]).await;
+
+    let records = list_records(&cx, &before_grant).await.unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].name, "app.a.example.test");
+
+    let after_grant = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
+    let records = list_records(&cx, &after_grant).await.unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[1].name, "app.b.example.test");
+}
+
+/// Verify that field errors wait until all resolved write targets have been authorized.
+#[tokio::test]
+async fn apply_changes_authorizes_targets_before_reporting_bad_values() {
+    let cx = context().await;
+    create_zone(&cx, "permitted.example.test").await;
+    create_zone(&cx, "readonly.example.test").await;
+    let secret = credential(&cx).await;
+    grant(&cx, "permitted.example.test", &["record:create"]).await;
+    grant(&cx, "readonly.example.test", &["record:read"]).await;
+    let caller = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
+    let request = ApplyExternalDnsChangesRequest {
+        creates: vec![
+            record_set("app.permitted.example.test", "A", None, &["not-an-ip"]),
+            record_set("app.readonly.example.test", "A", None, &["192.0.2.1"]),
+        ],
+        updates: Vec::new(),
+        deletes: Vec::new(),
+    };
+
+    let error = apply_changes(&cx, &caller, &request).await.unwrap_err();
+    assert_eq!(error.code(), ErrorCode::Forbidden);
+    let error = apply_changes(&cx, &Caller::socket(), &request)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::InvalidRecordValue);
+    assert_eq!(record::count_all(&cx).await.unwrap(), 0);
 }
 
 /// Verify that zone visibility changes after request authentication are decided under the zone
@@ -307,7 +407,7 @@ fn test_record(
 ) -> Record {
     Record {
         id: RecordId::from(record_id),
-        name: OwnerName::from_row(name),
+        name: OwnerName::from_row(name).unwrap(),
         record_type,
         value: value.to_string(),
         ttl: Ttl::try_from(ttl).unwrap(),
@@ -344,7 +444,7 @@ fn authoritative_zone_picks_most_specific_match() {
         policy::ZoneIndex::new(&zones)
             .find("api.internal.example.com")
             .map(|(zone, owner)| (zone.id, owner)),
-        Some((ZoneId::from(2), OwnerName::from_row("api")))
+        Some((ZoneId::from(2), OwnerName::from_row("api").unwrap()))
     );
     assert_eq!(
         policy::ZoneIndex::new(&zones)
@@ -396,24 +496,26 @@ fn normalize_lookup_name_lowercases_and_strips_trailing_dot() {
     assert!(policy::normalize_lookup_name("bad name.example.com").is_err());
 }
 
+/// Parse the fields of a fixture whose owner and type need no authorization.
+fn parse_record_set(record: &ExternalDnsRecord) -> Result<ZoneRecordSet, ServiceError> {
+    change_set::parse_record_set(record)?.into_zone_record_set(OwnerName::apex())
+}
+
 /// Verify that `parse_record_set` rejects unsupported types.
 #[test]
 fn parse_record_set_rejects_unsupported_types() {
     for record_type in ["NS", "MX", "SRV", "SOA", "PTR"] {
         let error =
-            change_set::parse_record_set(&record_set("a.example.com", record_type, None, &["x"]))
-                .unwrap_err();
+            parse_record_set(&record_set("a.example.com", record_type, None, &["x"])).unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
-    assert!(
-        change_set::parse_record_set(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err()
-    );
+    assert!(parse_record_set(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err());
 }
 
 /// Verify that `parse_record_set` rejects multi value CNAME and empty values.
 #[test]
 fn parse_record_set_rejects_multi_value_cname_and_empty_values() {
-    let error = change_set::parse_record_set(&record_set(
+    let error = parse_record_set(&record_set(
         "a.example.com",
         "CNAME",
         None,
@@ -423,8 +525,7 @@ fn parse_record_set_rejects_multi_value_cname_and_empty_values() {
 
     assert_eq!(error.code(), ErrorCode::InvalidRecordValue);
 
-    let error =
-        change_set::parse_record_set(&record_set("a.example.com", "A", None, &[])).unwrap_err();
+    let error = parse_record_set(&record_set("a.example.com", "A", None, &[])).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::InvalidInput);
 }
@@ -433,27 +534,24 @@ fn parse_record_set_rejects_multi_value_cname_and_empty_values() {
 #[test]
 fn parse_record_set_normalizes_ttl() {
     assert_eq!(
-        change_set::parse_record_set(&record_set("a.example.com", "A", Some(0), &["192.0.2.1"]))
+        parse_record_set(&record_set("a.example.com", "A", Some(0), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         None
     );
     assert_eq!(
-        change_set::parse_record_set(&record_set("a.example.com", "A", Some(300), &["192.0.2.1"]))
+        parse_record_set(&record_set("a.example.com", "A", Some(300), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         Some(Ttl::from_secs(300))
     );
-    assert!(
-        change_set::parse_record_set(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"]))
-            .is_err()
-    );
+    assert!(parse_record_set(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err());
 }
 
 /// Verify that `parse_record_set` deduplicates equivalent ipv6 spellings.
 #[test]
 fn parse_record_set_deduplicates_equivalent_ipv6_spellings() {
-    let parsed_record_set = change_set::parse_record_set(&record_set(
+    let parsed_record_set = parse_record_set(&record_set(
         "a.example.com",
         "AAAA",
         None,
@@ -467,7 +565,7 @@ fn parse_record_set_deduplicates_equivalent_ipv6_spellings() {
 /// Verify that `parse_record_set` parses quoted TXT values.
 #[test]
 fn parse_record_set_parses_quoted_txt_values() {
-    let parsed_record_set = change_set::parse_record_set(&record_set(
+    let parsed_record_set = parse_record_set(&record_set(
         "a.example.com",
         "TXT",
         None,
@@ -481,7 +579,7 @@ fn parse_record_set_parses_quoted_txt_values() {
         "\"heritage=external-dns,external-dns/owner=default\""
     );
     assert!(
-        change_set::parse_record_set(&record_set(
+        parse_record_set(&record_set(
             "a.example.com",
             "TXT",
             None,
@@ -583,7 +681,7 @@ fn zone_operations(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> Zon
         let (_, owner) = policy::ZoneIndex::new(slice::from_ref(zone))
             .find(&record_set.name)
             .unwrap();
-        zone_operations.push(owner, operation);
+        zone_operations.push(owner, operation).unwrap();
     }
 
     zone_operations
@@ -603,7 +701,10 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
 
     assert!(change_set.deletes.is_empty());
     assert_eq!(change_set.creates.len(), 1);
-    assert_eq!(change_set.creates[0].name, OwnerName::from_row("app"));
+    assert_eq!(
+        change_set.creates[0].name,
+        OwnerName::from_row("app").unwrap()
+    );
     assert_eq!(change_set.creates[0].ttl, zone.default_ttl);
 }
 

@@ -87,8 +87,9 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
             .execute(&mut connection)
             .await
             .unwrap();
-        let error = update::authenticate_tsig_key(&dns_cx, &query_data, "fault-key")
+        let error = auth::verify_request_tsig(&dns_cx, &query_data, "fault-key")
             .await
+            .map_err(UpdateError::from)
             .unwrap_err();
 
         assert!(matches!(

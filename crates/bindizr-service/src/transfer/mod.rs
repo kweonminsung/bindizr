@@ -5,7 +5,9 @@ use std::net::IpAddr;
 
 use bindizr_core::config::SavedTransfers;
 use bindizr_core::dns::Serial;
+use bindizr_core::dns::message::OptRcode;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::tsig::TsigRcode;
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::transfer::{
     TransferKind, TransferLog, TransferLogWithZone, TransferResult, TransferTransport,
@@ -14,9 +16,50 @@ use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 
 use crate::authorization::Caller;
-use crate::error::ServiceError;
+use crate::error::{ErrorCode, ServiceError};
 use crate::types::{PaginatedResponse, TransferLogFilter, TransferLogResponse};
-use crate::{Context, pagination, secondary, zone};
+use crate::{Context, pagination, secondary, text, zone};
+
+/// A transfer log classification carrying codes alone, never input values or diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransferLogErrorCode {
+    Dns(OptRcode),
+    Tsig(TsigRcode),
+    Service(ErrorCode),
+    IoFailed,
+    DnsEncodingFailed,
+    TsigResponseEncodingFailed,
+    PeerClosed,
+    ConnectionSlotsClosed,
+    WriteTimeout,
+    IncompletePrefix,
+    IncompleteMessage,
+    IxfrVersionMissing,
+    UpdateResponseEncodingFailed,
+    TsigAuthenticationFailed,
+}
+
+impl TransferLogErrorCode {
+    /// Return the stored code, preserving the DNS and TSIG response-code namespaces.
+    pub fn to_text(self) -> String {
+        match self {
+            Self::Dns(rcode) => rcode.to_string(),
+            Self::Tsig(rcode) => rcode.to_string(),
+            Self::Service(code) => code.as_str().to_string(),
+            Self::IoFailed => "IO_FAILED".to_string(),
+            Self::DnsEncodingFailed => "DNS_ENCODING_FAILED".to_string(),
+            Self::TsigResponseEncodingFailed => "TSIG_RESPONSE_ENCODING_FAILED".to_string(),
+            Self::PeerClosed => "PEER_CLOSED".to_string(),
+            Self::ConnectionSlotsClosed => "CONNECTION_SLOTS_CLOSED".to_string(),
+            Self::WriteTimeout => "WRITE_TIMEOUT".to_string(),
+            Self::IncompletePrefix => "INCOMPLETE_PREFIX".to_string(),
+            Self::IncompleteMessage => "INCOMPLETE_MESSAGE".to_string(),
+            Self::IxfrVersionMissing => "IXFR_VERSION_MISSING".to_string(),
+            Self::UpdateResponseEncodingFailed => "UPDATE_RESPONSE_ENCODING_FAILED".to_string(),
+            Self::TsigAuthenticationFailed => "TSIG_AUTHENTICATION_FAILED".to_string(),
+        }
+    }
+}
 
 /// Save a transfer answered for `zone_id` up to `serial`. A failure to
 /// save is logged; the transfer already went out. An IXFR answered with the
@@ -63,7 +106,7 @@ pub async fn save_refused(
     zone_name: &str,
     kind: TransferKind,
     transport: TransferTransport,
-    error_code: String,
+    error_code: TransferLogErrorCode,
 ) {
     save_unserved(
         cx,
@@ -85,7 +128,7 @@ pub async fn save_failed(
     zone_name: &str,
     kind: TransferKind,
     transport: TransferTransport,
-    error_code: String,
+    error_code: TransferLogErrorCode,
 ) {
     save_unserved(
         cx,
@@ -108,7 +151,7 @@ async fn save_unserved(
     kind: TransferKind,
     transport: TransferTransport,
     result: TransferResult,
-    error_code: String,
+    error_code: TransferLogErrorCode,
 ) {
     if cx.config().transfer_log.save == SavedTransfers::None {
         return;
@@ -137,7 +180,7 @@ async fn save_unserved(
             incremental: false,
             serial: None,
             served_at: Utc::now(),
-            error: Some(error_code),
+            error: Some(error_code.to_text()),
         },
     )
     .await;
@@ -163,10 +206,9 @@ pub async fn list(
     // with an address too, that address only when the secondary resolves to it.
     if let Some(secondary_name) = secondary_name {
         let secondary = secondary::lookup_by_name(cx, secondary_name).await?;
-        let secondary_addrs = secondary::resolve_ips(cx, &secondary)
-            .await
-            .into_iter()
-            .map(|ip| ip.to_string());
+        let target =
+            secondary::SecondaryTarget::resolve(secondary, cx.config().dns.notify.timeout()).await;
+        let secondary_addrs = target.client_ips().into_iter().map(|ip| ip.to_string());
 
         filter.client_addrs = Some(match filter.client_addrs {
             Some(client_addrs) => secondary_addrs
@@ -196,29 +238,8 @@ fn normalize_filter(
         .as_deref()
         .map(zone::normalize_name)
         .transpose()?;
-    let result = filter
-        .result
-        .as_deref()
-        .map(str::trim)
-        .filter(|result| !result.is_empty())
-        .map(str::parse::<TransferResult>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
-    let address = filter
-        .address
-        .as_deref()
-        .map(str::trim)
-        .filter(|address| !address.is_empty())
-        .map(|address| {
-            // Rows store an IPv4-mapped client as IPv4, so the key does too.
-            address
-                .parse::<IpAddr>()
-                .map(|ip| ip.to_canonical())
-                .map_err(|_| {
-                    ServiceError::invalid_input(format!("address '{address}' is not an IP address"))
-                })
-        })
-        .transpose()?;
+    let result = text::parse_optional::<TransferResult>(filter.result.as_deref())?;
+    let address = text::normalize_ip_address(filter.address.as_deref())?;
 
     pagination::validate_time_window(filter.since, filter.until)?;
 

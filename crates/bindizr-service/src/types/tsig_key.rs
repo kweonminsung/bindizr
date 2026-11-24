@@ -1,12 +1,14 @@
 //! TSIG key payloads.
 
+use std::fmt;
+
 use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId, TsigKeyMetadata};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 /// Request body for creating a TSIG key. Omitting `secret` generates one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateTsigKeyRequest {
     #[schema(example = "update-key")]
@@ -21,6 +23,18 @@ pub struct CreateTsigKeyRequest {
     /// may name one without grants.
     #[schema(example = "rfc2136-legacy")]
     pub role_name: String,
+}
+
+impl fmt::Debug for CreateTsigKeyRequest {
+    /// Format the diagnostic fields with credential material redacted.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CreateTsigKeyRequest")
+            .field("name", &self.name)
+            .field("algorithm", &self.algorithm)
+            .field("secret", &"<redacted>")
+            .field("role_name", &self.role_name)
+            .finish()
+    }
 }
 
 /// Query parameters of the TSIG keys listing: one role's, or every one.
@@ -65,11 +79,21 @@ impl TsigKeyResponse {
 }
 
 /// A key with its secret: the create and get responses.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleTsigKeyResponse {
     pub tsig_key: TsigKeyResponse,
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: String,
+}
+
+impl fmt::Debug for SingleTsigKeyResponse {
+    /// Format the diagnostic fields with credential material redacted.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SingleTsigKeyResponse")
+            .field("tsig_key", &self.tsig_key)
+            .field("secret", &"<redacted>")
+            .finish()
+    }
 }
 
 impl From<&TsigKeyMetadata> for TsigKeyResponse {

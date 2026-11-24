@@ -43,7 +43,7 @@ pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
 /// Apply the zone policy to a name already parsed from a request or DNS records.
 pub(crate) fn validate_name(zone_name: &ZoneName) -> Result<(), ServiceError> {
     if zone_name
-        .labels()
+        .to_labels()
         .first()
         .is_some_and(|label| label == b"*")
     {
@@ -168,7 +168,7 @@ pub(crate) async fn validate_record_changes_tx(
     removed: &[Record],
     added: &[Record],
 ) -> Result<(), ServiceError> {
-    let removed_ids: HashSet<_> = removed.iter().map(|record| record.id).collect();
+    let removed_record_ids: HashSet<_> = removed.iter().map(|record| record.id).collect();
     let related_types = [
         RecordType::Ds,
         RecordType::Ns,
@@ -179,22 +179,21 @@ pub(crate) async fn validate_record_changes_tx(
         RecordType::Ptr,
     ];
 
-    let mut records = if zone.id == ZoneId::UNWRITTEN {
+    let mut stored = if zone.id == ZoneId::UNWRITTEN {
         Vec::new()
     } else {
         bindizr_db::record::list_by_record_types_tx(tx, zone.id, &related_types).await?
     };
-    records.retain(|record| !removed_ids.contains(&record.id));
-    records.extend(
+    stored.retain(|record| !removed_record_ids.contains(&record.id));
+    let records = stored.iter().chain(
         added
             .iter()
-            .filter(|record| related_types.contains(&record.record_type))
-            .cloned(),
+            .filter(|record| related_types.contains(&record.record_type)),
     );
 
     let owners_of = |record_type| -> HashSet<&OwnerName> {
         records
-            .iter()
+            .clone()
             .filter(|record| record.record_type == record_type)
             .map(|record| &record.name)
             .collect()
@@ -210,7 +209,7 @@ pub(crate) async fn validate_record_changes_tx(
     // RFC 4035, Section 2.4 SHOULD exception: preserve explicit per-type NS/DS TTLs
     // for independent edits/imports; each RRset still requires one TTL.
     if records
-        .iter()
+        .clone()
         .any(|record| record.record_type == RecordType::Ds && !delegations.contains(&record.name))
     {
         return Err(ServiceError::record_conflict(
@@ -248,7 +247,7 @@ pub(crate) async fn validate_record_changes_tx(
         owners.extend(
             remaining
                 .into_iter()
-                .filter(|record| !removed_ids.contains(&record.id))
+                .filter(|record| !removed_record_ids.contains(&record.id))
                 .map(|record| record.name),
         );
         owners.extend(added.iter().map(|record| record.name.clone()));
@@ -278,7 +277,7 @@ pub(crate) async fn validate_record_changes_tx(
         .collect();
 
     if !cnames.is_empty() || !authoritative_dnames.is_empty() {
-        for record in &records {
+        for record in records {
             let target = match record.record_type {
                 RecordType::Srv => SrvRecordValue::parse(&record.value, record.priority)
                     .ok()

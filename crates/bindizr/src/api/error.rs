@@ -1,3 +1,5 @@
+use std::{error, fmt};
+
 use axum::Json;
 use axum::extract::rejection::JsonRejection;
 use axum::http::header::WWW_AUTHENTICATE;
@@ -55,16 +57,54 @@ pub(crate) fn http_status(code: ErrorCode) -> StatusCode {
     }
 }
 
-/// Newtype over [`ServiceError`] so the service error can be converted into an
-/// HTTP response (orphan rules forbid implementing `IntoResponse` directly).
-#[derive(Debug, Error)]
-#[error(transparent)]
-pub(crate) struct ApiError(pub(crate) ServiceError);
+/// Map a service failure or transport rejection to the API error contract.
+#[derive(Error)]
+pub(crate) enum ApiError {
+    #[error(transparent)]
+    Service(#[from] ServiceError),
+    #[error("{error}")]
+    Rejected {
+        error: ServiceError,
+        #[source]
+        source: Box<dyn error::Error + Send + Sync + 'static>,
+    },
+}
 
-impl From<ServiceError> for ApiError {
-    /// Wrap a service error for HTTP response conversion.
-    fn from(error: ServiceError) -> Self {
-        Self(error)
+impl ApiError {
+    /// Retain a transport rejection underneath its mapped response error.
+    pub(crate) fn with_source(
+        error: ServiceError,
+        source: impl error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::Rejected {
+            error,
+            source: Box::new(source),
+        }
+    }
+
+    /// Return the error code carried by the HTTP payload.
+    pub(crate) fn code(&self) -> ErrorCode {
+        self.service_error().code()
+    }
+
+    /// Return the service representation used for the response.
+    fn service_error(&self) -> &ServiceError {
+        match self {
+            Self::Service(error) | Self::Rejected { error, .. } => error,
+        }
+    }
+}
+
+impl fmt::Debug for ApiError {
+    /// Exclude rejected request input from diagnostics, including nested output.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Service(error) => f.debug_tuple("ApiError").field(error).finish(),
+            Self::Rejected { .. } => f
+                .debug_struct("ApiError")
+                .field("code", &self.code())
+                .finish_non_exhaustive(),
+        }
     }
 }
 
@@ -72,13 +112,13 @@ impl IntoResponse for ApiError {
     /// Convert a service error into its HTTP status and JSON error body.
     fn into_response(self) -> Response {
         // The one place a server fault leaves over HTTP, so its cause is logged here.
-        if self.0.code().is_internal() {
-            log::error!("HTTP request failed with a server fault: {:?}", self.0);
+        let code = self.code();
+        if code.is_internal() {
+            log::error!("HTTP request failed with a server fault: {self:?}");
         }
 
-        let status = http_status(self.0.code());
-        let code = self.0.code();
-        let body = ErrorResponse::from(&self.0);
+        let status = http_status(code);
+        let body = ErrorResponse::from(self.service_error());
         let mut response = (status, Json(body)).into_response();
         // Detailed diagnostics may contain rejected input; only the code is log-safe.
         response.extensions_mut().insert(code);
@@ -103,7 +143,7 @@ impl IntoResponse for ApiError {
 impl From<JsonRejection> for ApiError {
     /// Translate a JSON extraction failure into an API error.
     fn from(rejection: JsonRejection) -> Self {
-        let error = match rejection {
+        let error = match &rejection {
             JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
                 ServiceError::InvalidJsonBody {
                     message: format!("invalid JSON body: {}", rejection.body_text()),
@@ -136,10 +176,10 @@ impl From<JsonRejection> for ApiError {
                     rejection.body_text()
                 ))
             }
-            _ => ServiceError::internal_with_source("failed to read request body", rejection),
+            _ => ServiceError::internal("failed to read request body"),
         };
 
-        Self(error)
+        Self::with_source(error, rejection)
     }
 }
 
@@ -169,11 +209,13 @@ mod tests {
             .unwrap_err();
         let error = ApiError::from(rejection);
 
-        assert_eq!(error.0.code(), ErrorCode::InvalidJsonBody);
+        assert_eq!(error.code(), ErrorCode::InvalidJsonBody);
         assert!(
-            error.0.to_string().contains("unknown field `tll`"),
-            "{}",
-            error.0
+            error::Error::source(&error)
+                .and_then(|source| source.downcast_ref::<JsonRejection>())
+                .is_some()
         );
+        assert!(error.to_string().contains("unknown field `tll`"), "{error}");
+        assert!(!format!("{error:#?}").contains("tll"));
     }
 }

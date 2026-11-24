@@ -16,18 +16,32 @@ use crate::external_dns::policy;
 use crate::types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord};
 use crate::{external_dns, record, ttl};
 
-/// Desired records with row-encoded values and an absolute owner before zone resolution.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// An identified record set with field errors held until its write is authorized.
+#[derive(Debug)]
 pub(crate) struct RecordSet {
     pub(crate) name: String,
     pub(crate) record_type: RecordType,
-    /// Adds only; `None` resolves to the zone TTL at apply time.
-    pub(crate) ttl: Option<Ttl>,
-    pub(crate) values: Vec<String>,
+    fields: Result<(Option<Ttl>, Vec<String>), ServiceError>,
+}
+
+impl RecordSet {
+    /// Resolve the fields after the caller has been authorized at `owner`.
+    pub(crate) fn into_zone_record_set(
+        self,
+        owner: OwnerName,
+    ) -> Result<ZoneRecordSet, ServiceError> {
+        let (ttl, values) = self.fields?;
+        Ok(ZoneRecordSet {
+            name: owner,
+            record_type: self.record_type,
+            ttl,
+            values,
+        })
+    }
 }
 
 /// An ordered addition or deletion before its authoritative zone is resolved.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) enum RecordSetOperation {
     Add(RecordSet),
     Delete(RecordSet),
@@ -51,17 +65,17 @@ pub(crate) struct ZoneOperations {
 
 impl ZoneOperations {
     /// Add one operation whose name resolved to this zone as `owner`.
-    pub(crate) fn push(&mut self, owner: OwnerName, operation: RecordSetOperation) {
+    pub(crate) fn push(
+        &mut self,
+        owner: OwnerName,
+        operation: RecordSetOperation,
+    ) -> Result<(), ServiceError> {
         let (destination, record_set) = match operation {
             RecordSetOperation::Delete(record_set) => (&mut self.deletes, record_set),
             RecordSetOperation::Add(record_set) => (&mut self.adds, record_set),
         };
-        destination.push(ZoneRecordSet {
-            name: owner,
-            record_type: record_set.record_type,
-            ttl: record_set.ttl,
-            values: record_set.values,
-        });
+        destination.push(record_set.into_zone_record_set(owner)?);
+        Ok(())
     }
 }
 
@@ -157,11 +171,12 @@ impl ZoneChangeSet {
 
         // Validate each insert against the post-delete state plus earlier inserts,
         // so CNAME exclusivity and record set TTL rules see the state they will land in.
-        let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
+        let deleted_record_ids: HashSet<RecordId> =
+            deletes.iter().map(|record| record.id).collect();
         let mut constraints = record::RecordConstraintIndex::new(
             existing_records
                 .iter()
-                .filter(|record| !deleted_ids.contains(&record.id)),
+                .filter(|record| !deleted_record_ids.contains(&record.id)),
         );
 
         for record in &creates {
@@ -222,10 +237,22 @@ fn validate_record_set_shape(
     Ok(())
 }
 
-/// Parse and validate an ExternalDNS record group.
+/// Parse the identity and keep field validation separate from its authorization.
 pub(crate) fn parse_record_set(record: &ExternalDnsRecord) -> Result<RecordSet, ServiceError> {
     let record_type = parse_supported_record_type(&record.record_type)?;
     let name = policy::normalize_lookup_name(&record.name)?;
+    Ok(RecordSet {
+        name,
+        record_type,
+        fields: parse_record_set_fields(record, record_type),
+    })
+}
+
+/// Validate the requested TTL and encode and deduplicate the record values.
+fn parse_record_set_fields(
+    record: &ExternalDnsRecord,
+    record_type: RecordType,
+) -> Result<(Option<Ttl>, Vec<String>), ServiceError> {
     let ttl = normalize_ttl(record.ttl)?;
     validate_record_set_shape(record, record_type)?;
 
@@ -237,17 +264,12 @@ pub(crate) fn parse_record_set(record: &ExternalDnsRecord) -> Result<RecordSet, 
         let encoded = record_type
             .encoded_value(value, None)
             .map_err(ServiceError::invalid_record_value)?;
-        if seen.insert(record_type.canonical_value(&encoded, None).into_owned()) {
+        if seen.insert(record_type.to_comparison_key(&encoded, None).into_owned()) {
             values.push(encoded);
         }
     }
 
-    Ok(RecordSet {
-        name,
-        record_type,
-        ttl,
-        values,
-    })
+    Ok((ttl, values))
 }
 
 /// Canonicalize a desired record for apply/list, preserving the submitted name.

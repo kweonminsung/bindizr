@@ -3,10 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use reqwest::{Method, StatusCode};
+use reqwest::Method;
 use serde_json::Value;
 
-use crate::common::{RECORD_PAGE_LIMIT, TestApp, dns};
+use crate::common::{TestApp, dns};
 
 /// The record a mutation is about to replace or remove, kept with the zone it
 /// sits in, which decides whether DNS can be asked about it at all.
@@ -18,13 +18,9 @@ pub(crate) struct PreviousRecordKey {
 }
 
 impl TestApp {
-    /// Capture the record owner, type, and zone before an API mutation.
-    pub(crate) async fn read_previous_record_key(
-        &self,
-        method: &Method,
-        path: &str,
-    ) -> Option<PreviousRecordKey> {
-        if !matches!(*method, Method::PUT | Method::DELETE) || !path.starts_with("/records/") {
+    /// Capture the record owner, type, and zone before a mutation addressed by ID.
+    pub(crate) async fn read_previous_record_key(&self, path: &str) -> Option<PreviousRecordKey> {
+        if !self.has_dns_secondaries() {
             return None;
         }
 
@@ -54,81 +50,17 @@ impl TestApp {
             return;
         }
 
-        // Read every API page so all secondaries are checked against the complete zone.
-        let mut records = Vec::new();
-        let mut offset = 0u64;
-
-        loop {
-            let (status, body) = self
-                .send_http(
-                    Method::GET,
-                    &format!(
-                        "/records?search={}&limit={RECORD_PAGE_LIMIT}&offset={offset}",
-                        self.namespace
-                    ),
-                    None,
-                )
-                .await;
-
-            assert_eq!(
-                status,
-                StatusCode::OK,
-                "failed to list records for DNS verification: {body}"
-            );
-            let page = body["items"]
-                .as_array()
-                .expect("record list response did not contain items")
-                .clone();
-            let read = page.len();
-            records.extend(page);
-            let total = body["pagination"]["total"]
-                .as_u64()
-                .expect("record list response did not contain a total");
-            offset += read as u64;
-
-            if read == 0 || offset >= total {
-                break;
-            }
-        }
+        let records = self
+            .list_all_items(&format!("/records?search={}", self.namespace))
+            .await;
 
         // The catalog lists the enabled zones alone, so only they are served.
-        let mut enabled_zone_names = HashSet::new();
-        let mut offset = 0u64;
-
-        loop {
-            let (status, body) = self
-                .send_http(
-                    Method::GET,
-                    &format!(
-                        "/zones?enabled=true&search={}&limit={RECORD_PAGE_LIMIT}&offset={offset}",
-                        self.namespace
-                    ),
-                    None,
-                )
-                .await;
-
-            assert_eq!(
-                status,
-                StatusCode::OK,
-                "failed to list zones for DNS verification: {body}"
-            );
-            let page = body["items"]
-                .as_array()
-                .expect("zone list response did not contain items");
-            let read = page.len();
-            enabled_zone_names.extend(
-                page.iter()
-                    .filter_map(|zone| zone["name"].as_str().map(str::to_string)),
-            );
-            let total = body["pagination"]["total"]
-                .as_u64()
-                .expect("zone list response did not contain a total");
-            offset += read as u64;
-
-            if read == 0 || offset >= total {
-                break;
-            }
-        }
+        let enabled_zone_names: HashSet<_> = self
+            .list_all_items(&format!("/zones?enabled=true&search={}", self.namespace))
+            .await
+            .into_iter()
+            .map(|zone| zone["name"].as_str().expect("zone has a name").to_string())
+            .collect();
 
         // An enabled zone is served only with an apex NS: BIND9 will not load
         // a catalog member without one, which a zone stripped of it lacks.

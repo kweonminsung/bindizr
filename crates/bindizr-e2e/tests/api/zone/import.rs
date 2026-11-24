@@ -103,6 +103,73 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
     assert_eq!(after, versions);
 }
 
+/// Verify that an import counts TTL replacements separately from deletions in preview and apply.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_separates_ttl_updates_from_deletes() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    seed_records(
+        &app,
+        zone_name,
+        json!([
+            { "name": "www", "type": "A", "value": "192.0.2.1", "ttl": 300 },
+            { "name": "obsolete", "type": "A", "value": "192.0.2.2", "ttl": 300 }
+        ]),
+    )
+    .await;
+    let serial = app.read_zone_serial(zone_name).await;
+    let content = format!("@ IN NS ns1.{zone_name}.\nwww 600 IN A 192.0.2.1\n");
+
+    for dry_run in [true, false] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{zone_name}/import"),
+                Some(json!({ "content": content, "mode": "replace", "dry_run": dry_run })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["applied"], !dry_run, "{body}");
+        assert_eq!(body["summary"]["added"], 0, "{body}");
+        assert_eq!(
+            body["summary"]["deleted"], 1,
+            "TTL replacement is an update, not a second deletion: {body}"
+        );
+        assert_eq!(body["summary"]["updated"], 1, "{body}");
+        assert_eq!(body["summary"]["unchanged"], 1, "{body}");
+        assert_eq!(
+            app.read_zone_serial(zone_name).await,
+            if dry_run {
+                serial
+            } else {
+                serial + 1
+            }
+        );
+        if dry_run {
+            assert_eq!(
+                body["diff"]["summary"],
+                json!({ "added": 0, "removed": 1, "changed": 1 }),
+                "{body}"
+            );
+        }
+    }
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let records = body["items"].as_array().unwrap();
+    assert_eq!(records.len(), 1, "{body}");
+    assert_eq!(records[0]["name"], format!("www.{zone_name}."));
+    assert_eq!(records[0]["ttl"], 600);
+}
+
 /// Verify that zone-file import previews match the applied changes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

@@ -4802,6 +4802,7 @@ components:
         added:
           type: integer
           format: int64
+          description: Records persisted by this request. A dry run persists zero records.
           example: 3
           minimum: 0
         applied:
@@ -5169,13 +5170,12 @@ components:
       properties:
         applied:
           type: boolean
-          description: |-
-            Whether this call wrote; a filter that matched nothing still ran, and
-            says so with `deleted: 0`.
+          description: Whether the request completed in apply mode. An empty match still applies.
           example: true
         deleted:
           type: integer
           format: int64
+          description: Records selected for removal, including in a dry run.
           example: 3
           minimum: 0
         diff:

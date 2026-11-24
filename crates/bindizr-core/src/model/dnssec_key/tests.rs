@@ -71,6 +71,20 @@ fn active_key(role: DnssecKeyRole) -> DnssecKey {
     }
 }
 
+/// Verify that Debug can describe a key without exposing its private part.
+#[test]
+fn dnssec_key_debug_keeps_only_public_material() {
+    let key = DnssecKey {
+        public_key: "public-fixture".to_string(),
+        private_key: "private-fixture".to_string(),
+        ..active_key(DnssecKeyRole::Csk)
+    };
+    for debug in [format!("{key:?}"), format!("{:#?}", [&key])] {
+        assert!(debug.contains("public-fixture"));
+        assert!(!debug.contains("private-fixture"));
+    }
+}
+
 /// Verify that a retiring key waits out the signatures it made.
 #[test]
 fn retiring_key_waits_for_signature_expiration() {

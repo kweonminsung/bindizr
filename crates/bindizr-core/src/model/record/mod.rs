@@ -53,13 +53,31 @@ pub struct Record {
     pub zone_id: ZoneId,
 }
 
-/// Canonical DNS record identity: owner, type and RDATA, excluding TTL and row id.
+/// Comparison identity of a record value within one record type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RecordValueKey<'a> {
+    /// Canonical wire-format RDATA, including any encoded priority.
+    Canonical(Vec<u8>),
+    /// A malformed stored value, compared by its exact spelling.
+    Invalid(Cow<'a, str>),
+}
+
+impl RecordValueKey<'_> {
+    /// Make the key independent of the value it was built from.
+    pub fn into_owned(self) -> RecordValueKey<'static> {
+        match self {
+            Self::Canonical(rdata) => RecordValueKey::Canonical(rdata),
+            Self::Invalid(value) => RecordValueKey::Invalid(Cow::Owned(value.into_owned())),
+        }
+    }
+}
+
+/// Record identity: owner, type and value, excluding TTL and row id.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RecordKey {
     name: OwnerName,
     record_type: RecordType,
-    /// Canonical comparison form of the value, priority included for MX and SRV.
-    rdata: String,
+    value_key: RecordValueKey<'static>,
 }
 
 impl RecordKey {
@@ -73,7 +91,7 @@ impl RecordKey {
         Self {
             name: owner.clone(),
             record_type,
-            rdata: record_type.canonical_value(value, priority).into_owned(),
+            value_key: record_type.to_comparison_key(value, priority).into_owned(),
         }
     }
 }
@@ -243,7 +261,7 @@ impl RecordType {
         Self::Wks,
     ];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::A => "A",
@@ -303,7 +321,7 @@ impl RecordType {
         right: &str,
         right_priority: Option<i32>,
     ) -> bool {
-        self.canonical_value(left, left_priority) == self.canonical_value(right, right_priority)
+        self.to_comparison_key(left, left_priority) == self.to_comparison_key(right, right_priority)
     }
 
     /// Return the stored priority: MX and SRV encode a preference in their rdata, so
@@ -316,21 +334,22 @@ impl RecordType {
         }
     }
 
-    /// Return the canonical form used only to compare two values, never to store them.
-    pub fn canonical_value<'a>(
+    /// Compare valid values by canonical wire data and malformed values by exact spelling.
+    /// A malformed value cannot match any valid value.
+    pub fn to_comparison_key<'a>(
         self,
         value: &'a str,
         fallback_priority: Option<i32>,
-    ) -> Cow<'a, str> {
+    ) -> RecordValueKey<'a> {
         self.encoded_value(value, fallback_priority)
             .ok()
             .and_then(|value| Rdata::from_columns(self, &value, fallback_priority).ok())
             .and_then(|rdata| rdata.to_canonical(Rtype::from(self)).ok())
-            .map(|rdata| Cow::Owned(hex::encode(rdata.as_bytes())))
-            .unwrap_or(Cow::Borrowed(value))
+            .map(|rdata| RecordValueKey::Canonical(rdata.into_bytes()))
+            .unwrap_or(RecordValueKey::Invalid(Cow::Borrowed(value)))
     }
 
-    /// Render storage text, distinct from [`Self::canonical_value`]'s comparison form.
+    /// Render storage text, distinct from [`Self::to_comparison_key`]'s comparison form.
     /// TXT input starting with a quote is read as presentation form, anything
     /// else as raw text; segments, or raw text that may start with a quote, go
     /// through [`TxtRecordValue::from_segments`] or [`TxtRecordValue::from_string`].
@@ -344,20 +363,20 @@ impl RecordType {
         let name = name::trim_presentation_name(value);
 
         match self {
-            Self::Wks => WksRecordValue::parse(value).map(|parsed| parsed.canonical()),
-            Self::A => ARecordValue::parse(trimmed).map(ARecordValue::canonical),
-            Self::Aaaa => AaaaRecordValue::parse(trimmed).map(AaaaRecordValue::canonical),
+            Self::Wks => WksRecordValue::parse(value).map(|parsed| parsed.to_text()),
+            Self::A => ARecordValue::parse(trimmed).map(ARecordValue::to_text),
+            Self::Aaaa => AaaaRecordValue::parse(trimmed).map(AaaaRecordValue::to_text),
             Self::Caa => {
                 let parsed = CaaRecordValue::parse(value)?;
                 parsed.validate()?;
-                Ok(parsed.canonical())
+                Ok(parsed.to_text())
             }
-            Self::Cname => CnameRecordValue::parse(name).map(CnameRecordValue::canonical),
-            Self::Dname => DnameRecordValue::parse(name).map(DnameRecordValue::canonical),
+            Self::Cname => CnameRecordValue::parse(name).map(CnameRecordValue::to_text),
+            Self::Dname => DnameRecordValue::parse(name).map(DnameRecordValue::to_text),
             Self::Ds => {
                 let parsed = DsRecordValue::parse(trimmed)?;
                 parsed.validate()?;
-                Ok(parsed.canonical())
+                Ok(parsed.to_text())
             }
             Self::Mx => {
                 let parsed = MxRecordValue::parse(value, priority)?;
@@ -367,25 +386,25 @@ impl RecordType {
             Self::Naptr => {
                 let parsed = NaptrRecordValue::parse(value)?;
                 parsed.validate()?;
-                Ok(parsed.canonical())
+                Ok(parsed.to_text())
             }
             Self::Txt => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
-            Self::Ns => NsRecordValue::parse(name).map(NsRecordValue::canonical),
+            Self::Ns => NsRecordValue::parse(name).map(NsRecordValue::to_text),
             Self::Srv => {
                 let parsed = SrvRecordValue::parse(value, priority)?;
                 parsed.validate()?;
                 Ok(parsed.to_stored())
             }
-            Self::Ptr => PtrRecordValue::parse(name).map(PtrRecordValue::canonical),
+            Self::Ptr => PtrRecordValue::parse(name).map(PtrRecordValue::to_text),
             Self::Sshfp => {
                 let parsed = SshfpRecordValue::parse(trimmed)?;
                 parsed.validate()?;
-                Ok(parsed.canonical())
+                Ok(parsed.to_text())
             }
             Self::Tlsa => {
                 let parsed = TlsaRecordValue::parse(trimmed)?;
                 parsed.validate()?;
-                Ok(parsed.canonical())
+                Ok(parsed.to_text())
             }
         }
     }

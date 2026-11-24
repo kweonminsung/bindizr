@@ -15,7 +15,7 @@ mod role;
 mod secondary;
 mod token;
 mod transfer;
-mod tsig;
+mod tsig_key;
 mod version;
 mod zone;
 
@@ -63,7 +63,7 @@ pub use token::{
     CreateTokenRequest, CreateTokenResponse, SingleTokenResponse, TokenFilter, TokenResponse,
 };
 pub use transfer::{TransferLogFilter, TransferLogResponse};
-pub use tsig::{CreateTsigKeyRequest, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse};
+pub use tsig_key::{CreateTsigKeyRequest, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse};
 pub use version::{
     DiffZoneVersionsResponse, GetZoneVersionResponse, RecordChange, RecordDiffEntryResponse,
     RecordDiffResponse, RecordDiffSummaryResponse, RecordDiffValueResponse, RollbackZoneResponse,

@@ -6,12 +6,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bindizr_core::dns::message;
-use bindizr_core::dns::message::{Keepalive, Opcode, ParsedQuery, QueryMetadata, Rtype};
-use tokio::task::JoinSet;
+use bindizr_core::dns::message::{Keepalive, Opcode, ParsedQuery, QueryMetadata};
+use bindizr_core::model::transfer::{TransferKind, TransferTransport};
+use tokio::task::{JoinError, JoinSet};
 use tokio::time;
 
 use crate::dns::error::DnsError;
-use crate::dns::server::{DnsContext, nsupdate, soa};
+use crate::dns::server::{DnsContext, QueryDispatch, nsupdate, soa};
 use crate::dns::stream::{DnsStream, ResponseWriter};
 use crate::dns::{server, wire};
 
@@ -67,9 +68,15 @@ pub(crate) async fn serve_connection(
 
             () = writer.failed() => break Err(DnsError::PeerClosed),
 
-            Some(_) = in_flight.join_next(), if !in_flight.is_empty() => continue,
+            Some(result) = in_flight.join_next(), if !in_flight.is_empty() => {
+                log_query_task_failure(transport, client_addr, result);
+                continue;
+            }
 
-            Some(_) = transfers.join_next(), if !transfers.is_empty() => continue,
+            Some(result) = transfers.join_next(), if !transfers.is_empty() => {
+                log_query_task_failure(transport, client_addr, result);
+                continue;
+            }
 
             result = read => result,
         };
@@ -92,22 +99,26 @@ pub(crate) async fn serve_connection(
 
                 () = writer.failed() => break Err(DnsError::PeerClosed),
 
-                Some(_) = in_flight.join_next(), if !in_flight.is_empty() => {},
+                Some(result) = in_flight.join_next(), if !in_flight.is_empty() => {
+                    log_query_task_failure(transport, client_addr, result);
+                }
 
-                Some(_) = transfers.join_next(), if !transfers.is_empty() => {},
+                Some(result) = transfers.join_next(), if !transfers.is_empty() => {
+                    log_query_task_failure(transport, client_addr, result);
+                }
             }
         }
 
         // Separate retryable transfers from requests that must finish during shutdown.
         let transfer = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(idle_timeout))
             .is_ok_and(|query| {
-                query.opcode == Opcode::QUERY && server::is_xfr_query_type(query.qtype)
+                query.opcode == Opcode::QUERY && TransferKind::try_from(query.qtype).is_ok()
             });
         let dns_cx = dns_cx.clone();
         let writer = writer.clone();
 
         let task = async move {
-            handle_tcp_query(&dns_cx, &writer, client_addr, &query_data, idle_timeout).await;
+            handle_stream_query(&dns_cx, &writer, client_addr, &query_data, idle_timeout).await;
         };
 
         if transfer {
@@ -125,9 +136,13 @@ pub(crate) async fn serve_connection(
         transfers.abort_all();
     }
 
-    while in_flight.join_next().await.is_some() {}
+    while let Some(result) = in_flight.join_next().await {
+        log_query_task_failure(transport, client_addr, result);
+    }
 
-    while transfers.join_next().await.is_some() {}
+    while let Some(result) = transfers.join_next().await {
+        log_query_task_failure(transport, client_addr, result);
+    }
 
     // A TLS peer is owed close_notify ahead of the FIN; a plain socket closes.
     if outcome.is_ok()
@@ -139,8 +154,21 @@ pub(crate) async fn serve_connection(
     outcome
 }
 
+/// Log failed query tasks. Cancelling transfers during shutdown is expected.
+fn log_query_task_failure(
+    transport: TransferTransport,
+    client_addr: SocketAddr,
+    result: Result<(), JoinError>,
+) {
+    if let Err(error) = result
+        && !error.is_cancelled()
+    {
+        log::warn!("DNS {transport} query task failed for {client_addr}: {error}");
+    }
+}
+
 /// Route a framed DNS query to its transfer, update, or SOA handler.
-async fn handle_tcp_query(
+async fn handle_stream_query(
     dns_cx: &DnsContext,
     writer: &ResponseWriter,
     client_addr: SocketAddr,
@@ -214,20 +242,29 @@ async fn handle_tcp_query(
         }
     };
 
-    let result = async {
-        if let Some((rcode, ede)) = server::query_refusal(client_addr, &query, transport) {
-            let response =
-                server::refuse_query(dns_cx, &QueryMetadata::from(&query), query_data, rcode, ede)
-                    .await?;
+    let result = match server::classify_query(client_addr, &query, transport) {
+        QueryDispatch::Refuse { rcode, ede } => {
+            async {
+                let response = server::refuse_query(
+                    dns_cx,
+                    &QueryMetadata::from(&query),
+                    query_data,
+                    rcode,
+                    ede,
+                )
+                .await?;
 
-            writer.write_message(&response).await
-        } else if query.qtype == Rtype::SOA {
-            soa::handle_tcp_soa(dns_cx, writer, client_addr, &query, query_data).await
-        } else {
-            server::handle_tcp_xfr(dns_cx, writer, client_addr, &query, query_data).await
+                writer.write_message(&response).await
+            }
+            .await
         }
-    }
-    .await;
+        QueryDispatch::Transfer(kind) => {
+            server::handle_stream_xfr(dns_cx, writer, client_addr, &query, query_data, kind).await
+        }
+        QueryDispatch::Soa => {
+            soa::handle_stream_soa(dns_cx, writer, client_addr, &query, query_data).await
+        }
+    };
 
     // A handler logs a server fault with its cause where it answers; this adds
     // where the query came from, as the UDP dispatcher does. A peer that went

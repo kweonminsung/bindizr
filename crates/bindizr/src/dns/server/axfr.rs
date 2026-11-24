@@ -6,7 +6,7 @@ use bindizr_service::zone::TransferAccess;
 use bindizr_service::{transfer, zone};
 
 use crate::dns::error::DnsError;
-use crate::dns::server::auth::TransferIdentity;
+use crate::dns::server::auth::QueryIdentity;
 use crate::dns::server::{DnsContext, catalog, transfer_cache};
 use crate::dns::stream::ResponseWriter;
 
@@ -17,7 +17,8 @@ pub(crate) async fn handle_axfr(
     writer: &ResponseWriter,
     client_ip: IpAddr,
     query: &ParsedQuery,
-    identity: &mut TransferIdentity,
+    kind: TransferKind,
+    identity: &mut QueryIdentity,
 ) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
@@ -131,7 +132,7 @@ pub(crate) async fn handle_axfr(
         cx,
         client_ip,
         zone.id,
-        TransferKind::from_qtype(query.qtype),
+        kind,
         writer.transport(),
         false,
         serial,

@@ -2,7 +2,7 @@
 # Build the Alpine package with abuild, inside an Alpine container that
 # build_packages.sh starts: /stage holds the packaged tree, /packaging this
 # directory's parent, /out the repository root the .apk lands in.
-# Usage: build_apk.sh <apk version> <release>
+# Usage: build_apk.sh <apk version> <release> <cargo version>
 set -e
 APK_VERSION="$1"
 RELEASE="$2"
@@ -23,8 +23,12 @@ abuild-keygen -a -n -q
 cp "$HOME"/.abuild/*.rsa.pub /etc/apk/keys/
 STAGE=/stage abuild -F -r -P /build/out
 
-# Name the file for its architecture, as the .rpm is, since both architectures
-# are attached to one release.
+# Use the Cargo version in the release asset when the native version has a
+# hex field, whose tilde may be renamed by the release host.
 ARCH=$(apk --print-arch)
+case "$APK_VERSION" in
+    *~*) ASSET_VERSION="$3" ;;
+    *) ASSET_VERSION="$APK_VERSION" ;;
+esac
 cp /build/out/pkg/"$ARCH"/bindizr-"$APK_VERSION"-r"$RELEASE".apk \
-    /out/bindizr-"$APK_VERSION"-r"$RELEASE"."$ARCH".apk
+    /out/bindizr-"$ASSET_VERSION"-r"$RELEASE"."$ARCH".apk

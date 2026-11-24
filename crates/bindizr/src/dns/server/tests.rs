@@ -120,12 +120,13 @@ async fn transfer_log_excludes_record_values_when_encoding_fails() {
     let query =
         ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::from_secs(30))).unwrap();
 
-    let error = handle_tcp_xfr(
+    let error = handle_stream_xfr(
         &DnsContext::new(cx.clone()),
         &writer,
         client_addr,
         &query,
         &query_data,
+        TransferKind::Axfr,
     )
     .await
     .unwrap_err();

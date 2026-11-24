@@ -1,6 +1,8 @@
 use serde_json::json;
 
 use super::*;
+use crate::dns::SoaInterval;
+use crate::dns::name::ZoneName;
 
 /// Deviations from the base config TOML; the default renders a minimal valid
 /// sqlite config.
@@ -80,7 +82,7 @@ level = "debug"
 
 /// Parse a TOML configuration fixture.
 fn parse_config(toml: TestConfigToml) -> Result<Config, ConfigError> {
-    Config::from_toml(&toml.render(), |_| None)
+    Config::from_toml(&toml.render(), |_| Ok(None))
 }
 
 /// Verify that `from_toml` accepts valid config.
@@ -155,10 +157,10 @@ fn from_toml_defaults_missing_optional_fields() {
 #[test]
 fn from_toml_defaults_listeners_backend_and_logging() {
     let minimal = "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n";
-    let omitted = Config::from_toml(minimal, |_| None).unwrap();
+    let omitted = Config::from_toml(minimal, |_| Ok(None)).unwrap();
     let empty_sections = Config::from_toml(
         &format!("[api]\n[database]\n[dns]\n[history]\n[audit_log]\n[access_log]\n[transfer_log]\n[logging]\n{minimal}"),
-        |_| None,
+        |_| Ok(None),
     )
     .unwrap();
 
@@ -179,7 +181,7 @@ fn from_toml_defaults_listeners_backend_and_logging() {
 #[test]
 fn from_toml_overrides_defaults_before_validation() {
     let parsed = Config::from_toml("", |name| {
-        Some(
+        Ok(Some(
             match name {
                 "BINDIZR_API_LISTEN_ADDR" => "127.0.0.1",
                 "BINDIZR_API_LISTEN_PORT" => "8000",
@@ -188,10 +190,10 @@ fn from_toml_overrides_defaults_before_validation() {
                 "BINDIZR_DATABASE_TYPE" => "postgresql",
                 "BINDIZR_DATABASE_URL" => "postgresql://localhost/bindizr",
                 "BINDIZR_LOGGING_LEVEL" => "debug",
-                _ => return None,
+                _ => return Ok(None),
             }
             .to_string(),
-        )
+        ))
     })
     .unwrap();
 
@@ -222,15 +224,15 @@ fn from_toml_rejects_empty_values_and_missing_database_location() {
     ] {
         assert!(
             matches!(
-                Config::from_toml(&format!("{invalid}\n{base}"), |_| None),
-                Err(ConfigError::Parse(_))
+                Config::from_toml(&format!("{invalid}\n{base}"), |_| Ok(None)),
+                Err(ConfigError::Parse { .. })
             ),
             "{invalid}"
         );
     }
 
     assert!(matches!(
-        Config::from_toml("", |_| None),
+        Config::from_toml("", |_| Ok(None)),
         Err(ConfigError::EmptyDatabaseLocation {
             key: "database.sqlite.file_path",
             database_type: DatabaseType::Sqlite,
@@ -299,6 +301,27 @@ fn from_toml_rejects_invalid_listen_addr() {
     assert!(error.to_string().contains("invalid Bindizr configuration"));
 }
 
+/// Verify that a TOML error keeps its line and typed cause without the file contents.
+#[test]
+fn from_toml_redacts_credentials_from_parse_errors() {
+    use std::error::Error as _;
+
+    let error = Config::from_toml(
+        "[database.mysql]\nurl = \"mysql://user:private-fixture@localhost/bindizr\" junk\n",
+        |_| Ok(None),
+    )
+    .unwrap_err();
+    let source = error
+        .source()
+        .unwrap()
+        .downcast_ref::<toml::de::Error>()
+        .unwrap();
+
+    assert!(error.to_string().contains("at line 2"));
+    assert!(source.to_string().contains("expected newline"));
+    assert!(!format!("{error:#?}\n{error}\n{source:#?}\n{source}").contains("private-fixture"));
+}
+
 /// Verify that `from_toml` rejects empty selected database url.
 #[test]
 fn from_toml_rejects_empty_selected_database_url() {
@@ -325,39 +348,43 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     .unwrap();
 
     overridden
-        .apply_env_overrides(|name| match name {
-            "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
-            "BINDIZR_API_LISTEN_PORT" => Some("8000".to_string()),
-            "BINDIZR_API_AUTHENTICATION_REQUIRED" => Some("false".to_string()),
-            "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
-            "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
-            "BINDIZR_API_TLS_CERT_FILE" => Some("/tls/api.crt".to_string()),
-            "BINDIZR_API_TLS_KEY_FILE" => Some("/tls/api.key".to_string()),
-            "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
-            "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
-            "BINDIZR_DATABASE_TLS_MODE" => Some("verify-full".to_string()),
-            "BINDIZR_DATABASE_TLS_CA_FILE" => Some("/tls/db-ca.crt".to_string()),
-            "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
-            "BINDIZR_DNS_LISTEN_PORT" => Some("5353".to_string()),
-            "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog.staging".to_string()),
-            "BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED" => Some("false".to_string()),
-            "BINDIZR_DNS_NOTIFY_BATCH_MS" => Some("50".to_string()),
-            "BINDIZR_DNS_NOTIFY_RETRIES" => Some("7".to_string()),
-            "BINDIZR_DNS_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
-            "BINDIZR_DNS_TLS_LISTEN_PORT" => Some("8853".to_string()),
-            "BINDIZR_DNS_TLS_CERT_FILE" => Some("/tls/xot.crt".to_string()),
-            "BINDIZR_DNS_TLS_KEY_FILE" => Some("/tls/xot.key".to_string()),
-            "BINDIZR_DNS_SCHEDULER_INTERVAL_SECS" => Some("0".to_string()),
-            "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
-            "BINDIZR_HISTORY_MAX_DAYS" => Some("0".to_string()),
-            "BINDIZR_AUDIT_LOG_MAX_DAYS" => Some("30".to_string()),
-            "BINDIZR_ACCESS_LOG_SAVE" => Some("denied".to_string()),
-            "BINDIZR_ACCESS_LOG_MAX_DAYS" => Some("3".to_string()),
-            "BINDIZR_TRANSFER_LOG_SAVE" => Some("unserved".to_string()),
-            "BINDIZR_TRANSFER_LOG_MAX_DAYS" => Some("7".to_string()),
-            "BINDIZR_LOGGING_LEVEL" => Some("info".to_string()),
-            "BINDIZR_LOGGING_FORMAT" => Some("json".to_string()),
-            _ => None,
+        .apply_env_overrides(|name| {
+            Ok(match name {
+                "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
+                "BINDIZR_API_LISTEN_PORT" => Some("8000".to_string()),
+                "BINDIZR_API_AUTHENTICATION_REQUIRED" => Some("false".to_string()),
+                "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
+                "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
+                "BINDIZR_API_TLS_CERT_FILE" => Some("/tls/api.crt".to_string()),
+                "BINDIZR_API_TLS_KEY_FILE" => Some("/tls/api.key".to_string()),
+                "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
+                "BINDIZR_DATABASE_URL" => {
+                    Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string())
+                }
+                "BINDIZR_DATABASE_TLS_MODE" => Some("verify-full".to_string()),
+                "BINDIZR_DATABASE_TLS_CA_FILE" => Some("/tls/db-ca.crt".to_string()),
+                "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
+                "BINDIZR_DNS_LISTEN_PORT" => Some("5353".to_string()),
+                "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog.staging".to_string()),
+                "BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED" => Some("false".to_string()),
+                "BINDIZR_DNS_NOTIFY_BATCH_MS" => Some("50".to_string()),
+                "BINDIZR_DNS_NOTIFY_RETRIES" => Some("7".to_string()),
+                "BINDIZR_DNS_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
+                "BINDIZR_DNS_TLS_LISTEN_PORT" => Some("8853".to_string()),
+                "BINDIZR_DNS_TLS_CERT_FILE" => Some("/tls/xot.crt".to_string()),
+                "BINDIZR_DNS_TLS_KEY_FILE" => Some("/tls/xot.key".to_string()),
+                "BINDIZR_DNS_SCHEDULER_INTERVAL_SECS" => Some("0".to_string()),
+                "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
+                "BINDIZR_HISTORY_MAX_DAYS" => Some("0".to_string()),
+                "BINDIZR_AUDIT_LOG_MAX_DAYS" => Some("30".to_string()),
+                "BINDIZR_ACCESS_LOG_SAVE" => Some("denied".to_string()),
+                "BINDIZR_ACCESS_LOG_MAX_DAYS" => Some("3".to_string()),
+                "BINDIZR_TRANSFER_LOG_SAVE" => Some("unserved".to_string()),
+                "BINDIZR_TRANSFER_LOG_MAX_DAYS" => Some("7".to_string()),
+                "BINDIZR_LOGGING_LEVEL" => Some("info".to_string()),
+                "BINDIZR_LOGGING_FORMAT" => Some("json".to_string()),
+                _ => None,
+            })
         })
         .unwrap();
 
@@ -421,9 +448,11 @@ fn apply_env_overrides_rejects_invalid_values() {
     .unwrap();
 
     let error = overridden
-        .apply_env_overrides(|name| match name {
-            "BINDIZR_API_LISTEN_PORT" => Some("not-a-port".to_string()),
-            _ => None,
+        .apply_env_overrides(|name| {
+            Ok(match name {
+                "BINDIZR_API_LISTEN_PORT" => Some("not-a-port".to_string()),
+                _ => None,
+            })
         })
         .unwrap_err();
 
@@ -437,15 +466,19 @@ fn apply_env_overrides_rejects_invalid_values() {
 /// Verify that `resolve_config_path` prefers argument then env then default.
 #[test]
 fn resolve_config_path_prefers_argument_then_env_then_default() {
-    let env = |name: &str| (name == "BINDIZR_CONFIG_PATH").then(|| "/env/path.toml".to_string());
+    let env =
+        |name: &str| Ok((name == "BINDIZR_CONFIG_PATH").then(|| "/env/path.toml".to_string()));
 
     assert_eq!(
-        resolve_config_path_with_env(Some("/arg/path.toml"), env),
+        resolve_config_path_with_env(Some("/arg/path.toml"), env).unwrap(),
         "/arg/path.toml"
     );
-    assert_eq!(resolve_config_path_with_env(None, env), "/env/path.toml");
     assert_eq!(
-        resolve_config_path_with_env(None, |_| None),
+        resolve_config_path_with_env(None, env).unwrap(),
+        "/env/path.toml"
+    );
+    assert_eq!(
+        resolve_config_path_with_env(None, |_| Ok(None)).unwrap(),
         DEFAULT_CONFIG_PATH
     );
 }
@@ -457,7 +490,7 @@ fn from_toml_rejects_a_database_ca_file_without_a_verifying_mode() {
 
     for mode in ["", "mode = \"require\"\n"] {
         let toml = format!("{base}\n[database.tls]\n{mode}ca_file = \"/tls/db-ca.crt\"\n");
-        let error = Config::from_toml(&toml, |_| None).unwrap_err();
+        let error = Config::from_toml(&toml, |_| Ok(None)).unwrap_err();
         assert!(
             matches!(error, ConfigError::DatabaseTlsCaUnchecked),
             "{error}"
@@ -466,7 +499,7 @@ fn from_toml_rejects_a_database_ca_file_without_a_verifying_mode() {
 
     let toml =
         format!("{base}\n[database.tls]\nmode = \"verify-ca\"\nca_file = \"/tls/db-ca.crt\"\n");
-    let parsed = Config::from_toml(&toml, |_| None).unwrap();
+    let parsed = Config::from_toml(&toml, |_| Ok(None)).unwrap();
 
     assert_eq!(parsed.database.tls.mode, Some(DatabaseTlsMode::VerifyCa));
 }
@@ -818,9 +851,9 @@ fn from_toml_checks_catalog_member_owner_lengths_after_overrides() {
             "{}\n[dns]\ncatalog_zone_name = '{catalog_zone_name}'\n",
             "[database]\ntype = 'sqlite'\n[database.sqlite]\nfile_path = ':memory:'"
         );
-        let file = Config::from_toml(&text, |_| None);
+        let file = Config::from_toml(&text, |_| Ok(None));
         let overridden = Config::from_toml(&TestConfigToml::default().render(), |name| {
-            (name == "BINDIZR_DNS_CATALOG_ZONE_NAME").then(|| catalog_zone_name.clone())
+            Ok((name == "BINDIZR_DNS_CATALOG_ZONE_NAME").then(|| catalog_zone_name.clone()))
         });
 
         for result in [file, overridden] {
@@ -848,7 +881,7 @@ fn from_toml_checks_catalog_member_owner_lengths_after_overrides() {
     assert!(escaped.len() > 255);
     assert!(
         Config::from_toml(&TestConfigToml::default().render(), |name| {
-            (name == "BINDIZR_DNS_CATALOG_ZONE_NAME").then(|| escaped.clone())
+            Ok((name == "BINDIZR_DNS_CATALOG_ZONE_NAME").then(|| escaped.clone()))
         })
         .is_ok()
     );
@@ -893,9 +926,11 @@ fn apply_env_overrides_rejects_an_unusable_catalog_zone_name() {
     let mut config = parse_config(TestConfigToml::default()).unwrap();
 
     let error = config
-        .apply_env_overrides(|name| match name {
-            "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog bindizr".to_string()),
-            _ => None,
+        .apply_env_overrides(|name| {
+            Ok(match name {
+                "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog bindizr".to_string()),
+                _ => None,
+            })
         })
         .unwrap_err();
 
@@ -980,7 +1015,7 @@ fn from_toml_reads_history_and_log_tables() {
          [audit_log]\nmax_days = 0\n\
          [access_log]\nsave = \"denied\"\nmax_days = 7\n\
          [transfer_log]\nsave = \"unserved\"\nmax_days = 14\n",
-        |_| None,
+        |_| Ok(None),
     )
     .unwrap();
 
@@ -1091,12 +1126,14 @@ fn from_toml_reads_the_tcp_limits_and_the_import_block() {
 
     let mut overridden = parse_config(TestConfigToml::default()).unwrap();
     overridden
-        .apply_env_overrides(|name| match name {
-            "BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS" => Some("45".to_string()),
-            "BINDIZR_DNS_TCP_MAX_CONNECTIONS" => Some("256".to_string()),
-            "BINDIZR_DNS_IMPORT_TIMEOUT_SECS" => Some("90".to_string()),
-            "BINDIZR_DNS_IMPORT_MAX_RECORDS" => Some("5".to_string()),
-            _ => None,
+        .apply_env_overrides(|name| {
+            Ok(match name {
+                "BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS" => Some("45".to_string()),
+                "BINDIZR_DNS_TCP_MAX_CONNECTIONS" => Some("256".to_string()),
+                "BINDIZR_DNS_IMPORT_TIMEOUT_SECS" => Some("90".to_string()),
+                "BINDIZR_DNS_IMPORT_MAX_RECORDS" => Some("5".to_string()),
+                _ => None,
+            })
         })
         .unwrap();
 

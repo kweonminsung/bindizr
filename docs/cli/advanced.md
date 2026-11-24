@@ -30,6 +30,7 @@ give it only where you would give `admin`.
 | Seeing a zone and its details | Any grant reaching it, whatever its actions |
 | Reading records | `record:read` covering their name and type |
 | Creating, updating, deleting a record | The matching `record:` action at its name and type, per record in a bulk change |
+| Moving a record or changing its type | `record:update` at both the original and resulting name and type |
 | Updating a record without `record:read` on it | Every field given: an omitted one would be read from the record |
 | Zone export, version detail, version diff | `record:read` with no name or type narrowing |
 | `zone import --mode append` | `record:create` with no narrowing |

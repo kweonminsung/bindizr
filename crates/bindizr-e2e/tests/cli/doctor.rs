@@ -1,4 +1,7 @@
+use std::ffi::OsString;
 use std::fs;
+use std::os::unix::ffi::OsStringExt;
+use std::os::unix::fs::symlink;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -114,4 +117,58 @@ fn doctor_runs_the_offline_checks_when_no_daemon_runs() {
     assert!(stdout.contains("Database check skipped"), "{stdout}");
     assert!(stdout.contains("DNS port free"), "{stdout}");
     assert!(stdout.contains("API port free"), "{stdout}");
+}
+
+/// Verify that the first check reports path and override errors in structured output.
+#[test]
+#[serial_test::serial(bindizr_e2e)]
+fn doctor_reports_config_path_and_override_failures() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let config_path = temp_dir.path().join("bindizr.toml");
+    let looping_path = temp_dir.path().join("loop.toml");
+    let invalid = OsString::from_vec(b"private-value-\xff".to_vec());
+
+    fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
+    symlink(&looping_path, &looping_path).expect("failed to create config symlink");
+
+    for (path, env, expected) in [
+        (
+            Some(&looping_path),
+            None,
+            "failed to read the configuration file",
+        ),
+        (
+            None,
+            Some("BINDIZR_CONFIG_PATH"),
+            "BINDIZR_CONFIG_PATH environment variable is not valid UTF-8",
+        ),
+        (
+            Some(&config_path),
+            Some("BINDIZR_API_LISTEN_PORT"),
+            "BINDIZR_API_LISTEN_PORT environment variable is not valid UTF-8",
+        ),
+    ] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server"));
+        command
+            .args(["doctor", "--output", "json"])
+            .stdin(Stdio::null());
+        if let Some(path) = path {
+            command.arg("-c").arg(path);
+        }
+        if let Some(name) = env {
+            command.env(name, &invalid);
+        }
+        let output = command.output().expect("failed to run bindizr CLI");
+        let report: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("doctor did not return JSON");
+        let first = &report["checks"][0];
+        let message = first["message"]
+            .as_str()
+            .expect("the config check has no message");
+
+        assert!(!output.status.success());
+        assert_eq!(first["status"], "failed");
+        assert!(message.contains(expected), "{message}");
+        assert!(!message.contains("private-value"), "{message}");
+    }
 }

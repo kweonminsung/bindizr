@@ -1,29 +1,88 @@
 //! The access log: every management API request and nsupdate answered, written
 //! off the request path by one writer task; reads require `log:read`.
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use bindizr_core::config::SavedRequests;
+use bindizr_core::dns::message::OptRcode;
+use bindizr_core::dns::tsig::TsigRcode;
 use bindizr_core::model::access_log::{AccessLog, AccessResult, AccessSource};
+use bindizr_core::model::change::ChangeActor;
 use bindizr_core::model::role_grant::Action;
+use chrono::{DateTime, Utc};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::authorization::Caller;
-use crate::error::ServiceError;
+use crate::error::{ErrorCode, ServiceError};
 use crate::types::{AccessLogFilter, AccessLogResponse, PaginatedResponse};
-use crate::{Context, pagination};
+use crate::{Context, pagination, text};
 
 /// How many rows wait for the writer before new ones are dropped. A request
 /// never waits on its row: the SQLite writer reservation would otherwise hold
 /// every answer behind a long write.
 const QUEUE_CAPACITY: usize = 10000;
 
+/// An access log classification without rejected input or diagnostic text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessLogErrorCode {
+    Service(ErrorCode),
+    Dns(OptRcode),
+    Tsig(TsigRcode),
+    TsigAuthenticationFailed,
+    TsigResponseEncodingFailed,
+    ResponseEncodingFailed,
+}
+
+impl AccessLogErrorCode {
+    /// Return the stored code, preserving the service, DNS and TSIG namespaces.
+    pub fn to_text(self) -> String {
+        match self {
+            Self::Service(code) => code.as_str().to_string(),
+            Self::Dns(rcode) => rcode.to_string(),
+            Self::Tsig(rcode) => rcode.to_string(),
+            Self::TsigAuthenticationFailed => "TSIG_AUTHENTICATION_FAILED".to_string(),
+            Self::TsigResponseEncodingFailed => "TSIG_RESPONSE_ENCODING_FAILED".to_string(),
+            Self::ResponseEncodingFailed => "RESPONSE_ENCODING_FAILED".to_string(),
+        }
+    }
+}
+
+/// An answered request queued with a typed error code until the writer stores its row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessLogEntry {
+    pub source: AccessSource,
+    pub client_addr: String,
+    pub method: String,
+    pub target: String,
+    pub status: String,
+    pub result: AccessResult,
+    pub caller: Option<ChangeActor>,
+    pub error: Option<AccessLogErrorCode>,
+    pub requested_at: DateTime<Utc>,
+}
+
+impl From<AccessLogEntry> for AccessLog {
+    /// Convert a queued request into its row, rendering only its classified error code.
+    fn from(entry: AccessLogEntry) -> Self {
+        Self {
+            source: entry.source,
+            client_addr: entry.client_addr,
+            method: entry.method,
+            target: entry.target,
+            status: entry.status,
+            result: entry.result,
+            caller: entry.caller,
+            error: entry.error.map(AccessLogErrorCode::to_text),
+            requested_at: entry.requested_at,
+        }
+    }
+}
+
 /// Create the queue between the front ends and the writer; the context holds
 /// the sender, and `spawn` takes the receiver.
-pub fn channel() -> (Sender<AccessLog>, Receiver<AccessLog>) {
+pub fn channel() -> (Sender<AccessLogEntry>, Receiver<AccessLogEntry>) {
     mpsc::channel(QUEUE_CAPACITY)
 }
 
@@ -43,7 +102,7 @@ impl AccessLogWorker {
 }
 
 /// Spawn the task that writes queued access log rows one at a time.
-pub fn spawn(cx: Arc<Context>, mut logs: Receiver<AccessLog>) -> AccessLogWorker {
+pub fn spawn(cx: Arc<Context>, mut logs: Receiver<AccessLogEntry>) -> AccessLogWorker {
     let (stop_tx, mut stop) = watch::channel(false);
 
     let task = tokio::spawn(async move {
@@ -53,7 +112,7 @@ pub fn spawn(cx: Arc<Context>, mut logs: Receiver<AccessLog>) -> AccessLogWorker
                 _ = stop.changed() => break,
 
                 log = logs.recv() => match log {
-                    Some(log) => write(&cx, &log).await,
+                    Some(log) => write(&cx, log).await,
                     None => return,
                 },
             }
@@ -63,7 +122,7 @@ pub fn spawn(cx: Arc<Context>, mut logs: Receiver<AccessLog>) -> AccessLogWorker
         logs.close();
 
         while let Some(log) = logs.recv().await {
-            write(&cx, &log).await;
+            write(&cx, log).await;
         }
     });
 
@@ -74,8 +133,9 @@ pub fn spawn(cx: Arc<Context>, mut logs: Receiver<AccessLog>) -> AccessLogWorker
 }
 
 /// Write one row; a failure is logged, since the request was answered.
-async fn write(cx: &Context, log: &AccessLog) {
-    if let Err(error) = bindizr_db::access_log::create(cx.db(), log).await {
+async fn write(cx: &Context, entry: AccessLogEntry) {
+    let log = AccessLog::from(entry);
+    if let Err(error) = bindizr_db::access_log::create(cx.db(), &log).await {
         log::warn!(
             "Failed to save an access log row for {} {}: {error}",
             log.method,
@@ -87,7 +147,7 @@ async fn write(cx: &Context, log: &AccessLog) {
 /// Queue the row of an answered request. `access_log.save = "denied"`
 /// keeps denials alone and `"none"` nothing; a full or closed queue drops the
 /// row and counts it.
-pub fn save(cx: &Context, log: AccessLog) {
+pub fn save(cx: &Context, log: AccessLogEntry) {
     let saved = match cx.config().access_log.save {
         SavedRequests::All => true,
         SavedRequests::Denied => log.result == AccessResult::Denied,
@@ -129,43 +189,16 @@ pub async fn list(
 fn normalize_filter(
     filter: &AccessLogFilter,
 ) -> Result<bindizr_db::access_log::AccessLogFilter, ServiceError> {
-    let source = filter
-        .source
-        .as_deref()
-        .map(str::trim)
-        .filter(|source| !source.is_empty())
-        .map(str::parse::<AccessSource>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
-    let result = filter
-        .result
-        .as_deref()
-        .map(str::trim)
-        .filter(|result| !result.is_empty())
-        .map(str::parse::<AccessResult>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
+    let source = text::parse_optional::<AccessSource>(filter.source.as_deref())?;
+    let result = text::parse_optional::<AccessResult>(filter.result.as_deref())?;
     let caller_name = filter
         .caller_name
         .as_deref()
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(str::to_ascii_lowercase);
-    let client_addr = filter
-        .address
-        .as_deref()
-        .map(str::trim)
-        .filter(|address| !address.is_empty())
-        .map(|address| {
-            // Rows store an IPv4-mapped client as IPv4, so the key does too.
-            address
-                .parse::<IpAddr>()
-                .map(|ip| ip.to_canonical().to_string())
-                .map_err(|_| {
-                    ServiceError::invalid_input(format!("address '{address}' is not an IP address"))
-                })
-        })
-        .transpose()?;
+    let client_addr =
+        text::normalize_ip_address(filter.address.as_deref())?.map(|address| address.to_string());
 
     pagination::validate_time_window(filter.since, filter.until)?;
 

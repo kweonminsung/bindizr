@@ -1,10 +1,11 @@
 use std::io;
 
 use bindizr_core::dns::Serial;
-use bindizr_core::dns::message::EncodeMessageError;
+use bindizr_core::dns::message::{EncodeMessageError, OptRcode};
 use bindizr_core::dns::nsupdate::BuildResponseError;
 use bindizr_core::dns::tsig::BuildErrorResponseError;
 use bindizr_service::error::ServiceError;
+use bindizr_service::transfer::TransferLogErrorCode;
 use thiserror::Error;
 use tokio::sync::AcquireError;
 
@@ -42,31 +43,27 @@ pub(crate) enum DnsError {
     /// An IXFR whose version rows do not cover a serial the journal names.
     #[error("DNS protocol error: missing {which} SOA version for serial {serial}")]
     MissingVersion { which: &'static str, serial: Serial },
-    #[error("invalid query: {reason}")]
-    InvalidQuery { reason: String },
     #[error("failed to build NSUPDATE response: {0}")]
     BuildNsupdateResponse(#[from] BuildResponseError),
 }
 
 impl DnsError {
     /// Return a fixed log classification without record values or peer input.
-    pub(crate) fn to_log_code(&self) -> String {
+    pub(crate) fn to_log_code(&self) -> TransferLogErrorCode {
         match self {
-            Self::NotAuth { .. } => "NOTAUTH",
-            Self::Refused { .. } => "REFUSED",
-            Self::Service(error) => error.code().as_str(),
-            Self::Io(_) => "IO_FAILED",
-            Self::Protocol(_) => "DNS_ENCODING_FAILED",
-            Self::TsigResponse(_) => "TSIG_RESPONSE_ENCODING_FAILED",
-            Self::PeerClosed => "PEER_CLOSED",
-            Self::ConnectionSlotsClosed(_) => "CONNECTION_SLOTS_CLOSED",
-            Self::WriteTimeout { .. } => "WRITE_TIMEOUT",
-            Self::IncompletePrefix => "INCOMPLETE_PREFIX",
-            Self::IncompleteMessage { .. } => "INCOMPLETE_MESSAGE",
-            Self::MissingVersion { .. } => "IXFR_VERSION_MISSING",
-            Self::InvalidQuery { .. } => "INVALID_QUERY",
-            Self::BuildNsupdateResponse(_) => "UPDATE_RESPONSE_ENCODING_FAILED",
+            Self::NotAuth { .. } => TransferLogErrorCode::Dns(OptRcode::NOTAUTH),
+            Self::Refused { .. } => TransferLogErrorCode::Dns(OptRcode::REFUSED),
+            Self::Service(error) => TransferLogErrorCode::Service(error.code()),
+            Self::Io(_) => TransferLogErrorCode::IoFailed,
+            Self::Protocol(_) => TransferLogErrorCode::DnsEncodingFailed,
+            Self::TsigResponse(_) => TransferLogErrorCode::TsigResponseEncodingFailed,
+            Self::PeerClosed => TransferLogErrorCode::PeerClosed,
+            Self::ConnectionSlotsClosed(_) => TransferLogErrorCode::ConnectionSlotsClosed,
+            Self::WriteTimeout { .. } => TransferLogErrorCode::WriteTimeout,
+            Self::IncompletePrefix => TransferLogErrorCode::IncompletePrefix,
+            Self::IncompleteMessage { .. } => TransferLogErrorCode::IncompleteMessage,
+            Self::MissingVersion { .. } => TransferLogErrorCode::IxfrVersionMissing,
+            Self::BuildNsupdateResponse(_) => TransferLogErrorCode::UpdateResponseEncodingFailed,
         }
-        .to_string()
     }
 }

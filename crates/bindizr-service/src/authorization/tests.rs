@@ -56,7 +56,7 @@ fn authorize(grants: &[RoleGrant], writes: &[RecordAccess]) -> Result<(), Servic
 fn create(name: &str, record_type: Option<RecordType>) -> RecordAccess {
     RecordAccess {
         action: Action::RecordCreate,
-        relative_name: OwnerName::from_row(name),
+        relative_name: OwnerName::from_row(name).unwrap(),
         record_type,
     }
 }
@@ -173,7 +173,11 @@ fn authorize_rejects_when_any_single_write_is_denied() {
 
 /// Return whether the test caller may read the requested record.
 fn is_record_visible(caller: &Caller, name: &str, record_type: Option<RecordType>) -> bool {
-    caller.sees_record(ZoneId::from(1), &OwnerName::from_row(name), record_type)
+    caller.sees_record(
+        ZoneId::from(1),
+        &OwnerName::from_row(name).unwrap(),
+        record_type,
+    )
 }
 
 /// Verify that `reaches_record` lets a write-only grant find the records it
@@ -189,7 +193,7 @@ fn reaches_record_admits_the_write_action_under_its_constraints() {
         caller.reaches_record(
             action,
             ZoneId::from(1),
-            &OwnerName::from_row(name),
+            &OwnerName::from_row(name).unwrap(),
             Some(record_type),
         )
     };

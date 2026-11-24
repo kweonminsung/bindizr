@@ -5,13 +5,10 @@ For Bindizr, wait for propagation and transfer from the secondary.
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from datasets.gen_dataset import generate  # noqa: E402
-from lib import dig  # noqa: E402
+from datasets.gen_dataset import generate
+from lib import dig
 
 
 # A statically-configured zone (Knot, CoreDNS) still answers AXFR with its apex
@@ -89,15 +86,25 @@ async def run(adapter, config, context) -> list:
 
             continue
 
-        secs, count, nbytes = await dig.axfr(zone_name, endpoint.host, endpoint.port)
+        try:
+            transfer = await dig.axfr(zone_name, endpoint.host, endpoint.port)
+        except dig.TransferError as error:
+            rows.append({
+                "system": context["label"],
+                "size": size,
+                "status": "FAILED",
+                "error": str(error),
+            })
+            continue
+        seconds = transfer.seconds
 
         rows.append({
             "system": context["label"],
             "size": size,
-            "transfer_secs": round(secs, 3),
-            "records": count,
-            "transfer_bytes": nbytes,
-            "records_per_sec": round(count / secs, 1) if secs else 0,
+            "transfer_secs": round(seconds, 3),
+            "records": transfer.records,
+            "transfer_bytes": transfer.output_bytes,
+            "records_per_sec": round(transfer.records / seconds, 1) if seconds else 0,
         })
 
     return rows

@@ -39,7 +39,7 @@ pub(crate) async fn get_role(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<SingleRoleResponse>, ServiceError> {
-    let response = role::get(cx, &Caller::socket(), name).await?;
+    let response = role::get_by_name(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "Role retrieved successfully".to_string(),
         data: SingleRoleResponse { role: response },
@@ -53,10 +53,7 @@ pub(crate) async fn delete_role(
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     let response = role::delete(cx, &Caller::socket(), name).await?;
 
-    Ok(DaemonResponse {
-        message: response.message.clone(),
-        data: response,
-    })
+    Ok(response.into())
 }
 
 /// Grant the requested role actions.
@@ -95,8 +92,5 @@ pub(crate) async fn delete_role_grant(
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     let response = grant::revoke(cx, &Caller::socket(), role_name, grant_id).await?;
 
-    Ok(DaemonResponse {
-        message: response.message.clone(),
-        data: response,
-    })
+    Ok(response.into())
 }

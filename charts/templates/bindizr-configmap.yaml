@@ -43,7 +43,7 @@ data:
     [dns]
     listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"
     listen_port = {{ int64 .Values.bindizr.dns.port }}
-    catalog_zone_name = "{{ .Values.bindizr.dns.catalogZoneName }}"
+    catalog_zone_name = {{ .Values.bindizr.dns.catalogZoneName | toString | mustToJson }}
     scheduler_interval_secs = {{ int64 .Values.bindizr.dns.schedulerIntervalSecs }}
     tcp_idle_timeout_secs = {{ int64 .Values.bindizr.dns.tcpIdleTimeoutSecs }}
     tcp_max_connections = {{ int64 .Values.bindizr.dns.tcpMaxConnections }}

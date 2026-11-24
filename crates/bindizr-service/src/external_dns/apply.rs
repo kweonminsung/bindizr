@@ -2,6 +2,7 @@
 //! zone is resolved and authorized here, its change set computed in `change_set`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::slice;
 use std::time::Instant;
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
@@ -69,10 +70,12 @@ pub async fn apply_changes(
 
         // Refuse missing and hidden zones alike, in request order and before any
         // grant check; the locked zones hold each name's most-specific match.
-        let mut zone_operations: BTreeMap<&ZoneName, (&Zone, ZoneOperations)> = BTreeMap::new();
+        let mut resolved_operations = Vec::new();
         for operation in operations {
-            let (RecordSetOperation::Add(record_set) | RecordSetOperation::Delete(record_set)) =
-                &operation;
+            let (action, record_set) = match &operation {
+                RecordSetOperation::Add(record_set) => (Action::RecordCreate, record_set),
+                RecordSetOperation::Delete(record_set) => (Action::RecordDelete, record_set),
+            };
             let Some((zone, owner)) = locked_zone_index
                 .find(&record_set.name)
                 .filter(|(zone, _)| caller.sees_zone(zone.id))
@@ -82,10 +85,26 @@ pub async fn apply_changes(
                 });
             };
 
+            let write = RecordAccess {
+                action,
+                relative_name: owner,
+                record_type: Some(record_set.record_type),
+            };
+            resolved_operations.push((zone, write, operation));
+        }
+
+        // A write needs its grant even if its value is invalid or an
+        // idempotent pair will later cancel it.
+        for (zone, write, _) in &resolved_operations {
+            caller.authorize_record_access(zone, slice::from_ref(write))?;
+        }
+
+        let mut zone_operations: BTreeMap<&ZoneName, (&Zone, ZoneOperations)> = BTreeMap::new();
+        for (zone, write, operation) in resolved_operations {
             let (_, entry) = zone_operations
                 .entry(&zone.name)
                 .or_insert_with(|| (zone, ZoneOperations::default()));
-            entry.push(owner, operation);
+            entry.push(write.relative_name, operation)?;
         }
 
         let mut changed_zones = Vec::new();
@@ -93,27 +112,6 @@ pub async fn apply_changes(
         let mut deleted = 0u64;
 
         for (zone, operations) in zone_operations.values() {
-            // Authorize the requested operations before idempotent pairs cancel;
-            // a no-op must not bypass grants or reveal existing records.
-            let adds = operations
-                .adds
-                .iter()
-                .map(|operation| (Action::RecordCreate, operation));
-            let deletes = operations
-                .deletes
-                .iter()
-                .map(|operation| (Action::RecordDelete, operation));
-            let writes: Vec<RecordAccess> = adds
-                .chain(deletes)
-                .map(|(action, operation)| RecordAccess {
-                    action,
-                    relative_name: operation.name.clone(),
-                    record_type: Some(operation.record_type),
-                })
-                .collect();
-
-            caller.authorize_record_access(zone, &writes)?;
-
             // Only records sharing an owner name with the request can be
             // touched or conflict, so load just those.
             let mut owners: Vec<OwnerName> = operations

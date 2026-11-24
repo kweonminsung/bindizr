@@ -1,5 +1,7 @@
 //! DNSSEC management payloads.
 
+use std::fmt;
+
 use bindizr_core::dns::dnssec::KeyTag;
 use bindizr_core::dns::{Serial, Ttl};
 use bindizr_core::model::dnssec_key::{
@@ -30,7 +32,7 @@ impl DsCheck {
         }
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Probe => "probe",
@@ -58,7 +60,7 @@ impl Holddown {
         }
     }
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Wait => "wait",
@@ -130,7 +132,7 @@ pub enum DsState {
 }
 
 impl DsState {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Published => "published",
@@ -267,7 +269,7 @@ pub struct DnssecStatusResponse {
 
 /// One key's BIND file contents. Served only over the daemon socket:
 /// private keys never transit the HTTP API.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnssecKeyMaterialResponse {
     pub role: DnssecKeyRole,
     /// IANA algorithm number.
@@ -279,6 +281,19 @@ pub struct DnssecKeyMaterialResponse {
     pub private_key: String,
 }
 
+impl fmt::Debug for DnssecKeyMaterialResponse {
+    /// Format the diagnostic fields with credential material redacted.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DnssecKeyMaterialResponse")
+            .field("role", &self.role)
+            .field("algorithm", &self.algorithm)
+            .field("key_tag", &self.key_tag)
+            .field("dnskey_record", &self.dnskey_record)
+            .field("private_key", &"<redacted>")
+            .finish()
+    }
+}
+
 /// Response body listing a zone's keys in BIND file form.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportDnssecKeysResponse {
@@ -288,11 +303,21 @@ pub struct ExportDnssecKeysResponse {
 
 /// One BIND key pair: `K*.key` contents (or the bare DNSKEY RDATA) and the
 /// matching `K*.private` contents.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImportDnssecKeyPair {
     pub dnskey: String,
     pub private_key: String,
+}
+
+impl fmt::Debug for ImportDnssecKeyPair {
+    /// Format the diagnostic fields with credential material redacted.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ImportDnssecKeyPair")
+            .field("dnskey", &self.dnskey)
+            .field("private_key", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Request body importing a zone's complete key set; daemon-socket only.

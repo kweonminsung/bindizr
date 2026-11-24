@@ -111,7 +111,7 @@ pub(crate) async fn get_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let response = dnssec_policy::get(&cx, &caller, &params.name).await?;
+    let response = dnssec_policy::get_by_name(&cx, &caller, &params.name).await?;
     let response = SingleDnssecPolicyResponse {
         dnssec_policy: response,
     };

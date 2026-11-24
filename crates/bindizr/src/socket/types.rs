@@ -9,8 +9,8 @@ use bindizr_service::types::{
     CreateDnssecPolicyRequest, CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest,
     CreateSecondaryRequest, CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest,
     DeleteRecordsRequest, DsCheck, EnableDnssecRequest, Holddown, ImportDnssecKeysRequest,
-    ImportZoneRequest, ImportZonesRequest, NotifySerial, PageRequest, RecordFilter, Run,
-    StartDnssecRolloverRequest, TokenFilter, TransferLogFilter, TsigKeyFilter,
+    ImportZoneRequest, ImportZonesRequest, MessageResponse, NotifySerial, PageRequest,
+    RecordFilter, Run, StartDnssecRolloverRequest, TokenFilter, TransferLogFilter, TsigKeyFilter,
     UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
     UpdateSecondaryRequest, UpdateZoneRequest, ZoneFilter, ZoneView,
 };
@@ -221,6 +221,16 @@ pub(crate) struct DaemonResponse<T> {
     pub(crate) data: T,
 }
 
+impl From<MessageResponse> for DaemonResponse<MessageResponse> {
+    /// Use the same message for table output and the structured payload.
+    fn from(response: MessageResponse) -> Self {
+        Self {
+            message: response.message.clone(),
+            data: response,
+        }
+    }
+}
+
 /// Daemon status details returned by the `Status` command.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DaemonStatusResponse {
@@ -271,7 +281,7 @@ pub(crate) enum DoctorCheckStatus {
 }
 
 impl DoctorCheckStatus {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",

@@ -206,10 +206,10 @@ impl SignedViewDiff {
 
         // Sign authoritative records, excluding delegation NS and glue
         // at or below the cut (RFC 4035, Section 2.2).
-        let delegations: BTreeSet<Vec<u8>> = input
+        let delegations: BTreeSet<&[u8]> = input
             .iter()
             .filter(|record| record.rtype() == Rtype::NS && *record.owner() != apex)
-            .map(|record| record.owner().as_slice().to_vec())
+            .map(|record| record.owner().as_slice())
             .collect();
 
         let mut signable: Vec<Vec<&SignRecord>> = Vec::new();
@@ -296,7 +296,8 @@ impl SignedViewDiff {
                     let expiration = params.record_set_expiration(record_set[0].owner(), covered);
 
                     for signer in record_set_signers {
-                        let rrsig = signer.sign_rrset(record_set, params.inception, expiration)?;
+                        let rrsig =
+                            signer.sign_record_set(record_set, params.inception, expiration)?;
                         new_records.push(DnssecRecord {
                             id: DnssecRecordId::UNWRITTEN,
                             zone_id: zone.id,
@@ -379,7 +380,7 @@ fn record_set_digest(
 }
 
 /// Return whether an owner lies below a delegation in this zone.
-fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8>>) -> bool {
+fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<&[u8]>) -> bool {
     // Walk proper ancestors of `owner` down to (excluding) the apex; the name
     // is glue if any of them is a delegation point.
     let mut ancestor = owner.parent();
@@ -434,7 +435,7 @@ impl<'a> Signer<'a> {
     }
 
     /// Sign one record set for the supplied validity interval.
-    fn sign_rrset(
+    fn sign_record_set(
         &self,
         record_set: &[&SignRecord],
         inception: DateTime<Utc>,

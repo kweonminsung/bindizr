@@ -6,15 +6,15 @@ The same server manages and answers records.
 from __future__ import annotations
 
 import asyncio
-import sys
+from ipaddress import ip_address
 from pathlib import Path
 
 import aiohttp
 
+from adapters.base import DnsAdapter, Endpoint
+from lib import docker
+
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent))
-from adapters.base import DnsAdapter, Endpoint  # noqa: E402
-from lib import docker  # noqa: E402
 
 API_PORT = 15380
 DNS_PORT = 15355
@@ -24,7 +24,7 @@ SEP = "||"
 class TechnitiumAdapter(DnsAdapter):
     key = "technitium"
     resource_services = ["technitium"]
-    supports_ixfr = False
+    supports_ixfr = True
 
     def __init__(self, config: dict, project: str):
         """Initialize the adapter with its benchmark configuration and project."""
@@ -36,8 +36,7 @@ class TechnitiumAdapter(DnsAdapter):
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
-        self.compose.down()  # clean slate: remove any leftovers from a prior run
-        self.compose.up("technitium", wait=False)
+        await self.compose.up("technitium", wait=False)
         # Technitium compresses responses with brotli when offered; aiohttp has no
         # built-in brotli decoder, so restrict Accept-Encoding to what it handles.
         self.session = aiohttp.ClientSession(headers={"Accept-Encoding": "gzip, deflate"})
@@ -63,15 +62,27 @@ class TechnitiumAdapter(DnsAdapter):
 
     async def teardown(self) -> None:
         """Stop the benchmark system and release its resources."""
-        if self.session:
-            await self.session.close()
-        self.compose.down()
+        try:
+            if self.session:
+                await self.session.close()
+        finally:
+            await self.compose.down()
 
-    async def _get(self, path: str, params: dict) -> dict:
-        """Send an authenticated request to the Technitium API."""
+    async def _get(self, path: str, params: dict,
+                   absent_messages: tuple[str, ...] = ()) -> dict | None:
+        """Require HTTP and API success, with None for explicitly allowed absent resources."""
         params = {"token": self.token, **params}
         async with self.session.get(self.base + path, params=params) as response:
-            return await response.json()
+            if response.status != 200:
+                raise RuntimeError(f"{path} {response.status}: {await response.text()}")
+            data = await response.json()
+
+        status = data["status"]
+        if status == "ok":
+            return data
+        if status == "error" and data.get("errorMessage") in absent_messages:
+            return None
+        raise RuntimeError(f"{path} {status}: {data.get('errorMessage', 'no error message')}")
 
     @staticmethod
     def _fqdn(zone_name: str, name: str) -> str:
@@ -87,7 +98,9 @@ class TechnitiumAdapter(DnsAdapter):
 
     async def delete_zone(self, zone_name: str) -> None:
         """Remove the benchmark zone and its records."""
-        await self._get("/zones/delete", {"zone": zone_name.rstrip(".")})
+        zone_name = zone_name.rstrip(".")
+        await self._get("/zones/delete", {"zone": zone_name},
+                        absent_messages=(f"No such zone was found: {zone_name}",))
 
     def _build_record_params(self, record: dict) -> dict:
         """Map a benchmark record value to Technitium request parameters."""
@@ -115,7 +128,8 @@ class TechnitiumAdapter(DnsAdapter):
 
     def _decode_record_handle(self, handle: str) -> dict:
         """Decode a record handle into its stored identity and value."""
-        fqdn, record_type, value, prio = handle.split(SEP)
+        fqdn, record_type, value_and_priority = handle.split(SEP, 2)
+        value, prio = value_and_priority.rsplit(SEP, 1)
         record = {"fqdn": fqdn, "type": record_type, "value": value}
         if prio:
             record["priority"] = int(prio)
@@ -131,20 +145,37 @@ class TechnitiumAdapter(DnsAdapter):
             **self._build_record_params(record),
         }
 
-        data = await self._get("/zones/records/add", params)
-
-        if data.get("status") != "ok":
-            raise RuntimeError(f"add record failed: {data}")
-
+        await self._get("/zones/records/add", params)
         return self._encode_record_handle(zone_name, record)
 
     async def get_record(self, zone_name: str, handle: str) -> bool:
-        """Fetch the handle's record information and report API success."""
-        existing_record = self._decode_record_handle(handle)
+        """Check whether the owner, type and data encoded in the handle are present."""
+        record = self._decode_record_handle(handle)
+        fqdn = record["fqdn"]
         data = await self._get("/zones/records/get",
-                               {"domain": existing_record["fqdn"], "zone": zone_name.rstrip("."),
-                                "listZone": "false"})
-        return data.get("status") == "ok"
+                               {"domain": fqdn, "zone": zone_name.rstrip("."), "listZone": "false"},
+                               absent_messages=(f"No such zone was found for: {fqdn}",))
+        if data is None:
+            return False
+        return any(self._matches_record(record, found) for found in data["response"]["records"])
+
+    def _matches_record(self, record: dict, found: dict) -> bool:
+        """Compare record data without depending on a domain or IP's spelling."""
+        record_type = record["type"]
+        if (found["name"].rstrip(".").lower() != record["fqdn"].rstrip(".").lower()
+                or found["type"].upper() != record_type):
+            return False
+
+        data = found["rData"]
+        expected = self._build_record_params(record)
+        if record_type in ("A", "AAAA"):
+            return ip_address(data["ipAddress"]) == ip_address(expected["ipAddress"])
+        if record_type == "CNAME":
+            return data["cname"].rstrip(".").lower() == expected["cname"].lower()
+        if record_type == "MX":
+            return (data["exchange"].rstrip(".").lower() == expected["exchange"].lower()
+                    and data["preference"] == expected["preference"])
+        return all(data.get(key) == value for key, value in expected.items())
 
     async def update_record(self, zone_name: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
@@ -164,9 +195,8 @@ class TechnitiumAdapter(DnsAdapter):
         for key, value in value_params.items():
             params["new" + key[0].upper() + key[1:]] = value
 
-        data = await self._get("/zones/records/update", params)
-
-        return data.get("status") == "ok"
+        await self._get("/zones/records/update", params)
+        return True
 
     async def delete_record(self, zone_name: str, handle: str) -> bool:
         """Delete the record identified by the handle."""
@@ -179,9 +209,11 @@ class TechnitiumAdapter(DnsAdapter):
                                   "priority": existing_record.get("priority", 10)}),
         }
 
-        data = await self._get("/zones/records/delete", params)
-
-        return data.get("status") == "ok"
+        data = await self._get("/zones/records/delete", params, absent_messages=(
+            "Cannot delete record: no such record exists.",
+            f"No such zone was found for: {existing_record['fqdn']}",
+        ))
+        return data is not None
 
     def dns_endpoint(self) -> Endpoint:
         """Return the DNS endpoint that serves the managed zone."""

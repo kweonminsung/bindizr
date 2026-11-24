@@ -388,7 +388,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 },
             ))
             .await?;
-            output::print_response(&response.data, output, |response| {
+            output::print_write_response(&response, output, response.data.dry_run, |response| {
                 vec![ZoneRow::from(&response.zone)]
             })?;
         }
@@ -481,7 +481,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 },
             })
             .await?;
-            output::print_response(&response.data, output, |response| {
+            output::print_write_response(&response, output, response.data.dry_run, |response| {
                 vec![ZoneRow::from(&response.zone)]
             })?;
         }
@@ -560,7 +560,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             // A zone left behind must not exit as a success.
             if import.has_rejected_or_failed() {
                 return Err(CliError::request(format!(
-                    "{} of {} zone(s) were rejected or failed; see the table",
+                    "{} of {} zone(s) were rejected or failed; see the results",
                     import.summary.rejected + import.summary.failed,
                     import.summary.zones
                 )));
@@ -601,7 +601,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
 
                 output::print_table(vec![ImportSummaryRow::from(import)]);
 
-                if dry_run {
+                if import.dry_run {
                     out!("{}", output::render_change_preview(&import.diff));
                 }
             } else {

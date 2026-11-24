@@ -2,12 +2,7 @@
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
-from bindizr.adapter import BindizrAdapter  # noqa: E402
+from systems.bindizr.adapter import BindizrAdapter
 
 
 class BindizrPdnsAdapter(BindizrAdapter):

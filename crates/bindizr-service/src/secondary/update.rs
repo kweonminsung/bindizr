@@ -124,6 +124,21 @@ pub async fn update(
                 error.into()
             }
         })?;
+
+        // The response names the key on the row this transaction writes.
+        let notify_key_name = match (notify_tsig_key, secondary.notify_tsig_key_id) {
+            (Some(key), _) => key.map(|key| key.name),
+            (None, Some(tsig_key_id)) => Some(
+                bindizr_db::tsig_key::get_tx(&mut tx, tsig_key_id, LockLevel::Unlocked)
+                    .await?
+                    .ok_or_else(|| {
+                        ServiceError::internal(format!("TSIG key {tsig_key_id} is missing"))
+                    })?
+                    .name,
+            ),
+            (None, None) => None,
+        };
+
         audit::save_tx(
             &mut tx,
             AuditEntity::Secondary,
@@ -134,11 +149,12 @@ pub async fn update(
         )
         .await?;
 
-        Ok(secondary)
+        Ok(SecondaryResponse::from_secondary(
+            &secondary,
+            notify_key_name.as_deref(),
+        ))
     }
     .await;
 
-    let secondary = transaction::finish_tx(tx, apply_result, "failed to update secondary").await?;
-
-    secondary::lookup_response(cx, &secondary).await
+    transaction::finish_tx(tx, apply_result, "failed to update secondary").await
 }

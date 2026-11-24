@@ -208,8 +208,14 @@ fn owner_name_keeps_an_escaped_dot_as_label_data() {
 fn name_rendering_escapes_dots_inside_labels() {
     // SQL matches a grant's subtree as `LIKE '%.sub'`, so the single label
     // `a.sub` must not render to text ending in `.sub`; `[a\, sub]` may.
-    assert_eq!(OwnerName::from_row(r"a\.sub").to_stored(), r"a\046sub");
-    assert_eq!(OwnerName::from_row(r"a\\.sub").to_stored(), r"a\\.sub");
+    assert_eq!(
+        OwnerName::from_row(r"a\.sub").unwrap().to_stored(),
+        r"a\046sub"
+    );
+    assert_eq!(
+        OwnerName::from_row(r"a\\.sub").unwrap().to_stored(),
+        r"a\\.sub"
+    );
 }
 
 /// Verify that DNS labels preserve arbitrary octets, independently of IDNA host conventions.
@@ -316,13 +322,31 @@ fn owner_name_parse_absolute_never_qualifies_a_foreign_name() {
 /// Verify that owner name equality and hashing fold case.
 #[test]
 fn owner_name_equality_and_hashing_fold_case() {
-    assert_eq!(OwnerName::from_row("WWW"), OwnerName::from_row("www"));
-    assert!(OwnerName::from_row("").is_apex());
+    assert_eq!(
+        OwnerName::from_row("WWW").unwrap(),
+        OwnerName::from_row("www").unwrap()
+    );
+    assert!(OwnerName::from_row("").unwrap().is_apex());
 
     let mut seen = HashSet::new();
-    seen.insert(OwnerName::from_row("WWW"));
+    seen.insert(OwnerName::from_row("WWW").unwrap());
 
-    assert!(seen.contains(&OwnerName::from_row("www")));
+    assert!(seen.contains(&OwnerName::from_row("www").unwrap()));
+}
+
+/// Verify that a stored name that fails DNS decoding returns its parse error.
+#[test]
+fn owner_name_from_row_rejects_invalid_dns_labels() {
+    let long_label = "a".repeat(64);
+    let full_label = "a".repeat(63);
+    let long_name = format!("{full_label}.{full_label}.{full_label}.{full_label}");
+    for (invalid, expected) in [
+        (long_label.as_str(), ParseNameError::LabelTooLong),
+        (long_name.as_str(), ParseNameError::TooLong),
+        ("owner\\", ParseNameError::DanglingEscape),
+    ] {
+        assert_eq!(OwnerName::from_row(invalid), Err(expected));
+    }
 }
 
 /// Verify that owner name to fqdn resolves within its zone.
@@ -332,11 +356,11 @@ fn owner_name_to_fqdn_resolves_within_its_zone() {
 
     assert_eq!(OwnerName::apex().to_fqdn(&zone_name), "test.example.com.");
     assert_eq!(
-        OwnerName::from_row("a1").to_fqdn(&zone_name),
+        OwnerName::from_row("a1").unwrap().to_fqdn(&zone_name),
         "a1.test.example.com."
     );
     assert_eq!(
-        OwnerName::from_row("A1.Sub").to_fqdn(&zone_name),
+        OwnerName::from_row("A1.Sub").unwrap().to_fqdn(&zone_name),
         "a1.sub.test.example.com."
     );
 }
@@ -344,14 +368,18 @@ fn owner_name_to_fqdn_resolves_within_its_zone() {
 /// Verify that owner name is same or under compares labels.
 #[test]
 fn owner_name_is_same_or_under_compares_labels() {
-    let sub = OwnerName::from_row("sub");
+    let sub = OwnerName::from_row("sub").unwrap();
 
-    assert!(OwnerName::from_row("a.sub").is_same_or_under(&sub));
+    assert!(OwnerName::from_row("a.sub").unwrap().is_same_or_under(&sub));
     assert!(sub.is_same_or_under(&sub));
-    assert!(!OwnerName::from_row("xsub").is_same_or_under(&sub));
+    assert!(!OwnerName::from_row("xsub").unwrap().is_same_or_under(&sub));
 
     // `a\.sub` is the single label `a.sub`, so it is not under `sub`.
-    assert!(!OwnerName::from_row(r"a\.sub").is_same_or_under(&sub));
+    assert!(
+        !OwnerName::from_row(r"a\.sub")
+            .unwrap()
+            .is_same_or_under(&sub)
+    );
 }
 
 /// Verify that zone name parse normalizes case and the trailing dot.
@@ -419,7 +447,7 @@ fn owner_name_round_trips_storage_and_presentation() {
         let owner = OwnerName::parse_in_zone(input, &zone_name).unwrap();
 
         assert_eq!(
-            OwnerName::from_row(&owner.to_stored()),
+            OwnerName::from_row(&owner.to_stored()).unwrap(),
             owner,
             "storage round trip for {input:?}"
         );

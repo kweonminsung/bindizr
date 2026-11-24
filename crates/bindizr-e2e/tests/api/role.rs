@@ -7,6 +7,116 @@ use tokio::sync::oneshot;
 use crate::api::common::RECORD_ACTIONS;
 use crate::common::{TestApp, TestAppOptions};
 
+/// Verify that a known mutation target is authorized before body errors are reported.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn scoped_mutations_authorize_targets_before_reporting_bad_values() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token.clone());
+    let (role_name, scoped_token) = app.create_scoped_api_token().await;
+    let zone_name = app.zone_name("mutation-precedence.example");
+    app.create_named_zone(&zone_name).await;
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "www", "A", "192.0.2.1")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let record_id = body["record"]["id"].as_i64().unwrap();
+    let serial = app.read_zone_serial(&zone_name).await;
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/roles/{role_name}/grants"),
+            Some(json!({
+                "zone_name": zone_name, "actions": ["record:read"],
+                "record_name_pattern": "www", "record_types": "A"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let dnssec_path = format!("/zones/{zone_name}/dnssec");
+    let record_path = format!("/records/{record_id}");
+    for (method, path, request) in [
+        (
+            Method::POST,
+            "/records".to_string(),
+            Some(record_body(&zone_name, "www", "A", "invalid-address")),
+        ),
+        (
+            Method::POST,
+            "/records/bulk".to_string(),
+            Some(json!({
+                "zone_name": zone_name,
+                "records": [{"name": "www", "type": "A", "value": "invalid-address"}],
+            })),
+        ),
+        (
+            Method::PUT,
+            record_path.clone(),
+            Some(json!({"value": "invalid-address"})),
+        ),
+        (
+            Method::DELETE,
+            format!("/records?zone_name={zone_name}&name=www&type=A&value=invalid-address"),
+            None,
+        ),
+        (
+            Method::POST,
+            dnssec_path.clone(),
+            Some(json!({"parent_ns_addrs": ["ns.parent.example:not-a-port"]})),
+        ),
+        (Method::PUT, dnssec_path.clone(), Some(json!({}))),
+        (
+            Method::POST,
+            format!("{dnssec_path}/rollover"),
+            Some(json!({"role": "unsupported-role"})),
+        ),
+    ] {
+        app.set_auth_token(scoped_token.clone());
+        let (status, body) = app
+            .send_request(method.clone(), &path, request.clone())
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
+
+        app.set_auth_token(admin_token.clone());
+        let (status, body) = app.send_request(method, &path, request).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {body}");
+    }
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/roles/{role_name}/grants"),
+            Some(json!({
+                "zone_name": zone_name, "actions": ["record:update"],
+                "record_name_pattern": "www", "record_types": "A"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    app.set_auth_token(scoped_token);
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &record_path,
+            Some(json!({"name": "denied", "value": "invalid-address"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    app.set_auth_token(admin_token);
+    assert_eq!(app.read_zone_serial(&zone_name).await, serial);
+}
+
 /// Verify that signed listings preserve per-zone grants and paging across both
 /// record planes, including matching signatures under a name-only grant.
 #[tokio::test]
@@ -1672,6 +1782,18 @@ async fn write_only_grant_changes_matching_records() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(!leaks(&body), "a dry run revealed a neighbour: {body}");
+    assert_eq!(
+        body["diff"]["summary"],
+        json!({ "added": 1, "removed": 0, "changed": 0 }),
+        "the caller's own proposal must remain visible: {body}"
+    );
+    assert_eq!(body["diff"]["entries"][0]["from"], json!([]));
+    assert!(
+        body["diff"]["entries"][0]["to"]
+            .to_string()
+            .contains("probe"),
+        "{body}"
+    );
 
     // Reading stays refused; changing what the grant covers does not.
     let (status, _) = app
@@ -1698,18 +1820,36 @@ async fn write_only_grant_changes_matching_records() {
         "{body}"
     );
 
-    let (status, body) = app
-        .send_request(
-            Method::PUT,
-            &format!("/records/{record_id}"),
-            Some(json!({
-                "name": "_acme-challenge", "type": "TXT", "value": "token-2", "ttl": 3600
-            })),
-        )
-        .await;
+    for dry_run in [true, false] {
+        let (status, body) = app
+            .send_request(
+                Method::PUT,
+                &format!("/records/{record_id}"),
+                Some(json!({
+                    "name": "_acme-challenge", "type": "TXT", "value": "token-2", "ttl": 3600,
+                    "dry_run": dry_run
+                })),
+            )
+            .await;
 
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(!leaks(&body), "update revealed a neighbour: {body}");
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(!leaks(&body), "update revealed a neighbour: {body}");
+
+        if dry_run {
+            assert_eq!(
+                body["diff"]["summary"],
+                json!({ "added": 1, "removed": 0, "changed": 0 }),
+                "the unread stored value must stay outside the diff: {body}"
+            );
+            assert_eq!(body["diff"]["entries"][0]["from"], json!([]));
+            assert!(
+                body["diff"]["entries"][0]["to"]
+                    .to_string()
+                    .contains("token-2"),
+                "{body}"
+            );
+        }
+    }
 
     let (status, body) = app
         .send_request(Method::DELETE, &format!("/records/{record_id}"), None)

@@ -15,7 +15,7 @@ fn zone_content(records: usize) -> CachedTransferContent {
     let records = (0..records)
         .map(|i| Record {
             id: RecordId::from(i as i32),
-            name: OwnerName::from_row("www"),
+            name: OwnerName::from_row("www").unwrap(),
             record_type: RecordType::A,
             value: "192.0.2.1".to_string(),
             ttl: Ttl::from_secs(3600),
@@ -29,6 +29,23 @@ fn zone_content(records: usize) -> CachedTransferContent {
         records: Arc::new(records),
         dnssec_records: Arc::new(Vec::new()),
     }
+}
+
+/// Verify that disabling the cache drops every snapshot, including an empty zone.
+#[test]
+fn disabling_transfer_cache_clears_entries_and_prevents_stores() {
+    let mut entries = Entries::default();
+    entries.store(ZoneId::from(1), zone_content(0), 2);
+    entries.store(ZoneId::from(2), zone_content(1), 2);
+
+    assert_eq!(entries.reconcile_budget(0), 2);
+    assert!(entries.zones.is_empty());
+    assert_eq!(entries.records, 0);
+
+    entries.store(ZoneId::from(1), zone_content(0), 0);
+    entries.store(ZoneId::from(2), zone_content(1), 0);
+    assert!(entries.zones.is_empty());
+    assert_eq!(entries.records, 0);
 }
 
 /// Verify that a zone larger than the budget is served uncached.

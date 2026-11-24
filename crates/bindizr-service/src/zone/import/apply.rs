@@ -246,8 +246,9 @@ pub(crate) async fn apply_import(
         let plan = ImportPlan::compute(mode, &existing_records, &desired);
         timings.reconcile_ms = time::elapsed_ms(started);
 
-        let mut all_deletes = plan.deletes.clone();
-        all_deletes.extend_from_slice(&plan.ttl_deletes);
+        let deleted = plan.deletes.len() as u64;
+        let mut all_deletes = plan.deletes;
+        all_deletes.extend(plan.ttl_deletes);
         let mut to_insert: Vec<Record> = plan
             .adds
             .iter()
@@ -265,11 +266,12 @@ pub(crate) async fn apply_import(
 
         // Validate additions without writes, indexing simulated records by owner for conflict checks.
         let started = Instant::now();
-        let deleted_ids: HashSet<RecordId> = all_deletes.iter().map(|record| record.id).collect();
+        let deleted_record_ids: HashSet<RecordId> =
+            all_deletes.iter().map(|record| record.id).collect();
         let mut constraints = record::RecordConstraintIndex::new(
             existing_records
                 .iter()
-                .filter(|record| !deleted_ids.contains(&record.id)),
+                .filter(|record| !deleted_record_ids.contains(&record.id)),
         );
 
         for (desired_record, candidate) in plan.adds.iter().zip(&to_insert) {
@@ -302,7 +304,7 @@ pub(crate) async fn apply_import(
             // Additions also carry the re-inserted TTL-reconciled records,
             // which are reported under `updated` instead.
             added: (plan.adds.len() - plan.updated) as u64,
-            deleted: plan.deletes.len() as u64,
+            deleted,
             updated: plan.updated as u64,
             unchanged: plan.unchanged as u64,
             skipped: skipped as u64,
@@ -311,39 +313,21 @@ pub(crate) async fn apply_import(
         // Only a valid dry run needs a diff; failed validation must not preview
         // changes that cannot be applied.
         let diff = if run.is_dry_run() && errors.is_empty() {
-            let deleted_ids: HashSet<RecordId> = plan
-                .deletes
-                .iter()
-                .chain(&plan.ttl_deletes)
-                .map(|record| record.id)
-                .collect();
+            let existing = caller
+                .readable_records(existing_records.into_iter().map(|record| (zone.id, record)));
 
-            let before = caller.readable_records(
-                existing_records
-                    .iter()
-                    .cloned()
-                    .map(|record| (zone.id, RecordData::from(record))),
-            );
-            let mut after = caller.readable_records(
-                existing_records
-                    .iter()
-                    .filter(|record| !deleted_ids.contains(&record.id))
-                    .cloned()
-                    .map(|record| (zone.id, RecordData::from(record))),
-            );
-
-            for desired_record in &plan.adds {
-                after.push_written(desired_record.data.clone());
-            }
-
-            diff::build_record_diff(&zone, &before, &after)
+            diff::build_record_preview(
+                &zone,
+                existing,
+                &all_deletes,
+                plan.adds.iter().map(|record| record.data.clone()),
+            )
         } else {
             RecordDiffResponse::default()
         };
 
         let will_apply = errors.is_empty() && !run.is_dry_run();
-        let has_changes =
-            !plan.deletes.is_empty() || !plan.adds.is_empty() || !plan.ttl_deletes.is_empty();
+        let has_changes = !all_deletes.is_empty() || !plan.adds.is_empty();
 
         let new_serial = if has_changes && errors.is_empty() {
             serial::generate_serial(Some(zone.serial))

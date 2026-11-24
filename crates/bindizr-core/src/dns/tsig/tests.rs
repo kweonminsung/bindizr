@@ -21,7 +21,7 @@ const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
 /// Verify that fixed TSIG fields are checked even when altering them leaves the MAC unchanged.
 #[test]
-fn verify_response_rejects_invalid_class_and_ttl() {
+fn tsig_response_verification_rejects_invalid_class_and_ttl() {
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();

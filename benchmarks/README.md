@@ -22,6 +22,9 @@ numbers are internally consistent but not comparable with amd64 ones.
 Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
 `performance.md` (paste-into-README tables), `performance.csv`,
 `performance.json`, and `graphs/*.png`.
+Set `BENCH_RESULTS_DIR` to reuse an existing directory for a subset rerun.
+Only one run at a time can write to that directory. Each workload uses its
+own Compose project, which it tears down on completion or interruption.
 
 ## Systems under test
 
@@ -131,14 +134,12 @@ before the run returns; their drain time is included in the measured elapsed tim
   (`repeats` in `config/settings.yaml`; `--ci` uses `repeats_ci: 1`, override with
   `BENCH_REPEATS=N`). The report averages numeric metrics per system/backend,
   reports the **sample standard deviation** as `mean ± std` on headline metrics,
-  and shows a `runs` column. Each full run starts from a clean `raw/` under its
-  own results directory, and
-  every system is `down -v`'d before setup, so runs never accumulate
-  stale/duplicate rows.
+  and shows a `runs` column. The selected benchmarks replace their raw rows
+  when the run finishes. Each setup starts with a fresh Compose project.
 - **Reproducible.** A fixed seed (`config/settings.yaml`) generates the same
   dataset every run; workload order is deterministic.
-- **Isolated.** Each system is set up, exercised, and torn down on its own; only
-  one runs at a time so the host is never contended.
+- **Isolated.** Each system is set up, exercised, and torn down before the next
+  system in the same run.
 - **Environment recorded.** CPU/mem/OS/Docker, per-container limits, repeats, and
   all image versions are written into every report.
 
@@ -180,7 +181,7 @@ overrides (for quick runs; `--ci` sets `BENCH_CI=1`):
 | --- | --- |
 | `BENCH_CI=1` | use small CI sizes |
 | `BENCH_RESULTS_DIR=results_20260710_233856` | reuse an existing results directory instead of creating one; pass it when re-running a subset (`-b ...`) so the report is rebuilt from the full raw set |
-| `BENCH_SIZES=1000,10000` | override the record-set sizes for bulk import (B2), AXFR (B4), and large zone (B6) |
+| `BENCH_SIZES=1000,10000` | override the record counts for bulk import (B2), AXFR (B4), and large zone (B6) |
 | `BENCH_SEED=1337` | dataset seed |
 | `BENCH_CRUD_DURATION` / `BENCH_CRUD_CONCURRENCY` / `BENCH_CRUD_PREPOP` | CRUD window/load |
 | `BENCH_QUERY_DURATION` / `BENCH_QUERY_ZONE_SIZE` | query load |
@@ -197,9 +198,9 @@ The **1,000,000-record** size is part of a full run's default `sizes` but heavy
 (time + disk); `--ci` omits it. To run only that size, set `BENCH_SIZES=1000000`.
 
 To read the per-stage breakdown, set `BENCH_BINDIZR_LOG_LEVEL=debug` and follow
-the Bindizr container's logs while the run is in progress (`docker compose -p
-bench-bindizr logs -f bindizr`; projects are `bench-<system>` with `_` as `-`,
-and B7 uses `bench-<system>-db-<backend>`), looking for
+the Bindizr container's logs while the run is in progress. Find the generated
+project with `docker compose ls`, then use
+`docker compose -p <project> logs -f bindizr`, looking for
 `event=record_bulk_create_timing` / `event=zone_import_timing`; each line
 reports `*_ms` for every stage plus `total_ms`. Every stack is torn down with
 `down -v` at the end of its benchmark, so the logs do not outlive the run.

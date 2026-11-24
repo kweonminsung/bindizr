@@ -153,6 +153,15 @@ async fn get_signed_zone_tx(
         .reauthenticate_tx(tx)
         .await?
         .authorize_zone_action(action, &zone)?;
+
+    lookup_signed_zone_tx(tx, zone).await
+}
+
+/// Load the signing state of a zone already locked and authorized by the caller.
+async fn lookup_signed_zone_tx(
+    tx: &mut Transaction<'_>,
+    zone: Zone,
+) -> Result<SignedZone, ServiceError> {
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id).await?;
 
     if keys.is_empty() {
@@ -282,9 +291,10 @@ async fn apply_signed_view_tx(
     // The derived rows and their IXFR journal commit in the caller's transaction.
     bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
 
-    let removed_ids: Vec<DnssecRecordId> = diff.removed.iter().map(|record| record.id).collect();
+    let removed_record_ids: Vec<DnssecRecordId> =
+        diff.removed.iter().map(|record| record.id).collect();
 
-    bindizr_db::dnssec_record::delete_many_tx(tx, &removed_ids).await?;
+    bindizr_db::dnssec_record::delete_many_tx(tx, &removed_record_ids).await?;
     bindizr_db::dnssec_record::create_many_tx(tx, &diff.added).await?;
 
     Ok(true)

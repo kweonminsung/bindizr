@@ -4,8 +4,11 @@ Precedence: CLI overrides > environment variables > settings.yaml defaults.
 """
 from __future__ import annotations
 
+import fcntl
 import os
-from datetime import datetime
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -14,17 +17,39 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def _results_dir() -> Path:
-    """Choose `results_<YYYYmmdd_HHMMSS>/`, or reuse `BENCH_RESULTS_DIR` for subset reruns."""
+def _reserve_results_directory() -> Path:
+    """Reserve an unused timestamped directory, or resolve the explicit override."""
     override = os.environ.get("BENCH_RESULTS_DIR")
     if override:
         path = Path(override)
-        return path if path.is_absolute() else ROOT / path
-    return ROOT / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        path = path if path.is_absolute() else ROOT / path
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    timestamp = datetime.now()
+    while True:
+        path = ROOT / f"results_{timestamp:%Y%m%d_%H%M%S}"
+        try:
+            path.mkdir()
+        except FileExistsError:
+            timestamp += timedelta(seconds=1)
+            continue
+        return path
 
 
-RESULTS_DIR = _results_dir()
-GRAPHS_DIR = RESULTS_DIR / "graphs"
+@contextmanager
+def results_directory() -> Iterator[Path]:
+    """Hold the results directory exclusively while clearing, collecting and reporting."""
+    path = _reserve_results_directory()
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError(f"a benchmark is already using {path}") from error
+        yield path
+    finally:
+        os.close(descriptor)
 
 
 def load(path: Path | None = None) -> dict[str, Any]:

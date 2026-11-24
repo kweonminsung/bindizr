@@ -1,6 +1,6 @@
 //! SOA network probes for explicitly supplied targets.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -27,12 +27,11 @@ pub enum ProbeSoaError {
     Response(#[from] ParseResponseError),
 }
 
-/// An SOA result and the resolved IPs used to look up transfer history.
+/// The address tried and its SOA result.
 #[derive(Debug)]
 pub(crate) struct SoaProbe {
     pub(crate) address: String,
     pub(crate) serial: Result<Serial, ProbeSoaError>,
-    pub(crate) clients: Vec<IpAddr>,
 }
 
 /// Probe the supplied resolved addresses in order until one answers.
@@ -41,16 +40,13 @@ pub(crate) async fn probe_addresses(
     target: &AddressTarget,
     addrs: &[SocketAddr],
     timeout: Duration,
-) -> Result<SoaProbe, ProbeSoaError> {
+) -> Result<SoaProbe, EncodeWireNameError> {
     let qname = zone_name.to_wire_name()?;
-    // Transfer rows store an IPv4-mapped client as IPv4.
-    let clients = addrs.iter().map(|addr| addr.ip().to_canonical()).collect();
     let mut probe = SoaProbe {
         address: target.to_string(),
         serial: Err(ProbeSoaError::Resolve(
             Arc::new(ResolveAddressError::NoAddresses).into(),
         )),
-        clients,
     };
 
     for addr in addrs {

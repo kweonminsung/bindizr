@@ -1,4 +1,4 @@
-//! Selected secondary rows and their address resolution, shared within one diagnostic request.
+//! Selected secondary rows with one address lookup per target.
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use crate::dns_client::ResolveAddressError;
 use crate::error::ServiceError;
 use crate::{Context, dns_client, secondary};
 
-/// A diagnostic target, including a resolution failure that each report must describe alike.
+/// A selected secondary and its resolved addresses or the reason resolution failed.
 #[derive(Debug, Clone)]
 pub(crate) struct SecondaryTarget {
     pub(crate) secondary: Secondary,
@@ -19,7 +19,7 @@ pub(crate) struct SecondaryTarget {
 }
 
 impl SecondaryTarget {
-    /// Resolve this selected row once for its probe, history, and NOTIFY stages.
+    /// Resolve this selected row once for its caller to reuse.
     pub(crate) async fn resolve(secondary: Secondary, timeout: Duration) -> Self {
         let addresses = dns_client::resolve_address_entry(&secondary.address, timeout)
             .await

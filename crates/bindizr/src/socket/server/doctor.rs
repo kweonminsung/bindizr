@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use bindizr_core::dns::address;
 use bindizr_service::authorization::Caller;
-use bindizr_service::dns_client::probe;
+use bindizr_service::dns_client::soa;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::CheckSecondariesResponse;
 use bindizr_service::{Context, secondary, zone};
@@ -61,7 +61,7 @@ pub(crate) async fn check_installation(
     let timeout = config.dns.notify.timeout();
 
     let (dns_server, catalog_serial) =
-        match probe::probe_server(&config.dns.catalog_zone_name, dns_addr, timeout).await {
+        match soa::probe_server(&config.dns.catalog_zone_name, dns_addr, timeout).await {
             Ok(serial) => (
                 DoctorCheckResponse {
                     status: DoctorCheckStatus::Ok,

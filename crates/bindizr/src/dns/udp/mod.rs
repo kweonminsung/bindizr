@@ -8,8 +8,8 @@ use std::os::fd::AsRawFd;
 use std::sync::Arc;
 
 use bindizr_core::dns::message;
-use bindizr_core::dns::message::{Keepalive, ParsedQuery, QueryMetadata, ResponseLimit, Rtype};
-use bindizr_core::model::transfer::TransferTransport;
+use bindizr_core::dns::message::{Keepalive, ParsedQuery, QueryMetadata, ResponseLimit};
+use bindizr_core::model::transfer::{TransferKind, TransferTransport};
 use nix::libc::{in_addr, in_pktinfo, in6_addr, in6_pktinfo};
 use nix::sys::socket;
 use nix::sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, SockaddrStorage, sockopt};
@@ -20,7 +20,7 @@ use tokio::task::JoinSet;
 
 use crate::dns::error::DnsError;
 use crate::dns::server;
-use crate::dns::server::{DnsContext, nsupdate, soa};
+use crate::dns::server::{DnsContext, QueryDispatch, nsupdate, soa};
 
 /// Datagrams answered at once; past this the listener drops, since a caller retries.
 const MAX_UDP_IN_FLIGHT: usize = 256;
@@ -317,38 +317,35 @@ async fn handle_udp_query(
         }
     };
 
-    if let Some((rcode, ede)) = server::query_refusal(client_addr, &query, TransferTransport::Udp) {
-        match server::refuse_query(dns_cx, &QueryMetadata::from(&query), query_data, rcode, ede)
-            .await
-        {
-            Ok(response) => {
-                send_udp_response(socket, target, &response, query.response_limit()).await;
+    let result = match server::classify_query(client_addr, &query, TransferTransport::Udp) {
+        QueryDispatch::Refuse { rcode, ede } => {
+            match server::refuse_query(dns_cx, &QueryMetadata::from(&query), query_data, rcode, ede)
+                .await
+            {
+                Ok(response) => {
+                    send_udp_response(socket, target, &response, query.response_limit()).await;
+                }
+                Err(error) => {
+                    log::warn!("Failed to refuse DNS UDP query from {client_addr}: {error}");
+                }
             }
-            Err(error) => log::warn!("Failed to refuse DNS UDP query from {client_addr}: {error}"),
+
+            return;
         }
-
-        return;
-    }
-
-    if query.qtype == Rtype::SOA {
-        if let Err(error) = soa::handle_udp_soa(dns_cx, socket, target, &query, query_data).await {
-            log::warn!("Failed to handle SOA UDP query from {client_addr}: {error}");
+        QueryDispatch::Soa => soa::handle_udp_soa(dns_cx, socket, target, &query, query_data).await,
+        // RFC 1995, Section 2: return only the current SOA; lagging clients retry over TCP.
+        QueryDispatch::Transfer(TransferKind::Ixfr) => {
+            soa::handle_udp_ixfr(dns_cx, socket, target, &query, query_data).await
         }
-
-        return;
-    }
-
-    // RFC 1995, Section 2: return only the current SOA; lagging clients retry over TCP.
-    if query.qtype == Rtype::IXFR {
-        if let Err(error) = soa::handle_udp_ixfr(dns_cx, socket, target, &query, query_data).await {
-            log::warn!("Failed to handle IXFR UDP query from {client_addr}: {error}");
+        QueryDispatch::Transfer(TransferKind::Axfr) => {
+            server::handle_udp_axfr(dns_cx, socket, target, &query, query_data).await
         }
-
-        return;
-    }
-
-    if let Err(error) = server::handle_udp_xfr(dns_cx, socket, target, &query, query_data).await {
-        log::warn!("Failed to answer DNS UDP transfer from {client_addr}: {error}");
+    };
+    if let Err(error) = result {
+        log::warn!(
+            "Failed to answer DNS UDP {} query from {client_addr}: {error}",
+            query.qtype
+        );
     }
 }
 

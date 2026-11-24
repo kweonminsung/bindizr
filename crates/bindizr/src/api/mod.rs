@@ -69,7 +69,7 @@ pub(crate) async fn start(
     cx: Arc<Context>,
     shutdown: &Shutdown,
     certificate: Option<Arc<TlsCertificate>>,
-) -> Result<JoinHandle<()>, StartApiError> {
+) -> Result<JoinHandle<io::Result<()>>, StartApiError> {
     let config = cx.config();
     let addr = SocketAddr::from((config.api.listen_addr, config.api.listen_port));
 
@@ -87,12 +87,9 @@ pub(crate) async fn start(
             // The access log reads each request's peer from its connect info.
             let service = router::routes(cx).into_make_service_with_connect_info::<SocketAddr>();
 
-            if let Err(error) = axum::serve(listener, service)
+            axum::serve(listener, service)
                 .with_graceful_shutdown(stop)
                 .await
-            {
-                log::error!("API server error: {error:?}");
-            }
         }));
     };
 
@@ -118,12 +115,9 @@ pub(crate) async fn start(
     });
 
     Ok(tokio::spawn(async move {
-        if let Err(error) = server
+        server
             .handle(handle)
             .serve(router::routes(cx).into_make_service_with_connect_info::<SocketAddr>())
             .await
-        {
-            log::error!("API server error: {error:?}");
-        }
     }))
 }

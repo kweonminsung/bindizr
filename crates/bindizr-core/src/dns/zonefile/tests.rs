@@ -66,13 +66,12 @@ fn parse_error_names_the_line_of_the_submitted_text() {
         Ttl::from_secs(3600),
     );
 
+    let error = &parsed.errors[0];
+    assert!(error.to_string().contains(": 2:"), "{error}");
     assert!(
-        parsed
-            .errors
-            .iter()
-            .any(|error| error.to_string().contains(": 2:")),
-        "expected the error to name line 2, got: {:?}",
-        parsed.errors
+        std::error::Error::source(error)
+            .unwrap()
+            .is::<inplace::Error>()
     );
 }
 

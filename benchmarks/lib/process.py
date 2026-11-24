@@ -6,16 +6,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import signal
 import subprocess
 
 
 async def run(*command: str, input: bytes | None = None,
-              stdout: int = subprocess.PIPE, stderr: int = subprocess.PIPE,
-              timeout: float = 30.0) -> subprocess.CompletedProcess:
-    """Run a command, reaping its child on timeout or cancellation."""
+              stdout: int | None = subprocess.PIPE, stderr: int | None = subprocess.PIPE,
+              timeout: float | None = 30.0, env: dict[str, str] | None = None,
+              own_process_group: bool = False) -> subprocess.CompletedProcess:
+    """Run a command, stopping its child and any owned subprocess group on cancellation."""
     started = asyncio.create_task(asyncio.create_subprocess_exec(
         *command, stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
-        stdout=stdout, stderr=stderr))
+        stdout=stdout, stderr=stderr, env=env, start_new_session=own_process_group))
     exchange = None
 
     try:
@@ -25,7 +28,7 @@ async def run(*command: str, input: bytes | None = None,
         stdout_bytes, stderr_bytes = await asyncio.wait_for(asyncio.shield(exchange), timeout)
         return subprocess.CompletedProcess(command, child.returncode, stdout_bytes, stderr_bytes)
     except BaseException as error:
-        cleanup = asyncio.create_task(_stop(started, exchange))
+        cleanup = asyncio.create_task(_stop(started, exchange, own_process_group))
         while not cleanup.done():
             try:
                 await asyncio.shield(cleanup)
@@ -44,19 +47,21 @@ async def run(*command: str, input: bytes | None = None,
         raise
 
 
-async def _stop(started: asyncio.Task, exchange: asyncio.Task | None) -> None:
-    """Acquire an in-flight spawn, stop its child, and finish draining its pipes."""
+async def _stop(started: asyncio.Task, exchange: asyncio.Task | None, own_process_group: bool) -> None:
+    """Acquire an in-flight spawn, stop its owned processes, and drain its pipes."""
     try:
         child = await started
     except Exception:
         # A failed spawn owns no child; the original error reaches run's caller.
         return
 
-    if child.returncode is None:
-        try:
+    try:
+        if own_process_group:
+            os.killpg(child.pid, signal.SIGKILL)
+        elif child.returncode is None:
             child.kill()
-        except ProcessLookupError:
-            pass
+    except ProcessLookupError:
+        pass
 
     if exchange is not None:
         try:

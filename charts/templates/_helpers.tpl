@@ -57,6 +57,24 @@ extraSecondaries. */ -}}
 {{- join " " $entries -}}
 {{- end -}}
 
+{{- /* Quote a BIND zone name, keeping DNS escapes intact for BIND's name parser. */ -}}
+{{- define "bindizr-chart.bind9ZoneName" -}}
+{{- if regexMatch `[[:cntrl:]]` . -}}
+{{- fail "bindizr.dns.catalogZoneName must spell control characters with DNS octet escapes" -}}
+{{- end -}}
+"{{- range regexFindAll `\\.|.` . -1 -}}
+{{- if eq . `"` -}}
+\034
+{{- else if eq . "@" -}}
+\064
+{{- else if eq . `\` -}}
+{{- fail "bindizr.dns.catalogZoneName ends with an incomplete DNS escape" -}}
+{{- else -}}
+{{- . -}}
+{{- end -}}
+{{- end -}}"
+{{- end -}}
+
 {{- /* Choose the secret containing the database connection URL. */ -}}
 {{- define "bindizr-chart.databaseSecretName" -}}
 {{- default (printf "%s-db" (include "bindizr-chart.fullname" .)) .Values.bindizr.database.existingSecret -}}

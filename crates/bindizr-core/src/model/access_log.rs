@@ -35,7 +35,7 @@ impl AccessSource {
     /// Every AccessSource value, in declaration order.
     pub const ALL: [Self; 2] = [Self::Api, Self::Nsupdate];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Api => "api",
@@ -97,7 +97,7 @@ impl AccessResult {
     /// Every AccessResult value, in declaration order.
     pub const ALL: [Self; 3] = [Self::Ok, Self::Denied, Self::Failed];
 
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",

@@ -95,6 +95,22 @@ fn extract_member_zones_reads_ptr_members_under_zones_label() {
     );
 }
 
+/// Verify that an undecodable member PTR retains its wire name error.
+#[test]
+fn malformed_member_ptr_preserves_its_wire_error() {
+    let catalog_zone_name = ZoneName::parse("catalog.example").unwrap();
+    let records = [TransferRecord {
+        name: "member.zones.catalog.example.".to_string(),
+        rtype: Rtype::PTR,
+        ttl: Ttl::from_secs(0),
+        rdata: Rdata::new(vec![1]).unwrap(),
+    }];
+    let error = extract_member_zones(&records, &catalog_zone_name).unwrap_err();
+
+    assert!(matches!(error, ExtractMemberZonesError::MemberRdata { .. }));
+    assert!(std::error::Error::source(&error).unwrap().is::<NameError>());
+}
+
 /// Verify that `extract_member_zones` refuses a node with two PTRs and a zone under two nodes.
 #[test]
 fn extract_member_zones_rejects_repeated_members() {

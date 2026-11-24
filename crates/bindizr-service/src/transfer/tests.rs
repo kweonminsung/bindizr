@@ -15,6 +15,24 @@ use crate::zone;
 /// The client address every test transfer is served to.
 const CLIENT: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
 
+/// Verify that overlapping DNS and TSIG code numbers retain distinct stored spellings.
+#[test]
+fn error_code_preserves_dns_and_tsig_namespaces() {
+    assert_eq!(OptRcode::BADVERS.to_int(), TsigRcode::BADSIG.to_int());
+    assert_eq!(
+        TransferLogErrorCode::Dns(OptRcode::BADVERS).to_text(),
+        "BADVERS"
+    );
+    assert_eq!(
+        TransferLogErrorCode::Tsig(TsigRcode::BADSIG).to_text(),
+        "BADSIG(16)"
+    );
+    assert_eq!(
+        TransferLogErrorCode::Service(ErrorCode::InvalidRecordValue).to_text(),
+        "INVALID_RECORD_VALUE"
+    );
+}
+
 /// Build service state over a disposable database holding the named zones.
 async fn context(save: SavedTransfers, zone_names: &[&str]) -> (Context, Vec<ZoneId>) {
     let mut config: Config = serde_json::from_str("{}").unwrap();
@@ -123,11 +141,19 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
         "example.test",
         axfr,
         tcp,
-        "refused".to_string(),
+        TransferLogErrorCode::Dns(OptRcode::REFUSED),
     )
     .await;
     save_ok(&cx, CLIENT, zone_ids[0], axfr, tcp, false, Serial::from(7)).await;
-    save_failed(&cx, CLIENT, "example.test", axfr, tcp, "closed".to_string()).await;
+    save_failed(
+        &cx,
+        CLIENT,
+        "example.test",
+        axfr,
+        tcp,
+        TransferLogErrorCode::PeerClosed,
+    )
+    .await;
 
     let logs = list_logs(&cx, &transfer_log::TransferLogFilter::default()).await;
     let results: Vec<_> = logs.iter().map(|log| log.log.result).collect();
@@ -142,6 +168,9 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
     );
     // The failure that followed did not erase the serial last served.
     assert_eq!(logs[1].log.serial, Some(Serial::from(7)));
+    assert_eq!(logs[0].log.error.as_deref(), Some("PEER_CLOSED"));
+    assert_eq!(logs[1].log.error, None);
+    assert_eq!(logs[2].log.error.as_deref(), Some("REFUSED"));
 
     let latest = list_latest_by_clients(&cx, &[CLIENT]).await.unwrap();
     let zone_name = ZoneName::parse("example.test").unwrap();
@@ -198,7 +227,7 @@ async fn save_ok_leaves_no_row_when_only_unserved_transfers_are_saved() {
         "example.test",
         axfr,
         tcp,
-        "refused".to_string(),
+        TransferLogErrorCode::Dns(OptRcode::REFUSED),
     )
     .await;
 
@@ -221,7 +250,7 @@ async fn save_leaves_no_row_when_no_transfers_are_saved() {
         "example.test",
         axfr,
         tcp,
-        "refused".to_string(),
+        TransferLogErrorCode::Dns(OptRcode::REFUSED),
     )
     .await;
     save_failed(
@@ -230,7 +259,7 @@ async fn save_leaves_no_row_when_no_transfers_are_saved() {
         "example.test",
         axfr,
         tcp,
-        "broken pipe".to_string(),
+        TransferLogErrorCode::IoFailed,
     )
     .await;
 
@@ -427,7 +456,7 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
         "example.test",
         axfr,
         tcp,
-        "refused".to_string(),
+        TransferLogErrorCode::Dns(OptRcode::REFUSED),
     )
     .await;
 
@@ -436,7 +465,7 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
         &Caller::socket(),
         &TransferLogFilter {
             address: Some(CLIENT.to_string()),
-            result: Some("Refused".to_string()),
+            result: Some(" Refused ".to_string()),
             ..Default::default()
         },
     )
@@ -451,7 +480,7 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
         &cx,
         &Caller::socket(),
         &TransferLogFilter {
-            address: Some("::ffff:192.0.2.1".to_string()),
+            address: Some(" ::ffff:192.0.2.1 ".to_string()),
             ..Default::default()
         },
     )
@@ -459,6 +488,22 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
     .unwrap();
 
     assert_eq!(mapped.pagination.total, 2, "{mapped:?}");
+
+    let blank = list(
+        &cx,
+        &Caller::socket(),
+        &TransferLogFilter {
+            result: Some(" ".to_string()),
+            address: Some("\t".to_string()),
+            sort: Some(String::new()),
+            order: Some(" ".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(blank.pagination.total, 2, "{blank:?}");
 
     let by_result = list(
         &cx,

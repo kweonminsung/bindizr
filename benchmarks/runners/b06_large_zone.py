@@ -6,14 +6,11 @@ create, populate (bulk), export (AXFR), and delete, plus peak memory/CPU.
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from datasets.gen_dataset import generate  # noqa: E402
-from lib import dig  # noqa: E402
-from lib.resources import load_sampler  # noqa: E402
+from datasets.gen_dataset import generate
+from lib import dig
+from lib.resources import load_sampler
 
 # Sampled around the measured phase below, not by the orchestrator.
 SELF_SAMPLES = True
@@ -104,7 +101,16 @@ async def run(adapter, config, context) -> list:
 
                 continue
 
-            export_secs, _, export_bytes = await dig.axfr(zone_name, endpoint.host, endpoint.port)
+            try:
+                transfer = await dig.axfr(zone_name, endpoint.host, endpoint.port)
+            except dig.TransferError as error:
+                rows.append({
+                    "system": context["label"],
+                    "size": size,
+                    "status": "FAILED",
+                    "error": str(error),
+                })
+                continue
 
             started = time.monotonic()
 
@@ -118,11 +124,11 @@ async def run(adapter, config, context) -> list:
             "size": size,
             "create_secs": round(create_secs, 3),
             "populate_secs": round(populate_secs, 3),
-            "export_secs": round(export_secs, 3),
-            "export_mb": round(export_bytes / 1024**2, 2),
+            "export_secs": round(transfer.seconds, 3),
+            "export_mb": round(transfer.output_bytes / 1024**2, 2),
             "delete_secs": round(delete_secs, 3),
-            "peak_mem_mb": resource_usage.get("peak_mem_mb", 0),
-            "peak_cpu_pct": resource_usage.get("peak_cpu_pct", 0),
+            "peak_mem_mb": resource_usage.get("peak_mem_mb"),
+            "peak_cpu_pct": resource_usage.get("peak_cpu_pct"),
         })
 
     return rows

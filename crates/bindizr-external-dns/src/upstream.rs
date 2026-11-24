@@ -2,28 +2,50 @@
 
 use std::borrow::Cow;
 use std::time::Duration;
-use std::{fs, io};
+use std::{fmt, fs, io};
 
-use reqwest::{Certificate, Client, Method, RequestBuilder, Response};
+use reqwest::{Certificate, Client, Method, RequestBuilder, Response, StatusCode};
 use rustls::crypto::ring;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::config::{BindizrUrl, RedactedString};
 use crate::wire::{ApplyExternalDnsChangesRequest, BindizrRecord};
+
+/// A reqwest failure with its request URL removed before it leaves the client.
+#[derive(Error)]
+#[error("{0}")]
+pub(crate) struct HttpClientError(#[source] reqwest::Error);
+
+impl From<reqwest::Error> for HttpClientError {
+    /// Retain the typed cause without its URL.
+    fn from(error: reqwest::Error) -> Self {
+        Self(error.without_url())
+    }
+}
+
+impl fmt::Debug for HttpClientError {
+    /// Format the sanitized error without printing arbitrary nested client diagnostics.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("HttpClientError")
+            .field(&self.0.to_string())
+            .finish()
+    }
+}
 
 /// A bindizr API failure, split for the webhook error mapping in `server`.
 #[derive(Debug, Error)]
 pub(crate) enum UpstreamError {
     /// The error body bindizr answered with, under its status.
     #[error("{message}")]
-    Rejected { status: u16, message: String },
+    Rejected { status: StatusCode, message: String },
     /// Connect error or timeout.
     #[error("bindizr is unreachable: {0}")]
-    Unreachable(#[source] reqwest::Error),
+    Unreachable(#[source] HttpClientError),
     /// bindizr answered something that was not the payload asked for.
     #[error("invalid response from bindizr: {0}")]
-    InvalidResponse(#[source] reqwest::Error),
+    InvalidResponse(#[source] HttpClientError),
 }
 
 /// Why the client to bindizr could not be built.
@@ -39,10 +61,10 @@ pub(crate) enum BuildClientError {
     InvalidCa {
         path: String,
         #[source]
-        source: reqwest::Error,
+        source: HttpClientError,
     },
     #[error("failed to build HTTP client: {0}")]
-    Build(#[source] reqwest::Error),
+    Build(#[source] HttpClientError),
 }
 
 /// The `error` message a bindizr API error response carries.
@@ -53,18 +75,27 @@ struct UpstreamErrorResponse {
 
 /// HTTP client for the bindizr `/external-dns` API, sending the Bearer token
 /// with every request.
-#[derive(Debug)]
 pub(crate) struct UpstreamClient {
     http: Client,
-    base_url: String,
-    token: Option<String>,
+    base_url: BindizrUrl,
+    token: Option<RedactedString>,
+}
+
+impl fmt::Debug for UpstreamClient {
+    /// Redact the token and omit reqwest's proxy and header diagnostics.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UpstreamClient")
+            .field("base_url", &self.base_url)
+            .field("token", &self.token)
+            .finish_non_exhaustive()
+    }
 }
 
 impl UpstreamClient {
     /// Build the bindizr HTTP client with authentication, timeout, and TLS settings.
     pub(crate) fn new(
-        base_url: String,
-        token: Option<String>,
+        base_url: BindizrUrl,
+        token: Option<RedactedString>,
         timeout_secs: u64,
         ca_file: Option<&str>,
     ) -> Result<Self, BuildClientError> {
@@ -84,14 +115,16 @@ impl UpstreamClient {
             for certificate in Certificate::from_pem_bundle(&pem).map_err(|source| {
                 BuildClientError::InvalidCa {
                     path: path.to_string(),
-                    source,
+                    source: source.into(),
                 }
             })? {
                 builder = builder.add_root_certificate(certificate);
             }
         }
 
-        let http = builder.build().map_err(BuildClientError::Build)?;
+        let http = builder
+            .build()
+            .map_err(|error| BuildClientError::Build(error.into()))?;
 
         Ok(Self {
             http,
@@ -156,7 +189,7 @@ impl UpstreamClient {
         let body: AdjustExternalDnsRecordsResponse = response
             .json()
             .await
-            .map_err(UpstreamError::InvalidResponse)?;
+            .map_err(|error| UpstreamError::InvalidResponse(error.into()))?;
 
         Ok(body.records)
     }
@@ -168,17 +201,17 @@ impl UpstreamClient {
         response
             .json::<T>()
             .await
-            .map_err(UpstreamError::InvalidResponse)
+            .map_err(|error| UpstreamError::InvalidResponse(error.into()))
     }
 
     /// Build an authenticated request to a bindizr API path.
     fn build_request(&self, method: Method, path: &str) -> RequestBuilder {
         let mut request = self
             .http
-            .request(method, format!("{}{path}", self.base_url));
+            .request(method, self.base_url.to_request_url(path));
 
         if let Some(token) = &self.token {
-            request = request.bearer_auth(token);
+            request = request.bearer_auth(token.as_str());
         }
 
         request
@@ -186,7 +219,10 @@ impl UpstreamClient {
 
     /// Send an upstream request and translate transport or HTTP failures.
     async fn send(&self, request: RequestBuilder) -> Result<Response, UpstreamError> {
-        let response = request.send().await.map_err(UpstreamError::Unreachable)?;
+        let response = request
+            .send()
+            .await
+            .map_err(|error| UpstreamError::Unreachable(error.into()))?;
 
         let status = response.status();
 
@@ -194,22 +230,69 @@ impl UpstreamClient {
             return Ok(response);
         }
 
-        // Surface the bindizr error body's message; never the token.
+        // Preserve validation diagnostics while masking reflected credentials.
+        let response_url = response.url().clone();
         let message = response.json::<UpstreamErrorResponse>().await.map_or_else(
             |_| format!("bindizr responded with status {}", status.as_u16()),
-            |body| body.error,
+            |body| {
+                let message = body.error.replace(
+                    response_url.as_str(),
+                    &response_url.origin().ascii_serialization(),
+                );
+                let message = self.base_url.redact_path_in(message);
+                if let Some(token) = &self.token
+                    && !token.as_str().is_empty()
+                {
+                    message.replace(token.as_str(), "<redacted>")
+                } else {
+                    message
+                }
+            },
         );
 
-        if status.as_u16() == 401 || status.as_u16() == 403 {
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
             log::error!(
                 "bindizr rejected the request with {} ({message}); check the API token and its grants",
                 status.as_u16()
             );
         }
 
-        Err(UpstreamError::Rejected {
-            status: status.as_u16(),
-            message,
-        })
+        Err(UpstreamError::Rejected { status, message })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use tokio::net::TcpListener;
+
+    use super::*;
+
+    /// Verify that the client and its transport failures format without credentials.
+    #[tokio::test]
+    async fn client_diagnostics_omit_request_url_and_token() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let client = UpstreamClient::new(
+            format!("http://{addr}/dummy-path-secret").parse().unwrap(),
+            Some("dummy-api-token".to_string().into()),
+            2,
+            None,
+        )
+        .unwrap();
+        let error = client.list_domains().await.unwrap_err();
+        let UpstreamError::Unreachable(http_error) = &error else {
+            panic!("expected a transport failure: {error}");
+        };
+        let source = http_error.source().unwrap();
+        let source = source.downcast_ref::<reqwest::Error>().unwrap();
+        assert!(source.url().is_none());
+
+        let diagnostics = format!("{client:?} {client:#?} {error} {error:?} {error:#?} {source:?}");
+        assert!(diagnostics.contains("bindizr is unreachable"));
+        assert!(!diagnostics.contains("dummy-path-secret"));
+        assert!(!diagnostics.contains("dummy-api-token"));
     }
 }

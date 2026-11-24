@@ -1,4 +1,5 @@
 use std::io;
+use std::num::TryFromIntError;
 use std::path::PathBuf;
 
 use sqlx::error::ErrorKind;
@@ -21,9 +22,13 @@ pub enum DatabaseError {
     TransactionFailed(#[source] sqlx::Error),
     /// A SQLite rowid past the 32-bit range ids are carried in.
     #[error("row id {id} exceeds the 32-bit id range")]
-    IdOutOfRange { id: i64 },
+    IdOutOfRange {
+        id: i64,
+        #[source]
+        source: TryFromIntError,
+    },
     #[error("pool timed out")]
-    PoolTimedOut,
+    PoolTimedOut(#[source] sqlx::Error),
     /// Each names the setting an operator would fix.
     #[error("MySQL connection failed (check database.mysql.url): {0}")]
     MySqlConnect(#[source] sqlx::Error),
@@ -60,7 +65,7 @@ impl From<sqlx::Error> for DatabaseError {
     /// source.
     fn from(error: sqlx::Error) -> Self {
         match &error {
-            sqlx::Error::PoolTimedOut => Self::PoolTimedOut,
+            sqlx::Error::PoolTimedOut => Self::PoolTimedOut(error),
             sqlx::Error::Database(database_error) => match database_error.kind() {
                 ErrorKind::UniqueViolation => Self::UniqueViolation(error),
                 ErrorKind::ForeignKeyViolation => Self::ForeignKeyViolation(error),
@@ -68,5 +73,24 @@ impl From<sqlx::Error> for DatabaseError {
             },
             _ => Self::QueryFailed(error),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use super::*;
+
+    /// Verify that the classified timeout retains SQLx's original error.
+    #[test]
+    fn pool_timeout_preserves_its_source() {
+        let error = DatabaseError::from(sqlx::Error::PoolTimedOut);
+
+        assert_eq!(error.to_string(), "pool timed out");
+        assert!(matches!(
+            error.source().and_then(|source| source.downcast_ref()),
+            Some(sqlx::Error::PoolTimedOut)
+        ));
     }
 }

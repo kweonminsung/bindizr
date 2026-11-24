@@ -52,18 +52,12 @@ fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
         };
         let from_lines: Vec<(String, String)> = entry.from.iter().map(render_line).collect();
         let to_lines: Vec<(String, String)> = entry.to.iter().map(render_line).collect();
-        let mut lines: Vec<(String, String)> = from_lines
+        let mut lines: Vec<&(String, String)> = from_lines
             .iter()
             .filter(|line| !to_lines.contains(line))
-            .cloned()
             .collect();
         let removed = lines.len();
-        lines.extend(
-            to_lines
-                .iter()
-                .filter(|line| !from_lines.contains(line))
-                .cloned(),
-        );
+        lines.extend(to_lines.iter().filter(|line| !from_lines.contains(line)));
 
         // Sign and name label the entry once; TTL stays per-line so a TTL-only
         // change reads clearly.

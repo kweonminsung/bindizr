@@ -48,19 +48,19 @@ fn naptr_flags_allow_empty_and_application_defined_values() {
         let parsed = NaptrRecordValue::parse(&text).unwrap();
         parsed.validate().unwrap();
 
-        assert_eq!(parsed.canonical(), text);
+        assert_eq!(parsed.to_text(), text);
         let wire =
             NaptrRecordValue::from_wire(1, 1, flags.as_bytes(), b"app", b"", "next.example.")
                 .unwrap();
         wire.validate().unwrap();
 
-        assert_eq!(wire.canonical(), text);
+        assert_eq!(wire.to_text(), text);
     }
 
     let escaped = NaptrRecordValue::parse(r#"1 1 "\117\090\057" "app" "" ."#).unwrap();
     escaped.validate().unwrap();
 
-    assert_eq!(escaped.canonical(), r#"1 1 "uZ9" "app" "" ."#);
+    assert_eq!(escaped.to_text(), r#"1 1 "uZ9" "app" "" ."#);
 }
 
 /// Verify that NAPTR parsing canonicalizes the replacement name.
@@ -70,7 +70,7 @@ fn naptr_parse_canonicalizes_replacement_name() {
         NaptrRecordValue::parse("100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM.").unwrap();
 
     assert_eq!(
-        parsed.canonical(),
+        parsed.to_text(),
         "100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM."
     );
 }
@@ -82,7 +82,7 @@ fn naptr_accepts_root_replacement() {
     let parsed = NaptrRecordValue::parse(value).unwrap();
 
     parsed.validate().unwrap();
-    assert_eq!(parsed.canonical(), value);
+    assert_eq!(parsed.to_text(), value);
 }
 
 /// Verify that NAPTR wire data converts into its stored form and back.
@@ -91,13 +91,13 @@ fn naptr_round_trips_wire_data_through_stored_form() {
     assert_eq!(
         NaptrRecordValue::from_wire(100, 10, b"S", b"SIP+D2U", b"", "_sip._udp.Example.COM")
             .unwrap()
-            .canonical(),
+            .to_text(),
         "100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM."
     );
     assert_eq!(
         NaptrRecordValue::from_wire(200, 20, b"u", b"E2U+tel", b"!^.*$!tel:+1!", ".")
             .unwrap()
-            .canonical(),
+            .to_text(),
         "200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" ."
     );
 }
@@ -107,7 +107,7 @@ fn naptr_round_trips_wire_data_through_stored_form() {
 fn naptr_regexp_preserves_quotes_and_escapes() {
     let parsed = NaptrRecordValue::parse(r#"1 1 "u" "E2U+sip" "!\"a\"!sip:b!" ."#).unwrap();
 
-    assert_eq!(parsed.canonical(), r#"1 1 "u" "E2U+sip" "!\"a\"!sip:b!" ."#);
+    assert_eq!(parsed.to_text(), r#"1 1 "u" "E2U+sip" "!\"a\"!sip:b!" ."#);
 }
 
 /// Verify that a regexp BIND refuses fails validation, not just parsing.

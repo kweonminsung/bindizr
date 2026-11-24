@@ -78,7 +78,7 @@ async fn reload_config(output: OutputFormat) -> Result<(), CliError> {
 
 /// Validate the local configuration file.
 fn validate_config(config_file: Option<&str>, output: OutputFormat) -> Result<(), CliError> {
-    let path = config::resolve_config_path(config_file);
+    let path = config::resolve_config_path(config_file)?;
 
     if output == OutputFormat::Table {
         outln!("Checking configuration file: {path}");

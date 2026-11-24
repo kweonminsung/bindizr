@@ -58,7 +58,7 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    /// Return the canonical wire spelling.
+    /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InvalidInput => "INVALID_INPUT",

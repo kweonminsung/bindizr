@@ -61,5 +61,5 @@ pub(crate) async fn auth_middleware(
 
 /// Build the HTTP response for missing or invalid authentication.
 fn unauthorized(message: &str) -> Response {
-    ApiError(ServiceError::unauthorized(message)).into_response()
+    ApiError::from(ServiceError::unauthorized(message)).into_response()
 }
