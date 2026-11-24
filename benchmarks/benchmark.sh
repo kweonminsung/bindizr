@@ -50,27 +50,10 @@ fi
 "$PYTHON" -c "import aiohttp, yaml, matplotlib" 2>/dev/null || {
   echo "ERROR: missing Python deps. Run: pip install -r requirements.txt" >&2; exit 1; }
 
-# --- cleanup on exit ---------------------------------------------------------
-
-# Tear down leftover benchmark stacks while preserving the exit status.
-cleanup() {
-  # Preserve the script's real exit status: on a clean run the `grep` below finds
-  # no leftover stacks and returns 1, which would otherwise become the script's
-  # exit code (a spurious failure) since this runs from the EXIT trap.
-  local exit_status=$?
-  echo ">>> tearing down any leftover benchmark stacks..."
-  for project in $(docker compose ls -q 2>/dev/null | grep '^bench-' || true); do
-    docker compose -p "$project" down -v --remove-orphans >/dev/null 2>&1 || true
-  done
-  return $exit_status
-}
-trap cleanup EXIT INT TERM
-
 # --- run ---------------------------------------------------------------------
 [[ -n "$BENCHES" ]] && ARGS+=(-b ${BENCHES//,/ })
 [[ -n "$SYSTEMS" ]] && ARGS+=(-s ${SYSTEMS//,/ })
 
 echo ">>> starting benchmark run"
-# Guard empty arrays for macOS bash 3.2, which treats them as unset under `set -u`.
-"$PYTHON" orchestrator.py ${ARGS[@]+"${ARGS[@]}"}
-echo ">>> done. Results written under results_<timestamp>/ (exact path printed above)."
+# Deliver signals to the process that owns setup and teardown.
+exec "$PYTHON" orchestrator.py ${ARGS[@]+"${ARGS[@]}"}

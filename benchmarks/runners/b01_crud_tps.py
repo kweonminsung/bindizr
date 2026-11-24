@@ -4,12 +4,9 @@ Reads/updates use a prepopulated pool; deletes target only records created in th
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from datasets.gen_dataset import generate  # noqa: E402
-from lib import loadgen  # noqa: E402
+from datasets.gen_dataset import generate
+from lib import loadgen
 
 
 async def run(adapter, config, context) -> dict:

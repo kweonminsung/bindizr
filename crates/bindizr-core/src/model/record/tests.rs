@@ -107,6 +107,31 @@ fn values_equal_normalizes_name_like_values() {
     assert!(!RecordType::Txt.values_equal("Token=ABC", None, "token=abc", None));
 }
 
+/// Verify that invalid row text cannot equal a valid record's wire identity.
+#[test]
+fn values_equal_separates_invalid_text_from_canonical_wire_data() {
+    let record_type = RecordType::A;
+    let valid = "1.2.3.4";
+    let invalid = "01020304";
+
+    assert_eq!(
+        record_type.to_comparison_key(valid, None),
+        RecordValueKey::Canonical(vec![1, 2, 3, 4])
+    );
+    assert_eq!(
+        record_type.to_comparison_key(invalid, None),
+        RecordValueKey::Invalid(Cow::Borrowed(invalid))
+    );
+    assert!(!record_type.values_equal(valid, None, invalid, None));
+    assert!(record_type.values_equal(invalid, None, invalid, None));
+
+    let owner = OwnerName::apex();
+    assert_ne!(
+        RecordKey::new(&owner, record_type, valid, None),
+        RecordKey::new(&owner, record_type, invalid, None)
+    );
+}
+
 /// Verify that a TXT value compares equal across the two spellings of one
 /// value.
 #[test]
@@ -234,7 +259,10 @@ fn domain_record_values_reject_malformed_names_and_preserve_root_policy() {
     ] {
         assert!(record_type.validate_value(".", None).is_ok());
         assert_eq!(record_type.encoded_value(".", None).unwrap(), ".");
-        assert_eq!(record_type.canonical_value(".", None), "00");
+        assert_eq!(
+            record_type.to_comparison_key(".", None),
+            RecordValueKey::Canonical(vec![0])
+        );
     }
 }
 

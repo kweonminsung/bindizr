@@ -15,11 +15,13 @@ use crate::dns::Serial;
 use crate::dns::name::ZoneName;
 use crate::model::zone::ZoneId;
 
-/// A transfer column holding a kind or result bindizr does not record.
+/// A transfer query or column holding a value bindizr does not support.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseTransferError {
     #[error("unsupported transfer kind '{value}'")]
     Kind { value: String },
+    #[error("unsupported transfer query type '{value}'")]
+    QueryType { value: Rtype },
     #[error("unsupported transfer result '{value}' (supported: {})", TransferResult::supported_names().join(", "))]
     Result { value: String },
     #[error("unsupported transfer transport '{value}'")]
@@ -37,15 +39,6 @@ pub enum TransferKind {
 impl TransferKind {
     /// Every kind, as the metrics pre-register them.
     pub const ALL: [Self; 2] = [Self::Axfr, Self::Ixfr];
-
-    /// Return the transfer a query type asks for; the caller checked it is one.
-    pub fn from_qtype(qtype: Rtype) -> Self {
-        if qtype == Rtype::IXFR {
-            Self::Ixfr
-        } else {
-            Self::Axfr
-        }
-    }
 
     /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
@@ -87,6 +80,19 @@ impl TryFrom<String> for TransferKind {
     /// Validate and convert the stored value into a transfer kind.
     fn try_from(value: String) -> Result<Self, Self::Error> {
         value.parse::<Self>()
+    }
+}
+
+impl TryFrom<Rtype> for TransferKind {
+    type Error = ParseTransferError;
+
+    /// Convert a wire question type to a supported transfer kind.
+    fn try_from(value: Rtype) -> Result<Self, Self::Error> {
+        match value {
+            Rtype::AXFR => Ok(Self::Axfr),
+            Rtype::IXFR => Ok(Self::Ixfr),
+            _ => Err(ParseTransferError::QueryType { value }),
+        }
     }
 }
 
@@ -248,6 +254,17 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// Verify that only transfer question types map to a transfer kind.
+    #[test]
+    fn transfer_kind_checks_the_wire_type() {
+        assert_eq!(TransferKind::try_from(Rtype::AXFR), Ok(TransferKind::Axfr));
+        assert_eq!(TransferKind::try_from(Rtype::IXFR), Ok(TransferKind::Ixfr));
+        assert_eq!(
+            TransferKind::try_from(Rtype::SOA),
+            Err(ParseTransferError::QueryType { value: Rtype::SOA })
+        );
+    }
 
     /// Verify that `TransferKind` has one spelling across `as_str`, serde, and `FromStr`.
     #[test]

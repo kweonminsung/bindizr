@@ -43,8 +43,6 @@ pub(crate) enum DnsError {
     /// An IXFR whose version rows do not cover a serial the journal names.
     #[error("DNS protocol error: missing {which} SOA version for serial {serial}")]
     MissingVersion { which: &'static str, serial: Serial },
-    #[error("invalid query: {reason}")]
-    InvalidQuery { reason: String },
     #[error("failed to build NSUPDATE response: {0}")]
     BuildNsupdateResponse(#[from] BuildResponseError),
 }
@@ -65,7 +63,6 @@ impl DnsError {
             Self::IncompletePrefix => TransferLogErrorCode::IncompletePrefix,
             Self::IncompleteMessage { .. } => TransferLogErrorCode::IncompleteMessage,
             Self::MissingVersion { .. } => TransferLogErrorCode::IxfrVersionMissing,
-            Self::InvalidQuery { .. } => TransferLogErrorCode::InvalidQuery,
             Self::BuildNsupdateResponse(_) => TransferLogErrorCode::UpdateResponseEncodingFailed,
         }
     }

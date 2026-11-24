@@ -112,7 +112,11 @@ pub async fn list(
 }
 
 /// Get one role by name, with how many grants, tokens, and keys it has.
-pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<RoleResponse, ServiceError> {
+pub async fn get_by_name(
+    cx: &Context,
+    caller: &Caller,
+    name: &str,
+) -> Result<RoleResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     let name = normalize_name(name)?;
 

@@ -2,6 +2,8 @@
 //! the two to the same answers. Every backend shares the match fragment.
 
 use std::collections::BTreeSet;
+use std::error::Error;
+use std::num::TryFromIntError;
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::record::RecordType;
@@ -318,7 +320,7 @@ async fn create_tx_rejects_a_rowid_past_the_32_bit_range() {
         .unwrap();
     let mut tx = pool.begin().await.unwrap();
 
-    let result = role::create_tx(
+    let error = role::create_tx(
         &mut tx,
         Role {
             id: RoleId::UNWRITTEN,
@@ -327,10 +329,12 @@ async fn create_tx_rejects_a_rowid_past_the_32_bit_range() {
             created_at: Utc::now(),
         },
     )
-    .await;
+    .await
+    .unwrap_err();
 
     assert!(
-        matches!(result, Err(DatabaseError::IdOutOfRange { id }) if id == i64::from(i32::MAX) + 1),
-        "{result:?}"
+        matches!(error, DatabaseError::IdOutOfRange { id, .. } if id == i64::from(i32::MAX) + 1),
+        "{error:?}"
     );
+    assert!(error.source().unwrap().is::<TryFromIntError>());
 }

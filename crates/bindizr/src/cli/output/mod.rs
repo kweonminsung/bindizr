@@ -8,6 +8,7 @@ pub(crate) use diff::{render_change_preview, render_version_diff};
 pub(crate) use display::{display_time, display_transfer_summary, display_uptime};
 pub(crate) use format::{
     OutputFormat, RenderOutputError, print_page, print_payload, print_response, print_table,
+    print_write_response,
 };
 pub(crate) use table::{
     AccessLogRow, AuditLogRow, DnssecKeyRow, DnssecPolicyRow, ImportSummaryRow, ImportZonesRow,

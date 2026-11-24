@@ -105,7 +105,7 @@ pub(crate) async fn get_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let (tsig_key, secret) = tsig_key::get(&cx, &caller, &params.name).await?;
+    let (tsig_key, secret) = tsig_key::get_by_name(&cx, &caller, &params.name).await?;
     let response = SingleTsigKeyResponse { tsig_key, secret };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

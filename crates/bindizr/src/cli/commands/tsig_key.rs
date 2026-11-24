@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bindizr_core::outln;
 use bindizr_service::types::{
     CreateTsigKeyRequest, MessageResponse, PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter,
@@ -12,7 +14,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing TSIG update and transfer credentials.
-#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
+#[derive(Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum TsigKeyCommand {
     /// Create a TSIG key in a role (generates a secret unless one is provided)
     #[command(after_help = "\
@@ -78,6 +80,51 @@ Examples:
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+}
+
+impl fmt::Debug for TsigKeyCommand {
+    /// Format the command while masking any imported TSIG secret.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Create {
+                name,
+                role,
+                algorithm,
+                secret: _,
+                output,
+            } => f
+                .debug_struct("Create")
+                .field("name", name)
+                .field("role", role)
+                .field("algorithm", algorithm)
+                .field("secret", &"<redacted>")
+                .field("output", output)
+                .finish(),
+            Self::List {
+                role,
+                limit,
+                offset,
+                output,
+            } => f
+                .debug_struct("List")
+                .field("role", role)
+                .field("limit", limit)
+                .field("offset", offset)
+                .field("output", output)
+                .finish(),
+            Self::Get { name, output } => f
+                .debug_struct("Get")
+                .field("name", name)
+                .field("output", output)
+                .finish(),
+            Self::Export { name } => f.debug_struct("Export").field("name", name).finish(),
+            Self::Delete { name, output } => f
+                .debug_struct("Delete")
+                .field("name", name)
+                .field("output", output)
+                .finish(),
+        }
+    }
 }
 
 /// Handle the `tsig-key` subcommand by dispatching to the daemon over the socket.
@@ -158,4 +205,29 @@ fn print_bind_key(response: &SingleTsigKeyResponse) {
     outln!("    algorithm {};", response.tsig_key.algorithm);
     outln!("    secret \"{}\";", response.secret);
     outln!("}};");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::Command;
+
+    /// Verify that Debug masks a secret supplied on the command line.
+    #[test]
+    fn tsig_create_command_debug_masks_secret() {
+        let subcommand = TsigKeyCommand::Create {
+            name: "test".to_string(),
+            role: "admin".to_string(),
+            algorithm: None,
+            secret: Some("fixture-tsig-key".to_string()),
+            output: OutputFormat::Table,
+        };
+        let direct = format!("{subcommand:?}");
+        let nested = format!("{:#?}", Command::TsigKey { subcommand });
+
+        for debug in [direct, nested] {
+            assert!(debug.contains("<redacted>"));
+            assert!(!debug.contains("fixture-tsig-key"));
+        }
+    }
 }

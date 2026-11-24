@@ -16,10 +16,10 @@ def _to_bytes(text: str) -> float:
     text = text.strip()
     # Docker uses a lowercase SI 'k' for NET/BLOCK IO (e.g. "2.48kB") and binary
     # MiB/GiB for memory; accept both.
-    match = re.match(r"([\d.]+)\s*([kKMGT]?i?B)", text)
+    match = re.fullmatch(r"([\d.]+)\s*([kKMGT]?i?B)", text)
 
     if not match:
-        return 0.0
+        raise ValueError(f"invalid Docker size: {text!r}")
 
     value, unit = float(match.group(1)), match.group(2)
     scale = {
@@ -35,14 +35,20 @@ def _to_bytes(text: str) -> float:
         "TB": 1000**4,
     }
 
-    return value * scale.get(unit, 1)
+    if unit not in scale:
+        raise ValueError(f"unsupported Docker size unit: {unit!r}")
+    return value * scale[unit]
 
 
 def load_sampler(adapter, config: dict) -> "ResourceSampler":
     """Load a sampler after resolving the adapter's running containers."""
-    container_ids = [adapter.compose.resolve_container_id(service) for service in adapter.resource_services]
-    return ResourceSampler([container_id for container_id in container_ids if container_id],
-                           config["resources"]["sample_interval_secs"])
+    container_ids = []
+    for service in adapter.resource_services:
+        container_id = adapter.compose.resolve_container_id(service)
+        if not container_id:
+            raise RuntimeError(f"could not resolve running container for {service}")
+        container_ids.append(container_id)
+    return ResourceSampler(container_ids, config["resources"]["sample_interval_secs"])
 
 
 class ResourceSampler:
@@ -83,20 +89,20 @@ class ResourceSampler:
                 # One snapshot covers every container; stamp samples with their tick
                 # so summary() can total the stack for that interval.
                 for row in docker.read_stats(self.ids):
-                    cpu = float(row.get("CPUPerc", "0%").rstrip("%") or 0)
-                    mem_use = _to_bytes(row.get("MemUsage", "0B").split("/")[0])
-                    net = row.get("NetIO", "0B / 0B").split("/")
-                    blk = row.get("BlockIO", "0B / 0B").split("/")
+                    cpu = float(row["CPUPerc"].removesuffix("%"))
+                    mem_use = _to_bytes(row["MemUsage"].split("/")[0])
+                    net_rx, net_tx = row["NetIO"].split("/")
+                    blk_r, blk_w = row["BlockIO"].split("/")
                     self.samples.append(
                         {
                             "tick": tick,
-                            "name": row.get("Name", ""),
+                            "name": row["Name"],
                             "cpu_pct": cpu,
                             "mem_bytes": mem_use,
-                            "net_rx": _to_bytes(net[0]),
-                            "net_tx": _to_bytes(net[1]) if len(net) > 1 else 0,
-                            "blk_r": _to_bytes(blk[0]),
-                            "blk_w": _to_bytes(blk[1]) if len(blk) > 1 else 0,
+                            "net_rx": _to_bytes(net_rx),
+                            "net_tx": _to_bytes(net_tx),
+                            "blk_r": _to_bytes(blk_r),
+                            "blk_w": _to_bytes(blk_w),
                         }
                     )
 
@@ -130,10 +136,9 @@ class ResourceSampler:
         return by_container
 
     def summary(self) -> dict:
-        """Summarize CPU, memory, and network usage across the sampled interval."""
+        """Summarize metrics only when Docker observed containers."""
         if not self.samples:
-            return {"peak_cpu_pct": 0, "avg_cpu_pct": 0, "cpu_by_container": {},
-                    "peak_mem_mb": 0, "avg_mem_mb": 0, "net_tx_mb": 0, "samples": 0}
+            return {"samples": 0}
 
         cpu_totals = self._by_tick("cpu_pct")
         mem_totals = self._by_tick("mem_bytes")

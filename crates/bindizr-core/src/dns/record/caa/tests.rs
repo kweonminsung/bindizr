@@ -9,7 +9,7 @@ fn caa_encoding_preserves_empty_properties() {
         let parsed = CaaRecordValue::parse(&text).unwrap();
         parsed.validate().unwrap();
 
-        assert_eq!(parsed.canonical(), text);
+        assert_eq!(parsed.to_text(), text);
         let mut expected = vec![0, u8::try_from(tag.len()).unwrap()];
         expected.extend_from_slice(tag.as_bytes());
 
@@ -21,16 +21,16 @@ fn caa_encoding_preserves_empty_properties() {
 #[test]
 fn parse_accepts_quoted_and_bare_values() {
     let quoted = CaaRecordValue::parse("0 issue \"letsencrypt.org\"").unwrap();
-    assert_eq!(quoted.canonical(), "0 issue \"letsencrypt.org\"");
+    assert_eq!(quoted.to_text(), "0 issue \"letsencrypt.org\"");
     let bare = CaaRecordValue::parse("0 ISSUE letsencrypt.org").unwrap();
-    assert_eq!(bare.canonical(), "0 ISSUE \"letsencrypt.org\"");
+    assert_eq!(bare.to_text(), "0 ISSUE \"letsencrypt.org\"");
 }
 
 /// Verify that `parse` accepts repeated whitespace between fields.
 #[test]
 fn parse_accepts_repeated_whitespace_between_fields() {
     let spaced = CaaRecordValue::parse("  0  issue \t \"letsencrypt.org\"  ").unwrap();
-    assert_eq!(spaced.canonical(), "0 issue \"letsencrypt.org\"");
+    assert_eq!(spaced.to_text(), "0 issue \"letsencrypt.org\"");
 }
 
 /// Verify that a quoted value resolves its escapes and renders them back.
@@ -41,7 +41,7 @@ fn caa_parse_round_trips_quoted_value_escapes() {
     let parsed = CaaRecordValue::parse(r#"0 issue "a\"b\\c""#).unwrap();
     parsed.validate().unwrap();
 
-    assert_eq!(parsed.canonical(), r#"0 issue "a\"b\\c""#);
+    assert_eq!(parsed.to_text(), r#"0 issue "a\"b\\c""#);
     assert_eq!(
         parsed.to_rdata().unwrap().as_bytes(),
         b"\x00\x05issuea\"b\\c"
@@ -82,12 +82,12 @@ fn caa_parse_splits_fields_at_unquoted_whitespace() {
     for text in [r"0 issue a\032b", r"0 issue a\ b", r#"0 issue "a b""#] {
         let parsed = CaaRecordValue::parse(text).unwrap();
         parsed.validate().unwrap();
-        assert_eq!(parsed.canonical(), r#"0 issue "a b""#);
+        assert_eq!(parsed.to_text(), r#"0 issue "a b""#);
     }
 
     let trailing_space = CaaRecordValue::parse("0 issue a\\ ").unwrap();
 
-    assert_eq!(trailing_space.canonical(), r#"0 issue "a ""#);
+    assert_eq!(trailing_space.to_text(), r#"0 issue "a ""#);
 }
 
 /// Verify that every property octet survives presentation and wire encoding.
@@ -105,7 +105,7 @@ fn property_values_preserve_all_octets() {
         expected.extend(0..=255u8);
 
         assert_eq!(parsed.to_rdata().unwrap().as_bytes(), expected);
-        let canonical = parsed.canonical();
+        let canonical = parsed.to_text();
         let reparsed = CaaRecordValue::parse(&canonical).unwrap();
 
         assert_eq!(reparsed.to_rdata().unwrap().as_bytes(), expected);

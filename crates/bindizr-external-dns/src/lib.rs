@@ -17,12 +17,11 @@ use bindizr_core::errln;
 use bindizr_core::logger::Logger;
 use clap::Parser;
 use tokio::net::TcpListener;
-use tokio::signal::unix;
-use tokio::signal::unix::SignalKind;
+use tokio::signal::unix::{self, Signal, SignalKind};
 use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
 use tokio::task::{JoinError, JoinHandle, JoinSet};
-use tokio::{signal, time};
+use tokio::time;
 
 use crate::config::{AdapterConfig, Cli};
 use crate::metrics::AdapterMetrics;
@@ -101,6 +100,15 @@ pub async fn execute() {
             process::exit(1);
         });
 
+    let listen = |signal, kind| {
+        listen_for_signal(signal, kind).unwrap_or_else(|error| {
+            log::error!("{error}");
+            process::exit(1);
+        })
+    };
+    let mut interrupt = listen("SIGINT", SignalKind::interrupt());
+    let mut terminate = listen("SIGTERM", SignalKind::terminate());
+
     log::info!(
         "ExternalDNS webhook listening on http://{} (bindizr: {})",
         adapter_config.listen_addr,
@@ -122,14 +130,20 @@ pub async fn execute() {
     watch(&mut servers, "Health", tokio::spawn(health.into_future()));
 
     let failed = tokio::select! {
-        Some(Ok((name, result))) = servers.join_next() => {
-            log_server_stopped(name, result);
+        Some(result) = servers.join_next() => {
+            match result {
+                Ok((name, result)) => log_server_stopped(name, result),
+                Err(error) => log::error!("A server supervisor task failed: {error}"),
+            }
             true
         }
 
-        () = wait_for_signal() => {
-            log::info!("Shutting down");
-            false
+        result = wait_for_signal(&mut interrupt, &mut terminate) => {
+            match result {
+                Ok(()) => log::info!("Shutting down"),
+                Err(ref error) => log::error!("{error}"),
+            }
+            result.is_err()
         }
     };
 
@@ -138,7 +152,13 @@ pub async fn execute() {
     let _ = stop.send(true);
 
     let drained = time::timeout(DRAIN_TIMEOUT, async {
-        while servers.join_next().await.is_some() {}
+        while let Some(result) = servers.join_next().await {
+            match result {
+                Ok((_, Ok(Ok(())))) => {}
+                Ok((name, result)) => log_server_stopped(name, result),
+                Err(error) => log::error!("A server supervisor task failed: {error}"),
+            }
+        }
     })
     .await;
 
@@ -165,21 +185,34 @@ async fn wait_for_stop(mut stop: Receiver<bool>) {
     }
 }
 
-/// Wait for SIGTERM or SIGINT; a container's PID 1 needs explicit handlers
-/// to stop before its grace period expires.
-async fn wait_for_signal() {
-    let mut terminate = match unix::signal(SignalKind::terminate()) {
-        Ok(terminate) => terminate,
-        Err(error) => {
-            log::error!("Failed to listen for SIGTERM: {error}");
-            return;
-        }
-    };
-    tokio::select! {
-        _ = signal::ctrl_c() => {}
+/// Why an operating-system shutdown signal could not be observed.
+#[derive(Debug, thiserror::Error)]
+#[error("shutdown signal {signal} failed: {source}")]
+struct SignalError {
+    signal: &'static str,
+    #[source]
+    source: io::Error,
+}
 
-        _ = terminate.recv() => {}
-    }
+/// Register an operating-system signal, including when running as PID 1.
+fn listen_for_signal(signal: &'static str, kind: SignalKind) -> Result<Signal, SignalError> {
+    unix::signal(kind).map_err(|source| SignalError { signal, source })
+}
+
+/// Wait for an interrupt or termination signal, reporting closed receivers.
+async fn wait_for_signal(
+    interrupt: &mut Signal,
+    terminate: &mut Signal,
+) -> Result<(), SignalError> {
+    let (signal, received) = tokio::select! {
+        received = interrupt.recv() => ("SIGINT", received),
+        received = terminate.recv() => ("SIGTERM", received),
+    };
+
+    received.ok_or_else(|| SignalError {
+        signal,
+        source: io::Error::new(io::ErrorKind::BrokenPipe, "signal listener closed"),
+    })
 }
 
 /// Log the server that stopped on its own, which stops the adapter with it.

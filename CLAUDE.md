@@ -30,6 +30,11 @@ violations, intentional exceptions, document ambiguities, and unverified boundar
 separately. A passing scan or test suite does not verify an unexecuted database,
 transport, container setup, or CI run.
 
+Compare peer operations through their callers and tests. Check which layer
+owns validation, authorization, mutation, and error handling before aligning
+names, control flow, or return types. Share a step when its inputs, effects,
+and failure contract match across callers.
+
 Contents:
 
 - [Development workflow](#development-workflow)
@@ -80,9 +85,11 @@ cargo +nightly fmt                                        # format
 - Formatting requires nightly for `rustfmt.toml`'s `imports_granularity` and
   `group_imports`; stable ignores these unstable options.
 - E2E tests use temporary SQLite databases and local processes by default.
-  `BINDIZR_E2E_VERIFY_DNS=true` enables DB/BIND9 Docker containers; also set
-  `BINDIZR_E2E_ARM=true` on ARM. Other crates' `--lib` tests need no external services,
-  but network tests still need permission to bind local TCP, UDP, and Unix sockets.
+  `BINDIZR_E2E_VERIFY_DNS=true` selects the Compose stack with Bindizr,
+  PostgreSQL and BIND9 for tests that support it. Also set
+  `BINDIZR_E2E_ARM=true` on ARM to select the ARM BIND9 images. Other crates'
+  `--lib` tests need no external services. Network tests still need permission
+  to bind local TCP, UDP, and Unix sockets.
 
 ### Benchmarks
 
@@ -90,15 +97,20 @@ cargo +nightly fmt                                        # format
 build). `./benchmarks/benchmark.sh` is the entrypoint; benchmark keys are
 `b01_crud_tps` … `b09_resource_usage` (query performance is `b08_query_perf`).
 
-Every run writes to its own timestamped directory
+By default, each run must use a fresh timestamped directory
 **`results_<YYYYmmdd_HHMMSS>/`** (e.g. `results_20260710_233856/`), selected by
-[`benchmarks/lib/settings.py`](benchmarks/lib/settings.py) and created by the
-reporting flow. This is the single
+[`benchmarks/lib/settings.py`](benchmarks/lib/settings.py). This is the single
 canonical naming convention — never refer to a bare `results/` directory in
 code, docs, or messages. Set `BENCH_RESULTS_DIR` to reuse an existing directory
 when re-running a subset (`-b ...`) so the report is rebuilt from the full raw
 set. Results (`performance.{md,csv,json}` + `graphs/`) and the `results_*/`
-dirs are git-ignored.
+dirs are git-ignored. Reserve a fresh directory before clearing or writing
+raw results and hold it exclusively through reporting when reusing it.
+Each workload acquires a unique Compose project and releases only that project.
+Print the selected path in subset rerun instructions, including any parent
+directories in an override. Keep failed or missing observations distinct
+from a measured zero. Rebuild every report view from the current raw set
+when reusing a directory, including removing charts whose data is now absent.
 
 ## Architecture and ownership
 
@@ -106,10 +118,10 @@ dirs are git-ignored.
 
 | Crate | Owns |
 | --- | --- |
-| `bindizr-core` | Configuration, logging, DB models, DNS value types, wire encoding/decoding, DNSSEC signing, TSIG, zone-file parsing. Owns the production `domain` dependency; higher product layers use core types. E2E may use `domain` as a dev-dependency for independent protocol inspection. |
-| `bindizr-db` | Row access through `Db` and `Transaction` enums over MySQL, PostgreSQL, and SQLite. Entity modules dispatch to same-named backend functions. SQL and error text are intentionally duplicated per backend; do not deduplicate them. |
+| `bindizr-core` | Configuration, logging, metrics registry and typed labels, DB models, DNS value types, wire encoding/decoding, DNSSEC signing, TSIG, zone-file parsing. Owns the production `domain` dependency; higher product layers use core types. E2E may use `domain` as a dev-dependency for independent protocol inspection. |
+| `bindizr-db` | Row access through `Db` and `Transaction` wrappers over MySQL, PostgreSQL, and SQLite. Entity modules dispatch to same-named backend functions. SQL and error text are intentionally duplicated per backend; do not deduplicate them. |
 | `bindizr-service` | Business logic, RFC 2136 apply, `Context`, and outbound `dns_client/` operations: NOTIFY, SOA/parent-DS probes, inbound AXFR. `transfer` logs what the DNS server served each client, across restarts. Wire formats stay in core. |
-| `bindizr` | Daemon bootstrap and front ends: HTTP API, CLI, Unix-socket IPC, inbound DNS listeners and dispatch (AXFR/IXFR/catalog/NOTIFY/nsupdate). |
+| `bindizr` | Daemon bootstrap and front ends: HTTP API, CLI, Unix-socket IPC, inbound DNS listeners and dispatch (SOA, AXFR/IXFR, catalog replies, nsupdate). |
 | `bindizr-external-dns` | ExternalDNS webhook adapter forwarding to `/external-dns` over HTTP; no DNS logic or independent state. |
 | `bindizr-e2e` | API/CLI/DNS end-to-end tests. Its binary targets let `env!("CARGO_BIN_EXE_…")` resolve inside the test package. |
 
@@ -135,9 +147,10 @@ Service/db functions omit the entity their module names; front-end handlers keep
 the full operation (`get_zone`, `list_records`). HTTP names are API-wide unique
 OpenAPI operation IDs, and socket handlers use the same names.
 
-Use an enum for a closed set. `Db` and `Transaction<'a>` match their backend
-enums and pass the backend's own pool or sqlx transaction to its functions;
-there is no runtime transaction-kind mismatch. A trait is justified by open
+Use an enum for a closed set. The `Db` and `Transaction<'a>` wrappers hold
+internal `Backend` and `TransactionKind<'a>` enums. The DB facade matches them
+and passes the backend's own pool or sqlx transaction to its functions.
+A trait is justified by open
 implementors or a generic bound (`impl IntoIterator<Item = &Record>`), not a
 closed collection of implementations used only as boxed trait objects. Do not
 introduce repository factories, boxed repository traits, or `async-trait` for
@@ -167,8 +180,9 @@ boundary; justify a change to that boundary by its contract, not clone counts.
 ### State and process lifecycle
 
 `bootstrap` builds one `bindizr_service::Context` in dependency order:
-configuration, database, metrics, and NOTIFY/scheduler senders. Create channels
-before `Context` and spawn workers afterward with `Arc<Context>`. Configuration
+configuration, database, metrics, and senders for NOTIFY, access logs, and the
+scheduler. Create channels before `Context` and spawn workers afterward with
+`Arc<Context>`. Configuration
 reload swaps the stored value; `cx.config()` returns the current `Arc<Config>`.
 `Db` is private, accessible through `cx.db()` only inside the service crate.
 
@@ -184,18 +198,32 @@ from constructors, with `stop` where draining is needed, never `initialize` into
 globals. Bind the daemon socket before building other state to reject a second
 daemon early, then `serve` it.
 
-Listeners own their accepted requests and connections. Shutdown stops new reads
-and waits for accepted mutations, then stops and joins the scheduler before
-flushing NOTIFY. A transfer may be interrupted for the secondary to retry;
-canceling it must not leave a partially written frame usable by another reply.
-The daemon's overall drain timeout bounds this wait.
+Listeners own their accepted requests and connections. On orderly shutdown,
+stop admitting new work and let already dispatched mutations finish within the
+daemon's overall drain timeout. Join the listeners and the scheduler before
+flushing NOTIFY, then flush the access-log queue within the same deadline.
+Canceling a transfer for the secondary to retry must also retire its stream
+writer before a partial frame can be reused by another reply. Mutations
+already dispatched on that connection still finish within the drain budget.
+Startup failures must clean up the resources already acquired, including the
+control socket, and drain any mutations already dispatched.
+A control response acknowledges the transition the daemon accepted. A pending
+different transition or closed control channel must produce a failure.
+`stop` waits for the socket entry of the daemon that acknowledged the request
+to disappear. The daemon keeps its socket bound during drain so another
+startup recognizes it as live, stops accepting commands, and removes its own
+socket entry after draining.
+Preparing the socket path and binding its listener are serialized via the
+trusted parent directory so concurrent starts cannot both replace a stale entry.
 
-Only two production process globals remain: the `log` facade (`Logger::init`,
-`set_level`, its level/format atomics) and stdout/stderr write state behind
-`outln!`. A pure environment fact such as color detection may memoize in a
-function-local `OnceLock`. No other production `static` is allowed, including
-configuration, pools, metrics registries, or caches. E2E globals for test sequence, run ID, and
-the shared Compose stack are test coordination, not production dependencies.
+The `log` facade (`Logger::init`, `set_level`, its level/format atomics) and
+the stdout/stderr writer behind `outln!` are Bindizr's two production process
+globals. A pure environment fact such as color detection may memoize in a
+function-local `OnceLock`. Keep all other Bindizr-owned production state in its
+owning context, including configuration, pools, metrics registries and caches.
+Required dependency initialization, such as the rustls crypto provider, uses
+the dependency's process API. E2E may use globals for the test sequence,
+run ID, and shared Compose stack.
 
 Only a binary's `execute()` (the body of `main`) calls `std::process::exit`.
 It lives in the binary crate's lib target so E2E can wrap and spawn it. All other
@@ -215,8 +243,9 @@ code, including core and db, propagates errors to its caller.
   permissions do not replace that check. The CLI also checks the daemon's uid.
   A root CLI additionally trusts another user's daemon at the primary
   `/run/bindizr` socket, relying on system control of `/run`. The `/tmp` fallback
-  always requires the CLI's own uid or root. Directory ownership and symlink checks protect
-  socket preparation separately from peer authentication.
+  always requires the CLI's own uid or root. Socket directories must be owned
+  by the daemon user or root and writable by their owner alone. Ownership,
+  mode, and symlink checks protect the path separately from peer authentication.
   NOTIFY takes no caller. A transfer or an nsupdate authenticates its TSIG
   key into a `Caller` (`Caller::authenticate_tsig_key`), or takes
   `Caller::unsigned_dns()` where the address ACL or
@@ -262,10 +291,12 @@ code, including core and db, propagates errors to its caller.
 - `bindizr_service::types` owns shared HTTP API, daemon-socket, and CLI management
   payloads. `socket::types` owns daemon control messages, transport envelopes, and
   PID/listener reports. The HTTP adapter owns its external protocol shapes.
-- Query extractors belong to their front end. Every handler's `Query<T>` appears
-  as OpenAPI `params(T)` via `IntoParams`, including single switches; do not
-  hand-write a second parameter list. Front ends reshape payloads for presentation
-  (CLI table rows), never re-derive their contents.
+- Query extraction belongs to the HTTP front end. An HTTP-only switch belongs
+  in a front-end query type. The extractor can use a shared service filter or
+  request directly when its fields already match the query contract. Every
+  handler's `Query<T>` appears as OpenAPI `params(T)` via `IntoParams` on that
+  same type, including single switches. Front ends reshape payloads for
+  presentation (CLI table rows) and leave their contents to the service.
 - `DaemonCommand` is a data-carrying enum with
   `#[serde(tag = "command", content = "data")]`. Match directly into its typed
   variants; do not split a command into a kind plus `serde_json::Value` and re-parse.
@@ -327,10 +358,12 @@ than returning anything.
   action, `All`) is ensured at startup and can be neither changed nor deleted;
   the first token is issued over the socket with `token create --role admin`.
 - **Visibility**: a zone is visible when any grant of the role reaches it,
-  whatever its actions (404 otherwise, so a scope cannot probe existence; a
-  visible zone's denied operation is 403), and its details — SOA and
-  settings, no records — read with visibility alone; `zone:read` adds
-  status and the version list. Reading records needs `record:read`
+  regardless of its actions. An operation on a named zone returns 404 for
+  missing and invisible zones alike, and 403 when a visible target denies
+  the requested action. For scoped callers, a record collection filtered by
+  zone returns an empty page for missing and invisible zones alike. Zone
+  details show SOA and settings with visibility alone. `zone:read` adds status
+  and the version list. Reading records needs `record:read`
   covering them; an update or delete finds its target by that or by its own
   write action, so a write-only grant reaches what it may change and no more.
   An update fills omitted fields from the stored record, so without
@@ -349,8 +382,10 @@ than returning anything.
   `authorize_whole_zone_read`; `push_written` adds the caller's own writes.
   A new response carrying rows takes a `ReadableRecords`, not a filter at
   its site.
-  Every record response carries the caller's `actions` on it, so a client
-  offers what the service allows without re-implementing grant matching.
+  Live management `RecordResponse` items carry the caller's `actions` so a
+  client can offer the permitted operations. Historical and preview items
+  keep their own response shapes, and ExternalDNS uses its own protocol
+  shape. Their records still follow the caller's read scope.
   The e2e `responses_hide_records_outside_read_grants` sweeps every
   route as restricted roles; a new route that returns records joins it.
 - **A write-only grant learns what its write touches, never an unread stored value.** Write
@@ -419,14 +454,17 @@ describes.
 A log holds rows that only say what happened: nothing decides on them. Its
 table is `<subject>_log`, singular where entity tables are plural, and its row
 type and db module carry that name (`audit_log`, `AuditLog`;
-`transfer_log`, `TransferLog`); the service module keeps the subject (`audit`,
-`access`, `transfer`). The audit log holds management changes; the access log
-every management API request and nsupdate answered, by the front end, client
-address and verified credential; the transfer log every transfer Bindizr
-answered, refused, or failed, by client address and zone (an IXFR answered
-with the current SOA alone moved nothing and is none, and a UDP refusal,
-whose source address can be forged, is counted but not saved). `zone_journal` and
-`zone_versions` are not logs: IXFR, diff, and rollback are served from them.
+`transfer_log`, `TransferLog`). The service module keeps the subject (`audit`,
+`access`, `transfer`). The audit log holds management changes. The access log
+records HTTP management responses, authentication denials, and the unknown
+path and method fallbacks. Health, metrics, OpenAPI reads and CORS preflights
+are outside that path. For nsupdate, record the processing and encoding
+outcome before the transport write. Identify the surface, client address and
+verified credential. The transfer log records the configured outcomes by
+client address and stored zone. Unknown zones, the synthesized catalog zone,
+and an IXFR answered with the current SOA alone leave no row. Count UDP
+refusals in metrics only because their source addresses can be forged.
+IXFR, diff, and rollback read `zone_journal` and `zone_versions`.
 
 Every log is read the same way: `GET /logs/<subject>`, `bindizr log
 <subject>`, and a paged `list` in its service module under `log:read`, an
@@ -483,14 +521,17 @@ One locking model covers the service layer; keep new code on it:
   every later one; a read authorizes and loads its content in one snapshot, so on
   SQLite, where a read holds no lock, it may finish after a revocation but serves only
   what it could read before. Every write that acts for a caller therefore runs in a
-  transaction, management writes included; a TSIG transfer or update re-reads its key
-  and grants the same way, and a transfer loads what it serves (AXFR records, IXFR
-  delta, catalog members, SOA) in that transaction, a cached AXFR serving that version's
-  content. A single statement that only records what already happened — the token's
-  last-used stamp written during authentication, the transfer log — runs on the pool:
-  nothing decides on it, and the caller's own transaction re-authenticates regardless.
-  A read without a transaction, an outbound NOTIFY or probe, and an unsigned transfer
-  (the address list as the request finds it) decide on the request's credential.
+  transaction, management writes included. A TSIG transfer or update re-reads
+  its key and grants the same way. Signed and unsigned DNS serving paths load
+  what they serve (AXFR records, IXFR delta, catalog members, SOA) in a protected
+  snapshot, with cached AXFR content matched to that version. Unsigned admission
+  uses the address list as observed by the request and has no credential row to
+  re-read. Token last-used timestamps are best-effort bookkeeping outside
+  the caller's transaction. The backend may take short-lived locks to stamp
+  a row without waiting on a mutation. Access and transfer log inserts use
+  the pool. The caller's own transaction still re-authenticates.
+  A read without a transaction and an outbound NOTIFY or probe use the
+  request's authenticated caller.
 - **Reads**: one statement needs no transaction. A derived output that must
   be internally consistent (zone export, version detail, version diff)
   takes a transaction plus the zone lock. Paginated listings run count and
@@ -514,11 +555,13 @@ One locking model covers the service layer; keep new code on it:
   read after it: no fingerprint or "changed meanwhile" comparison, no
   snapshot carried across a network wait, no in-process mutex or
   singleflight around a cache miss. Such a guard means something only if
-  every path carries it, and none does. Work whose answer the transaction
-  acts on — a parent-DS probe included — runs inside it under the zone row lock
-  (or SQLite writer reservation); a read-only path runs it outside and accepts drift. The duplicate
-  pre-check above is an integrity check the constraint backstops, not a
-  concurrency guard.
+  every path carries it, and none does. State-dependent checks that authorize
+  a local transition, such as a parent-DS probe, run under the zone row lock
+  or SQLite writer reservation. Read-only probes can accept drift. An
+  external AXFR is supplied input and can be fetched before locking. The
+  import transaction still re-authenticates and validates it against locked
+  state. Duplicate pre-checks provide a clearer integrity error. Database
+  constraints handle concurrent inserts.
 
 ### Pagination
 
@@ -531,11 +574,13 @@ service entry point.
 
 ### Mutation lifecycle
 
-Service mutations follow one order: normalize supplied input, begin the transaction,
-lock the target, re-authenticate and authorize, resolve omitted fields against the
-locked state, validate the proposed state, apply, commit, then notify and report
-success. Management operations re-authenticate before locking their own rows, as
-[Transactions and locking](#transactions-and-locking) specifies. Reads keep their own transaction contract.
+Prepare supplied input and begin the transaction. Acquire the locks and
+re-authenticate in the order specified in [Transactions and locking](#transactions-and-locking).
+When the target is known, authorize it before inheriting stored fields or
+reporting semantic errors about the proposed change. Resolve omissions against
+the locked state, authorize any new identity the mutation would affect,
+validate the proposed state, apply, commit, then notify and report success.
+Reads keep their own transaction contract.
 
 - Normalize supplied fields once at their owning boundary and carry the result
   forward. Independent validation, canonical comparison, and wire encoding may
@@ -564,12 +609,13 @@ success. Management operations re-authenticate before locking their own rows, as
 - Imports resolve text using the locked zone's TTL, or configured creation defaults
   for a missing zone. Parse once; AXFR passes records without rendering a master
   file. Plan and validate missing-zone imports before inserting the zone.
-  A bulk import (`import_zones`) runs that flow once per zone, each in its own
-  transaction in list order, so one zone's rejection or failure is reported
-  beside the others' outcomes and stops nothing. Its zone list is the request's
-  names or the members of the source's catalog zone (RFC 9432), read before
-  any zone is touched; the `create` authorization, and the all-zones record
-  actions a catalog needs, are checked once before the first transfer.
+  A bulk import (`zone::import_many`) runs that flow once per zone, each in its
+  own transaction in list order. The result reports each zone's outcome and a
+  rejection or failure does not stop the rest. Resolve the requested zone names
+  or source catalog members (RFC 9432) before touching a zone. Check the
+  requested create permission and the all-zones record actions needed to read a
+  catalog before the first transfer. Each zone's transaction re-authenticates
+  the caller and authorizes the actual import or creation against the locked state.
 - NOTIFY, successful-write metrics and success logs follow commit. A no-op reports
   its outcome without claiming a version change. A preview log says `dry_run` or
   `applied`. A transaction result carries any change information these steps need.
@@ -605,11 +651,12 @@ RFC 1035, Section 5.1. A dot inside a label is data, never a boundary.
 `ZoneName::parse` uses the same octet-label and escape rules. DNS labels may
 contain arbitrary octets (RFC 2181, Section 11), including non-LDH zone names.
 
-Outside these name types and their parsers, do not answer a question about
-name relationships with string operations. `ends_with`,
-`split('.')`, or `strip_suffix` on a name is a bug even when it looks right:
-it reads `evil\.example.com` as inside `example.com`. Use `OwnerName`'s
-methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or `is_label_suffix`.
+Compare DNS owner and zone relationships by decoded labels. String
+`ends_with`, `split('.')`, or `strip_suffix` on presentation text can
+treat an escaped dot as a boundary. Use `OwnerName`'s methods
+(`is_same_or_under`, `is_apex`, `to_fqdn`), `is_label_suffix`, or a
+wire-name operation that compares labels. Resolver host validation may
+split the separate escape-free hostname grammar used by `AddressTarget`.
 
 Names are canonical by construction: ASCII letters are lowercased
 (RFC 4343); other octets retain their values. Presentation renders nonprintable
@@ -622,16 +669,17 @@ match a grant's subtree with `LIKE`, and concatenate them into FQDNs.
 The row form is the type's, not a caller's: `from_row` decodes it, behind
 the type's `sqlx::Decode`, and `sqlx::Encode` renders it, so bind an
 `OwnerName` itself rather than a string you produced; no `From<String>`
-exists to build one unparsed. `Display` is the presentation form, whose apex is `@` and not
-the empty string a row holds. A `ZoneName` and a secondary's `AddressTarget`
+exists to build one unparsed. An invalid persisted owner name fails row
+decoding with its typed parse error. `Display` renders the apex as `@`.
+A row holds the apex as an empty string. A `ZoneName` and a secondary's `AddressTarget`
 (`host:port`, the port spelled out and the host lowercase) are rows the same
 way: parsed once by the service, bound as themselves, and read back typed,
 so nothing splits or re-parses their text at the point of use.
 
-Choose the owner-name parser from the input contract, not its final character.
-`OwnerName::parse_in_zone` accepts client input including `@`, a relative
-name such as `www`, and an absolute name; it qualifies relative input with
-the zone. `parse_absolute_in_zone` takes input already known to be absolute
+Choose the owner-name parser from the input contract. `OwnerName::parse_in_zone`
+accepts client input including `@`, a relative name such as `www`, and an
+absolute name in the zone. It checks the qualified wire length and returns
+relative owner labels. `parse_absolute_in_zone` takes input already known to be absolute
 (lookup form, wire owners), even when its rendered form omits the trailing
 dot, and never qualifies it. With zone `example.com`, client input `www` is
 relative, while a wire owner `www.other.org` must be rejected as out of zone.
@@ -679,8 +727,9 @@ User records use a closed list of implemented types, including WKS. Unsupported
 ordinary types are rejected across API, CLI, imports, and DNS UPDATE; there is
 no opaque fallback or option to skip unsupported import records. Rejecting
 unknown types is an explicit product exception to RFC 3597, Section 3's
-transparent-handling requirement. A failed import leaves the zone unchanged. Numeric TYPE aliases
-resolve only to implemented types. An UPDATE record of such a type is FORMERR
+transparent-handling requirement. A failed import leaves the zone unchanged.
+Numeric TYPE aliases resolve only to implemented types. An UPDATE record
+of an unsupported ordinary type receives FORMERR
 (RFC 2136, Section 3.4.1.2); a prerequisite may name any type and is evaluated
 against the served zone. SOA and signer-managed DNSSEC data retain
 their separate contracts.
@@ -703,22 +752,20 @@ defines flag meanings; DNS record validation does not restrict them to a list.
 
 ### RFC behavior and explicit exceptions
 
-For the authoritative DNS operations Bindizr supports, follow the applicable
-requirements of the RFCs cited here (1034/1035, 1982, 1995, 1996,
-2136, 2181, 3225, 4034/4035, 5155, 5936, 6672, 6891, 7766, 8767, 8945, 9103, 9432, 9619), and a
-requirement one states is met as written: a MUST is implemented, a SHOULD
-is followed unless the reason not to stands in a comment beside the code,
-and a MAY is a design choice recorded here or in the docs. This concerns the
-implemented protocol roles, not every role or optional feature in those RFCs.
-An RFC citation alone does not establish conformance; an audit names the paths,
-requirements, and verification it actually covered. Interoperability
-with a named server never loosens a MUST by default; where a server needs
-one relaxed, that is an operator option documented with the section and the
-server. The access-control model and the clean-install policy shape *how* a
-requirement is met, not *whether*: XoT admits a request only when its TSIG
-key and its registered address both pass (RFC 9103, Section 7.5), though
-the plain listener takes either alone. Code that meets a requirement cites
-the section (`RFC 9103, Section 7.1`), so a reader can check the text.
+For the DNS roles and features Bindizr supports, implement every applicable
+MUST in the cited RFCs (1034/1035, 1982, 1995, 1996, 2136, 2181, 3225,
+4034/4035, 5155, 5936, 6672, 6891, 7766, 8767, 8945, 9103, 9432, 9619),
+subject to the explicit deviations documented below.
+Follow each SHOULD or document its rationale beside the code, and record MAY
+choices here or in the docs. An unimplemented requirement for a supported role
+or feature is an audit finding. A new limitation or deviation requires a user
+decision. An interoperability option that relaxes a MUST for a named server
+must document the server and RFC section and be opt-in. Access control and
+clean installs remain subject to the applicable requirements. Bindizr uses
+the address ACL and TSIG option for XoT (RFC 9103, Section 7.5). For plain
+transfers, verify a supplied TSIG or apply the address ACL to an unsigned
+request. Cite the applicable section in code. In an audit, name the roles,
+requirements, paths and verification actually covered.
 
 These SHOULD recommendations have explicit exceptions. TSIG verification does
 not retain the latest Time Signed per key (RFC 8945, Section 5.2.3), because
@@ -809,8 +856,10 @@ datagrams or missing destination metadata instead of guessing the reply source.
 Omitted API/DNS addresses default to `0.0.0.0`; their ports default to `3000`
 and `5300`. The database type defaults to SQLite and the logging level to `info`.
 These defaults also apply when their sections are absent. The selected database
-still needs its location. Parse the file and fill defaults, then apply environment
-overrides before validation; explicit invalid values remain errors.
+still needs its location. TOML deserialization checks syntax, types and known
+fields while filling defaults. Apply environment overrides next, then validate
+the effective values and their combinations. An invalid supplied override,
+including non-Unicode text, is a configuration error.
 
 DNS response budgets use `ResponseLimit`. Ingress reads EDNS from `ParsedQuery`
 or `QueryMetadata` and chooses UDP/EDNS or stream; UPDATE and outbound UDP
@@ -837,9 +886,13 @@ server time in Other Data (RFC 8945, Sections 4.3 and 5.2.3). If a TSIG
 validation error exceeds the UDP limit, omit its question and re-sign the
 same error, retaining its time fields, OPT and full MAC. Stream errors keep
 their question (RFC 5936, Section 2.2.2).
-Every TSIG MAC includes the original Other Len and Other Data octets. Requests
-require Error zero; requests and responses both require the final Additional
-TSIG to carry CLASS ANY and TTL zero (RFC 8945, Sections 4.2 and 5.2).
+A request MAC and the MAC of a standalone reply or first transfer message
+include the original Other Len and Other Data octets (RFC 8945, Section 4.3.3).
+A later signed transfer message hashes the prior MAC, the DNS messages since
+the last signature through the current message, and the current Time Signed
+and Fudge (RFC 8945, Section 5.3.1). Requests require Error zero. The final
+Additional TSIG in requests and responses carries CLASS ANY and TTL zero
+(RFC 8945, Sections 4.2 and 5.2).
 Bindizr requires full-length TSIG MACs. Key, MAC, and time validation precede
 this policy; authenticated truncations receive signed BADTRUNC, while invalid MACs
 receive unsigned BADSIG (RFC 8945, Sections 5.2 and 5.3.2).
@@ -1062,7 +1115,7 @@ Derive traits according to the value's contract (`C-COMMON-TRAITS`, `C-DEBUG`):
 
 | Trait | When |
 | --- | --- |
-| `Debug` | Every type. |
+| `Debug` | Every type, with credential material redacted. |
 | `Clone`, `PartialEq`, `Eq` | Fields permit them and the type owns no resource. A resource has external identity: socket, pool, task, lock, child process; cloneable protocol state such as a TSIG sequence is not one. A shared resource handle (`Shutdown`, `SocketContext`) clones but does not compare. |
 | `Copy` | Fieldless enums and structs whose fields are all `Copy`, regardless of size. Generic wrappers derive traits conditionally, including `Copy`. |
 | `Hash`, `Ord` | Map keys or sorting. |
@@ -1078,6 +1131,17 @@ expands where nothing is imported.
 
 Enums with stored, wire, or textual forms follow [Presentation](#presentation).
 Control enums without those forms need neither text conversion nor `Display`.
+
+Redact credential material in `Debug`, including alternate formatting,
+nested fields and error variants. Raw API tokens, TSIG secrets, DNSSEC private
+keys, and credentials in configuration URLs need a redacting `Debug`
+implementation at the owning value or a field type whose formatter redacts
+them. Apply the same redaction to startup logs and error messages that
+describe the URL. When a parser error quotes input that may contain a
+credential, keep the location and classification in the diagnostic.
+Verify direct and nested output with dummy credentials.
+Preserve each authorized secret-return and export shape at its serialization
+boundary.
 
 ### Errors
 
@@ -1115,9 +1179,10 @@ error rather than its ownership wrapper; test that source identity and chain.
   logging it first, so a `?` path is logged as surely as a `map_err` one. A client's mistake is not logged at
   error level. Work that ends without returning its error (a spawned task, a
   scheduler pass, a post-commit NOTIFY) logs it where it ends.
-- Box `domain` errors in `dns::LibraryError`; their types vary and callers do
-  not match them. Only foreign failures without `Error` (`SigningError`, `TxtError`)
-  keep text in a `reason` field instead of a source.
+- Keep a known `domain` error type as a typed source. Use `dns::LibraryError`
+  for foreign causes whose types vary and whose callers use the error chain.
+  Foreign failures that lack `Error` (`SigningError`, `TxtError`) may keep
+  their text in a `reason` field.
 - Share error types within a layer when handling is the same. Preserve distinct
   contracts/recovery decisions (`StartDnsError`, `SendIxfrError::NotStarted` /
   `Partial`). No wrapper variants solely to name handlers. Logs supply operation,
@@ -1320,8 +1385,10 @@ the service needs both, and the `_tx` form alone where it needs the lock
   `delete_*_older_than` would misdescribe.
 
 `Db::connect` / `begin` / `begin_read`, `Transaction::commit` / `rollback`,
-the service's transaction helpers, and connection probes are resource and
-lifecycle operations, outside the entity-query grammar.
+and service transaction helpers manage resource lifecycles outside the
+entity-query grammar. The diagnostic entry points `probe_connection` for
+offline doctor and `zone::probe_table` for readiness also follow their own
+probe vocabulary.
 
 **Segments:**
 
@@ -1464,7 +1531,7 @@ Domain actions/lifecycle steps keep their own verbs (`sign_zone`, `escape_label`
 Nouns are allowed for accessors and pure derivations when a verb adds nothing
 (`elapsed_ms`, `record_set_digest`, `promotable_sep_key_ids`, `like_pattern`).
 Error/refusal constructors and small HTTP status helpers name the condition
-(`ServiceError::unauthorized`, `TransferRefusal::refused`, `unauthorized(message)`).
+(`ServiceError::unauthorized`, `QueryRefusal::refused`, `unauthorized(message)`).
 Message assembly still uses `build_error_response`, not `error_response`.
 Foreign-trait names and serde `default_<field>` providers follow their contracts.
 
@@ -1578,7 +1645,7 @@ Choose a name from the responsibility, not the return type's implementation:
 | --- | --- | --- |
 | Assemble a message, payload, or aggregate in memory | `build_<thing>` | `build_question`, `build_page`, `build_json_response` |
 | Construct a type's own value | `Type::new`, `Type::parse`, or its lifecycle verb | `DnsMessageBuilder::new`, `ImportPlan::compute`, `Db::connect` |
-| Convert the same logical value to another representation | `From` / `TryFrom`, or `as_` / `to_` / `into_` as defined in [Conversions](#conversions) | `OwnerName::to_wire`, `TransferRefusal::into_response` |
+| Convert the same logical value to another representation | `From` / `TryFrom`, or `as_` / `to_` / `into_` as defined in [Conversions](#conversions) | `OwnerName::to_wire`, `QueryRefusal::into_response` |
 | Encode/decode an existing value or frame | `encode_<thing>` / `decode_<thing>` | `encode_tcp_message`, `decode_name_labels` |
 | Create a stored entity | `create` in its entity module; `create_<entity>` at a front end | `zone::create`, `create_zone` |
 
@@ -1618,15 +1685,15 @@ Section 5) survive only in protocol tokens, which keep their own spelling: the n
 (`NXRRSET`, `YXRRSET`, the `NxRrset`/`YxRrset` variants, lowercase log and
 metric labels), `RRSIG` and its `Rrsig` types, the `domain` crate's own
 `Rrset` and `sign_rrset`, ExternalDNS protocol words (endpoint, targets,
-recordTTL), and RFC quotations. Check with:
+recordTTL), and RFC quotations. Scan tracked text so local audit outputs
+cannot become candidates. Check matches against the owning declaration,
+including an owned wrapper around a dependency's method.
 
 ```sh
-grep -rnE "RRsets?\b|record set|resource record|\bRRs?\b" \
-  docs README.md crates/bindizr/src/api crates/bindizr/src/cli \
-  crates/bindizr-service/src/types
-grep -rnE '"[^"]*(RRset|resource record|record set)[^"]*"' crates/*/src
-grep -rnoE "\b[A-Za-z0-9_]*[Rr]r(set|s)?\b" crates --include='*.rs' \
-  | grep -vE "Rrsig|rrsig|err$|stderr|Err$|formerr|Rrset$|NxRrset|YxRrset|sign_rrset|[yn]xrrset"
+git ls-files -z -- '*.md' docs/openapi.yaml ':!CLAUDE.md' |
+  xargs -0 rg -ni '\b(?:RRs?|RRsets?|resource records?|record[ -]sets?)\b'
+git ls-files -z -- 'crates/**/*.rs' |
+  xargs -0 rg -ni '\b\w*rrset\w*\b|\b(?:RRs?|resource records?|record[ _-]sets?)\b'
 ```
 
 ### Presentation
@@ -1692,7 +1759,7 @@ are evidence of the contract, not a separate visibility rule for each member.
   `ServiceError` constructors, and `probe_secondary` / `probe_secondaries`.
   A public enum's canonical `as_str` or `to_text` belongs to this value API too.
   Corresponding API groups across modules follow the same rule:
-  `zone::list` and `secondary::list_enabled` are public DNS-plane listings,
+  `zone::list_enabled` and `secondary::list_enabled` are public DNS-plane listings,
   regardless of which currently has cross-crate callers.
 - **`pub(crate)` — an internal interface.** Apply the same grouping within a
   crate, including shared implementation types and their operations. A private
@@ -1799,8 +1866,10 @@ Where two spellings mean the same thing, the workspace writes one:
   (`2026072501`).
 - A function-local `const` opens its body. In tests, a function-local `use`
   also opens its body.
-- A `collect()` that ends a `let` takes its type from the binding
-  (`let names: Vec<_> = …collect();`); `parse` and sqlx `query_as` /
+- A `collect()` used directly as a `let` initializer takes its type from the
+  binding (`let names: Vec<_> = …collect();`). Specify an intermediate type
+  at the call when an adapter or `?` needs it
+  (`collect::<Result<Vec<_>, _>>()?`). `parse` and sqlx `query_as` /
   `query_scalar` take the turbofish.
 - A `Display` value is passed as itself (`&zone.name`, `{zone_name}`), not
   through `.as_str()`.
@@ -1879,7 +1948,7 @@ stays at its default.
 
 No dead code or `#[allow(dead_code)]`. Add DB functions only for live callers,
 never for symmetric `_tx`/non-`_tx` pairs or a complete-looking API. Entity queries
-serve the service; `probe_connection` serves offline doctor as a lifecycle operation.
+serve the service.
 After removing a caller, inspect the next layer: rustc cannot detect an orphaned
 cross-crate `pub` facade. Remove a dead DB root function and all three backends together.
 
@@ -1930,22 +1999,23 @@ never bare `pub`):
    `#[cfg(test)]` tests module with at most `pub(crate)` (e.g.
    `nsupdate/parser/tests.rs::build_minimal_update_with_ztype`). No crate-wide
    `test_util` grab-bag modules.
-3. **e2e suite**: `e2e.rs` is the one harness binary — a `tests/*.rs` sibling
-   would be built as a second one — and it declares a flat group per surface a
-   request arrives on: `api/`, `cli/`, `nsupdate/` (RFC 2136), `xfr/` (a
-   secondary's transfer and what authorizes it). What bindizr drives outward
-   (NOTIFY, SOA and parent-DS probes, an inbound AXFR) stays with the surface
-   that triggers it. A group splits into files only where a distinct command or
-   route earns one — `zone import`, `POST /records/bulk` — and everything else,
-   the CRUD and its listing and validation, stays in the group's `mod.rs`.
+3. **e2e suite**: `e2e.rs` is the one harness binary. A `tests/*.rs` sibling
+   would be built as a second one. The top-level groups follow the request
+   surface: `api/`, `cli/`, `nsupdate/` (RFC 2136), and `xfr/` (a
+   secondary's transfer and its admission). Outbound NOTIFY, SOA and parent-DS
+   probes, and inbound AXFR stay with the surface that triggers them. Group
+   HTTP cases by resource and CLI cases by command group. Keep each group's
+   CRUD, listing, and validation together in its file or `mod.rs`. Split out
+   a distinct operation when it warrants a file (`zone import`, `POST /records/bulk`).
    Helpers sit at the narrowest scope that serves them: `tests/common/` when
    more than one group uses them, `<group>/common.rs` when one does, and
    private to the file otherwise. `common/dns/` holds the shared DNS logic
    every group pulls from (queries, transfers, the RFC 2136 builder, the fake
    parent), so its own unit tests live beside it in `common/dns/tests.rs`;
    apart from those, `common/` holds helpers only.
-4. **Never across crates**: no `test-util` features or helper crates;
-   duplicate small fixtures per crate instead.
+4. **Never share Bindizr fixtures across crates**: duplicate small fixtures.
+   Keep them out of workspace features and helper crates. Test support features
+   of dev-dependencies, such as Tokio's paused test clock, stay in dev-dependencies.
 
 ## Documentation and releases
 
@@ -1955,25 +2025,29 @@ never bare `pub`):
 by hand**. The source of truth is the `#[utoipa::path]` annotations listed in
 `crates/bindizr/src/api/openapi.rs` and the payload types they name. To change the
 spec, change the annotations, then regenerate the file from a bindizr serving
-the document (`api.openapi_enabled = true`, off by default since it describes
-the whole API surface). Use an explicitly selected running instance, or start
-one with a temporary configuration and database after checking the shared Unix
-socket is free. Wait for readiness with a bounded deadline. Set `api_port` to
-that instance's port, then fetch to a temporary file:
+the document (`api.openapi_enabled = true`, off by default). The spec includes
+the registered management and health routes, including feature-gated routes
+regardless of the generation instance's flags. The root status, metrics and
+spec endpoints have their own route contracts. Verify that the instance serves
+the revision being documented. To start a generation instance, use a temporary
+configuration and database, check that the shared Unix socket and chosen API
+port are free, and retain the process handle. Wait for readiness within a
+deadline and abort if the process exits. Set `api_port` to the verified
+instance's port and fetch from the repository root into a temporary file beside
+the artifact.
 
 ```sh
-openapi_tmp=$(mktemp)
-curl --fail --silent --show-error \
-  "http://127.0.0.1:${api_port}/openapi.yaml" --output "$openapi_tmp"
+openapi_tmp=$(mktemp docs/.openapi.XXXXXX) &&
+  curl --fail --silent --show-error --connect-timeout 2 --max-time 10 \
+    "http://127.0.0.1:${api_port}/openapi.yaml" --output "$openapi_tmp"
 ```
 
-Parse the downloaded YAML and check its OpenAPI structure and expected paths
-and schemas before replacing `docs/openapi.yaml`; a failed fetch or validation
-leaves the existing artifact intact. Remove the temporary file when done.
-Stop and wait for an instance this task
-started, using its owned process handle. Leave a pre-existing instance under
-its owner's control. Run E2E only after the shared Unix socket is free; a daemon
-left serving there makes tests fail with "Bindizr is already running".
+After a successful fetch, parse the YAML and verify the OpenAPI version, API
+identity, expected paths and schemas. Atomically rename the validated file over
+`docs/openapi.yaml`. On failure, keep the existing artifact and remove the
+temporary file. On success or failure, stop and wait for the generation
+process using its owned handle. Leave any existing instance under its owner's
+control. Run E2E once the shared Unix socket is free.
 
 Pages CI rebuilds the hosted API docs when `docs/openapi.yaml` changes on
 `main`.
@@ -1990,7 +2064,10 @@ section above.
 
 - Build locally with
   `uv run --with-requirements docs/requirements.txt mkdocs serve`. CI runs
-  `mkdocs build --strict`, so a broken internal link fails the build.
+  `mkdocs build --strict` on the checked-out site sources, so a broken internal
+  link fails the build. When local audit files exist below `docs/`, use a
+  clean snapshot of the site sources for the strict check. MkDocs also reads
+  files that Git ignores.
 - `docs/requirements.txt` pins mkdocs and mkdocs-material exactly; it lives in
   `docs_dir` and is kept out of the site by `exclude_docs` in `mkdocs.yml`.
 - Images live in `docs/assets/`, referenced as `assets/…` from docs pages and as
@@ -2046,11 +2123,17 @@ another `accepted` entry.
 
 ### Release workflows
 
-`release.yml` publishes what the pushed `v*` tag says, `manual-release.yml`
-what `Cargo.toml` and the dispatch inputs say, and `publish-image.yml` the
-image tag typed in. Release and Manual Release validate SemVer before building:
-check every prerelease identifier, forbid build metadata, and cap the version at 128
-characters so a Docker tag can carry it. Publish Image accepts any valid
+`release.yml` uses the pushed `v*` tag for the GitHub release, image tag and
+release-note lookup. The binaries and package versions come from the tagged
+revision's `Cargo.toml`. The operator keeps these versions aligned.
+`manual-release.yml` uses `Cargo.toml` and its dispatch inputs.
+`publish-image.yml` uses the image tag entered by the operator. Release and
+Manual Release validate SemVer before building, including prerelease
+identifiers, and forbid build metadata. The version is capped at 128
+characters so a Docker tag can carry it. Alpine package builds translate every
+accepted Cargo prerelease into native version syntax and preserve prerelease
+ordering and existing `alpha.N`, `beta.N`, and `rc.N` package versions.
+Publish Image accepts any valid
 Docker tag of at most 128 characters, including non-version labels such as
 `dev`. Both release workflows use `docs/changelog/<version>.md` as the release
 body when that file exists; without it, the release has an empty body. Missing

@@ -15,6 +15,148 @@ from adapters import registry
 from runners import b02_bulk_import
 
 
+def _http_response(status=200, data=None, message=""):
+    """Build an aiohttp-style response context for adapter tests."""
+    request = AsyncMock()
+    request.__aenter__.return_value = Mock(
+        status=status,
+        json=AsyncMock(return_value=data),
+        text=AsyncMock(return_value=message),
+    )
+    return request
+
+
+class HttpAdapterTests(IsolatedAsyncioTestCase):
+    zone = "bench.example"
+
+    def adapter(self, key):
+        """Construct an HTTP adapter with a mock client."""
+        adapter = registry.build_adapter(key, {}, "unit-adapters")
+        adapter.session = Mock()
+        return adapter
+
+    async def test_technitium_get_matches_exact_record_data(self):
+        """Check the five generated record types against the server's rData fields."""
+        adapter = self.adapter("technitium")
+
+        def records(entries):
+            """Wrap a list of resource records as returned by Technitium."""
+            return _http_response(data={"status": "ok", "response": {"records": entries}})
+
+        for record_type, value, matching, different in (
+            ("A", "192.0.2.1", {"ipAddress": "192.0.2.1"}, {"ipAddress": "192.0.2.2"}),
+            ("AAAA", "2001:db8::1", {"ipAddress": "2001:0DB8:0:0:0:0:0:1"},
+             {"ipAddress": "2001:db8::2"}),
+            ("CNAME", "Mail.Bench.Example.", {"cname": "mail.bench.example"},
+             {"cname": "other.bench.example"}),
+            ("MX", "Mail.Bench.Example.", {"exchange": "mail.bench.example", "preference": 10},
+             {"exchange": "mail.bench.example", "preference": 20}),
+            ("TXT", "v=Bench||1", {"text": "v=Bench||1"}, {"text": "v=bench||1"}),
+        ):
+            with self.subTest(record_type=record_type):
+                record = {"name": "mail", "type": record_type, "value": value}
+                adapter.session.get.return_value = _http_response(data={"status": "ok"})
+                handle = await adapter.create_record(self.zone, record)
+                found = {"name": "MAIL.BENCH.EXAMPLE.", "type": record_type, "rData": matching}
+                adapter.session.get.return_value = records([
+                    {**found, "name": "other.bench.example"},
+                    {**found, "type": "SOA"},
+                    {**found, "rData": different},
+                ])
+                self.assertFalse(await adapter.get_record(self.zone, handle))
+                adapter.session.get.return_value = records([found])
+                self.assertTrue(await adapter.get_record(self.zone, handle))
+                self.assertEqual(adapter.session.get.call_args.kwargs["params"]["listZone"], "false")
+                adapter.session.get.return_value = records([])
+                self.assertFalse(await adapter.get_record(self.zone, handle))
+
+    async def test_technitium_zone_setup_and_cleanup_check_api_status(self):
+        """Reject setup failures and allow only the requested zone's absence during cleanup."""
+        adapter = self.adapter("technitium")
+        refused = _http_response(data={"status": "error", "errorMessage": "Access was denied."})
+        adapter.session.get.return_value = refused
+        with self.assertRaisesRegex(RuntimeError, "/zones/create.*Access was denied"):
+            await adapter.create_zone(self.zone)
+        self.assertEqual(adapter.session.get.call_count, 1)
+
+        adapter.session.get.side_effect = [_http_response(data={"status": "ok"}), refused]
+        with self.assertRaisesRegex(RuntimeError, "/zones/options/set.*Access was denied"):
+            await adapter.create_zone(self.zone)
+        adapter.session.get.side_effect = None
+
+        adapter.session.get.return_value = _http_response(
+            data={"status": "error", "errorMessage": f"No such zone was found: {self.zone}"},
+        )
+        await adapter.delete_zone(self.zone)
+        adapter.session.get.return_value = refused
+        with self.assertRaisesRegex(RuntimeError, "/zones/delete.*Access was denied"):
+            await adapter.delete_zone(self.zone)
+        adapter.session.get.return_value = _http_response(status=503, message="unavailable")
+        with self.assertRaisesRegex(RuntimeError, "/zones/delete 503"):
+            await adapter.delete_zone(self.zone)
+
+    async def test_technitium_record_delete_distinguishes_absence_from_failure(self):
+        """Return False for a missing record and surface other API errors."""
+        adapter = self.adapter("technitium")
+        handle = "mail.bench.example||A||192.0.2.1||"
+        adapter.session.get.return_value = _http_response(data={
+            "status": "error", "errorMessage": "Cannot delete record: no such record exists.",
+        })
+        self.assertFalse(await adapter.delete_record(self.zone, handle))
+        adapter.session.get.return_value = _http_response(
+            data={"status": "error", "errorMessage": "Access was denied."},
+        )
+        with self.assertRaisesRegex(RuntimeError, "/zones/records/delete.*Access was denied"):
+            await adapter.delete_record(self.zone, handle)
+
+    async def test_zone_cleanup_surfaces_bindizr_and_powerdns_failures(self):
+        """Only a successful deletion or a missing zone permits the next benchmark round."""
+        for key, status, not_found in (("bindizr", 200, {"code": "ZONE_NOT_FOUND"}),
+                                       ("powerdns", 204, None)):
+            with self.subTest(adapter=key):
+                adapter = self.adapter(key)
+                adapter.session.delete.return_value = _http_response(status=status)
+                await adapter.delete_zone(self.zone)
+                adapter.session.delete.return_value = _http_response(status=404, data=not_found)
+                await adapter.delete_zone(self.zone)
+                adapter.session.delete.return_value = _http_response(status=500, message="failed")
+                with self.assertRaisesRegex(RuntimeError, "delete_zone 500: failed"):
+                    await adapter.delete_zone(self.zone)
+
+        adapter = self.adapter("bindizr")
+        adapter.session.delete.return_value = _http_response(
+            status=404, data={"code": "UNEXPECTED"}, message="unexpected",
+        )
+        with self.assertRaisesRegex(RuntimeError, "delete_zone 404: unexpected"):
+            await adapter.delete_zone(self.zone)
+
+    async def test_powerdns_get_matches_exact_rrset(self):
+        """Respect the RRset handle when the API returns different owners or types."""
+        adapter = self.adapter("powerdns")
+        name = "mail.bench.example."
+        handle = f"{name}|A"
+        rrset = {"name": name.upper(), "type": "A", "records": [{"content": "192.0.2.1"}]}
+        adapter.session.get.return_value = _http_response(data={"rrsets": [
+            {**rrset, "name": "other.bench.example."},
+            {**rrset, "type": "AAAA"},
+            {**rrset, "records": []},
+        ]})
+        self.assertFalse(await adapter.get_record(self.zone, handle))
+        adapter.session.get.return_value = _http_response(data={"rrsets": [rrset]})
+        self.assertTrue(await adapter.get_record(self.zone, handle))
+        self.assertEqual(adapter.session.get.call_args.kwargs["params"],
+                         {"rrset_name": name, "rrset_type": "A"})
+
+    async def test_powerdns_zone_setup_distinguishes_conflicts_from_invalid_requests(self):
+        """Allow an existing zone and fail on a rejected creation."""
+        adapter = self.adapter("powerdns")
+        adapter.session.post.return_value = _http_response(status=409)
+        await adapter.create_zone(self.zone)
+        adapter.session.post.return_value = _http_response(status=422, message="invalid request")
+        with self.assertRaisesRegex(RuntimeError, "create_zone 422: invalid request"):
+            await adapter.create_zone(self.zone)
+
+
 class AdapterTests(IsolatedAsyncioTestCase):
     def setUp(self):
         """Build record fixtures for adapter writes."""
@@ -225,7 +367,7 @@ class AdapterTests(IsolatedAsyncioTestCase):
     async def test_coredns_stream_preserves_zone_content_permissions_and_reload_time(self):
         """Verify that CoreDNS streaming preserves UTF-8 zone data, read access and reload timestamps."""
         adapter = self.adapters()[2]
-        adapter.cid = "unit-coredns"
+        adapter.container_id = "unit-coredns"
         record = {"name": "txt", "type": "TXT", "value": '한글 "quote"', "ttl": 60}
         from lib import process, zonefile
 

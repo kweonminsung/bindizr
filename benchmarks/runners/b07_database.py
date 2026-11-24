@@ -4,25 +4,24 @@ Own adapter setup/teardown (`adapter=None`); report CRUD by backend and bulk by 
 """
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from adapters import registry  # noqa: E402
-from datasets.gen_dataset import generate  # noqa: E402
-from lib import loadgen  # noqa: E402
-from lib.resources import load_sampler  # noqa: E402
+from adapters import registry
+from datasets.gen_dataset import generate
+from lib import loadgen
+from lib.resources import load_sampler
 
 # Sampled around the measured phase below, not by the orchestrator.
 SELF_SAMPLES = True
 
 
-def _mem_split(resource_usage: dict) -> tuple[float, float]:
+def _mem_split(resource_usage: dict, backend: str) -> tuple[float | None, float | None]:
     """Return Bindizr and database container memory peaks separately.
 
-    SQLite runs in-process, so its database container share is zero.
+    SQLite runs in-process, so its database container share is zero when sampled.
     """
+    if not resource_usage.get("samples"):
+        return None, None
     by_service = {}
 
     for name, mb in resource_usage.get("mem_by_container", {}).items():
@@ -30,8 +29,8 @@ def _mem_split(resource_usage: dict) -> tuple[float, float]:
         parts = name.rsplit("-", 2)
         by_service[parts[-2] if len(parts) == 3 else name] = mb
 
-    return (by_service.get("bindizr", 0),
-            by_service.get("mysql", 0) + by_service.get("postgres", 0))
+    service = {"mysql": "mysql", "postgresql": "postgres"}.get(backend)
+    return by_service.get("bindizr"), 0.0 if service is None else by_service.get(service)
 
 
 async def _bench_backend(adapter, config, zone_name, label, pairing) -> dict:
@@ -74,7 +73,7 @@ async def _bench_backend(adapter, config, zone_name, label, pairing) -> dict:
     resource_usage = sampler.summary()
 
     create_summary, read_summary = create_recorder.summary(), read_recorder.summary()
-    bindizr_mem, db_mem = _mem_split(resource_usage)
+    bindizr_mem, db_mem = _mem_split(resource_usage, label)
 
     return {
         "system": pairing,
@@ -86,10 +85,10 @@ async def _bench_backend(adapter, config, zone_name, label, pairing) -> dict:
         "error_rate": round(
             (create_recorder.errors + read_recorder.errors) / max(create_recorder.total + read_recorder.total, 1), 5
         ),
-        "peak_mem_mb": resource_usage.get("peak_mem_mb", 0),
+        "peak_mem_mb": resource_usage.get("peak_mem_mb"),
         "bindizr_peak_mem_mb": bindizr_mem,
         "db_peak_mem_mb": db_mem,
-        "avg_cpu_pct": resource_usage.get("avg_cpu_pct", 0),
+        "avg_cpu_pct": resource_usage.get("avg_cpu_pct"),
     }
 
 
@@ -115,7 +114,7 @@ async def _bulk_backend(adapter, config, zone_name, backend, size, pairing) -> d
     failed = getattr(adapter, "bulk_errors", 0)
     imported = max(size - failed, 0)
 
-    bindizr_mem, db_mem = _mem_split(resource_usage)
+    bindizr_mem, db_mem = _mem_split(resource_usage, backend)
 
     return {
         "system": pairing,
@@ -124,10 +123,10 @@ async def _bulk_backend(adapter, config, zone_name, backend, size, pairing) -> d
         "import_secs": round(elapsed, 3),
         "records_per_sec": round(imported / elapsed, 1) if elapsed else 0,
         "import_errors": failed,
-        "peak_mem_mb": resource_usage.get("peak_mem_mb", 0),
+        "peak_mem_mb": resource_usage.get("peak_mem_mb"),
         "bindizr_peak_mem_mb": bindizr_mem,
         "db_peak_mem_mb": db_mem,
-        "avg_cpu_pct": resource_usage.get("avg_cpu_pct", 0),
+        "avg_cpu_pct": resource_usage.get("avg_cpu_pct"),
     }
 
 
@@ -141,15 +140,17 @@ async def run(_adapter, config, context) -> list:
     system = context["system"]
 
     for backend in config["databases"]:
-        project = f"bench-{system.replace('_', '-')}-db-{backend}"
-        # notify off: isolate database write throughput from NOTIFY/XFR cost.
-        adapter = registry.build_adapter(system, config, project, db_type=backend,
-                                 notify_after_update=False)
-
+        project = f'{context["project"]}-db-{backend}'
+        adapter = None
+        phase = "setup"
         try:
+            # Isolate database write throughput from NOTIFY/XFR cost.
+            adapter = registry.build_adapter(system, config, project, db_type=backend,
+                                             notify_after_update=False)
             print(f"    backend {backend}: setup...", flush=True)
 
             await adapter.setup()
+            phase = "measurement"
             crud_result = await _bench_backend(adapter, config, zone_name, backend, pairing)
 
             rows.append(crud_result)
@@ -162,10 +163,15 @@ async def run(_adapter, config, context) -> list:
                 print(f"    backend {backend} (bulk {size}): {bulk_result}", flush=True)
         except Exception as error:
             print(f"    backend {backend} FAILED: {error}")
-            # Report the failure faithfully instead of silently omitting it.
             rows.append({"system": pairing, "backend": backend,
-                         "status": "FAILED", "error": str(error)[:120]})
+                         "status": "FAILED", "phase": phase, "error": str(error)})
         finally:
-            await adapter.teardown()
+            if adapter is not None:
+                try:
+                    await adapter.teardown()
+                except Exception as error:
+                    print(f"    backend {backend} teardown FAILED: {error}")
+                    rows.append({"system": pairing, "backend": backend, "status": "FAILED",
+                                 "phase": "teardown", "error": str(error)})
 
     return rows

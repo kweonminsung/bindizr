@@ -153,6 +153,15 @@ async fn get_signed_zone_tx(
         .reauthenticate_tx(tx)
         .await?
         .authorize_zone_action(action, &zone)?;
+
+    lookup_signed_zone_tx(tx, zone).await
+}
+
+/// Load the signing state of a zone already locked and authorized by the caller.
+async fn lookup_signed_zone_tx(
+    tx: &mut Transaction<'_>,
+    zone: Zone,
+) -> Result<SignedZone, ServiceError> {
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id).await?;
 
     if keys.is_empty() {

@@ -23,8 +23,8 @@ use bindizr_service::{Context, access, zone};
 use chrono::Utc;
 
 use crate::dns::error::DnsError;
-use crate::dns::server::DnsContext;
 use crate::dns::server::nsupdate::update::UpdateError;
+use crate::dns::server::{DnsContext, auth};
 use crate::dns::stream::ResponseWriter;
 use crate::dns::udp::{ReplyTarget, UdpSocket};
 
@@ -97,7 +97,10 @@ async fn handle_nsupdate_request(
             // under it, a FORMERR included; a bad key or MAC is its own error.
             let (signer, fudge) = match tsig::request_signature(query_data) {
                 RequestSignature::Key(RequestTsig { name, fudge }) => {
-                    match update::authenticate_tsig_key(dns_cx, query_data, &name).await {
+                    match auth::verify_request_tsig(dns_cx, query_data, &name)
+                        .await
+                        .map_err(UpdateError::from)
+                    {
                         Ok((tsig_key, signer)) => {
                             access_log.caller = Some(ChangeActor::TsigKey {
                                 name: tsig_key.name,

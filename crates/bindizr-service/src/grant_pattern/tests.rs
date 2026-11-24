@@ -98,12 +98,62 @@ fn normalize_pattern_preserves_escaped_dot_as_label_data() {
 fn domain_filter_renders_normalized_grant_pattern() {
     let zone_name = ZoneName::parse("example.com").unwrap();
 
-    assert_eq!(pattern_domain("*", &zone_name), "example.com.");
-    assert_eq!(pattern_domain("*.k8s", &zone_name), "k8s.example.com.");
-    assert_eq!(pattern_domain("a.b", &zone_name), "a.b.example.com.");
+    assert_eq!(
+        pattern_domain("*", &zone_name).unwrap().as_deref(),
+        Some("example.com")
+    );
+    assert_eq!(
+        pattern_domain("*.k8s", &zone_name).unwrap().as_deref(),
+        Some("k8s.example.com")
+    );
+    assert_eq!(
+        pattern_domain("a.b", &zone_name).unwrap().as_deref(),
+        Some("a.b.example.com")
+    );
 
     // Both widen: a filter entry always carries everything under it, so the
     // apex reads as the zone and an exact name as its subtree.
-    assert_eq!(pattern_domain("@", &zone_name), "example.com.");
-    assert_eq!(pattern_domain("www", &zone_name), "www.example.com.");
+    assert_eq!(
+        pattern_domain("@", &zone_name).unwrap().as_deref(),
+        Some("example.com")
+    );
+    assert_eq!(
+        pattern_domain("www", &zone_name).unwrap().as_deref(),
+        Some("www.example.com")
+    );
+    assert_eq!(
+        pattern_domain(r"*.a\.", &zone_name).unwrap().as_deref(),
+        Some(r"a\046.example.com")
+    );
+    assert_eq!(
+        pattern_domain(r"\@", &zone_name).unwrap().as_deref(),
+        Some(r"\@.example.com")
+    );
+}
+
+/// Verify that a malformed stored pattern fails without widening the domain filter.
+#[test]
+fn pattern_domain_preserves_invalid_stored_name_error() {
+    let zone_name = ZoneName::parse("example.com").unwrap();
+    let long_label = "a".repeat(64);
+    for (pattern, expected) in [
+        (
+            long_label.as_str(),
+            ParsePatternOwnerError::Name(ParseNameError::LabelTooLong),
+        ),
+        (
+            "*.sub.",
+            ParsePatternOwnerError::Name(ParseNameError::Absolute),
+        ),
+        (r"*.\042", ParsePatternOwnerError::Wildcard),
+    ] {
+        let error = pattern_domain(pattern, &zone_name).unwrap_err();
+        let source = std::error::Error::source(&error).unwrap();
+
+        assert_eq!(error.code(), ErrorCode::Internal);
+        assert_eq!(
+            source.downcast_ref::<ParsePatternOwnerError>(),
+            Some(&expected)
+        );
+    }
 }

@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use bindizr_core::dns::Ttl;
-use bindizr_core::model::record::{Record, RecordData, RecordSetKey};
+use bindizr_core::model::record::{Record, RecordData, RecordSetKey, RecordValueKey};
 use bindizr_core::model::zone::Zone;
 
 use crate::authorization::ReadableRecords;
@@ -14,10 +14,10 @@ use crate::types::{
     RecordDiffValueResponse,
 };
 
-/// What makes two records of one record set the same: canonical rdata and TTL.
+/// What makes two records of one record set the same: value identity and TTL.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct MemberIdentity {
-    rdata: String,
+    value_key: RecordValueKey<'static>,
     ttl: Ttl,
 }
 
@@ -63,9 +63,9 @@ fn group_record_sets(
         };
         record_sets.entry(key).or_default().push(RecordSetMember {
             identity: MemberIdentity {
-                rdata: record
+                value_key: record
                     .record_type
-                    .canonical_value(&record.value, record.priority)
+                    .to_comparison_key(&record.value, record.priority)
                     .into_owned(),
                 ttl: record.ttl,
             },

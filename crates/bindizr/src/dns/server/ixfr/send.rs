@@ -13,24 +13,28 @@ use thiserror::Error;
 use crate::dns::error::DnsError;
 use crate::dns::stream::ResponseWriter;
 
-/// Send the current SOA alone (RFC 1995, Section 2).
+/// Send the current SOA alone (RFC 1995, Section 2), returning the signer.
 pub(crate) async fn send_soa_response(
     writer: &ResponseWriter,
     query: &ParsedQuery,
     zone: &Zone,
-    signer: Option<TransferSigner>,
+    signer: &mut Option<TransferSigner>,
 ) -> Result<(), DnsError> {
     let mut builder = DnsMessageBuilder::new(query);
 
-    if let Some(signer) = signer {
+    if let Some(signer) = signer.take() {
         builder = builder.sign_with(signer);
     }
 
-    builder.add_soa(zone, zone.serial)?;
+    let sent = async {
+        builder.add_soa(zone, zone.serial)?;
+        writer.flush_if_not_empty(&mut builder).await?;
+        Ok(())
+    }
+    .await;
 
-    writer.flush_if_not_empty(&mut builder).await?;
-
-    Ok(())
+    *signer = builder.take_signer();
+    sent
 }
 
 /// Outcome of a failed IXFR stream: whether any bytes reached the client yet.

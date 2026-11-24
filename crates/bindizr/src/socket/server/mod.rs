@@ -6,6 +6,7 @@ mod dnssec_policy;
 mod doctor;
 mod logs;
 mod notify;
+mod path;
 mod record;
 mod role;
 mod secondary;
@@ -16,68 +17,26 @@ mod zone;
 
 use std::future::Future;
 use std::io;
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
-use std::path::Path;
 use std::sync::Arc;
 
 use bindizr_service::Context;
 use bindizr_service::error::{ErrorCode, ServiceError};
 use bindizr_service::types::ErrorResponse;
+pub(crate) use path::{BindSocketError, bind, remove_socket_file};
 use serde::Serialize;
 use thiserror::Error;
-use tokio::fs;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::mpsc::Sender;
 use tokio::task::{JoinHandle, JoinSet};
 
+use crate::daemon::ConfigReloader;
 use crate::shutdown::Shutdown;
 use crate::socket;
-use crate::socket::server::control::DaemonControl;
+use crate::socket::server::control::DaemonControlSender;
 use crate::socket::types::{DaemonCommand, DaemonResponse};
-use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
-use crate::tls::TlsCertificates;
 
 /// Bound command allocation above the 32 MB HTTP cap to accommodate JSON-escaped zone files.
 const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
-
-/// Socket paths tried in order when the daemon starts.
-const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH];
-
-/// Why the control socket could not be bound.
-#[derive(Debug, Error)]
-pub(crate) enum BindSocketError {
-    /// Another daemon answers on the socket.
-    #[error("Bindizr is already running")]
-    InUse,
-    /// Every candidate path failed, each with its reason.
-    #[error("failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, error)| format!("'{path}': {error}")).collect::<Vec<_>>().join("; "))]
-    Unavailable {
-        failures: Vec<(String, BindSocketPathError)>,
-    },
-}
-
-/// Why one candidate path could not be bound.
-#[derive(Debug, Error)]
-pub(crate) enum BindSocketPathError {
-    /// A daemon answers on the socket at this path.
-    #[error("Bindizr is already running")]
-    AlreadyRunning,
-    /// Something other than a Unix socket sits at the path.
-    #[error("socket path exists and is not a Unix socket: {path}")]
-    NotASocket { path: String },
-    /// The socket's directory is not a directory, or is reached through a symlink.
-    #[error("socket directory is not a directory: {path}")]
-    NotADirectory { path: String },
-    /// Another user owns the socket's directory and could replace what the daemon binds there.
-    #[error(
-        "socket directory '{path}' is owned by uid {uid}, neither this user nor root; remove what \
-         another user left there"
-    )]
-    ForeignDirectory { path: String, uid: u32 },
-    #[error(transparent)]
-    Io(#[from] io::Error),
-}
 
 /// Why the bound socket could not be served.
 #[derive(Debug, Error)]
@@ -87,25 +46,24 @@ pub(crate) enum ServeSocketError {
 }
 
 /// Daemon context and lifecycle control channel; only control commands need the latter.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct SocketContext {
     daemon: Arc<Context>,
-    control: Sender<DaemonControl>,
-    /// The certificates a reload re-reads.
-    tls: TlsCertificates,
+    control: DaemonControlSender,
+    reloader: Arc<ConfigReloader>,
 }
 
 impl SocketContext {
     /// Build the front end's context over the daemon's.
     pub(crate) fn new(
         daemon: Arc<Context>,
-        control: Sender<DaemonControl>,
-        tls: TlsCertificates,
+        control: DaemonControlSender,
+        reloader: Arc<ConfigReloader>,
     ) -> Self {
         Self {
             daemon,
             control,
-            tls,
+            reloader,
         }
     }
 
@@ -114,13 +72,13 @@ impl SocketContext {
         &self.daemon
     }
 
-    /// Return the certificates the TLS listeners present.
-    pub(crate) fn tls(&self) -> &TlsCertificates {
-        &self.tls
+    /// Return the daemon's shared reload handler.
+    pub(crate) fn reloader(&self) -> &ConfigReloader {
+        &self.reloader
     }
 
     /// Return the sender a shutdown or restart request goes down.
-    pub(crate) fn control(&self) -> &Sender<DaemonControl> {
+    pub(crate) fn control(&self) -> &DaemonControlSender {
         &self.control
     }
 }
@@ -144,20 +102,14 @@ async fn handle_client(
 
     if read.is_ok() {
         // A connect-and-close is another `bindizr start` probing whether this
-        // daemon is alive (`prepare_socket_path`), not a command.
+        // daemon is alive (`remove_stale_socket`), not a command.
         if line.is_empty() {
             return;
         }
 
         let response = match serde_json::from_str::<DaemonCommand>(&line) {
             Ok(command) => handle_command(socket_cx, command).await,
-            Err(error) => {
-                // A client's mistake, answered INVALID_INPUT; not a server fault.
-                log::warn!("Failed to parse command: {error}");
-                encode_error(&ServiceError::invalid_input(format!(
-                    "failed to parse command: {error}"
-                )))
-            }
+            Err(error) => reject_invalid_command(socket::SocketDecodeError(error)),
         };
 
         let mut stream = reader.into_inner().into_inner();
@@ -167,11 +119,19 @@ async fn handle_client(
     }
 }
 
+/// Reject an invalid command without copying its values into diagnostics.
+fn reject_invalid_command(error: socket::SocketDecodeError) -> String {
+    let reason = format!("failed to parse command ({error})");
+
+    log::warn!("{reason}");
+    encode_error(&ServiceError::invalid_input(reason))
+}
+
 /// Serve control commands for the daemon's user and root until `shutdown` fires.
 /// Remove the socket only after draining: `bindizr stop` uses its disappearance as completion.
 pub(crate) fn serve(
     socket_cx: Arc<SocketContext>,
-    listener: UnixListener,
+    listener: Arc<UnixListener>,
     shutdown: &Shutdown,
 ) -> Result<JoinHandle<()>, ServeSocketError> {
     let own_uid = socket::read_own_uid().map_err(ServeSocketError::ReadUid)?;
@@ -237,101 +197,6 @@ pub(crate) fn serve(
     }))
 }
 
-/// Remove the daemon's socket file, once nothing is serving on it.
-pub(crate) async fn remove_socket_file(socket_path: &str) {
-    if let Err(error) = fs::remove_file(socket_path).await {
-        log::warn!("Failed to remove the daemon socket {socket_path}: {error}");
-    }
-}
-
-/// Bind the daemon's configured control socket. Owning it is what refuses a
-/// second daemon, so the daemon binds before anything else it would share.
-pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
-    let mut failures = Vec::new();
-
-    for (index, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
-        let error = match bind_socket(path).await {
-            Ok(listener) => return Ok(((*path).to_string(), listener)),
-            // Another daemon already owns this socket. Trying the next candidate
-            // would start a second daemon instead of reporting the conflict.
-            Err(BindSocketPathError::AlreadyRunning) => return Err(BindSocketError::InUse),
-            Err(error) => error,
-        };
-
-        if let Some(next) = SOCKET_PATH_CANDIDATES.get(index + 1) {
-            log::warn!("Cannot use Unix socket path '{path}': {error}. Falling back to '{next}'.");
-        }
-
-        failures.push((path.to_string(), error));
-    }
-
-    Err(BindSocketError::Unavailable { failures })
-}
-
-/// Bind a Unix listener at the requested path.
-async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathError> {
-    prepare_socket_path(socket_path).await?;
-
-    // A daemon that bound this path after the check above answers EADDRINUSE
-    // here: the same conflict, not a path to fall back from.
-    UnixListener::bind(socket_path).map_err(|error| match error.kind() {
-        io::ErrorKind::AddrInUse => BindSocketPathError::AlreadyRunning,
-        _ => BindSocketPathError::Io(error),
-    })
-}
-
-/// Prepare the control socket path and remove a stale socket if needed.
-async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathError> {
-    if let Some(parent) = Path::new(socket_path).parent() {
-        // No chmod of the socket by path, which a writable directory would let
-        // someone redirect; the peer check in `serve` is the boundary.
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(parent)
-            .await?;
-        let metadata = fs::symlink_metadata(parent).await?;
-
-        if !metadata.is_dir() {
-            return Err(BindSocketPathError::NotADirectory {
-                path: parent.display().to_string(),
-            });
-        }
-
-        let own_uid = socket::read_own_uid()?;
-
-        if metadata.uid() != own_uid && metadata.uid() != 0 {
-            return Err(BindSocketPathError::ForeignDirectory {
-                path: parent.display().to_string(),
-                uid: metadata.uid(),
-            });
-        }
-    }
-
-    match fs::symlink_metadata(socket_path).await {
-        Ok(metadata) => {
-            if !metadata.file_type().is_socket() {
-                return Err(BindSocketPathError::NotASocket {
-                    path: socket_path.to_string(),
-                });
-            }
-
-            match UnixStream::connect(socket_path).await {
-                Ok(_) => Err(BindSocketPathError::AlreadyRunning),
-                // Socket file exists but no process is listening, so it is safe to remove.
-                Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
-                    Ok(fs::remove_file(socket_path).await?)
-                }
-                // Socket disappeared after metadata lookup, so there is nothing to remove.
-                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-                Err(error) => Err(error.into()),
-            }
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
-    }
-}
-
 /// Run one command and encode its answer as the line the client reads.
 async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> String {
     let cx = socket_cx.daemon();
@@ -341,8 +206,8 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::Config => encode_response(Ok(status::get_config(cx))),
         DaemonCommand::ReloadConfig => encode_response(control::reload_config(socket_cx)),
         DaemonCommand::Doctor => encode_response(doctor::check_installation(cx).await),
-        DaemonCommand::Shutdown => encode_response(Ok(control::shutdown(socket_cx))),
-        DaemonCommand::Restart => encode_response(Ok(control::restart(socket_cx))),
+        DaemonCommand::Shutdown => encode_response(control::shutdown(socket_cx).await),
+        DaemonCommand::Restart => encode_response(control::restart(socket_cx).await),
         DaemonCommand::CreateToken(request) => {
             encode_response(token::create_token(cx, &request).await)
         }
@@ -424,24 +289,28 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(zone::create_zone(cx, &request).await)
         }
         DaemonCommand::ListZones(filter) => encode_response(zone::list_zones(cx, &filter).await),
-        DaemonCommand::GetZone { name } => encode_response(zone::get_zone(cx, &name).await),
+        DaemonCommand::GetZone { name: zone_name } => {
+            encode_response(zone::get_zone(cx, &zone_name).await)
+        }
         DaemonCommand::UpdateZone { zone_name, request } => {
             encode_response(zone::update_zone(cx, &zone_name, &request).await)
         }
-        DaemonCommand::DeleteZone { name, run } => {
-            encode_response(zone::delete_zone(cx, &name, run).await)
-        }
+        DaemonCommand::DeleteZone {
+            name: zone_name,
+            run,
+        } => encode_response(zone::delete_zone(cx, &zone_name, run).await),
         DaemonCommand::ImportZone { zone_name, request } => {
             encode_response(zone::import_zone(cx, &zone_name, &request).await)
         }
         DaemonCommand::ImportZones(request) => {
             encode_response(zone::import_zones(cx, &request).await)
         }
-        DaemonCommand::ExportZone { name, view } => {
-            encode_response(zone::export_zone(cx, &name, view).await)
-        }
-        DaemonCommand::GetZoneStatus { name } => {
-            encode_response(zone::get_zone_status(cx, &name).await)
+        DaemonCommand::ExportZone {
+            name: zone_name,
+            view,
+        } => encode_response(zone::export_zone(cx, &zone_name, view).await),
+        DaemonCommand::GetZoneStatus { name: zone_name } => {
+            encode_response(zone::get_zone_status(cx, &zone_name).await)
         }
         DaemonCommand::NotifyZone { zone_name, serial } => {
             encode_response(notify::notify_zone(cx, &zone_name, serial).await)
@@ -450,22 +319,27 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(notify::notify_all_zones(cx, serial).await)
         }
         DaemonCommand::ListZoneVersions {
-            name,
+            name: zone_name,
             limit,
             offset,
             filter,
-        } => encode_response(zone::list_zone_versions(cx, &name, limit, offset, filter).await),
-        DaemonCommand::GetZoneVersion { name, serial } => {
-            encode_response(zone::get_zone_version(cx, &name, serial).await)
-        }
+        } => encode_response(zone::list_zone_versions(cx, &zone_name, limit, offset, filter).await),
+        DaemonCommand::GetZoneVersion {
+            name: zone_name,
+            serial,
+        } => encode_response(zone::get_zone_version(cx, &zone_name, serial).await),
         DaemonCommand::DiffZoneVersions {
-            name,
+            name: zone_name,
             from_serial,
             to_serial,
-        } => encode_response(zone::diff_zone_versions(cx, &name, from_serial, to_serial).await),
-        DaemonCommand::RollbackZone { name, serial, run } => {
-            encode_response(zone::rollback_zone(cx, &name, serial, run).await)
+        } => {
+            encode_response(zone::diff_zone_versions(cx, &zone_name, from_serial, to_serial).await)
         }
+        DaemonCommand::RollbackZone {
+            name: zone_name,
+            serial,
+            run,
+        } => encode_response(zone::rollback_zone(cx, &zone_name, serial, run).await),
         DaemonCommand::CreateRecord(request) => {
             encode_response(record::create_record(cx, &request).await)
         }
@@ -502,10 +376,12 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             zone_name,
             ds_check,
         } => encode_response(dnssec::disable_dnssec(cx, &zone_name, ds_check).await),
-        DaemonCommand::GetDnssecStatus { name } => {
-            encode_response(dnssec::get_dnssec_status(cx, &name).await)
+        DaemonCommand::GetDnssecStatus { name: zone_name } => {
+            encode_response(dnssec::get_dnssec_status(cx, &zone_name).await)
         }
-        DaemonCommand::SignZone { name } => encode_response(dnssec::sign_zone(cx, &name).await),
+        DaemonCommand::SignZone { name: zone_name } => {
+            encode_response(dnssec::sign_zone(cx, &zone_name).await)
+        }
         DaemonCommand::StartDnssecRollover { zone_name, request } => {
             encode_response(dnssec::start_dnssec_rollover(cx, &zone_name, &request).await)
         }
@@ -516,20 +392,20 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         } => encode_response(
             dnssec::advance_dnssec_rollover(cx, &zone_name, ds_check, holddown).await,
         ),
-        DaemonCommand::WithdrawDnssec { name } => {
-            encode_response(dnssec::withdraw_dnssec(cx, &name).await)
+        DaemonCommand::WithdrawDnssec { name: zone_name } => {
+            encode_response(dnssec::withdraw_dnssec(cx, &zone_name).await)
         }
-        DaemonCommand::CancelDnssecWithdrawal { name } => {
-            encode_response(dnssec::cancel_dnssec_withdrawal(cx, &name).await)
+        DaemonCommand::CancelDnssecWithdrawal { name: zone_name } => {
+            encode_response(dnssec::cancel_dnssec_withdrawal(cx, &zone_name).await)
         }
         DaemonCommand::UpdateDnssecSettings { zone_name, request } => {
             encode_response(dnssec::update_dnssec_settings(cx, &zone_name, &request).await)
         }
-        DaemonCommand::CheckDnssecDs { name } => {
-            encode_response(dnssec::check_dnssec_ds(cx, &name).await)
+        DaemonCommand::CheckDnssecDs { name: zone_name } => {
+            encode_response(dnssec::check_dnssec_ds(cx, &zone_name).await)
         }
-        DaemonCommand::ExportDnssecKeys { name } => {
-            encode_response(dnssec::export_dnssec_keys(cx, &name).await)
+        DaemonCommand::ExportDnssecKeys { name: zone_name } => {
+            encode_response(dnssec::export_dnssec_keys(cx, &zone_name).await)
         }
         DaemonCommand::ImportDnssecKeys { zone_name, request } => {
             encode_response(dnssec::import_dnssec_keys(cx, &zone_name, &request).await)

@@ -2,13 +2,10 @@
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from datasets.gen_dataset import generate  # noqa: E402
-from lib import dnsquery, dig  # noqa: E402
-from lib.resources import load_sampler  # noqa: E402
+from datasets.gen_dataset import generate
+from lib import dnsquery, dig
+from lib.resources import load_sampler
 
 # Samples its own query phase, including warmup, rather than the orchestrator's full run.
 SELF_SAMPLES = True
@@ -69,9 +66,9 @@ async def run(adapter, config, context) -> dict:
     return {
         "system": context["label"],
         "qps_during": summary["tps"],
-        "cpu_total_pct": round(sum(by_service.values()), 2),
-        "cpu_by_container": ", ".join(f"{name} {value}" for name, value in sorted(by_service.items())),
-        "peak_mem_mb": resource_usage.get("peak_mem_mb", 0),
-        "avg_mem_mb": resource_usage.get("avg_mem_mb", 0),
-        "net_tx_mb": resource_usage.get("net_tx_mb", 0),
+        "cpu_total_pct": round(sum(by_service.values()), 2) if by_service else None,
+        "cpu_by_container": ", ".join(f"{name} {value}" for name, value in sorted(by_service.items())) or None,
+        "peak_mem_mb": resource_usage.get("peak_mem_mb"),
+        "avg_mem_mb": resource_usage.get("avg_mem_mb"),
+        "net_tx_mb": resource_usage.get("net_tx_mb"),
     }

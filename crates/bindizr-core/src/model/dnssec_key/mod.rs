@@ -280,7 +280,7 @@ id_newtype!(
 
 /// A zone's DNSSEC signing key; key rows mark a signed zone. Private material
 /// is exported only through the daemon socket, never the HTTP API.
-#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+#[derive(Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecKey {
     pub id: DnssecKeyId,
     pub zone_id: ZoneId,
@@ -306,6 +306,26 @@ pub struct DnssecKey {
     /// how long resolvers can keep validating with it.
     pub max_signed_ttl: Ttl,
     pub created_at: DateTime<Utc>,
+}
+
+impl fmt::Debug for DnssecKey {
+    /// Format the diagnostic fields with credential material redacted.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DnssecKey")
+            .field("id", &self.id)
+            .field("zone_id", &self.zone_id)
+            .field("role", &self.role)
+            .field("algorithm", &self.algorithm)
+            .field("key_tag", &self.key_tag)
+            .field("public_key", &self.public_key)
+            .field("private_key", &"<redacted>")
+            .field("state", &self.state)
+            .field("state_changed_at", &self.state_changed_at)
+            .field("eligible_at", &self.eligible_at)
+            .field("max_signed_ttl", &self.max_signed_ttl)
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 impl DnssecKey {

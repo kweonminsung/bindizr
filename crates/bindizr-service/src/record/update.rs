@@ -28,12 +28,13 @@ enum LockTarget<'a> {
     },
 }
 
-/// Resolve a replacement; omitted fields require read access to the stored record.
+/// Authorize the replacement identity before validating its fields. Omissions
+/// require read access to the authorized stored record.
 fn resolve_update(
     zone: &Zone,
     existing_record: &Record,
     request: &UpdateRecordRequest,
-    can_read: bool,
+    caller: &Caller,
 ) -> Result<Record, ServiceError> {
     let record_type = request
         .record_type
@@ -42,7 +43,11 @@ fn resolve_update(
         .transpose();
 
     // Omitted fields would read stored values the caller may not be allowed to see.
-    if !can_read {
+    if !caller.sees_record(
+        zone.id,
+        &existing_record.name,
+        Some(existing_record.record_type),
+    ) {
         let mut missing = Vec::new();
 
         if request.name.is_none() {
@@ -77,6 +82,16 @@ fn resolve_update(
     }
 
     let record_type = record_type?.unwrap_or(existing_record.record_type);
+    let owner = match &request.name {
+        Some(name) => record::normalize_record_owner_name(name, &zone.name),
+        None => Ok(existing_record.name.clone()),
+    };
+    let write = owner.as_ref().ok().map(|owner| RecordAccess {
+        action: Action::RecordUpdate,
+        relative_name: owner.clone(),
+        record_type: Some(record_type),
+    });
+    caller.authorize_record_access(zone, write.as_slice())?;
 
     // Each type has its own stored grammar (TXT uses quoted presentation),
     // so a type change requires a fresh value.
@@ -110,15 +125,9 @@ fn resolve_update(
         None => existing_record.ttl,
     };
 
-    // An omitted name keeps the stored owner, which needs no reparse.
-    let owner = match &request.name {
-        Some(name) => record::normalize_record_owner_name(name, &zone.name)?,
-        None => existing_record.name.clone(),
-    };
-
     Ok(Record {
         id: existing_record.id,
-        name: owner,
+        name: owner?,
         record_type,
         value: encoded_value,
         ttl,
@@ -247,31 +256,16 @@ async fn update_locked(
 
         let caller = &caller;
 
-        // Inheriting an omitted field reads the record.
-        let can_read = caller.sees_record(
-            zone.id,
-            &existing_record.name,
-            Some(existing_record.record_type),
-        );
-        let candidate = resolve_update(&zone, &existing_record, request, can_read)?;
-
-        // An update moves a record from its stored identity to the requested
-        // one, so `record:update` must reach both.
+        // Permission to read the old identity alone cannot authorize a write.
         caller.authorize_record_access(
             &zone,
-            &[
-                RecordAccess {
-                    action: Action::RecordUpdate,
-                    relative_name: existing_record.name.clone(),
-                    record_type: Some(existing_record.record_type),
-                },
-                RecordAccess {
-                    action: Action::RecordUpdate,
-                    relative_name: candidate.name.clone(),
-                    record_type: Some(candidate.record_type),
-                },
-            ],
+            &[RecordAccess {
+                action: Action::RecordUpdate,
+                relative_name: existing_record.name.clone(),
+                record_type: Some(existing_record.record_type),
+            }],
         )?;
+        let candidate = resolve_update(&zone, &existing_record, request, caller)?;
 
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.

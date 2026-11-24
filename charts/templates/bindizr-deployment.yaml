@@ -33,6 +33,26 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        - name: prepare-runtime
+          image: "{{ .Values.bindizr.image.repository }}:{{ .Values.bindizr.image.tag }}"
+          imagePullPolicy: {{ .Values.bindizr.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              umask 077
+              mkdir -p /runtime/socket
+              chmod 0700 /runtime/socket
+          securityContext:
+            capabilities:
+              drop: [ALL]
+            {{- with omit (.Values.bindizr.securityContext | default dict) "capabilities" }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: runtime
+              mountPath: /runtime
       containers:
         - name: bindizr
           image: "{{ .Values.bindizr.image.repository }}:{{ .Values.bindizr.image.tag }}"
@@ -149,6 +169,7 @@ spec:
             # filesystem has to open.
             - name: runtime
               mountPath: /run/bindizr
+              subPath: socket
       volumes:
         - name: config-template
           configMap:

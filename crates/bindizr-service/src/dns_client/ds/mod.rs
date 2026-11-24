@@ -47,15 +47,13 @@ pub(crate) enum QueryDsError {
     TaskFailed(#[source] JoinError),
 }
 
-/// What the parent zone's servers said about the zone's DS.
+/// What one parent nameserver said about the zone's DS.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ParentDs {
-    /// The nameservers asked, as `host[:port]` entries from the zone's
-    /// `parent_ns_addrs`.
-    pub(crate) ns_addrs: Vec<String>,
-    /// Per-server DS sets in `ns_addrs` order; `None` means no DS.
-    /// Removal needs all servers empty; promotion needs a match at each.
-    pub(crate) answers: Vec<Option<DsRecordSet>>,
+pub(crate) struct ParentDsAnswer {
+    /// The `host[:port]` entry from the zone's `parent_ns_addrs`.
+    pub(crate) server: String,
+    /// The server's DS set; `None` means that it serves no DS.
+    pub(crate) records: Option<DsRecordSet>,
 }
 
 /// Query every supplied parent for DS; unanswered servers are errors, not absence.
@@ -63,15 +61,10 @@ pub(crate) async fn probe_parent_ds(
     zone_name: &ZoneName,
     parent_ns_addrs: &str,
     timeout: Duration,
-) -> Result<ParentDs, ProbeParentDsError> {
+) -> Result<Vec<ParentDsAnswer>, ProbeParentDsError> {
     let servers = resolve_parent_ns_addrs(parent_ns_addrs, timeout).await?;
 
-    let answers = query_ds(zone_name, &servers, timeout).await?;
-
-    Ok(ParentDs {
-        ns_addrs: servers.into_iter().map(|(entry, _)| entry).collect(),
-        answers,
-    })
+    query_ds(zone_name, &servers, timeout).await
 }
 
 /// Resolve the zone's configured parent servers to their addresses; one that
@@ -101,7 +94,7 @@ async fn query_ds(
     zone_name: &ZoneName,
     servers: &[(String, Vec<SocketAddr>)],
     timeout: Duration,
-) -> Result<Vec<Option<DsRecordSet>>, ProbeParentDsError> {
+) -> Result<Vec<ParentDsAnswer>, ProbeParentDsError> {
     let qname = zone_name.to_wire_name()?;
 
     let mut tasks = JoinSet::new();
@@ -132,7 +125,10 @@ async fn query_ds(
 
     for (_, entry, answer) in results {
         match answer {
-            Ok(answer) => answers.push(answer),
+            Ok(records) => answers.push(ParentDsAnswer {
+                server: entry.clone(),
+                records,
+            }),
             Err(error) => failures.push((entry.clone(), error)),
         }
     }

@@ -5,12 +5,9 @@ their measured QPS difference determines the report's query-overhead conclusion.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from datasets.gen_dataset import generate  # noqa: E402
-from lib import dnsquery, dig  # noqa: E402
+from datasets.gen_dataset import generate
+from lib import dnsquery, dig
 
 
 async def run(adapter, config, context) -> dict:

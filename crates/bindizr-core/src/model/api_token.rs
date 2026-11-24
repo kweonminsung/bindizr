@@ -1,3 +1,5 @@
+use std::fmt;
+
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
@@ -9,7 +11,7 @@ id_newtype!(
 );
 
 /// An API authentication token and its metadata.
-#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+#[derive(Clone, PartialEq, Eq, FromRow)]
 pub struct ApiToken {
     pub id: TokenId,
     /// Unique human-facing identifier; CLI and API reference tokens by name.
@@ -23,6 +25,22 @@ pub struct ApiToken {
     pub expires_at: Option<DateTime<Utc>>,
     /// `None` until the token is first used.
     pub last_used_at: Option<DateTime<Utc>>,
+}
+
+impl fmt::Debug for ApiToken {
+    /// Format the diagnostic fields with credential material redacted.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ApiToken")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("token", &"<redacted>")
+            .field("description", &self.description)
+            .field("role_id", &self.role_id)
+            .field("created_at", &self.created_at)
+            .field("expires_at", &self.expires_at)
+            .field("last_used_at", &self.last_used_at)
+            .finish()
+    }
 }
 
 impl ApiToken {
@@ -42,4 +60,29 @@ pub struct ApiTokenMetadata {
     pub created_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
     pub last_used_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that the stored token verifier is absent from Debug output.
+    #[test]
+    fn api_token_debug_masks_verifier() {
+        let token = ApiToken {
+            id: TokenId::from(1),
+            name: "test".to_string(),
+            token: "fixture-token-verifier".to_string(),
+            description: None,
+            role_id: RoleId::from(1),
+            created_at: Utc::now(),
+            expires_at: None,
+            last_used_at: None,
+        };
+
+        for debug in [format!("{token:?}"), format!("{:#?}", Some(&token))] {
+            assert!(debug.contains("<redacted>"));
+            assert!(!debug.contains("fixture-token-verifier"));
+        }
+    }
 }

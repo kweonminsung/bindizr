@@ -39,7 +39,7 @@ pub async fn list(
 }
 
 /// Get one secondary by name.
-pub async fn get(
+pub async fn get_by_name(
     cx: &Context,
     caller: &Caller,
     name: &str,

@@ -7,6 +7,7 @@ mod soa;
 mod transfer;
 
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
+use domain::base::wire::ParseError;
 use domain::base::{Message, ToName};
 use domain::rdata::AllRecordData;
 pub use ds::{DsRecord, DsRecordSet, extract_ds_record_set};
@@ -44,6 +45,8 @@ pub enum ParseResponseError {
     Rcode { rcode: OptRcode },
     #[error("malformed response OPT record")]
     MalformedEdns,
+    #[error("malformed response OPT record")]
+    MalformedKeepalive(#[source] ParseError),
     #[error("malformed answer section: {0}")]
     MalformedAnswer(#[source] LibraryError),
     #[error("malformed answer record: {0}")]

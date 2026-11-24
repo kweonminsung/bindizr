@@ -1,5 +1,3 @@
-use std::fs;
-use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 
 use bindizr_core::config::Config;
@@ -8,13 +6,107 @@ use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
 use bindizr_service::secondary;
-use bindizr_service::types::{CreateSecondaryRequest, CreateZoneRequest, UpdateZoneRequest};
+use bindizr_service::types::{
+    CreateSecondaryRequest, CreateTokenResponse, CreateZoneRequest, ExportDnssecKeysResponse,
+    SingleTsigKeyResponse, UpdateZoneRequest,
+};
 use serde_json::{Value, json};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch};
 use tokio::{task, time};
 
 use super::*;
+
+/// Verify that a malformed private-key request cannot echo its value in diagnostics.
+#[test]
+fn malformed_command_redacts_its_value() {
+    let request = json!({
+        "command": "import_dnssec_keys",
+        "data": {
+            "zone_name": "example.com",
+            "request": {"keys": ["private-fixture"]}
+        }
+    });
+    let error = serde_json::from_str::<DaemonCommand>(&request.to_string()).unwrap_err();
+
+    assert!(error.to_string().contains("private-fixture"));
+
+    let error = socket::SocketDecodeError(error);
+    assert!(!format!("{error:#?}").contains("private-fixture"));
+    let response: ErrorResponse = serde_json::from_str(&reject_invalid_command(error)).unwrap();
+
+    assert_eq!(response.code, ErrorCode::InvalidInput);
+    assert!(response.error.contains("failed to parse command"));
+    assert!(!response.error.contains("private-fixture"));
+}
+
+/// Verify that credential-bearing commands keep their wire fields without exposing them in Debug.
+#[test]
+fn command_debug_masks_key_material() {
+    let examples = [
+        json!({
+            "command": "create_tsig_key",
+            "data": {"name": "test", "algorithm": null, "secret": "private-fixture", "role_name": "admin"}
+        }),
+        json!({
+            "command": "import_dnssec_keys",
+            "data": {
+                "zone_name": "example.com",
+                "request": {"keys": [{"dnskey": "public-fixture", "private_key": "private-fixture"}]}
+            }
+        }),
+    ];
+
+    for example in examples {
+        let command: DaemonCommand = serde_json::from_value(example.clone()).unwrap();
+        let debug = format!("{command:?}\n{:#?}", [&command]);
+        assert!(!debug.contains("private-fixture"));
+        assert!(debug.contains("<redacted>"));
+        assert_eq!(serde_json::to_value(command).unwrap(), example);
+    }
+}
+
+/// Verify that authorized replies still reveal credentials explicitly.
+#[test]
+fn credential_responses_serialize_secrets_without_debugging_them() {
+    let tsig_key: SingleTsigKeyResponse = serde_json::from_value(json!({
+        "tsig_key": {"id": 1, "name": "test", "algorithm": "hmac-sha256",
+            "role_name": "admin", "created_at": "2026-01-01T00:00:00Z"},
+        "secret": "private-fixture"
+    }))
+    .unwrap();
+    let token: CreateTokenResponse = serde_json::from_value(json!({
+        "token": {"id": 1, "name": "test", "description": null, "role_name": "admin",
+            "created_at": "2026-01-01T00:00:00Z", "expires_at": null, "last_used_at": null},
+        "secret": "private-fixture"
+    }))
+    .unwrap();
+    let exported: ExportDnssecKeysResponse = serde_json::from_value(json!({
+        "zone_name": "example.com",
+        "keys": [{"role": "csk", "algorithm": 13, "key_tag": 123,
+            "dnskey_record": "public-fixture", "private_key": "private-fixture"}]
+    }))
+    .unwrap();
+    let response = DaemonResponse {
+        message: "test".to_string(),
+        data: (&tsig_key, &token, &exported),
+    };
+
+    for debug in [
+        format!("{tsig_key:?}{token:?}{:#?}", exported.keys[0]),
+        format!("{response:#?}"),
+    ] {
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("private-fixture"));
+    }
+    let output = serde_json::to_value(response).unwrap();
+    assert_eq!(output["data"][0]["secret"], "private-fixture");
+    assert_eq!(output["data"][1]["secret"], "private-fixture");
+    assert_eq!(
+        output["data"][2]["keys"][0]["private_key"],
+        "private-fixture"
+    );
+}
 
 /// Verify that invalid command fields are rejected instead of silently defaulting.
 #[test]
@@ -69,108 +161,6 @@ fn command_round_trips_between_client_and_server() {
     );
 }
 
-/// Verify that `prepare_socket_path` creates the parent directory owner-only.
-#[tokio::test]
-async fn prepare_socket_path_creates_parent_directory() {
-    let directory = tempfile::tempdir().unwrap();
-    let socket_path = directory.path().join("run").join("bindizr.sock");
-    let socket_path = socket_path.to_str().unwrap();
-
-    prepare_socket_path(socket_path).await.unwrap();
-
-    let parent = fs::metadata(Path::new(socket_path).parent().unwrap()).unwrap();
-
-    assert!(parent.is_dir());
-    assert_eq!(parent.mode() & 0o777, 0o700);
-}
-
-/// Verify that `prepare_socket_path` refuses a parent reached through a symlink.
-#[tokio::test]
-async fn prepare_socket_path_rejects_symlinked_parent_directory() {
-    let directory = tempfile::tempdir().unwrap();
-    fs::create_dir(directory.path().join("real")).unwrap();
-    std::os::unix::fs::symlink(directory.path().join("real"), directory.path().join("link"))
-        .unwrap();
-    let socket_path = directory.path().join("link").join("bindizr.sock");
-
-    let error = prepare_socket_path(socket_path.to_str().unwrap())
-        .await
-        .unwrap_err();
-
-    assert!(
-        matches!(error, BindSocketPathError::NotADirectory { .. }),
-        "{error}"
-    );
-}
-
-/// Verify that the socket's owner and the UID both ends read for peer authorization agree.
-#[tokio::test]
-async fn accepted_connection_returns_peer_uid() {
-    let directory = tempfile::tempdir().unwrap();
-    let socket_path = directory.path().join("bindizr.sock");
-    let socket_path = socket_path.to_str().unwrap();
-
-    let listener = bind_socket(socket_path).await.unwrap();
-
-    let metadata = fs::metadata(socket_path).unwrap();
-    let own_uid = socket::read_own_uid().unwrap();
-
-    assert_eq!(own_uid, metadata.uid());
-
-    let (client, accepted) = tokio::join!(UnixStream::connect(socket_path), listener.accept());
-
-    // macOS reports no credentials once the peer has hung up, so the client
-    // stays open while the daemon side asks.
-    let client = client.unwrap();
-    let (stream, _) = accepted.unwrap();
-
-    assert_eq!(stream.peer_cred().unwrap().uid(), own_uid);
-    assert_eq!(client.peer_cred().unwrap().uid(), own_uid);
-}
-
-/// Verify that `prepare_socket_path` removes stale socket.
-#[tokio::test]
-async fn prepare_socket_path_removes_stale_socket() {
-    let directory = tempfile::tempdir().unwrap();
-    let socket_path = directory.path().join("bindizr.sock");
-    let socket_path = socket_path.to_str().unwrap();
-    let listener = UnixListener::bind(socket_path).unwrap();
-    drop(listener);
-
-    prepare_socket_path(socket_path).await.unwrap();
-
-    assert!(!Path::new(socket_path).exists());
-}
-
-/// Verify that `prepare_socket_path` rejects active socket.
-#[tokio::test]
-async fn prepare_socket_path_rejects_active_socket() {
-    let directory = tempfile::tempdir().unwrap();
-    let socket_path = directory.path().join("bindizr.sock");
-    let socket_path = socket_path.to_str().unwrap();
-    let listener = UnixListener::bind(socket_path).unwrap();
-
-    let error = prepare_socket_path(socket_path).await.unwrap_err();
-
-    assert!(matches!(error, BindSocketPathError::AlreadyRunning));
-    assert!(Path::new(socket_path).exists());
-    drop(listener);
-}
-
-/// Verify that `prepare_socket_path` rejects non socket file.
-#[tokio::test]
-async fn prepare_socket_path_rejects_non_socket_file() {
-    let directory = tempfile::tempdir().unwrap();
-    let socket_path = directory.path().join("bindizr.sock");
-    let socket_path = socket_path.to_str().unwrap();
-    fs::write(socket_path, "not a socket").unwrap();
-
-    let error = prepare_socket_path(socket_path).await.unwrap_err();
-
-    assert!(matches!(error, BindSocketPathError::NotASocket { .. }));
-    assert!(Path::new(socket_path).exists());
-}
-
 /// Verify that shutdown waits for committed commands and closes clients still waiting for input.
 #[tokio::test]
 async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
@@ -181,7 +171,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     config.dns.notify.batch_ms = 0;
     config.dns.notify.timeout_secs = 3;
     config.dns.notify.retries = 0;
-    let tls = TlsCertificates::load(&config).unwrap();
+    let tls = crate::tls::TlsCertificates::load(&config).unwrap();
 
     let db = Db::connect(&config.database).await.unwrap();
     let cx = Arc::new(Context::new(
@@ -206,10 +196,12 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
         .unwrap();
 
     let (control_tx, _control_rx) = control::channel();
-    let socket_cx = Arc::new(SocketContext::new(cx, control_tx, tls));
+    let transfer_cache = Arc::new(crate::dns::server::transfer_cache::TransferCache::new());
+    let reloader = Arc::new(ConfigReloader::new(tls, transfer_cache));
+    let socket_cx = Arc::new(SocketContext::new(cx, control_tx, reloader));
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("drain.sock");
-    let listener = UnixListener::bind(&path).unwrap();
+    let listener = Arc::new(UnixListener::bind(&path).unwrap());
     let shutdown = Shutdown::new();
     let mut server = serve(socket_cx.clone(), listener, &shutdown).unwrap();
 

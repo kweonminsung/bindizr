@@ -55,8 +55,8 @@ pub async fn enable(
             .policy_name
             .as_deref()
             .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME),
-    )?;
-    let parent_ns_addrs = parent_ns_addrs::normalize(&request.parent_ns_addrs)?;
+    );
+    let parent_ns_addrs = parent_ns_addrs::normalize(&request.parent_ns_addrs);
 
     let mut tx = transaction::begin_tx(cx, "failed to enable DNSSEC").await?;
 
@@ -65,6 +65,8 @@ pub async fn enable(
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
+        let policy_name = policy_name?;
+        let parent_ns_addrs = parent_ns_addrs?;
 
         let existing_keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id).await?;
 
@@ -175,22 +177,16 @@ pub async fn update_settings(
     zone_name: &ZoneName,
     request: &UpdateDnssecSettingsRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    if request.policy_name.is_none() && request.parent_ns_addrs.is_none() {
-        return Err(ServiceError::invalid_input(
-            "nothing to update: give a policy, parent nameserver addresses, or both",
-        ));
-    }
-
     let policy_name = request
         .policy_name
         .as_deref()
         .map(dnssec_policy::normalize_name)
-        .transpose()?;
+        .transpose();
     let parent_ns_addrs = request
         .parent_ns_addrs
         .as_deref()
         .map(parent_ns_addrs::normalize)
-        .transpose()?;
+        .transpose();
 
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC settings").await?;
 
@@ -198,6 +194,14 @@ pub async fn update_settings(
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
+
+        let policy_name = policy_name?;
+        let parent_ns_addrs = parent_ns_addrs?;
+        if policy_name.is_none() && parent_ns_addrs.is_none() {
+            return Err(ServiceError::invalid_input(
+                "nothing to update: give a policy, parent nameserver addresses, or both",
+            ));
+        }
 
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id).await?;
         let (policy, policy_change) = match &policy_name {

@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, io};
 
@@ -25,13 +25,15 @@ use bindizr_service::scheduler::SchedulerWorker;
 use bindizr_service::{Context, access, scheduler, token, zone};
 use chrono::Utc;
 use thiserror::Error;
-use tokio::signal::unix;
-use tokio::signal::unix::SignalKind;
+use tokio::net::UnixListener;
+use tokio::signal::unix::{self, Signal, SignalKind};
 use tokio::task::{JoinError, JoinHandle, JoinSet};
-use tokio::{signal, sync, time};
+use tokio::{sync, time};
 
 use crate::api::StartApiError;
 use crate::dns::StartDnsError;
+use crate::dns::error::DnsError;
+use crate::dns::server::transfer_cache::TransferCache;
 use crate::shutdown::Shutdown;
 use crate::socket::server;
 use crate::socket::server::control::DaemonControl;
@@ -67,7 +69,7 @@ pub(crate) enum DaemonError {
     ServeSocket(#[from] ServeSocketError),
     #[error(transparent)]
     Api(#[from] StartApiError),
-    #[error("failed to listen for {signal}: {source}")]
+    #[error("shutdown or reload signal {signal} failed: {source}")]
     Signal {
         signal: &'static str,
         #[source]
@@ -79,8 +81,16 @@ pub(crate) enum DaemonError {
     ServerFailed {
         name: &'static str,
         #[source]
+        source: ServeError,
+    },
+    #[error("the {name} task failed: {source}")]
+    ServerTaskFailed {
+        name: &'static str,
+        #[source]
         source: JoinError,
     },
+    #[error("a server supervisor task failed: {0}")]
+    SupervisorFailed(#[source] JoinError),
     #[error("failed to locate the bindizr executable")]
     ExecutableUnknown,
     #[error("failed to re-execute bindizr: {0}")]
@@ -101,13 +111,27 @@ impl DaemonError {
     }
 }
 
+/// Why a bound front end failed while serving.
+#[derive(Debug, Error)]
+pub(crate) enum ServeError {
+    #[error("{0}")]
+    Http(#[from] io::Error),
+    #[error("{0}")]
+    Dns(#[from] DnsError),
+}
+
 /// Supervised front-end tasks paired with their names; `join_next` removes
 /// finished tasks so shutdown never awaits a handle twice.
-type Servers = JoinSet<(&'static str, Result<(), JoinError>)>;
+type Servers = JoinSet<(&'static str, Result<Result<(), ServeError>, JoinError>)>;
 
 /// Put a spawned front end under the daemon's supervision.
-fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<()>) {
-    servers.spawn(async move { (name, task.await) });
+fn watch<T: Send + 'static>(
+    servers: &mut Servers,
+    name: &'static str,
+    task: JoinHandle<T>,
+    serve_result: impl FnOnce(T) -> Result<(), ServeError> + Send + 'static,
+) {
+    servers.spawn(async move { (name, task.await.map(serve_result)) });
 }
 
 /// Why a reload applied nothing, or not everything.
@@ -131,30 +155,45 @@ impl From<ReloadError> for ServiceError {
     }
 }
 
-/// Reload startup-captured settings and the certificate pairs presented by TLS listeners.
-pub(crate) fn reload_config(
-    cx: &Context,
-    tls: &TlsCertificates,
-) -> Result<Vec<String>, ReloadError> {
-    // Everything that can fail, the file and both certificate pairs, is read
-    // before anything is replaced, so a refusal leaves the daemon as it was.
-    let next = cx.load_config()?;
-    let certificates = tls.reload(&next)?;
-    let mut changed = cx.set_config(next);
+/// Apply live settings from either SIGHUP or the control socket.
+#[derive(Debug)]
+pub(crate) struct ConfigReloader {
+    tls: TlsCertificates,
+    transfer_cache: Arc<TransferCache>,
+    reload: Mutex<()>,
+}
 
-    // The installed logger reads its level and format per record, so this is enough.
-    let config = cx.config();
-    logger::set_level(config.logging.level);
-    logger::set_format(config.logging.format);
+impl ConfigReloader {
+    /// Share the listener state affected by each reload.
+    pub(crate) fn new(tls: TlsCertificates, transfer_cache: Arc<TransferCache>) -> Self {
+        Self {
+            tls,
+            transfer_cache,
+            reload: Mutex::new(()),
+        }
+    }
 
-    // The scheduler takes its period from the channel, so a reload that
-    // names one reaches an instance a zero interval left idle.
-    cx.set_scheduler_period(config.dns.scheduler_interval_secs);
+    /// Serialize reloads so the daemon and listeners finish each update together.
+    pub(crate) fn reload(&self, cx: &Context) -> Result<Vec<String>, ReloadError> {
+        let _reload = self.reload.lock().expect("Bindizr reload lock is poisoned");
+        // The file and both certificate pairs are read before anything is replaced.
+        let next = cx.load_config()?;
+        let certificates = self.tls.reload(&next)?;
+        let mut changed = cx.set_config(next);
 
-    changed.extend(certificates);
-    log::info!("event=config_reload changed={}", changed.join(","));
+        let config = cx.config();
+        logger::set_level(config.logging.level);
+        logger::set_format(config.logging.format);
+        self.transfer_cache.reconcile_budget(cx);
 
-    Ok(changed)
+        // A new period also reaches a scheduler that was idle at zero.
+        cx.set_scheduler_period(config.dns.scheduler_interval_secs);
+
+        changed.extend(certificates);
+        log::info!("event=config_reload changed={}", changed.join(","));
+
+        Ok(changed)
+    }
 }
 
 /// Build the daemon's state in dependency order, serve every front end, handle
@@ -164,7 +203,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     // "(deleted)" path, while this path points at the replacement.
     let daemon_exe = env::current_exe().ok();
 
-    let config_path = config::resolve_config_path(config_file);
+    let config_path = config::resolve_config_path(config_file)?;
     let config = Config::load(&config_path)?;
 
     Logger::init(config.logging);
@@ -174,9 +213,29 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 
     // Bind the control socket first so a second daemon fails before
     // opening the database or claiming DNS ports.
-    let (socket_path, socket_listener) = server::bind().await?;
-    log::info!("Daemon socket server listening on {socket_path}");
+    let (socket_file, socket_listener) = server::bind().await?;
+    log::info!("Daemon socket server listening on {}", socket_file.path());
 
+    let outcome = run(config, config_path, socket_listener).await;
+    server::remove_socket_file(socket_file).await;
+
+    match outcome? {
+        RunResult::Stop => Ok(()),
+        // exec replaces this image, so it returns only on failure, and by
+        // then nothing is listening: the failure ends the process.
+        RunResult::Restart => Err(reexec(daemon_exe)),
+    }
+}
+
+/// Prepare the daemon and drain anything started before returning its outcome.
+async fn run(
+    config: Config,
+    config_path: String,
+    socket_listener: Arc<UnixListener>,
+) -> Result<RunResult, DaemonError> {
+    let mut interrupt = listen_for_signal("SIGINT", SignalKind::interrupt())?;
+    let mut terminate = listen_for_signal("SIGTERM", SignalKind::terminate())?;
+    let mut hangup = listen_for_signal("SIGHUP", SignalKind::hangup())?;
     // Read before the database opens: a pair that does not load is a
     // configuration failure.
     let tls = TlsCertificates::load(&config)?;
@@ -198,9 +257,6 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         access_tx,
         period_tx,
     ));
-    let notify_worker = queue::spawn(cx.clone(), notify_rx);
-    let access_log_worker = access::spawn(cx.clone(), access_rx);
-
     zone::validate_catalog_zone_name(&cx).await?;
 
     // Authentication with no token answers 401 to everything, which reads as a
@@ -215,89 +271,85 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         }
     }
 
+    let notify_worker = queue::spawn(cx.clone(), notify_rx);
+    let access_log_worker = access::spawn(cx.clone(), access_rx);
     let scheduler_worker = scheduler::spawn(cx.clone(), period_rx);
-
     let shutdown = Shutdown::new();
-
-    let dns_servers = dns::start(cx.clone(), &shutdown, tls.dns.clone()).await?;
-
-    let (control_tx, mut control_rx) = control::channel();
-    let socket_cx = Arc::new(SocketContext::new(cx.clone(), control_tx, tls.clone()));
-    let socket_task = server::serve(socket_cx, socket_listener, &shutdown)?;
-
-    let api_task = api::start(cx.clone(), &shutdown, tls.api.clone()).await?;
-
-    // A front end that stops on its own ends the daemon: the control socket
-    // would otherwise keep answering for a process serving nothing.
     let mut servers = Servers::new();
-    watch(&mut servers, "daemon socket server", socket_task);
-    watch(&mut servers, "API server", api_task);
-    watch(&mut servers, "DNS TCP server", dns_servers.tcp);
-    watch(&mut servers, "DNS UDP server", dns_servers.udp);
 
-    if let Some(task) = dns_servers.tls {
-        watch(&mut servers, "DNS TLS server", task);
-    }
+    let outcome = async {
+        let dns_servers = dns::start(cx.clone(), &shutdown, tls.dns.clone()).await?;
+        watch(&mut servers, "DNS TCP server", dns_servers.tcp, |result| {
+            result.map_err(ServeError::from)
+        });
+        watch(&mut servers, "DNS UDP server", dns_servers.udp, Ok);
+        if let Some(task) = dns_servers.tls {
+            watch(&mut servers, "DNS TLS server", task, |result| {
+                result.map_err(ServeError::from)
+            });
+        }
 
-    // Publish the start time only after all front ends serve; restart
-    // polling and the uptime gauge use this same readiness point.
-    cx.set_started_at(Utc::now());
-    log::info!("Bindizr is running.");
+        let (control_tx, mut control_rx) = control::channel();
+        let reloader = Arc::new(ConfigReloader::new(tls.clone(), dns_servers.transfer_cache));
+        let socket_cx = Arc::new(SocketContext::new(cx.clone(), control_tx, reloader.clone()));
+        let socket_task = server::serve(socket_cx, socket_listener, &shutdown)?;
+        watch(&mut servers, "daemon socket server", socket_task, Ok);
 
-    let mut terminate =
-        unix::signal(SignalKind::terminate()).map_err(|source| DaemonError::Signal {
-            signal: "SIGTERM",
-            source,
-        })?;
-    let mut hangup = unix::signal(SignalKind::hangup()).map_err(|source| DaemonError::Signal {
-        signal: "SIGHUP",
-        source,
-    })?;
+        let api_task = api::start(cx.clone(), &shutdown, tls.api.clone()).await?;
+        watch(&mut servers, "API server", api_task, |result| {
+            result.map_err(ServeError::from)
+        });
 
-    // Handle process signals and socket control commands in one lifecycle loop.
-    let outcome = loop {
-        let control = tokio::select! {
-            result = signal::ctrl_c() => {
-                result.map_err(|source| DaemonError::Signal {
-                    signal: "shutdown signal",
-                    source,
-                })?;
-                log::info!("Interrupt received, shutting down...");
-                break RunResult::Stop;
-            }
+        // Publish the start time only after all front ends serve; restart
+        // polling and the uptime gauge use this same readiness point.
+        cx.set_started_at(Utc::now());
+        log::info!("Bindizr is running.");
 
-            _ = terminate.recv() => {
-                log::info!("SIGTERM received, shutting down...");
-                break RunResult::Stop;
-            }
-
-            _ = hangup.recv() => {
-                // A reload logs what it changed; a signal has no one to answer.
-                if let Err(error) = reload_config(&cx, &tls) {
-                    log::error!("SIGHUP received, nothing reloaded: {error}");
+        loop {
+            let control = tokio::select! {
+                result = recv_signal("SIGINT", &mut interrupt) => {
+                    result?;
+                    log::info!("Interrupt received, shutting down...");
+                    break Ok(RunResult::Stop);
                 }
 
-                continue;
-            }
+                result = recv_signal("SIGTERM", &mut terminate) => {
+                    result?;
+                    log::info!("SIGTERM received, shutting down...");
+                    break Ok(RunResult::Stop);
+                }
 
-            Some(Ok((name, result))) = servers.join_next() => {
-                break RunResult::server_stopped(name, result);
-            }
+                result = recv_signal("SIGHUP", &mut hangup) => {
+                    result?;
+                    if let Err(error) = reloader.reload(&cx) {
+                        log::error!("SIGHUP received, nothing reloaded: {error}");
+                    }
 
-            control = control_rx.recv() => control,
-        };
+                    continue;
+                }
 
-        match control {
-            Some(DaemonControl::Restart) => {
-                log::info!("Restart requested, re-executing bindizr...");
-                break RunResult::Restart;
-            }
-            _ => {
-                log::info!("Shutdown requested, exiting gracefully...");
-                break RunResult::Stop;
+                // A listener stopping independently makes the daemon unhealthy.
+                Some(result) = servers.join_next() => {
+                    let (name, result) = result.map_err(DaemonError::SupervisorFailed)?;
+                    break Err(server_stopped(name, result));
+                }
+
+                control = control_rx.recv() => control,
+            };
+
+            match control {
+                Some(DaemonControl::Restart) => {
+                    log::info!("Restart requested, re-executing bindizr...");
+                    break Ok(RunResult::Restart);
+                }
+                _ => {
+                    log::info!("Shutdown requested, exiting gracefully...");
+                    break Ok(RunResult::Stop);
+                }
             }
         }
-    };
+    }
+    .await;
 
     drain(
         &shutdown,
@@ -307,15 +359,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         access_log_worker,
     )
     .await;
-    server::remove_socket_file(&socket_path).await;
-
-    match outcome {
-        RunResult::Stop => Ok(()),
-        RunResult::Failed(error) => Err(error),
-        // exec replaces this image, so it returns only on failure, and by
-        // then nothing is listening: the failure ends the process.
-        RunResult::Restart => Err(reexec(daemon_exe)),
-    }
+    outcome
 }
 
 /// Why the lifecycle loop ended.
@@ -323,18 +367,31 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 enum RunResult {
     Stop,
     Restart,
-    Failed(DaemonError),
 }
 
-impl RunResult {
-    /// Build the result of a server that stopped on its own, so the exit says what
-    /// failed.
-    fn server_stopped(name: &'static str, result: Result<(), JoinError>) -> Self {
-        Self::Failed(match result {
-            Ok(()) => DaemonError::ServerStopped { name },
-            Err(source) => DaemonError::ServerFailed { name, source },
-        })
+/// Report an independently stopped server with its actual failure, if any.
+fn server_stopped(
+    name: &'static str,
+    result: Result<Result<(), ServeError>, JoinError>,
+) -> DaemonError {
+    match result {
+        Ok(Ok(())) => DaemonError::ServerStopped { name },
+        Ok(Err(source)) => DaemonError::ServerFailed { name, source },
+        Err(source) => DaemonError::ServerTaskFailed { name, source },
     }
+}
+
+/// Register an operating-system signal before listeners start serving.
+fn listen_for_signal(signal: &'static str, kind: SignalKind) -> Result<Signal, DaemonError> {
+    unix::signal(kind).map_err(|source| DaemonError::Signal { signal, source })
+}
+
+/// Wait for a signal, reporting a lost receiver as a supervisor failure.
+async fn recv_signal(signal: &'static str, receiver: &mut Signal) -> Result<(), DaemonError> {
+    receiver.recv().await.ok_or_else(|| DaemonError::Signal {
+        signal,
+        source: io::Error::new(io::ErrorKind::BrokenPipe, "signal listener closed"),
+    })
 }
 
 /// Drain requests and scheduler work, then flush NOTIFY and the access log
@@ -350,23 +407,34 @@ async fn drain(
     shutdown.trigger();
 
     let drained = time::timeout(DRAIN_TIMEOUT, async {
-        while servers.join_next().await.is_some() {}
-
-        // The scheduler is a write producer too; its last pass may enqueue NOTIFY.
-        if let Err(error) = scheduler_worker.stop().await {
-            log::warn!("DNSSEC scheduler did not stop cleanly: {error}");
+        while let Some(result) = servers.join_next().await {
+            match result {
+                Ok((_, Ok(Ok(())))) => {}
+                Ok((name, result)) => log::warn!("{}", server_stopped(name, result)),
+                Err(error) => log::warn!("{}", DaemonError::SupervisorFailed(error)),
+            }
         }
 
+        // The scheduler is a write producer too; its last pass may enqueue NOTIFY.
+        wait_for_worker("DNSSEC scheduler", scheduler_worker.stop()).await;
+
         // Flush only after every NOTIFY producer has stopped.
-        let _ = notify_worker.stop().await;
+        wait_for_worker("NOTIFY worker", notify_worker.stop()).await;
 
         // The front ends were the access log's producers, and they have stopped.
-        let _ = access_log_worker.stop().await;
+        wait_for_worker("access log worker", access_log_worker.stop()).await;
     })
     .await;
 
     if drained.is_err() {
         log::error!("Servers did not finish within {DRAIN_TIMEOUT:?}, exiting anyway.");
+    }
+}
+
+/// Join a stopping worker and retain the cause if it cannot drain.
+async fn wait_for_worker(name: &str, task: JoinHandle<()>) {
+    if let Err(error) = task.await {
+        log::warn!("{name} did not stop cleanly: {error}");
     }
 }
 
@@ -383,6 +451,8 @@ fn reexec(daemon_exe: Option<PathBuf>) -> DaemonError {
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error as _;
+
     use bindizr_core::config::TlsFiles;
     use rustls::pki_types::pem;
 
@@ -392,8 +462,6 @@ mod tests {
     /// Verify that a TLS reload failure retains its read cause, error code, and message.
     #[test]
     fn tls_reload_failure_preserves_source_and_response() {
-        use std::error::Error as _;
-
         let directory = tempfile::tempdir().unwrap();
         let cert_file = directory.path().join("missing-cert.pem");
         let key_file = directory.path().join("missing-key.pem");
@@ -425,5 +493,24 @@ mod tests {
             .downcast_ref::<pem::Error>()
             .unwrap();
         assert!(matches!(read, pem::Error::Io(error) if error.kind() == io::ErrorKind::NotFound));
+    }
+
+    /// Verify that the supervisor can distinguish a stopped listener from its serving error.
+    #[test]
+    fn server_stopped_preserves_the_listener_error() {
+        let failure = ServeError::from(io::Error::new(io::ErrorKind::BrokenPipe, "listener lost"));
+        let error = server_stopped("API server", Ok(Err(failure)));
+        let source = error
+            .source()
+            .unwrap()
+            .source()
+            .unwrap()
+            .downcast_ref::<io::Error>()
+            .unwrap();
+        assert_eq!(source.kind(), io::ErrorKind::BrokenPipe);
+        assert!(matches!(
+            server_stopped("API server", Ok(Ok(()))),
+            DaemonError::ServerStopped { name: "API server" }
+        ));
     }
 }

@@ -4,7 +4,7 @@
 pub(crate) mod axfr;
 pub(crate) mod ds;
 pub(crate) mod notify;
-pub mod probe;
+pub mod soa;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -17,6 +17,7 @@ use bindizr_core::dns::{message, query};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
+use tokio::time::error::Elapsed;
 use tokio::{net, time};
 
 /// One byte beyond the largest supported advertisement detects truncated datagrams.
@@ -32,9 +33,17 @@ pub enum ExchangeMessageError {
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error("{what} TCP timeout")]
-    TcpTimedOut { what: &'static str },
+    TcpTimedOut {
+        what: &'static str,
+        #[source]
+        source: Elapsed,
+    },
     #[error("{what} send timeout")]
-    SendTimedOut { what: &'static str },
+    SendTimedOut {
+        what: &'static str,
+        #[source]
+        source: Option<Elapsed>,
+    },
     #[error("incomplete {what} send to {addr}: sent {sent} of {len} bytes")]
     IncompleteSend {
         what: &'static str,
@@ -46,6 +55,8 @@ pub enum ExchangeMessageError {
     ResponseTimedOut {
         what: &'static str,
         addr: SocketAddr,
+        #[source]
+        source: Option<Elapsed>,
     },
 }
 
@@ -57,7 +68,11 @@ pub enum ResolveAddressError {
     #[error(transparent)]
     Lookup(#[from] io::Error),
     #[error("resolution timed out after {secs} seconds")]
-    TimedOut { secs: u64 },
+    TimedOut {
+        secs: u64,
+        #[source]
+        source: Elapsed,
+    },
 }
 
 /// One shared resolution failure, retaining the original typed cause for every consumer.
@@ -118,7 +133,7 @@ pub(crate) async fn exchange_over_tcp(
 
     time::timeout(timeout, exchange)
         .await
-        .map_err(|_| ExchangeMessageError::TcpTimedOut { what })?
+        .map_err(|source| ExchangeMessageError::TcpTimedOut { what, source })?
 }
 
 /// Read one length-prefixed DNS message (RFC 1035, Section 4.2.2).
@@ -150,7 +165,10 @@ pub(crate) async fn exchange_over_udp(
 
     let sent = time::timeout(timeout, socket.send(request))
         .await
-        .map_err(|_| ExchangeMessageError::SendTimedOut { what })??;
+        .map_err(|source| ExchangeMessageError::SendTimedOut {
+            what,
+            source: Some(source),
+        })??;
 
     if sent != request.len() {
         return Err(ExchangeMessageError::IncompleteSend {
@@ -175,10 +193,11 @@ pub(crate) async fn exchange_over_udp(
             }
         }
     };
-    let received = time::timeout(timeout, receive).await.map_err(|_| {
+    let received = time::timeout(timeout, receive).await.map_err(|source| {
         ExchangeMessageError::ResponseTimedOut {
             what,
             addr: server_addr,
+            source: Some(source),
         }
     })??;
 
@@ -227,8 +246,9 @@ pub async fn resolve_address_entry(
                     }
                 }
                 Ok(Err(error)) => Err(ResolveAddressError::Lookup(error)),
-                Err(_) => Err(ResolveAddressError::TimedOut {
+                Err(source) => Err(ResolveAddressError::TimedOut {
                     secs: timeout.as_secs(),
+                    source,
                 }),
             }
         }
@@ -237,6 +257,9 @@ pub async fn resolve_address_entry(
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+    use std::str::FromStr;
+
     use bindizr_core::dns::message::{Opcode, OptRcode, ParsedQuery, Rtype};
     use bindizr_core::dns::name::WireName;
 
@@ -246,8 +269,6 @@ mod tests {
     /// deadline or sending again.
     #[tokio::test]
     async fn udp_exchange_ignores_oversized_matching_responses() {
-        use std::str::FromStr;
-
         for (advertised, limit) in [(None, 512), (Some(1232), 1232)] {
             let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr = socket.local_addr().unwrap();
@@ -291,5 +312,33 @@ mod tests {
 
             assert_eq!(&response[..len], valid);
         }
+    }
+
+    /// Verify that a silent UDP server yields the original Tokio timeout cause.
+    #[tokio::test]
+    async fn udp_response_timeout_preserves_its_source() {
+        let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let (_, query) = query::build_question(
+            Opcode::QUERY,
+            false,
+            false,
+            &WireName::from_str("example.com").unwrap(),
+            Rtype::SOA,
+            None,
+        );
+        let error = exchange_over_udp(
+            server.local_addr().unwrap(),
+            Duration::from_millis(100),
+            &query.finish(),
+            "test",
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ExchangeMessageError::ResponseTimedOut { .. }
+        ));
+        assert!(error.source().unwrap().is::<Elapsed>());
     }
 }

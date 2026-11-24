@@ -43,10 +43,7 @@ pub(crate) async fn disable_dnssec(
     )
     .await?;
 
-    Ok(DaemonResponse {
-        message: response.message.clone(),
-        data: response,
-    })
+    Ok(response.into())
 }
 
 /// Get the requested zone's DNSSEC status.
@@ -69,10 +66,7 @@ pub(crate) async fn sign_zone(
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     let response = dnssec::sign(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
 
-    Ok(DaemonResponse {
-        message: response.message.clone(),
-        data: response,
-    })
+    Ok(response.into())
 }
 
 /// Start a DNSSEC key rollover for the requested zone.

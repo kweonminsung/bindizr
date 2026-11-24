@@ -39,7 +39,7 @@ pub(crate) enum SendNotifyError {
     #[error(transparent)]
     Response(#[from] ParseResponseError),
     #[error("NOTIFY socket worker stopped")]
-    WorkerStopped,
+    WorkerStopped(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 /// A daemon's active NOTIFY target sockets; idle sockets have no strong owner.
@@ -179,7 +179,7 @@ impl NotifyClient {
         target
             .jobs
             .send(request)
-            .map_err(|_| SendNotifyError::WorkerStopped)?;
+            .map_err(|source| SendNotifyError::WorkerStopped(Box::new(source)))?;
 
         Ok(NotifyHandle { target, response })
     }
@@ -198,7 +198,7 @@ impl NotifyHandle {
         let result = self
             .response
             .await
-            .map_err(|_| SendNotifyError::WorkerStopped)?;
+            .map_err(|source| SendNotifyError::WorkerStopped(Box::new(source)))?;
 
         drop(self.target);
 
@@ -279,13 +279,15 @@ async fn serve(
                     let request = requests
                         .remove(&id)
                         .expect("timers belong to live requests");
+                    // A shared worker's timer ended. No timeout future returned an error.
                     let error = if request.waiting {
                         ExchangeMessageError::ResponseTimedOut {
                             what: "NOTIFY",
-                            addr: server_addr
+                            addr: server_addr,
+                            source: None,
                         }
                     } else {
-                        ExchangeMessageError::SendTimedOut { what: "NOTIFY" }
+                        ExchangeMessageError::SendTimedOut { what: "NOTIFY", source: None }
                     };
                     let _ = request.reply.send(Err(error.into()));
                 }

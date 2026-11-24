@@ -15,7 +15,7 @@ impl<'a> CnameRecordValue<'a> {
     }
 
     /// Render a CNAME target in canonical text form.
-    pub fn canonical(self) -> String {
+    pub fn to_text(self) -> String {
         name::to_fqdn_lowercase(self.target)
     }
 }
@@ -29,7 +29,7 @@ mod tests {
     fn cname_accepts_root_target_and_preserves_literal_dot() {
         for (input, expected) in [(".", vec![0]), (r"\.", vec![1, b'.', 0])] {
             let value = CnameRecordValue::parse(input).unwrap();
-            assert_eq!(name::encode_name(&value.canonical()).unwrap(), expected);
+            assert_eq!(name::encode_name(&value.to_text()).unwrap(), expected);
         }
 
         for invalid in ["", ".."] {
@@ -37,9 +37,9 @@ mod tests {
         }
     }
 
-    /// Render a CNAME target in canonical text form.
-    fn canonical(value: &str) -> String {
-        CnameRecordValue::parse(value).unwrap().canonical()
+    /// Parse and render a CNAME target in canonical text form.
+    fn parse_to_text(value: &str) -> String {
+        CnameRecordValue::parse(value).unwrap().to_text()
     }
 
     /// Verify that an escaped dot stays inside its label.
@@ -47,15 +47,18 @@ mod tests {
     fn cname_preserves_escaped_dot_inside_label() {
         // RFC 1035, Section 5.1: the escape makes the dot data, so the name has
         // two labels and the trailing dot is the only boundary left to drop.
-        assert_eq!(canonical(r"Evil\.Example.COM."), r"evil\046example.com.");
-        assert_eq!(canonical(r"a\.b"), r"a\046b.");
+        assert_eq!(
+            parse_to_text(r"Evil\.Example.COM."),
+            r"evil\046example.com."
+        );
+        assert_eq!(parse_to_text(r"a\.b"), r"a\046b.");
     }
 
     /// Verify that a label keeps what only an escape could have spelled.
     #[test]
     fn cname_preserves_escaped_label_octets() {
-        assert_eq!(canonical(r"host\065.example.com"), "hosta.example.com.");
-        assert_eq!(canonical(r"a\\b.example.com"), r"a\\b.example.com.");
+        assert_eq!(parse_to_text(r"host\065.example.com"), "hosta.example.com.");
+        assert_eq!(parse_to_text(r"a\\b.example.com"), r"a\\b.example.com.");
     }
 
     /// Verify that a classless reverse delegation target survives.
@@ -63,7 +66,7 @@ mod tests {
     fn cname_accepts_classless_reverse_delegation_target() {
         // RFC 2317, Section 4 delegates through a label carrying a slash.
         assert_eq!(
-            canonical("1.0/25.2.0.192.in-addr.arpa."),
+            parse_to_text("1.0/25.2.0.192.in-addr.arpa."),
             "1.0/25.2.0.192.in-addr.arpa."
         );
     }

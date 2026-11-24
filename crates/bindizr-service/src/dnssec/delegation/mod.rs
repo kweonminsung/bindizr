@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use crate::authorization::Caller;
 use crate::dns_client::ds;
-use crate::dns_client::ds::ParentDs;
+use crate::dns_client::ds::ParentDsAnswer;
 use crate::dnssec::SignedZone;
 use crate::error::ServiceError;
 use crate::types::{
@@ -95,9 +95,12 @@ pub(crate) async fn probe_delegation(
 fn build_delegation_response(
     zone: &Zone,
     keys: &[DnssecKey],
-    parent: ParentDs,
+    answers: Vec<ParentDsAnswer>,
 ) -> Result<DnssecDelegationResponse, ServiceError> {
-    let served: Vec<&DsRecordSet> = parent.answers.iter().flatten().collect();
+    let served: Vec<&DsRecordSet> = answers
+        .iter()
+        .filter_map(|answer| answer.records.as_ref())
+        .collect();
     let mut ds_key_tags: Vec<KeyTag> = served
         .iter()
         .flat_map(|record_set| record_set.key_tags())
@@ -126,16 +129,14 @@ fn build_delegation_response(
 
         // A digest bindizr cannot compute leaves the match undecided, not
         // absent. Per server, so one computable answer cannot mask another.
-        let ds_digest_unsupported = parent.answers.iter().any(|answer| {
-            answer.as_ref().is_some_and(|record_set| {
-                let mut for_key = record_set
-                    .records
-                    .iter()
-                    .filter(|record| record.key_tag == key.key_tag)
-                    .peekable();
-                for_key.peek().is_some()
-                    && !for_key.any(|record| DsDigestType::try_from(record.digest_type).is_ok())
-            })
+        let ds_digest_unsupported = served.iter().any(|record_set| {
+            let mut for_key = record_set
+                .records
+                .iter()
+                .filter(|record| record.key_tag == key.key_tag)
+                .peekable();
+            for_key.peek().is_some()
+                && !for_key.any(|record| DsDigestType::try_from(record.digest_type).is_ok())
         });
 
         let forms: Vec<Vec<u8>> = digest_types
@@ -147,14 +148,13 @@ fn build_delegation_response(
             })
             .collect::<Result<_, ServiceError>>()?;
 
-        let ds_published = !parent.answers.is_empty()
-            && parent.answers.iter().all(|answer| {
-                answer.as_ref().is_some_and(|record_set| {
-                    record_set
-                        .records
-                        .iter()
-                        .any(|record| forms.contains(&record.rdata))
-                })
+        let ds_published = !answers.is_empty()
+            && served.len() == answers.len()
+            && served.iter().all(|record_set| {
+                record_set
+                    .records
+                    .iter()
+                    .any(|record| forms.contains(&record.rdata))
             });
 
         delegation_keys.push(DnssecDelegationKeyResponse {
@@ -168,16 +168,18 @@ fn build_delegation_response(
         });
     }
 
+    let ds_state = if served.is_empty() {
+        DsState::Hidden
+    } else {
+        DsState::Published
+    };
+    let ds_ttl = served.iter().map(|record_set| record_set.ttl).max();
     Ok(DnssecDelegationResponse {
-        parent_ns_addrs: parent.ns_addrs,
-        ds_state: if served.is_empty() {
-            DsState::Hidden
-        } else {
-            DsState::Published
-        },
+        parent_ns_addrs: answers.into_iter().map(|answer| answer.server).collect(),
+        ds_state,
         keys: delegation_keys,
         ds_key_tags,
-        ds_ttl: served.iter().map(|record_set| record_set.ttl).max(),
+        ds_ttl,
         checked_at: Utc::now(),
     })
 }

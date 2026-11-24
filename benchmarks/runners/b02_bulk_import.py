@@ -4,13 +4,10 @@ Use each adapter's batch API or fixed worker pool; report Bindizr zone-file impo
 """
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from datasets.gen_dataset import generate  # noqa: E402
-from lib.resources import load_sampler  # noqa: E402
+from datasets.gen_dataset import generate
+from lib.resources import load_sampler
 
 # Sampled around the measured phase below, not by the orchestrator.
 SELF_SAMPLES = True
@@ -42,8 +39,8 @@ async def _measure(adapter, zone_name, size, label, load, errors) -> dict:
         "import_secs": round(elapsed, 3),
         "records_per_sec": round(imported / elapsed, 1) if elapsed else 0,
         "import_errors": failed,
-        "peak_mem_mb": resource_usage.get("peak_mem_mb", 0),
-        "avg_cpu_pct": resource_usage.get("avg_cpu_pct", 0),
+        "peak_mem_mb": resource_usage.get("peak_mem_mb"),
+        "avg_cpu_pct": resource_usage.get("avg_cpu_pct"),
     }
 
 

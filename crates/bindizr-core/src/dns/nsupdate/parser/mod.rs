@@ -3,7 +3,8 @@ mod record;
 use domain::base::Message;
 use domain::base::iana::{Class, Opcode, Rtype};
 use domain::base::name::ParsedName;
-use domain::dep::octseq::parse::Parser;
+use domain::base::wire::ParseError;
+use domain::dep::octseq::parse::{Parser, ShortInput};
 pub use record::{UpdateRecord, ValidateUpdateShapeError};
 use thiserror::Error;
 
@@ -17,27 +18,35 @@ use crate::model::record::ParseRecordTypeError;
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseUpdateError {
     #[error("DNS message is too short")]
-    TooShort,
+    TooShort(#[source] ShortInput),
     #[error("not a DNS UPDATE opcode")]
     InvalidOpcode,
     #[error("invalid DNS UPDATE header")]
     InvalidHeader,
     #[error("invalid DNS UPDATE zone section")]
     InvalidZoneSection,
+    #[error("invalid DNS UPDATE zone section")]
+    TruncatedZoneSection(#[source] ShortInput),
     #[error("invalid compressed domain name")]
-    InvalidName,
+    InvalidName(#[source] ParseError),
     #[error("invalid record in UPDATE section")]
-    InvalidRecord,
+    InvalidRecord(#[source] ShortInput),
     #[error("invalid TSIG record")]
     InvalidTsig,
-    /// The record's RDATA does not parse as its type, or does not fill RDLENGTH.
+    /// The record leaves unconsumed bytes in RDLENGTH.
     #[error("invalid {record_type} rdata")]
     Rdata { record_type: &'static str },
+    #[error("invalid {record_type} rdata")]
+    MalformedRdata {
+        record_type: &'static str,
+        #[source]
+        source: ParseError,
+    },
     #[error("invalid rdata: {0}")]
     ParseRdata(#[from] ParseRdataError),
-    #[error(transparent)]
+    #[error("{0}")]
     RecordType(#[from] ParseRecordTypeError),
-    #[error(transparent)]
+    #[error("{0}")]
     Value(#[from] ParseRecordValueError),
 }
 
@@ -55,7 +64,11 @@ pub struct UpdateRequest {
 impl UpdateRequest {
     /// Parse the zone, prerequisites, updates, and TSIG from an UPDATE message.
     pub fn parse(query_data: &[u8]) -> Result<Self, ParseUpdateError> {
-        let message = Message::from_octets(query_data).map_err(|_| ParseUpdateError::TooShort)?;
+        let mut parser = Parser::from_ref(query_data);
+        parser
+            .advance(DNS_HEADER_LEN)
+            .map_err(ParseUpdateError::TooShort)?;
+        let message = Message::from_octets(query_data).expect("checked DNS header length");
 
         if message.header().opcode() != Opcode::UPDATE {
             return Err(ParseUpdateError::InvalidOpcode);
@@ -67,20 +80,15 @@ impl UpdateRequest {
             return Err(ParseUpdateError::InvalidHeader);
         }
 
-        let mut parser = Parser::from_ref(query_data);
-        parser
-            .advance(DNS_HEADER_LEN)
-            .map_err(|_| ParseUpdateError::TooShort)?;
-
         // RFC 2136, Section 3.1.1 requires SOA; authority over ZCLASS is
         // decided by the service, not by the wire parser.
-        let zname = ParsedName::parse(&mut parser).map_err(|_| ParseUpdateError::InvalidName)?;
+        let zname = ParsedName::parse(&mut parser).map_err(ParseUpdateError::InvalidName)?;
         let ztype = parser
             .parse_u16_be()
-            .map_err(|_| ParseUpdateError::InvalidZoneSection)?;
+            .map_err(ParseUpdateError::TruncatedZoneSection)?;
         let zclass = parser
             .parse_u16_be()
-            .map_err(|_| ParseUpdateError::InvalidZoneSection)?;
+            .map_err(ParseUpdateError::TruncatedZoneSection)?;
 
         if Rtype::from_int(ztype) != Rtype::SOA {
             return Err(ParseUpdateError::InvalidZoneSection);
@@ -132,35 +140,35 @@ fn parse_record(
     parser: &mut Parser<'_, [u8]>,
     query_data: &[u8],
 ) -> Result<UpdateRecord, ParseUpdateError> {
-    let name = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
+    let name = ParsedName::parse(parser).map_err(ParseUpdateError::InvalidName)?;
     let name = to_presentation_name(&name);
 
     let rtype = Rtype::from_int(
         parser
             .parse_u16_be()
-            .map_err(|_| ParseUpdateError::InvalidRecord)?,
+            .map_err(ParseUpdateError::InvalidRecord)?,
     );
 
     let class = Class::from_int(
         parser
             .parse_u16_be()
-            .map_err(|_| ParseUpdateError::InvalidRecord)?,
+            .map_err(ParseUpdateError::InvalidRecord)?,
     );
     let ttl = Ttl::from_secs(
         parser
             .parse_u32_be()
-            .map_err(|_| ParseUpdateError::InvalidRecord)?,
+            .map_err(ParseUpdateError::InvalidRecord)?,
     );
     let rdlen = usize::from(
         parser
             .parse_u16_be()
-            .map_err(|_| ParseUpdateError::InvalidRecord)?,
+            .map_err(ParseUpdateError::InvalidRecord)?,
     );
 
     let rdata_start = parser.pos();
     parser
         .advance(rdlen)
-        .map_err(|_| ParseUpdateError::InvalidRecord)?;
+        .map_err(ParseUpdateError::InvalidRecord)?;
 
     Ok(UpdateRecord {
         name,
@@ -178,19 +186,17 @@ fn skip_additional_section(
     count: usize,
 ) -> Result<(), ParseUpdateError> {
     for _ in 0..count {
-        ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
+        ParsedName::parse(parser).map_err(ParseUpdateError::InvalidName)?;
         // TYPE, CLASS and TTL are opaque here.
-        parser
-            .advance(8)
-            .map_err(|_| ParseUpdateError::InvalidRecord)?;
+        parser.advance(8).map_err(ParseUpdateError::InvalidRecord)?;
         let rdlen = usize::from(
             parser
                 .parse_u16_be()
-                .map_err(|_| ParseUpdateError::InvalidRecord)?,
+                .map_err(ParseUpdateError::InvalidRecord)?,
         );
         parser
             .advance(rdlen)
-            .map_err(|_| ParseUpdateError::InvalidRecord)?;
+            .map_err(ParseUpdateError::InvalidRecord)?;
     }
 
     Ok(())

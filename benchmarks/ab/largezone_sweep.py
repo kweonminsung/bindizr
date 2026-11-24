@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from adapters import registry  # noqa: E402
 from datasets.gen_dataset import generate  # noqa: E402
-from lib import loadgen  # noqa: E402
+from lib import docker, loadgen  # noqa: E402
 
 ZONE = "bench.example."
 SIZES = [1_000, 20_000, 50_000, 100_000]
@@ -58,7 +58,7 @@ async def main() -> None:
     """Run and print the record-creation sweep across zone sizes."""
     label = sys.argv[1] if len(sys.argv) > 1 else "build"
     adapter = registry.build_adapter("bindizr", {"resources": {"sample_interval_secs": 1}},
-                             f"bench-lz-{label}", notify_after_update=False)
+                                     docker.project_name("lz"), notify_after_update=False)
     rows = []
 
     try:

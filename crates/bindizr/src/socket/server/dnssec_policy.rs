@@ -40,7 +40,7 @@ pub(crate) async fn get_dnssec_policy(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<SingleDnssecPolicyResponse>, ServiceError> {
-    let response = dnssec_policy::get(cx, &Caller::socket(), name).await?;
+    let response = dnssec_policy::get_by_name(cx, &Caller::socket(), name).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policy retrieved successfully".to_string(),
@@ -73,8 +73,5 @@ pub(crate) async fn delete_dnssec_policy(
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     let response = dnssec_policy::delete(cx, &Caller::socket(), name).await?;
 
-    Ok(DaemonResponse {
-        message: response.message.clone(),
-        data: response,
-    })
+    Ok(response.into())
 }

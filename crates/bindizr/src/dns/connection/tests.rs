@@ -1,5 +1,5 @@
 use bindizr_core::config::Config;
-use bindizr_core::dns::message::{OptRcode, Rcode};
+use bindizr_core::dns::message::{OptRcode, Rcode, Rtype};
 use bindizr_core::dns::name::WireName;
 use bindizr_core::dns::query;
 use bindizr_core::metrics::Metrics;

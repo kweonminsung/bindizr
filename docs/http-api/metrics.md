@@ -19,8 +19,8 @@ curl http://localhost:3000/metrics
 | `bindizr_zones_total`, `bindizr_records_total` | gauge | Zone / record counts, refreshed at scrape time |
 | `bindizr_http_requests_total{method, route, status}` | counter | HTTP API requests, labeled by route pattern |
 | `bindizr_http_request_duration_seconds{method, route}` | histogram | HTTP API request latency |
-| `bindizr_xfr_total{type, result, transport}` | counter | AXFR/IXFR requests served, by query type, outcome, and transport (`udp`, `tcp`, `tls`); a UDP request (TC set, or an IXFR's SOA alone) counts as `truncated`, since the transfer itself follows over TCP or TLS |
-| `bindizr_soa_queries_total{result}` | counter | SOA queries answered, by outcome; secondaries poll these on their refresh timer, so a rise in `refused` means one stopped being an enabled secondary |
+| `bindizr_xfr_total{type, result, transport}` | counter | AXFR/IXFR requests, by query type, outcome, and transport (`udp`, `tcp`, `tls`). A UDP AXFR or an IXFR that needs a stream retry counts as `truncated`. When the IXFR client's serial is equal or newer and UDP returns the current SOA in full, it counts as `ok`. |
+| `bindizr_soa_queries_total{result}` | counter | SOA queries answered, by outcome. An answer sent with TC set and no SOA counts as `truncated`. Secondaries poll these on their refresh timer, so a rise in `refused` can signal an ACL mismatch. |
 | `bindizr_notify_sent_total{result}` | counter | NOTIFY send attempts to secondaries, by outcome |
 | `bindizr_nsupdate_requests_total{result}` | counter | nsupdate requests (RFC 2136), by outcome |
 | `bindizr_pruned_rows_total{table}` | counter | History rows pruned by table (`journal`/`version`/`audit`/`access`/`transfer`); zero is expected until rows exceed the retention period |

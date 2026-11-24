@@ -21,7 +21,7 @@ use crate::types::{
     DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown,
     StartDnssecRolloverRequest,
 };
-use crate::{Context, Transaction, dnssec, notify, transaction};
+use crate::{Context, Transaction, dnssec, notify, transaction, zone};
 
 /// Start a key rollover: pre-publish a same-algorithm replacement for
 /// the CSK, or for the `role` named in a split-key zone.
@@ -36,21 +36,20 @@ pub async fn start_rollover(
         .as_deref()
         .map(str::parse::<DnssecKeyRole>)
         .transpose()
-        .map_err(ServiceError::invalid_input)?;
+        .map_err(ServiceError::invalid_input);
 
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
 
     let apply_result: Result<_, ServiceError> = async {
-        // Select a role only after ruling out an existing rollover under the zone lock.
-        let mut signed = dnssec::get_signed_zone_tx(
-            &mut tx,
-            caller,
-            Action::DnssecManage,
-            zone_name,
-            LockLevel::Exclusive,
-        )
-        .await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_zone_action(Action::DnssecManage, &zone)?;
+        let role = role?;
+        let mut signed = dnssec::lookup_signed_zone_tx(&mut tx, zone).await?;
 
+        // Pick the next key only after excluding an existing rollover.
         if signed
             .keys
             .iter()

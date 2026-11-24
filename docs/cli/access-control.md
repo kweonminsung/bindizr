@@ -102,7 +102,7 @@ deny rules. How grants combine, and what each operation needs, is in
 | `zone:transfer` | A TSIG-signed AXFR/IXFR of the zone |
 | `record:read` | Listing and reading records; export, version detail, diffs, and rollback |
 | `record:create` | Adding records |
-| `record:update` | Retiming records by nsupdate; changing records in place, found by id or name without `record:read`; without it every field must be given, since an omitted one is read from the record |
+| `record:update` | Retiming records by nsupdate and changing existing records. A move or type change requires this action at both the original and resulting name and type. A caller without `record:read` must supply every field. |
 | `record:delete` | Deleting records, found by id without `record:read`; also required for nsupdate CNAME, DNAME, or matching WKS replacement |
 | `dnssec:read` | DNSSEC status, `dnssec check-ds`; listing DNSSEC policies |
 | `dnssec:manage` | Every other DNSSEC operation; changing DNSSEC policies |
@@ -111,9 +111,10 @@ deny rules. How grants combine, and what each operation needs, is in
 | `access:manage` | Tokens, TSIG keys, and roles — needs all zones |
 | `log:read` | Reading the [audit, access, and transfer logs](#logs) — needs all zones |
 
-A response never carries a record the role cannot read: a write's preview
-shows the records it changes and the readable ones beside them, and every
-record in a response lists the record `actions` the token may take on it.
+A response carries only records the role can read. A write preview includes
+the readable records it changes and the readable ones beside them. The regular
+record endpoints and their preview results list the token's per-record
+`actions`. Zone version snapshots and ExternalDNS use their own record shapes.
 A grant that writes without reading still learns what its write runs into
 — that a record exists, the TTL its name and type share, how many a delete
 matches — but never a value, and a change made by record id never names

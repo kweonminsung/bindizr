@@ -19,20 +19,15 @@ pub async fn create(
     caller: &Caller,
     request: &CreateRecordRequest,
 ) -> Result<WriteRecordResponse, ServiceError> {
-    let ParsedRecord {
-        record_type,
-        value: record_value,
-        priority,
-        ttl,
-    } = record::parse_record_fields(
+    let (record_type, fields) = record::parse_record_fields(
         &request.record_type,
         &request.value,
         request.ttl,
         request.priority,
-    )?;
+    );
 
     let zone_name = zone::normalize_name(&request.zone_name)?;
-    let owner = record::normalize_record_owner_name(&request.name, &zone_name)?;
+    let owner = record::normalize_record_owner_name(&request.name, &zone_name);
 
     let mut tx = transaction::begin_tx(cx, "failed to create record").await?;
 
@@ -40,14 +35,24 @@ pub async fn create(
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        caller.authorize_record_access(
-            &zone,
-            &[RecordAccess {
+        let write = owner
+            .as_ref()
+            .ok()
+            .zip(record_type)
+            .map(|(owner, record_type)| RecordAccess {
                 action: Action::RecordCreate,
                 relative_name: owner.clone(),
                 record_type: Some(record_type),
-            }],
-        )?;
+            });
+        caller.authorize_record_access(&zone, write.as_slice())?;
+
+        let ParsedRecord {
+            record_type,
+            value: record_value,
+            priority,
+            ttl,
+        } = fields?;
+        let owner = owner?;
 
         // Only records sharing the owner name can conflict, so load just
         // those instead of the whole zone.

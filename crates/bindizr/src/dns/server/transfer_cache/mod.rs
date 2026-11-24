@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::metrics::Metrics;
 use bindizr_core::model::dnssec_record::DnssecRecord;
 use bindizr_core::model::record::Record;
 use bindizr_core::model::zone::{Zone, ZoneId};
@@ -60,8 +59,19 @@ impl Entries {
         self.clock
     }
 
-    /// Drop least-recently-used zones until the retained records fit
-    /// `max_records`, which a reload may have lowered since the last store.
+    /// Apply a configured budget, removing every entry when disabled.
+    fn reconcile_budget(&mut self, max_records: usize) -> usize {
+        if max_records == 0 {
+            let evicted = self.zones.len();
+            self.zones.clear();
+            self.records = 0;
+            return evicted;
+        }
+
+        self.trim_to(max_records)
+    }
+
+    /// Drop least-recently-used zones until the retained records fit.
     fn trim_to(&mut self, max_records: usize) -> usize {
         if self.records <= max_records {
             return 0;
@@ -110,13 +120,17 @@ impl Entries {
         content: CachedTransferContent,
         max_records: usize,
     ) -> usize {
+        if max_records == 0 {
+            return self.reconcile_budget(0);
+        }
+
         // Evict the old version even if its replacement exceeds the cache budget.
         self.remove(zone_id);
 
         let records = content.record_count();
 
         if records > max_records {
-            return 0;
+            return self.trim_to(max_records);
         }
 
         let evicted = self.trim_to(max_records - records);
@@ -156,6 +170,14 @@ impl TransferCache {
         Self::default()
     }
 
+    /// Apply the live budget and update the retained-record gauge.
+    pub(crate) fn reconcile_budget(&self, cx: &Context) {
+        let mut entries = self.locked();
+        let evicted = entries.reconcile_budget(cache_budget(cx));
+        cx.metrics()
+            .track_zone_cache_store(entries.records, evicted);
+    }
+
     /// Lock the cache, recovering a poisoned lock because panics cannot leave
     /// a cache invariant broken.
     fn locked(&self) -> MutexGuard<'_, Entries> {
@@ -165,37 +187,44 @@ impl TransferCache {
     /// Find content at `version_id`, enforcing budget reductions even on cache hits.
     fn find_cached_content(
         &self,
-        metrics: &Metrics,
-        max_records: usize,
+        cx: &Context,
         zone_id: ZoneId,
         version_id: ZoneVersionId,
     ) -> Option<CachedTransferContent> {
         let mut entries = self.locked();
-        let evicted = entries.trim_to(max_records);
+        // A request may have waited for authorization across a reload.
+        let max_records = cache_budget(cx);
+        let evicted = entries.reconcile_budget(max_records);
 
         if evicted > 0 {
-            metrics.track_zone_cache_store(entries.records, evicted);
+            cx.metrics()
+                .track_zone_cache_store(entries.records, evicted);
+        }
+
+        if max_records == 0 {
+            return None;
         }
 
         let content = entries.find(zone_id, version_id);
         drop(entries);
-        metrics.track_zone_cache_lookup(content.is_some());
+        cx.metrics().track_zone_cache_lookup(content.is_some());
 
         content
     }
 
     /// Store zone content in the cache within its configured budget.
-    fn store_content(
-        &self,
-        metrics: &Metrics,
-        max_records: usize,
-        zone_id: ZoneId,
-        content: CachedTransferContent,
-    ) {
+    fn store_content(&self, cx: &Context, zone_id: ZoneId, content: CachedTransferContent) {
         let mut entries = self.locked();
-        let evicted = entries.store(zone_id, content, max_records);
-        metrics.track_zone_cache_store(entries.records, evicted);
+        // An in-flight load must observe the budget at publication.
+        let evicted = entries.store(zone_id, content, cache_budget(cx));
+        cx.metrics()
+            .track_zone_cache_store(entries.records, evicted);
     }
+}
+
+/// Read the live record budget, bounded by this target's addressable size.
+fn cache_budget(cx: &Context) -> usize {
+    usize::try_from(cx.config().dns.transfer.cache_max_records).unwrap_or(usize::MAX)
 }
 
 /// Load authorized transfer content, reusing cached data for the locked zone's version.
@@ -206,9 +235,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
     let cx = dns_cx.daemon();
-    let max_records = cx.config().dns.transfer.cache_max_records as usize;
-
-    if max_records == 0 {
+    if cache_budget(cx) == 0 {
         return fetch_transfer_content(cx, caller, zone_name).await;
     }
 
@@ -219,10 +246,9 @@ pub(crate) async fn authorize_transfer_content_by_name(
     };
 
     // RFC 1982 serials can repeat; version ids identify the locked snapshot.
-    if let Some(content) =
-        dns_cx
-            .transfer_cache
-            .find_cached_content(cx.metrics(), max_records, zone.id, version_id)
+    if let Some(content) = dns_cx
+        .transfer_cache
+        .find_cached_content(cx, zone.id, version_id)
     {
         return Ok(TransferAccess::Granted((zone, content)));
     }
@@ -234,7 +260,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
     if let TransferAccess::Granted((zone, content)) = &loaded {
         dns_cx
             .transfer_cache
-            .store_content(cx.metrics(), max_records, zone.id, content.clone());
+            .store_content(cx, zone.id, content.clone());
     }
 
     Ok(loaded)

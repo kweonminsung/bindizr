@@ -54,8 +54,7 @@ pub(crate) async fn refresh_catalog_tx(
     let catalog_zone_name = &config.dns.catalog_zone_name;
     log::info!("Generating catalog zone: {catalog_zone_name}");
 
-    // Read only for its row lock; the serial served comes from the upsert below.
-    bindizr_db::catalog_zone::find_serial_tx(tx, catalog_zone_name).await?;
+    bindizr_db::catalog_zone::upsert_tx(tx, catalog_zone_name).await?;
 
     let zones: Vec<Zone> = bindizr_db::zone::list_all_tx(tx)
         .await?
@@ -81,10 +80,10 @@ pub(crate) async fn refresh_catalog_tx(
         member_zone_names.len()
     );
 
-    // The catalog zone is virtual (no DB row).
+    // The catalog has its own serial row and no entry in the managed zones table.
     let digest = catalog_digest(&member_zone_names);
     let serial =
-        bindizr_db::catalog_zone::upsert_tx(tx, catalog_zone_name, &digest, base_serial).await?;
+        bindizr_db::catalog_zone::update_tx(tx, catalog_zone_name, &digest, base_serial).await?;
 
     let catalog_zone = CatalogZone {
         name: catalog_zone_name.clone(),
@@ -117,28 +116,4 @@ fn catalog_digest(member_zone_names: &[ZoneName]) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verify that the catalog digest changes when members change and is
-    /// indifferent to their order.
-    #[test]
-    fn catalog_digest_changes_only_with_membership() {
-        let zone_names = |names: &[&str]| {
-            names
-                .iter()
-                .map(|name| ZoneName::parse(name).unwrap())
-                .collect::<Vec<_>>()
-        };
-
-        let original = catalog_digest(&zone_names(&["example.com", "test.com"]));
-
-        assert_ne!(original, catalog_digest(&zone_names(&["example.com"])));
-
-        // Order is not membership, so it must not read as a change.
-        assert_eq!(
-            original,
-            catalog_digest(&zone_names(&["test.com", "example.com"]))
-        );
-    }
-}
+mod tests;

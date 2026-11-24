@@ -81,22 +81,24 @@ class DigTests(IsolatedAsyncioTestCase):
     async def test_transfers_accept_complete_axfr_and_ixfr_shapes_with_real_dig(self):
         """Verify that full, empty, SOA-only, delta and AXFR-fallback transfers remain valid."""
         cases = [
-            ("full", [soa(3), address(1), soa(3)], None),
-            ("empty", [soa(3), soa(3)], None),
+            ("axfr", [soa(3), address(1), soa(3)], None),
+            ("axfr", [soa(3), soa(3)], None),
             ("soa-only", [soa(3)], 3),
-            ("delta", [soa(3), soa(2), address(1), soa(3), address(2), soa(3)], 2),
-            ("fallback", [soa(3), address(1), soa(3)], 2),
+            ("ixfr", [soa(3), soa(2), address(1), soa(3), address(2), soa(3)], 2),
+            ("axfr", [soa(3), address(1), soa(3)], 2),
+            ("axfr", [soa(3), soa(3)], 2),
         ]
         for name, records, serial in cases:
             with self.subTest(shape=name):
                 port, _ = await self.peer(records)
                 if serial is None:
-                    elapsed, count, size = await dig.axfr("bench.example", "127.0.0.1", port, 1)
+                    transfer = await dig.axfr("bench.example", "127.0.0.1", port, 1)
                 else:
-                    elapsed, count, size = await dig.ixfr("bench.example", "127.0.0.1", port, serial, 1)
-                self.assertGreater(elapsed, 0)
-                self.assertEqual(count, len(records))
-                self.assertGreater(size, 0)
+                    transfer = await dig.ixfr("bench.example", "127.0.0.1", port, serial, 1)
+                self.assertGreater(transfer.seconds, 0)
+                self.assertEqual(transfer.records, len(records))
+                self.assertGreater(transfer.output_bytes, 0)
+                self.assertEqual(transfer.kind, name)
 
     async def test_transfers_reject_incomplete_or_mismatched_data_with_real_dig(self):
         """Verify that early EOF, wrong closing SOA and refused transfers fail even with exit zero."""
@@ -204,5 +206,12 @@ class DigTests(IsolatedAsyncioTestCase):
                 patch.object(b04_axfr.asyncio, "sleep", AsyncMock()), \
                 patch.object(b06_large_zone, "load_sampler", return_value=sampler):
             for module in (b04_axfr, b05_ixfr, b06_large_zone):
-                with self.subTest(runner=module.__name__), self.assertRaises(dig.TransferError):
-                    await module.run(adapter, config, context)
+                with self.subTest(runner=module.__name__):
+                    dimension = "changes" if module is b05_ixfr else "size"
+                    rows = await module.run(adapter, config, context)
+                    self.assertEqual(rows, [{
+                        "system": "test",
+                        dimension: 1,
+                        "status": "FAILED",
+                        "error": str(error),
+                    }])

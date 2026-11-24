@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::role_grant::Action;
 
 use crate::authorization::Caller;
@@ -12,6 +13,7 @@ use crate::{Context, notify, zone};
 
 /// Send a manual NOTIFY for one zone or all zones, bumping the serial
 /// first when `serial` says to; an all-zones round runs the zones concurrently.
+/// If a bump fails partway through an all-zones round, announce the committed ones.
 pub async fn notify(
     cx: &Arc<Context>,
     caller: &Caller,
@@ -30,23 +32,27 @@ pub async fn notify(
         NotifyTarget::Zone(zone_name) => {
             let zone = zone::lookup_by_name(cx, zone_name).await?;
             caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
-            if !zone.enabled {
-                return Err(ServiceError::invalid_input(format!(
+            let disabled_zone = || {
+                ServiceError::invalid_input(format!(
                     "zone '{zone_name}' is disabled, so the DNS plane does not serve it; enable it to send NOTIFY"
-                )));
+                ))
+            };
+            if !zone.enabled {
+                return Err(disabled_zone());
             }
             if serial == NotifySerial::Bump {
-                zone::force_increment_serial(cx, caller, zone_name).await?;
-                serial_bumped = true;
+                serial_bumped = zone::force_increment_serial(cx, caller, zone_name).await?;
+                if !serial_bumped {
+                    return Err(disabled_zone());
+                }
             }
         }
         NotifyTarget::All => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
-                for zone in zone::list(cx).await? {
-                    zone::force_increment_serial(cx, caller, &zone.name).await?;
-                    serial_bumped = true;
-                }
+                let zones = zone::list_enabled(cx).await?;
+                serial_bumped =
+                    bump_zone_serials(cx, caller, zones.into_iter().map(|zone| zone.name)).await?;
             }
         }
     }
@@ -66,6 +72,32 @@ pub async fn notify(
     Ok(MessageResponse {
         message: format!("NOTIFY sent successfully for {scope}{suffix}"),
     })
+}
+
+/// Bump the selected zones in order. If a later bump fails, announce the
+/// committed changes before returning that failure.
+async fn bump_zone_serials(
+    cx: &Arc<Context>,
+    caller: &Caller,
+    zone_names: impl IntoIterator<Item = ZoneName>,
+) -> Result<bool, ServiceError> {
+    let mut bumped = Vec::new();
+    for zone_name in zone_names {
+        match zone::force_increment_serial(cx, caller, &zone_name).await {
+            Ok(true) => bumped.push(zone_name),
+            Ok(false) => {}
+            Err(error) => {
+                if let Err(notify_error) = notify::send_zone_notifies(cx, bumped).await {
+                    log::warn!(
+                        "Failed to send NOTIFY for committed zones after a serial bump failed: {notify_error:?}"
+                    );
+                }
+                return Err(error);
+            }
+        }
+    }
+
+    Ok(!bumped.is_empty())
 }
 
 #[cfg(test)]

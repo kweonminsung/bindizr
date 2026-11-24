@@ -257,23 +257,17 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
         }
     };
 
-    match state.upstream.adjust_records(&records).await {
-        // A short answer would silently drop endpoints in the zip below.
-        Ok(adjusted) if adjusted.len() != endpoints.len() => (
-            StatusCode::BAD_GATEWAY,
-            format!(
-                "bindizr adjusted {} of {} records",
-                adjusted.len(),
-                endpoints.len()
-            ),
-        )
-            .into_response(),
-        Ok(adjusted) => {
-            log::info!("event=adjust_endpoints endpoints={}", endpoints.len());
-            build_json_response(&wire::build_adjusted_endpoints(endpoints, adjusted))
-        }
-        Err(error) => error.into_response(),
-    }
+    let adjusted = match state.upstream.adjust_records(&records).await {
+        Ok(adjusted) => adjusted,
+        Err(error) => return error.into_response(),
+    };
+    let endpoints = match wire::build_adjusted_endpoints(endpoints, adjusted) {
+        Ok(endpoints) => endpoints,
+        Err(error) => return (StatusCode::BAD_GATEWAY, error.to_string()).into_response(),
+    };
+
+    log::info!("event=adjust_endpoints endpoints={}", endpoints.len());
+    build_json_response(&endpoints)
 }
 
 /// `GET /healthz` — report that this process is up, bindizr answers, and the

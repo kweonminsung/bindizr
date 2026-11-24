@@ -26,7 +26,7 @@ pub(crate) async fn handle_metrics(State(cx): State<Arc<Context>>) -> Response {
     // An empty 200 would read as a healthy scrape with every series gone.
     match metrics.encode() {
         Ok(text) => (StatusCode::OK, [(CONTENT_TYPE, TEXT_CONTENT_TYPE)], text).into_response(),
-        Err(error) => ApiError(ServiceError::internal_with_source(
+        Err(error) => ApiError::from(ServiceError::internal_with_source(
             "failed to encode metrics",
             error,
         ))

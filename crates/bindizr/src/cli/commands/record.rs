@@ -1,3 +1,4 @@
+use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::record::RecordId;
 use bindizr_core::{out, outln};
 use bindizr_service::types::{
@@ -5,6 +6,7 @@ use bindizr_service::types::{
     DeleteRecordsRequest, DeleteRecordsResponse, PaginatedResponse, RecordFilter, RecordResponse,
     RecordValue, Run, SingleRecordResponse, UpdateRecordRequest, WriteRecordResponse,
 };
+use bindizr_service::zone;
 use clap::Subcommand;
 use serde_json::Value;
 
@@ -12,7 +14,7 @@ use crate::cli::error::CliError;
 use crate::cli::output::{OutputFormat, RecordRow};
 use crate::cli::{commands, output};
 use crate::socket::client;
-use crate::socket::types::DaemonCommand;
+use crate::socket::types::{DaemonCommand, DaemonResponse};
 
 /// Subcommands for managing records.
 #[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
@@ -30,7 +32,7 @@ parts with nothing between them, so a space has to be inside a value.")]
     Create {
         /// Zone the record belongs to
         #[arg(value_name = "ZONE_NAME")]
-        zone: String,
+        zone_name: String,
         /// Owner name relative to the zone, or '@' for the apex
         #[arg(value_name = "RECORD_NAME")]
         name: String,
@@ -59,7 +61,7 @@ Input format (JSON or YAML): an array of records, or an object with a
 'records' array. Fields per record:
   name      owner name relative to the zone, or '@' for the apex (required)
   type      A, AAAA, CAA, CNAME, DNAME, DS, MX, NAPTR, NS, PTR, SRV, SSHFP,
-            TLSA, TXT (required)
+            TLSA, TXT, WKS (required)
   value     record value; TXT also accepts an array of strings (required)
   ttl       seconds (optional; defaults to the zone TTL)
   priority  MX/SRV priority (optional; defaults to 10)
@@ -76,7 +78,7 @@ YAML example:
     BulkCreate {
         /// Zone the records belong to
         #[arg(value_name = "ZONE_NAME")]
-        zone: String,
+        zone_name: String,
         /// Path to a JSON or YAML file (an array of records, or an object with
         /// a 'records' array), or '-' to read from stdin
         file: String,
@@ -102,7 +104,7 @@ Omit the zone to list records from all zones the caller can see."
     List {
         /// Zone to list; omitted, records from every visible zone are listed
         #[arg(value_name = "ZONE_NAME")]
-        zone: Option<String>,
+        zone_name: Option<String>,
         /// Filter by record name
         #[arg(long, value_name = "RECORD_NAME")]
         name: Option<String>,
@@ -167,12 +169,12 @@ addresses exactly one.")]
             required_unless_present = "id",
             requires = "name"
         )]
-        zone: Option<String>,
+        zone_name: Option<String>,
         /// Owner name relative to the zone, or '@' for the apex
         #[arg(
             value_name = "RECORD_NAME",
             required_unless_present = "id",
-            requires = "zone"
+            requires = "zone_name"
         )]
         name: Option<String>,
         /// The record ID; addresses exactly one record
@@ -199,13 +201,13 @@ error when the name holds several, which --id then addresses individually.")]
             required_unless_present = "id",
             requires = "name"
         )]
-        zone: Option<String>,
+        zone_name: Option<String>,
         /// Owner name relative to the zone, or '@' for the apex; holding
         /// several records there is an error
         #[arg(
             value_name = "RECORD_NAME",
             required_unless_present = "id",
-            requires = "zone"
+            requires = "zone_name"
         )]
         name: Option<String>,
         /// The record ID; addresses exactly one record
@@ -257,13 +259,13 @@ serial and the secondaries transfer once."
             required_unless_present = "id",
             requires = "name"
         )]
-        zone: Option<String>,
+        zone_name: Option<String>,
         /// Owner name relative to the zone, or '@' for the apex; every record
         /// there goes unless a flag below narrows it
         #[arg(
             value_name = "RECORD_NAME",
             required_unless_present = "id",
-            requires = "zone"
+            requires = "zone_name"
         )]
         name: Option<String>,
         /// The record ID; deletes exactly that one record
@@ -293,7 +295,7 @@ serial and the secondaries transfer once."
 pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliError> {
     match subcommand {
         RecordCommand::Create {
-            zone,
+            zone_name,
             name,
             record_type,
             value,
@@ -309,17 +311,15 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     value: to_record_value_request(value),
                     ttl,
                     priority,
-                    zone_name: zone,
+                    zone_name,
                     dry_run,
                 }),
             )
             .await?;
-            output::print_response(&response.data, output, |response| {
-                vec![RecordRow::from(&response.record)]
-            })?;
+            print_write_record(&response, output)?;
         }
         RecordCommand::BulkCreate {
-            zone,
+            zone_name,
             file,
             dry_run,
             output,
@@ -354,7 +354,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
             let response = client::send_command::<CreateBulkRecordsResponse>(
                 DaemonCommand::CreateBulkRecords(CreateBulkRecordsRequest {
-                    zone_name: zone,
+                    zone_name,
                     records,
                     dry_run,
                 }),
@@ -364,7 +364,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
             if output == OutputFormat::Table {
                 outln!("{}", response.message);
-                if dry_run {
+                if bulk.dry_run {
                     out!("{}", output::render_change_preview(&bulk.diff));
                 } else {
                     output::print_table(bulk.records.iter().map(RecordRow::from).collect());
@@ -374,7 +374,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             }
         }
         RecordCommand::List {
-            zone,
+            zone_name,
             name,
             record_type,
             value,
@@ -394,7 +394,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let response = client::send_command::<PaginatedResponse<RecordResponse>>(
                 DaemonCommand::ListRecords(RecordFilter {
-                    zone_name: zone,
+                    zone_name,
                     name,
                     record_type,
                     value,
@@ -430,22 +430,30 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             })?;
         }
         RecordCommand::Get {
-            zone,
-            name: Some(name),
+            zone_name: Some(zone_name),
+            name: Some(record_name),
             output,
             ..
         } => {
-            // The socket supplies no page limit, so one answer holds every record at the owner.
-            let page = client::send_command::<PaginatedResponse<RecordResponse>>(
+            let zone_name = zone::normalize_name(&zone_name)
+                .map_err(|error| CliError::request_with_source(error.to_string(), error))?;
+            let owner = OwnerName::parse_in_zone(&record_name, &zone_name).map_err(|error| {
+                CliError::request_with_source(
+                    format!("invalid record name '{record_name}': {error}"),
+                    error,
+                )
+            })?;
+
+            // An absolute owner keeps the filter exact, including at the apex.
+            let response = client::send_command::<PaginatedResponse<RecordResponse>>(
                 DaemonCommand::ListRecords(RecordFilter {
-                    zone_name: zone.clone(),
-                    name: Some(name.clone()),
+                    zone_name: Some(zone_name.to_string()),
+                    name: Some(owner.to_fqdn(&zone_name)),
                     ..Default::default()
                 }),
             )
-            .await?
-            .data;
-            output::print_page(&page, output, RecordRow::whole)?;
+            .await?;
+            output::print_page(&response.data, output, RecordRow::whole)?;
         }
         RecordCommand::Get { .. } => {
             return Err(CliError::request(
@@ -476,12 +484,10 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     },
                 })
                 .await?;
-            output::print_response(&response.data, output, |response| {
-                vec![RecordRow::from(&response.record)]
-            })?;
+            print_write_record(&response, output)?;
         }
         RecordCommand::Update {
-            zone: Some(zone),
+            zone_name: Some(zone_name),
             name: Some(name),
             new_name,
             record_type,
@@ -494,7 +500,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let response =
                 client::send_command::<WriteRecordResponse>(DaemonCommand::UpdateRecordByName {
-                    zone_name: zone,
+                    zone_name,
                     record_name: name,
                     request: UpdateRecordRequest {
                         name: new_name,
@@ -506,9 +512,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     },
                 })
                 .await?;
-            output::print_response(&response.data, output, |response| {
-                vec![RecordRow::from(&response.record)]
-            })?;
+            print_write_record(&response, output)?;
         }
         RecordCommand::Update { .. } => {
             return Err(CliError::request(
@@ -535,7 +539,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             }
         }
         RecordCommand::Delete {
-            zone: Some(zone),
+            zone_name: Some(zone_name),
             name: Some(name),
             record_type,
             value,
@@ -546,7 +550,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let response = client::send_command::<DeleteRecordsResponse>(
                 DaemonCommand::DeleteMatchingRecords(DeleteRecordsRequest {
-                    zone_name: zone,
+                    zone_name,
                     name,
                     record_type,
                     value: (!value.is_empty()).then(|| to_record_value_request(value)),
@@ -569,6 +573,17 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         }
     }
 
+    Ok(())
+}
+
+/// Print a record write and mark previews in table output.
+fn print_write_record(
+    response: &DaemonResponse<WriteRecordResponse>,
+    output: OutputFormat,
+) -> Result<(), CliError> {
+    output::print_write_response(response, output, response.data.dry_run, |response| {
+        vec![RecordRow::from(&response.record)]
+    })?;
     Ok(())
 }
 

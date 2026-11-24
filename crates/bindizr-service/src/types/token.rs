@@ -1,5 +1,7 @@
 //! API token payloads.
 
+use std::fmt;
+
 use bindizr_core::model::api_token::{ApiToken, ApiTokenMetadata, TokenId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -74,11 +76,21 @@ pub struct SingleTokenResponse {
 }
 
 /// The create response: the token and its secret, the one time it is shown.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CreateTokenResponse {
     pub token: TokenResponse,
     #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]
     pub secret: String,
+}
+
+impl fmt::Debug for CreateTokenResponse {
+    /// Format the diagnostic fields with credential material redacted.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CreateTokenResponse")
+            .field("token", &self.token)
+            .field("secret", &"<redacted>")
+            .finish()
+    }
 }
 
 impl From<&ApiTokenMetadata> for TokenResponse {

@@ -1,6 +1,13 @@
 {{- if lt (.Values.bind9.replicas | int) 1 }}
 {{- fail "bind9.replicas must be at least 1" }}
 {{- end }}
+{{- $catalogZoneName := .Values.bindizr.dns.catalogZoneName | toString }}
+{{- $catalogName := include "bindizr-chart.bind9ZoneName" $catalogZoneName }}
+{{- $catalogFile := $catalogZoneName }}
+{{- /* Keep existing files for ordinary names. Use a path-safe basename for other names. */ -}}
+{{- if not (regexMatch `^[A-Za-z0-9._-]{1,250}$` $catalogFile) }}
+{{- $catalogFile = printf "catalog-%s" (sha256sum $catalogZoneName) }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -21,13 +28,13 @@ data:
       ixfr-from-differences yes;
 
       catalog-zones {
-        zone "{{ .Values.bindizr.dns.catalogZoneName }}" default-primaries { __BINDIZR_DNS_ADDR__ port {{ .Values.bindizr.dns.service.port }}; };
+        zone {{ $catalogName }} default-primaries { __BINDIZR_DNS_ADDR__ port {{ .Values.bindizr.dns.service.port }}; };
       };
     };
 
-    zone "{{ .Values.bindizr.dns.catalogZoneName }}" {
+    zone {{ $catalogName }} {
       type secondary;
       primaries { __BINDIZR_DNS_ADDR__ port {{ .Values.bindizr.dns.service.port }}; };
-      file "/var/lib/bind/{{ .Values.bindizr.dns.catalogZoneName }}.zone";
+      file "/var/lib/bind/{{ $catalogFile }}.zone";
       ixfr-from-differences yes;
     };

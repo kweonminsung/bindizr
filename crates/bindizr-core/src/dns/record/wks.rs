@@ -75,7 +75,7 @@ impl WksRecordValue {
     }
 
     /// Render the protocol and distinct ports as ordered numeric fields.
-    pub fn canonical(&self) -> String {
+    pub fn to_text(&self) -> String {
         let mut value = format!("{} {}", self.address, self.protocol);
 
         for (index, byte) in self.services.iter().enumerate() {
@@ -119,8 +119,8 @@ mod tests {
             WKS_PREFIX_LEN + MAX_SERVICE_BITMAP_LEN
         );
         assert_eq!(bytes.as_bytes().last(), Some(&1));
-        assert_eq!(parsed.canonical(), "192.0.2.1 6 0 7 8 65535");
-        assert_eq!(WksRecordValue::parse(&parsed.canonical()).unwrap(), parsed);
+        assert_eq!(parsed.to_text(), "192.0.2.1 6 0 7 8 65535");
+        assert_eq!(WksRecordValue::parse(&parsed.to_text()).unwrap(), parsed);
     }
 
     /// Verify that empty bitmaps and protocol numbers survive wire/text round trips.
@@ -134,7 +134,7 @@ mod tests {
             let parsed = WksRecordValue::from_rdata(&bytes).unwrap();
 
             assert_eq!(
-                WksRecordValue::parse(&parsed.canonical())
+                WksRecordValue::parse(&parsed.to_text())
                     .unwrap()
                     .to_rdata()
                     .unwrap()

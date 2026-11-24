@@ -251,8 +251,8 @@ async fn connect_to_server(
     Err(last_error.unwrap_or(FetchZoneError::NoAddress))
 }
 
-/// Fetch one AXFR on an open connection: read length-prefixed messages until the
-/// closing SOA repeats the opening one.
+/// Fetch one AXFR on an open connection. The import accepts a closing SOA only
+/// when its owner, TTL, and canonical RDATA match the opening SOA.
 async fn fetch_zone_on_stream(
     stream: &mut TcpStream,
     qname: &WireName,
@@ -306,7 +306,8 @@ async fn fetch_zone_on_stream(
                 // Compare canonical copies, preserving received case for import.
                 let opening = &records[0];
 
-                if owner_labels(&record.name)? != owner_labels(&opening.name)?
+                if record.ttl != opening.ttl
+                    || owner_labels(&record.name)? != owner_labels(&opening.name)?
                     || record.rdata.to_canonical(Rtype::SOA)?
                         != opening.rdata.to_canonical(Rtype::SOA)?
                 {

@@ -33,8 +33,5 @@ async fn notify(
     serial: NotifySerial,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     let response = zone::notify(cx, &Caller::socket(), target, serial).await?;
-    Ok(DaemonResponse {
-        message: response.message.clone(),
-        data: response,
-    })
+    Ok(response.into())
 }

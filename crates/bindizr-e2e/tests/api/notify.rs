@@ -364,7 +364,7 @@ async fn notify_reports_completion_when_secondary_does_not_implement_notify() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn notify_skips_disabled_zones() {
-    let app = TestApp::start().await;
+    let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
@@ -404,6 +404,10 @@ async fn notify_skips_disabled_zones() {
         announced.push(query.sole_question().unwrap().qname().to_string());
     }
 
+    assert!(
+        announced.iter().any(|name| name == "catalog.bindizr"),
+        "the catalog did not announce the departing zone: {announced:?}"
+    );
     assert!(
         !announced.iter().any(|name| name == zone_name),
         "a disabled zone was announced: {announced:?}"

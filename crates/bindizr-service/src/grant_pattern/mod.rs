@@ -1,21 +1,35 @@
 //! Normalize grant name patterns and type lists and derive their covered domains.
-//! Core's `grant_pattern` owns matching.
+//! Core's `grant_pattern` owns the name grammar and matching.
 
-use bindizr_core::dns::name;
-use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::grant_pattern::MATCH_ANY;
+use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
+use bindizr_core::model::grant_pattern::{MATCH_ANY, ParsePatternOwnerError, parse_pattern_owner};
 
 use crate::error::ServiceError;
 use crate::record;
 
-/// Derive an ExternalDNS domain filter, which includes all descendants.
-/// Widen `@` and exact names to their containing domain.
-pub(crate) fn pattern_domain(pattern: &str, zone_name: &ZoneName) -> String {
+/// Derive a domain filter, which includes the name and all its descendants.
+/// Skip patterns whose root is already too long to be an owner in this zone.
+pub(crate) fn pattern_domain(
+    pattern: &str,
+    zone_name: &ZoneName,
+) -> Result<Option<String>, ServiceError> {
     if pattern == MATCH_ANY || pattern == OwnerName::APEX {
-        return zone_name.to_fqdn();
+        return Ok(Some(zone_name.to_string()));
     }
+
     let name_part = pattern.strip_prefix("*.").unwrap_or(pattern);
-    OwnerName::from_row(name_part).to_fqdn(zone_name)
+    let owner = parse_pattern_owner(name_part).map_err(|source| {
+        ServiceError::internal_with_source("invalid stored record name pattern", source)
+    })?;
+
+    match owner.to_wire(zone_name) {
+        Ok(_) => Ok(Some(format!("{owner}.{zone_name}"))),
+        Err(ParseNameError::TooLong) => Ok(None),
+        Err(source) => Err(ServiceError::internal_with_source(
+            "invalid domain for stored record name pattern",
+            source,
+        )),
+    }
 }
 
 /// Normalize and validate a record name pattern; `None` grants all names.
@@ -30,31 +44,22 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
 
     let name_part = raw.strip_prefix("*.").unwrap_or(raw);
 
-    // Store the canonical spelling so one name is one pattern.
-    let canonical = name::labels_to_presentation(&parse_relative_name(name_part)?);
+    let owner = parse_pattern_owner(name_part).map_err(|source| {
+        let message = match source {
+            ParsePatternOwnerError::Name(ParseNameError::Absolute)
+            | ParsePatternOwnerError::Wildcard => format!(
+                "invalid record name pattern '{name_part}': use '*', '@', '*.<name>' or an exact relative name"
+            ),
+            ParsePatternOwnerError::Name(error) => format!("record name pattern {error}"),
+        };
+        ServiceError::invalid_input_with_source(message, source)
+    })?;
 
     Ok(if raw.starts_with("*.") {
-        format!("*.{canonical}")
+        format!("*.{owner}")
     } else {
-        canonical
+        owner.to_string()
     })
-}
-
-/// Decode a pattern's name part and hold it to the pattern grammar; the name
-/// rules themselves (empty, length, charset) come with decoding.
-fn parse_relative_name(name: &str) -> Result<Vec<Vec<u8>>, ServiceError> {
-    let (labels, rooted) = name::decode_name_labels(name)
-        .map_err(|error| ServiceError::invalid_input(format!("record name pattern {error}")))?;
-
-    // A pattern is relative, and `*` is the language's metacharacter: it is
-    // not escaped on render, so a label spelled `\042` would read as a grant.
-    if rooted || labels.iter().any(|label| label.contains(&b'*')) {
-        return Err(ServiceError::invalid_input(format!(
-            "invalid record name pattern '{name}': use '*', '@', '*.<name>' or an exact relative name"
-        )));
-    }
-
-    Ok(labels)
 }
 
 /// Normalize and validate a record type list; `None` grants all types.

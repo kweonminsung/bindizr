@@ -43,7 +43,7 @@ pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
 /// Apply the zone policy to a name already parsed from a request or DNS records.
 pub(crate) fn validate_name(zone_name: &ZoneName) -> Result<(), ServiceError> {
     if zone_name
-        .labels()
+        .to_labels()
         .first()
         .is_some_and(|label| label == b"*")
     {

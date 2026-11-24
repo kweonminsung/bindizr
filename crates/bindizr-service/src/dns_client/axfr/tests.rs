@@ -159,6 +159,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
 async fn fetch_transfer(
     opening: Rdata,
     closing: Rdata,
+    closing_ttl: Ttl,
 ) -> Result<Vec<TransferRecord>, FetchZoneError> {
     use std::str::FromStr;
 
@@ -187,7 +188,12 @@ async fn fetch_transfer(
             response.extend_from_slice(&name::encode_name("example.com.").unwrap());
             response.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
             response.extend_from_slice(&Class::IN.to_int().to_be_bytes());
-            response.extend_from_slice(&300u32.to_be_bytes());
+            let ttl = if index == 0 {
+                Ttl::from_secs(300)
+            } else {
+                closing_ttl
+            };
+            response.extend_from_slice(&ttl.as_secs().to_be_bytes());
             response
                 .extend_from_slice(&u16::try_from(rdata.as_bytes().len()).unwrap().to_be_bytes());
             response.extend_from_slice(rdata.as_bytes());
@@ -241,7 +247,7 @@ async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
         .to_rdata()
         .unwrap();
 
-        let records = fetch_transfer(opening_rdata.clone(), closing_rdata.clone())
+        let records = fetch_transfer(opening_rdata.clone(), closing_rdata, Ttl::from_secs(300))
             .await
             .unwrap();
 
@@ -293,10 +299,34 @@ async fn fetch_zone_rejects_changed_closing_soa() {
             ..opening
         },
     ] {
-        let result = fetch_transfer(opening.to_rdata().unwrap(), closing.to_rdata().unwrap()).await;
+        let result = fetch_transfer(
+            opening.to_rdata().unwrap(),
+            closing.to_rdata().unwrap(),
+            Ttl::from_secs(300),
+        )
+        .await;
         assert!(
             matches!(result, Err(FetchZoneError::ForeignClosingSoa)),
             "{closing:?}: {result:?}"
         );
     }
+}
+
+/// Verify that an otherwise identical closing SOA must carry the same TTL.
+#[tokio::test]
+async fn fetch_zone_rejects_changed_closing_soa_ttl() {
+    let soa = SoaRecordValue {
+        mname: "ns.example.com.",
+        rname: "hostmaster.example.com.",
+        serial: Serial::from(42),
+        refresh: 7200,
+        retry: 3600,
+        expire: 604_800,
+        minimum: Ttl::from_secs(300),
+    }
+    .to_rdata()
+    .unwrap();
+    let result = fetch_transfer(soa.clone(), soa, Ttl::from_secs(301)).await;
+
+    assert!(matches!(result, Err(FetchZoneError::ForeignClosingSoa)));
 }

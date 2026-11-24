@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::api_token::{ApiToken, TokenId};
 use bindizr_core::model::change::{ChangeActor, ChangeSource};
-use bindizr_core::model::record::{Record, RecordData, RecordId, RecordType};
+use bindizr_core::model::record::{Record, RecordData, RecordId, RecordType, RecordWithZone};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrants};
 use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
@@ -481,6 +481,18 @@ impl GrantedRecord for Record {
     /// Return the stored type.
     fn record_type(&self) -> Option<RecordType> {
         Some(self.record_type)
+    }
+}
+
+impl GrantedRecord for RecordWithZone {
+    /// Return the attached record's owner name.
+    fn name(&self) -> &OwnerName {
+        self.record.name()
+    }
+
+    /// Return the attached record's type.
+    fn record_type(&self) -> Option<RecordType> {
+        self.record.record_type()
     }
 }
 

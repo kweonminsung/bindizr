@@ -190,7 +190,7 @@ async fn management_metadata_pages_keep_names_filters_and_cardinalities() {
         secondaries.items[0].notify_key_name.as_deref(),
         Some("a-credential")
     );
-    let role = role::get(&cx, &caller, "metadata").await.unwrap();
+    let role = role::get_by_name(&cx, &caller, "metadata").await.unwrap();
     assert_eq!(
         (role.grant_count, role.token_count, role.tsig_key_count),
         (2, 2, 2)
@@ -282,7 +282,7 @@ async fn listings_preserve_unbounded_windows_across_records_and_management() {
     let records: Vec<_> = (0..1001)
         .map(|index| Record {
             id: RecordId::UNWRITTEN,
-            name: OwnerName::from_row(&format!("host{index:04}")),
+            name: OwnerName::from_row(&format!("host{index:04}")).unwrap(),
             record_type: RecordType::A,
             value: "192.0.2.1".to_string(),
             ttl: Ttl::from_secs(300),
@@ -300,7 +300,7 @@ async fn listings_preserve_unbounded_windows_across_records_and_management() {
         .map(|index| DnssecRecord {
             id: DnssecRecordId::UNWRITTEN,
             zone_id: zone.id,
-            name: OwnerName::from_row(&format!("key{index}")),
+            name: OwnerName::from_row(&format!("key{index}")).unwrap(),
             record_type: DnssecRecordType::Dnskey,
             covered_record_type: None,
             ttl: Ttl::from_secs(300),

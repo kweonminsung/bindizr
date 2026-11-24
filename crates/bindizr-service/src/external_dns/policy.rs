@@ -27,7 +27,7 @@ impl<'a> ZoneIndex<'a> {
         Self {
             zones: zones
                 .iter()
-                .map(|zone| (zone.name.labels(), zone))
+                .map(|zone| (zone.name.to_labels(), zone))
                 .collect(),
         }
     }

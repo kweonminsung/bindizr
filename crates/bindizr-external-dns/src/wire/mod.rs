@@ -28,6 +28,14 @@ pub(crate) enum ConvertChangesError {
     Endpoint(#[from] ValidateEndpointError),
 }
 
+/// The upstream answer did not provide one record per endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("bindizr adjusted {records} of {endpoints} records")]
+pub(crate) struct AdjustedRecordCountError {
+    records: usize,
+    endpoints: usize,
+}
+
 /// JSON shape of external-dns `endpoint.Endpoint` (all fields omitempty).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -192,8 +200,15 @@ pub(crate) fn to_bindizr_records(
 pub(crate) fn build_adjusted_endpoints(
     endpoints: Vec<Endpoint>,
     adjusted: Vec<BindizrRecord>,
-) -> Vec<Endpoint> {
-    endpoints
+) -> Result<Vec<Endpoint>, AdjustedRecordCountError> {
+    if adjusted.len() != endpoints.len() {
+        return Err(AdjustedRecordCountError {
+            records: adjusted.len(),
+            endpoints: endpoints.len(),
+        });
+    }
+
+    Ok(endpoints
         .into_iter()
         .zip(adjusted)
         .map(|(endpoint, record)| Endpoint {
@@ -201,7 +216,7 @@ pub(crate) fn build_adjusted_endpoints(
             labels: endpoint.labels,
             ..Endpoint::from(record)
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]

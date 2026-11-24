@@ -140,6 +140,6 @@ fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, S
         algorithm: key.algorithm.as_u8(),
         digest_type: DS_DIGEST_TYPE.as_u8(),
         digest: hex::encode_upper(ds.digest()),
-        presentation: format!("{} IN DS {}", zone.name.to_fqdn(), ds.canonical()),
+        presentation: format!("{} IN DS {}", zone.name.to_fqdn(), ds.to_text()),
     })
 }

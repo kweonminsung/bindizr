@@ -25,14 +25,32 @@ pub(crate) struct ParsedRecord {
     pub(crate) priority: Option<i32>,
 }
 
-/// Parse the record type and encode the value into its record-row form.
+/// Parse the record fields, keeping the type available to authorize the
+/// target before reporting errors in its value or TTL.
 pub(crate) fn parse_record_fields(
     record_type: &str,
     value: &RecordValue,
     ttl: Option<i64>,
     priority: Option<i32>,
+) -> (Option<RecordType>, Result<ParsedRecord, ServiceError>) {
+    let record_type = match parse_record_type(record_type) {
+        Ok(record_type) => record_type,
+        Err(error) => return (None, Err(error)),
+    };
+
+    (
+        Some(record_type),
+        encode_record_fields(record_type, value, ttl, priority),
+    )
+}
+
+/// Validate a known record type's TTL, priority, and stored value.
+fn encode_record_fields(
+    record_type: RecordType,
+    value: &RecordValue,
+    ttl: Option<i64>,
+    priority: Option<i32>,
 ) -> Result<ParsedRecord, ServiceError> {
-    let record_type = parse_record_type(record_type)?;
     let ttl = ttl.map(ttl::validate_record_ttl).transpose()?;
     let priority = record_type.stored_priority(priority);
     let value = value
@@ -91,10 +109,10 @@ fn has_matching_rdata<'a>(
     priority: Option<i32>,
 ) -> bool {
     // One comparison form for the candidate, however many rows it meets.
-    let wanted = record_type.canonical_value(value, priority);
+    let wanted = record_type.to_comparison_key(value, priority);
     records.into_iter().any(|record| {
         record.record_type == record_type
-            && record_type.canonical_value(&record.value, record.priority) == wanted
+            && record_type.to_comparison_key(&record.value, record.priority) == wanted
     })
 }
 

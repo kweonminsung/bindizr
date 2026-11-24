@@ -103,7 +103,7 @@ id_newtype!(
 /// A TSIG credential whose wire `name` identifies it for updates and transfers.
 /// Rights come from its role's [`crate::model::role_grant::RoleGrant`] rows; a key
 /// that only signs outbound NOTIFY names a role with none.
-#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+#[derive(Clone, PartialEq, Eq, FromRow)]
 pub struct TsigKey {
     pub id: TsigKeyId,
     pub name: String,
@@ -112,6 +112,20 @@ pub struct TsigKey {
     pub secret: String,
     pub role_id: RoleId,
     pub created_at: DateTime<Utc>,
+}
+
+impl fmt::Debug for TsigKey {
+    /// Format the diagnostic fields with credential material redacted.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TsigKey")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("algorithm", &self.algorithm)
+            .field("secret", &"<redacted>")
+            .field("role_id", &self.role_id)
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 /// Key metadata joined with its role name, without the signing secret.
@@ -130,6 +144,24 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// Verify that the stored TSIG secret is absent from Debug output.
+    #[test]
+    fn tsig_key_debug_masks_secret() {
+        let tsig_key = TsigKey {
+            id: TsigKeyId::from(1),
+            name: "test".to_string(),
+            algorithm: TsigAlgorithm::HmacSha256,
+            secret: "fixture-tsig-key".to_string(),
+            role_id: RoleId::from(1),
+            created_at: Utc::now(),
+        };
+
+        for debug in [format!("{tsig_key:?}"), format!("{:#?}", [&tsig_key])] {
+            assert!(debug.contains("<redacted>"));
+            assert!(!debug.contains("fixture-tsig-key"));
+        }
+    }
 
     /// Verify that algorithm parses storage and wire forms case insensitively.
     #[test]

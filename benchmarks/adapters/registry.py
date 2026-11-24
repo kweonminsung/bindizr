@@ -1,27 +1,7 @@
 """Map a system key to its adapter instance."""
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-SYSTEMS = ROOT / "systems"
-
-
-def _load_adapter_module(key: str):
-    """Load the adapter module for the requested system key."""
-    path = SYSTEMS / key / "adapter.py"
-
-    if not path.exists():
-        raise FileNotFoundError(f"no adapter for system '{key}' at {path}")
-
-    spec = importlib.util.spec_from_file_location(f"systems.{key}.adapter", path)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
-
-    return mod
+from importlib import import_module
 
 
 _CLASS = {
@@ -51,6 +31,7 @@ def is_bindizr(key: str) -> bool:
 
 def build_adapter(key: str, config: dict, project: str, **kwargs):
     """Construct the adapter for a benchmark system and project."""
-    mod = _load_adapter_module(key)
-    cls = getattr(mod, _CLASS[key])
+    class_name = _CLASS[key]
+    module = import_module(f"systems.{key}.adapter")
+    cls = getattr(module, class_name)
     return cls(config, project, **kwargs)

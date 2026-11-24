@@ -5,13 +5,10 @@ Report transfer size so an AXFR fallback remains visible.
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from datasets.gen_dataset import generate  # noqa: E402
-from lib import dig  # noqa: E402
+from datasets.gen_dataset import generate
+from lib import dig
 
 # Fallbacks used only when the config lacks the ixfr_* keys; a normal run
 # overrides both from settings.yaml (ixfr_change_sizes / ixfr_baseline).
@@ -86,7 +83,12 @@ async def run(adapter, config, context) -> list:
             await asyncio.sleep(0.5)
 
         if base_serial is None:
-            print(f"  [SKIP] b05: could not read base serial for {change_count}-change IXFR")
+            rows.append({
+                "system": context["label"],
+                "changes": change_count,
+                "status": "FAILED",
+                "error": "could not read base serial",
+            })
             continue
 
         batch = []
@@ -132,16 +134,28 @@ async def run(adapter, config, context) -> list:
 
             continue
 
-        secs, lines, nbytes = await dig.ixfr(zone_name, endpoint.host, endpoint.port, base_serial)
+        try:
+            transfer = await dig.ixfr(zone_name, endpoint.host, endpoint.port, base_serial)
+        except dig.TransferError as error:
+            rows.append({
+                "system": context["label"],
+                "changes": change_count,
+                "status": "FAILED",
+                "error": str(error),
+            })
+            continue
+        seconds = transfer.seconds
 
         rows.append({
             "system": context["label"],
             "changes": change_count,
-            "transfer_secs": round(secs, 4),
-            "transfer_bytes": nbytes,
-            "lines": lines,
-            "records_per_sec": round(lines / secs, 1) if secs else 0,
-            "true_ixfr": bool(adapter.supports_ixfr),
+            "transfer_secs": round(seconds, 4),
+            "transfer_bytes": transfer.output_bytes,
+            "records": transfer.records,
+            "records_per_sec": round(transfer.records / seconds, 1) if seconds else 0,
+            "transfer_kind": transfer.kind,
+            "true_ixfr": transfer.kind == "ixfr",
+            "ixfr_supported": adapter.supports_ixfr,
         })
 
     return rows

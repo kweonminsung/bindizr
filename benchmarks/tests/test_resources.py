@@ -75,6 +75,35 @@ class SamplerTests(unittest.TestCase):
         self.assertEqual(failure.exception.timeout, 0.05)
         self.assertFalse(sampler._thread.is_alive())
 
+    def test_failed_docker_snapshot_reaches_the_sampler_owner(self):
+        """Verify that a nonzero Docker exit becomes an observation failure."""
+        run = subprocess.run
+
+        def failing_docker(command, **kwargs):
+            """Exercise exit handling using a known failing local command."""
+            return run([sys.executable, "-c", "raise SystemExit(17)"], **kwargs)
+
+        with patch.object(docker.subprocess, "run", side_effect=failing_docker):
+            with self.assertRaises(subprocess.CalledProcessError) as failure:
+                docker.read_stats(["expected"])
+        self.assertEqual(failure.exception.returncode, 17)
+
+    def test_empty_or_incomplete_snapshot_cannot_supply_zero_metrics(self):
+        """Verify that omitted containers cannot produce a zero resource measurement."""
+        sampler = resources.ResourceSampler([])
+        self.assertEqual(sampler.summary(), {"samples": 0})
+        snapshot = subprocess.CompletedProcess([], 0, '{"Name":"one"}\n')
+        with patch.object(docker, "run", return_value=snapshot):
+            with self.assertRaisesRegex(RuntimeError, "1 of 2"):
+                docker.read_stats(["first", "second"])
+        with patch.object(docker, "read_stats", return_value=[{"Name": "fixture"}]):
+            sampler = resources.ResourceSampler(["fixture"])
+            sampler.start()
+            sampler._thread.join(1)
+            with self.assertRaisesRegex(KeyError, "CPUPerc"):
+                sampler.stop()
+            self.assertEqual(sampler.summary(), {"samples": 0})
+
 
 class RunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_every_self_sampling_scope_stops_on_failure_and_cancellation(self):
@@ -142,19 +171,22 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
 
         adapter = SimpleNamespace(setup=AsyncMock(), teardown=AsyncMock(),
                                   resource_services=[], compose=Mock())
-        sampler = Mock()
-        sampler.stop.side_effect = OSError("observation failed")
+        sampler = resources.ResourceSampler([], 0.01)
+        sampler.start = Mock()
+        sampler.stop = Mock(side_effect=OSError("observation failed"))
         module = SimpleNamespace(SELF_SAMPLES=False, run=AsyncMock(side_effect=ValueError("workload failed")))
         with patch.object(orchestrator.registry, "is_bindizr", return_value=False), \
                 patch.object(orchestrator.registry, "build_adapter", return_value=adapter), \
                 patch.object(orchestrator.importlib, "import_module", return_value=module), \
-                patch.object(orchestrator, "ResourceSampler", return_value=sampler), \
+                patch.object(orchestrator, "load_sampler", return_value=sampler), \
                 redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             result = await orchestrator.run_one("b01_crud_tps", "test", {
                 "systems": {"test": {"label": "test"}},
                 "resources": {"sample_interval_secs": 0.01},
             })
-        self.assertIsNone(result)
+        expected = {"system": "test", "status": "FAILED", "phase": "measurement", "error": "workload failed"}
+        self.assertEqual(result, [expected])
+        sampler.stop.assert_called_once()
         adapter.teardown.assert_awaited_once()
 
 

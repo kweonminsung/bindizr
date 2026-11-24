@@ -296,7 +296,8 @@ impl SignedViewDiff {
                     let expiration = params.record_set_expiration(record_set[0].owner(), covered);
 
                     for signer in record_set_signers {
-                        let rrsig = signer.sign_rrset(record_set, params.inception, expiration)?;
+                        let rrsig =
+                            signer.sign_record_set(record_set, params.inception, expiration)?;
                         new_records.push(DnssecRecord {
                             id: DnssecRecordId::UNWRITTEN,
                             zone_id: zone.id,
@@ -434,7 +435,7 @@ impl<'a> Signer<'a> {
     }
 
     /// Sign one record set for the supplied validity interval.
-    fn sign_rrset(
+    fn sign_record_set(
         &self,
         record_set: &[&SignRecord],
         inception: DateTime<Utc>,

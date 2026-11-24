@@ -26,6 +26,8 @@ pub enum ParseNameError {
     InvalidEscape,
     #[error("is outside the zone")]
     OutsideZone,
+    #[error("must be relative")]
+    Absolute,
 }
 
 /// A typed name whose wire bytes the `domain` crate did not accept.

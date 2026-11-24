@@ -12,8 +12,7 @@ case "$TARGET" in
     aarch64-*) DEB_ARCH="arm64"; RPM_ARCH="aarch64" ;;
     *) echo "Unsupported target: $TARGET (expected x86_64-* or aarch64-*)" >&2; exit 2 ;;
 esac
-# Alpine spells a prerelease 0.1.0_rc3.
-APK_VERSION=$(printf '%s' "$VERSION" | sed -E 's/-(alpha|beta|rc)\./_\1/')
+APK_VERSION=$(python3 packaging/scripts/apk_version.py "$VERSION")
 
 # Point cargo at musl-gcc for the target.
 TARGET_ENV="${TARGET//-/_}"
@@ -93,7 +92,7 @@ if ! command -v docker >/dev/null 2>&1; then
     exit 2
 fi
 docker run --rm -v "$TMP_DIR:/stage:ro" -v "$PWD/packaging:/packaging:ro" -v "$PWD:/out" \
-    alpine:3.24 sh /packaging/scripts/build_apk.sh "$APK_VERSION" "$RELEASE"
+    alpine:3.24 sh /packaging/scripts/build_apk.sh "$APK_VERSION" "$RELEASE" "$VERSION"
 
 echo "Packages created successfully."
 ls -l bindizr*.{deb,rpm,apk}

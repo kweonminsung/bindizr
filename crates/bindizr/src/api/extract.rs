@@ -54,7 +54,12 @@ where
         axum::extract::Query::from_request_parts(parts, state)
             .await
             .map(|axum::extract::Query(value)| Self(value))
-            .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
+            .map_err(|rejection| {
+                ApiError::with_source(
+                    ServiceError::invalid_input(rejection.body_text()),
+                    rejection,
+                )
+            })
     }
 }
 
@@ -74,7 +79,12 @@ where
         axum::extract::Path::from_request_parts(parts, state)
             .await
             .map(|axum::extract::Path(value)| Self(value))
-            .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
+            .map_err(|rejection| {
+                ApiError::with_source(
+                    ServiceError::invalid_input(rejection.body_text()),
+                    rejection,
+                )
+            })
     }
 }
 
@@ -97,7 +107,9 @@ where
             .get::<Caller>()
             .cloned()
             .map(RequestCaller)
-            .ok_or_else(|| ApiError(ServiceError::unauthorized("request has no caller identity")))
+            .ok_or_else(|| {
+                ApiError::from(ServiceError::unauthorized("request has no caller identity"))
+            })
     }
 }
 
@@ -115,7 +127,7 @@ where
     /// Extract the authenticated API token from request extensions.
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
         parts.extensions.get::<Self>().cloned().ok_or_else(|| {
-            ApiError(ServiceError::TokenNotFound {
+            ApiError::from(ServiceError::TokenNotFound {
                 message: "the request presents no API token: authentication is disabled"
                     .to_string(),
             })
@@ -125,7 +137,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
     use axum::body::Body;
+    use axum::extract::rejection::QueryRejection;
     use axum::http::Request;
     use bindizr_service::error::ErrorCode;
     use bindizr_service::types::DeleteRecordsRequest;
@@ -147,12 +162,18 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert_eq!(error.0.code(), ErrorCode::InvalidInput);
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
         assert!(
-            error.0.to_string().contains("unknown field `record_type`"),
-            "{}",
-            error.0
+            error
+                .source()
+                .and_then(|source| source.downcast_ref::<QueryRejection>())
+                .is_some()
         );
+        assert!(
+            error.to_string().contains("unknown field `record_type`"),
+            "{error}"
+        );
+        assert!(!format!("{error:#?}").contains("record_type"));
     }
 
     /// Verify that the spelled-out filter still parses, keys and all.

@@ -93,9 +93,10 @@ pub(crate) async fn handle_command(
         failures: 0,
     };
 
-    let path = config::resolve_config_path(config_file);
-    let file_config = match Config::load(&path) {
-        Ok(config) => {
+    let config = config::resolve_config_path(config_file)
+        .and_then(|path| Config::load(&path).map(|config| (path, config)));
+    let file_config = match config {
+        Ok((path, config)) => {
             report.ok(format!("Config valid: {path}"));
             Some(config)
         }

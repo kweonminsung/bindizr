@@ -130,8 +130,8 @@ fn ok_mock_bodies() -> ((u16, Value), (u16, Value), (u16, Value)) {
 /// Start a webhook adapter connected to the test upstream.
 async fn spawn_adapter(upstream_addr: SocketAddr, token: Option<&str>) -> String {
     let upstream = UpstreamClient::new(
-        format!("http://{upstream_addr}"),
-        token.map(str::to_string),
+        format!("http://{upstream_addr}").parse().unwrap(),
+        token.map(|token| token.to_string().into()),
         2,
         None,
     )
@@ -409,7 +409,7 @@ async fn apply_changes_maps_a_rejected_token_to_a_retryable_503() {
         (200, json!({ "records": [] })),
         (
             401,
-            json!({ "error": "invalid API token", "code": "UNAUTHORIZED" }),
+            json!({ "error": "invalid API token test-token", "code": "UNAUTHORIZED" }),
         ),
     )
     .await;
@@ -425,6 +425,7 @@ async fn apply_changes_maps_a_rejected_token_to_a_retryable_503() {
     // the sync instead of leaving the change set dropped.
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
     assert!(body.contains("invalid API token"));
+    assert!(!body.contains("test-token"));
 }
 
 /// Verify that `apply_changes` maps bindizr 5xx and unreachable to retryable 502.
@@ -540,7 +541,8 @@ async fn healthz_reflects_bindizr_reachability() {
 
     let mock = spawn_mock(domains, records, changes).await;
 
-    let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
+    let base_url = format!("http://{}", mock.addr).parse().unwrap();
+    let upstream = UpstreamClient::new(base_url, None, 2, None).unwrap();
     let state = Arc::new(AppState {
         upstream,
         metrics: AdapterMetrics::new().unwrap(),
@@ -574,7 +576,8 @@ async fn healthz_reports_unready_without_manageable_names() {
 
     let mock = spawn_mock((200, json!({ "domains": [] })), records, changes).await;
 
-    let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
+    let base_url = format!("http://{}", mock.addr).parse().unwrap();
+    let upstream = UpstreamClient::new(base_url, None, 2, None).unwrap();
     let state = Arc::new(AppState {
         upstream,
         metrics: AdapterMetrics::new().unwrap(),

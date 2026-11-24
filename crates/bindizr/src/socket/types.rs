@@ -9,8 +9,8 @@ use bindizr_service::types::{
     CreateDnssecPolicyRequest, CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest,
     CreateSecondaryRequest, CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest,
     DeleteRecordsRequest, DsCheck, EnableDnssecRequest, Holddown, ImportDnssecKeysRequest,
-    ImportZoneRequest, ImportZonesRequest, NotifySerial, PageRequest, RecordFilter, Run,
-    StartDnssecRolloverRequest, TokenFilter, TransferLogFilter, TsigKeyFilter,
+    ImportZoneRequest, ImportZonesRequest, MessageResponse, NotifySerial, PageRequest,
+    RecordFilter, Run, StartDnssecRolloverRequest, TokenFilter, TransferLogFilter, TsigKeyFilter,
     UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
     UpdateSecondaryRequest, UpdateZoneRequest, ZoneFilter, ZoneView,
 };
@@ -219,6 +219,16 @@ pub(crate) enum DaemonCommand {
 pub(crate) struct DaemonResponse<T> {
     pub(crate) message: String,
     pub(crate) data: T,
+}
+
+impl From<MessageResponse> for DaemonResponse<MessageResponse> {
+    /// Use the same message for table output and the structured payload.
+    fn from(response: MessageResponse) -> Self {
+        Self {
+            message: response.message.clone(),
+            data: response,
+        }
+    }
 }
 
 /// Daemon status details returned by the `Status` command.

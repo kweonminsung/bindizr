@@ -4,11 +4,18 @@ pub enum SoaResult {
     Ok,
     Refused,
     NotAuth,
+    Truncated,
     Failed,
 }
 
 impl SoaResult {
-    pub(crate) const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Failed];
+    pub(crate) const ALL: [Self; 5] = [
+        Self::Ok,
+        Self::Refused,
+        Self::NotAuth,
+        Self::Truncated,
+        Self::Failed,
+    ];
 
     /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
@@ -16,6 +23,7 @@ impl SoaResult {
             Self::Ok => "ok",
             Self::Refused => "refused",
             Self::NotAuth => "notauth",
+            Self::Truncated => "truncated",
             Self::Failed => "failed",
         }
     }
@@ -30,7 +38,10 @@ mod tests {
     #[test]
     fn soa_result_spells_itself_once() {
         let spellings = SoaResult::ALL.map(SoaResult::as_str);
-        assert_eq!(spellings, ["ok", "refused", "notauth", "failed"]);
+        assert_eq!(
+            spellings,
+            ["ok", "refused", "notauth", "truncated", "failed"]
+        );
 
         let mut expected = spellings.map(str::to_string).to_vec();
         expected.sort();

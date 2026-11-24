@@ -138,7 +138,7 @@ async fn handle_home() -> Response {
 
 /// Return the API error for an unsupported HTTP method.
 async fn handle_method_not_allowed() -> Response {
-    ApiError(ServiceError::MethodNotAllowed {
+    ApiError::from(ServiceError::MethodNotAllowed {
         message: "this path does not take that method".to_string(),
     })
     .into_response()
@@ -146,7 +146,7 @@ async fn handle_method_not_allowed() -> Response {
 
 /// Return the API error for an unknown route.
 async fn handle_not_found() -> Response {
-    ApiError(ServiceError::EndpointNotFound {
+    ApiError::from(ServiceError::EndpointNotFound {
         message: "no route matches this path".to_string(),
     })
     .into_response()

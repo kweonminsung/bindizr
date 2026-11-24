@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use bindizr_core::dns::name::ZoneName;
 pub(crate) use send::{NotifyZoneError, send_notify_to_targets, send_zone_notify};
-pub use send::{send_notify_to_secondaries, send_notify_to_secondary};
 use thiserror::Error;
 use tokio::task::JoinSet;
 
@@ -56,36 +55,42 @@ pub(crate) async fn send_notify(
 ) -> Result<(), NotifyError> {
     match target {
         NotifyTarget::All => {
-            let zones = zone::list(cx).await?;
-
-            let mut failures = Vec::new();
-            let mut tasks = JoinSet::new();
-
-            for zone in zones {
-                let cx = cx.clone();
-                tasks.spawn(async move {
-                    let result = send::send_zone_notify(&cx, &zone.name).await;
-                    (zone.name.to_string(), result)
-                });
-            }
-
-            while let Some(result) = tasks.join_next().await {
-                let (zone_name, result) = result.map_err(|error| {
-                    ServiceError::internal_with_source("NOTIFY task failed", error)
-                })?;
-                // Returned whole to the boundary, which logs it once.
-                if let Err(error) = result {
-                    failures.push((zone_name, error));
-                }
-            }
-
-            if failures.is_empty() {
-                Ok(())
-            } else {
-                Err(NotifyError::Zones { failures })
-            }
+            let zones = zone::list_enabled(cx).await?;
+            send_zone_notifies(cx, zones.into_iter().map(|zone| zone.name)).await
         }
         NotifyTarget::Zone(zone_name) => Ok(send::send_zone_notify(cx, zone_name).await?),
+    }
+}
+
+/// Announce the selected zones concurrently and return their failures together.
+pub(crate) async fn send_zone_notifies(
+    cx: &Arc<Context>,
+    zone_names: impl IntoIterator<Item = ZoneName>,
+) -> Result<(), NotifyError> {
+    let mut failures = Vec::new();
+    let mut tasks = JoinSet::new();
+
+    for zone_name in zone_names {
+        let cx = cx.clone();
+        tasks.spawn(async move {
+            let result = send::send_zone_notify(&cx, &zone_name).await;
+            (zone_name.to_string(), result)
+        });
+    }
+
+    while let Some(result) = tasks.join_next().await {
+        let (zone_name, result) = result
+            .map_err(|error| ServiceError::internal_with_source("NOTIFY task failed", error))?;
+        // Returned whole to the boundary, which logs it once.
+        if let Err(error) = result {
+            failures.push((zone_name, error));
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(NotifyError::Zones { failures })
     }
 }
 

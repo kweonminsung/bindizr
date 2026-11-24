@@ -148,7 +148,7 @@ pub async fn list(
 }
 
 /// Get a named DNSSEC policy for an authorized caller.
-pub async fn get(
+pub async fn get_by_name(
     cx: &Context,
     caller: &Caller,
     name: &str,

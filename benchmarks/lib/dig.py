@@ -6,6 +6,8 @@ import asyncio
 import re
 import subprocess
 import time
+from dataclasses import dataclass
+from typing import Literal
 
 from . import process
 
@@ -13,6 +15,16 @@ from . import process
 # dig prints this only after its AXFR/IXFR state machine reaches completion.
 XFR_SIZE = re.compile(r"^;; XFR size: (\d+) records \(messages \d+, bytes \d+\)\s*$", re.MULTILINE)
 RESPONSE_STATUS = re.compile(r"^;; ->>HEADER<<- .*status: ([A-Z0-9]+),", re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class Transfer:
+    """A completed transfer's duration, records, output bytes, and observed shape."""
+
+    seconds: float
+    records: int
+    output_bytes: int
+    kind: Literal["axfr", "ixfr", "soa-only"]
 
 
 class TransferError(RuntimeError):
@@ -42,7 +54,7 @@ async def query(name: str, record_type: str, server: str, port: int,
 
 
 async def _transfer(zone_name: str, server: str, port: int, qtype: str,
-                    timeout: int) -> tuple[float, int, int]:
+                    timeout: int, from_serial: int | None = None) -> Transfer:
     """Measure only completed transfers, leaving SOA-only/delta/fallback validation to dig."""
     args = ["dig", f"@{server}", "-p", str(port), zone_name, qtype, "+tcp",
             f"+time={timeout}", "+tries=1", "+noall", "+noshort", "+answer",
@@ -73,25 +85,36 @@ async def _transfer(zone_name: str, server: str, port: int, qtype: str,
                 != [field.lower() for field in last])):
         raise TransferError(zone_name, server, port, qtype, "invalid SOA boundaries")
 
-    return (elapsed, len(lines), len(result.stdout))
+    kind: Literal["axfr", "ixfr", "soa-only"] = "axfr"
+    if len(lines) == 1:
+        kind = "soa-only"
+    elif from_serial is not None:
+        # RFC 1995, Section 4: the client's SOA opens the first difference.
+        second = lines[1].split()
+        if (len(second) == 11 and second[0].lower() == first[0].lower()
+                and second[2:4] == ["IN", "SOA"] and second[6] == str(from_serial)
+                and second[6] != first[6]):
+            kind = "ixfr"
+
+    return Transfer(elapsed, len(lines), len(result.stdout), kind)
 
 
-async def axfr(zone_name: str, server: str, port: int, timeout: int = 300) -> tuple[float, int, int]:
+async def axfr(zone_name: str, server: str, port: int, timeout: int = 300) -> Transfer:
     """Run an AXFR and report its duration, record count, and output size."""
     return await _transfer(zone_name, server, port, "AXFR", timeout)
 
 
 async def ixfr(zone_name: str, server: str, port: int, from_serial: int,
-               timeout: int = 60) -> tuple[float, int, int]:
+               timeout: int = 60) -> Transfer:
     """Run an IXFR from a serial and report its duration and transfer size."""
-    return await _transfer(zone_name, server, port, f"IXFR={from_serial}", timeout)
+    return await _transfer(zone_name, server, port, f"IXFR={from_serial}", timeout, from_serial)
 
 
 async def count_axfr_records(zone_name: str, server: str, port: int,
                              timeout: int = 300) -> int | None:
     """Probe a complete AXFR's size, or report unavailable for a polling caller."""
     try:
-        return (await axfr(zone_name, server, port, timeout))[1]
+        return (await axfr(zone_name, server, port, timeout)).records
     except TransferError:
         return None
 
@@ -100,7 +123,7 @@ async def zone_is_cleared(zone_name: str, server: str, port: int,
                           apex_lines: int, timeout: int = 5) -> bool:
     """Accept a complete apex-only zone or an explicit unserved SOA response, never silence."""
     try:
-        return (await axfr(zone_name, server, port, timeout))[1] <= apex_lines
+        return (await axfr(zone_name, server, port, timeout)).records <= apex_lines
     except TransferError as error:
         if error.rcode in ("NXDOMAIN", "NOTAUTH"):
             return True

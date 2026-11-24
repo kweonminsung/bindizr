@@ -142,6 +142,52 @@ async fn zone_supports_create_read_and_delete() {
     );
 }
 
+/// Verify that table output identifies a preview and keeps the proposed zone.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_writes_mark_table_previews() {
+    let app = TestApp::start_local().await;
+    let zone_name = app.zone_name("zone-preview.example");
+    let mname = format!("ns1.{zone_name}");
+    let preview = app
+        .run_cli_success(
+            &[
+                "zone",
+                "create",
+                &zone_name,
+                "--mname",
+                &mname,
+                "--rname",
+                "admin@example.com",
+                "--dry-run",
+            ],
+            None,
+        )
+        .await;
+    assert!(preview.contains("Zone would be created"), "{preview}");
+    assert!(preview.contains(&zone_name), "{preview}");
+
+    let created = app.create_zone_cli(&zone_name, "3600").await;
+    assert!(!created.contains("would be created"), "{created}");
+
+    let preview = app
+        .run_cli_success(
+            &[
+                "zone",
+                "update",
+                &zone_name,
+                "--description",
+                "preview",
+                "--dry-run",
+            ],
+            None,
+        )
+        .await;
+    assert!(preview.contains("Zone would be updated"), "{preview}");
+    assert!(preview.contains(&zone_name), "{preview}");
+    assert!(preview.contains("preview"), "{preview}");
+}
+
 /// Verify that zone update changes only passed fields via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

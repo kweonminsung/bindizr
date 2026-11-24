@@ -200,6 +200,6 @@ mod tests {
             ));
         }
 
-        assert!(zone::list(&cx).await.unwrap().is_empty());
+        assert!(zone::list_enabled(&cx).await.unwrap().is_empty());
     }
 }

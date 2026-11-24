@@ -20,7 +20,9 @@ use tokio::net;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
+use crate::dns::error::DnsError;
 use crate::dns::server::DnsContext;
+use crate::dns::server::transfer_cache::TransferCache;
 use crate::dns::udp::UdpSocket;
 use crate::shutdown::Shutdown;
 use crate::tls::TlsCertificate;
@@ -49,10 +51,12 @@ pub(crate) enum StartDnsError {
 /// The DNS front end's accept loops, for the daemon to supervise.
 #[derive(Debug)]
 pub(crate) struct DnsServers {
-    pub(crate) tcp: JoinHandle<()>,
+    pub(crate) tcp: JoinHandle<Result<(), DnsError>>,
     pub(crate) udp: JoinHandle<()>,
     /// Present when `dns.tls` names a certificate.
-    pub(crate) tls: Option<JoinHandle<()>>,
+    pub(crate) tls: Option<JoinHandle<Result<(), DnsError>>>,
+    /// The daemon reconciles the cache after applying live settings.
+    pub(crate) transfer_cache: Arc<TransferCache>,
 }
 
 /// Bring the DNS front end up: spawn the TCP, UDP, and (with a certificate)
@@ -113,35 +117,27 @@ pub(crate) async fn start(
     log::info!("DNS UDP server listening on {listen_addr}");
 
     let tcp_stop = shutdown.waiter();
-    let tcp_task = {
-        let dns_cx = dns_cx.clone();
-
-        tokio::spawn(async move {
-            if let Err(error) = tcp::run_tcp_server(dns_cx, tcp_listener, tcp_stop).await {
-                log::error!("DNS TCP server error: {error}");
-            }
-        })
-    };
+    let tcp_task = tokio::spawn(tcp::run_tcp_server(dns_cx.clone(), tcp_listener, tcp_stop));
 
     let tls_task = tls_listener.map(|(tls_addr, listener, server_config)| {
         log::info!("DNS TLS server listening on {tls_addr} (XoT)");
         let tls_stop = shutdown.waiter();
-        let dns_cx = dns_cx.clone();
-
-        tokio::spawn(async move {
-            if let Err(error) = tls::run_tls_server(dns_cx, listener, server_config, tls_stop).await
-            {
-                log::error!("DNS TLS server error: {error}");
-            }
-        })
+        tokio::spawn(tls::run_tls_server(
+            dns_cx.clone(),
+            listener,
+            server_config,
+            tls_stop,
+        ))
     });
 
     let udp_stop = shutdown.waiter();
+    let transfer_cache = dns_cx.transfer_cache.clone();
     let udp_task = tokio::spawn(udp::run_udp_server(dns_cx, udp_socket, udp_stop));
 
     Ok(DnsServers {
         tcp: tcp_task,
         udp: udp_task,
         tls: tls_task,
+        transfer_cache,
     })
 }

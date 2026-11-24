@@ -5,15 +5,14 @@ Handles use "<fqdn>|<TYPE>"; the same server manages and answers records.
 from __future__ import annotations
 
 import asyncio
-import sys
 from pathlib import Path
 
 import aiohttp
 
+from adapters.base import DnsAdapter, Endpoint
+from lib import docker
+
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent))
-from adapters.base import DnsAdapter, Endpoint  # noqa: E402
-from lib import docker  # noqa: E402
 
 API_PORT = 18081
 DNS_PORT = 15354
@@ -48,8 +47,7 @@ class PowerDnsAdapter(DnsAdapter):
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
-        self.compose.down()  # clean slate: remove any leftovers from a prior run
-        self.compose.up("powerdns", wait=True)
+        await self.compose.up("powerdns", wait=True)
         self.session = aiohttp.ClientSession(
             headers=self.headers,
             connector=aiohttp.TCPConnector(limit=API_MAX_CONNECTIONS))
@@ -70,9 +68,11 @@ class PowerDnsAdapter(DnsAdapter):
 
     async def teardown(self) -> None:
         """Stop the benchmark system and release its resources."""
-        if self.session:
-            await self.session.close()
-        self.compose.down()
+        try:
+            if self.session:
+                await self.session.close()
+        finally:
+            await self.compose.down()
 
     @staticmethod
     def _fqdn(zone_name: str, name: str) -> str:
@@ -89,14 +89,15 @@ class PowerDnsAdapter(DnsAdapter):
         }
 
         async with self.session.post(self.base + "/zones", json=body) as response:
-            if response.status not in (201, 200, 409, 422):
+            if response.status not in (200, 201, 409):
                 raise RuntimeError(f"create_zone {response.status}: {await response.text()}")
 
     async def delete_zone(self, zone_name: str) -> None:
         """Remove the benchmark zone and its records."""
         fqdn_zone_name = zone_name if zone_name.endswith(".") else zone_name + "."
         async with self.session.delete(self.base + f"/zones/{fqdn_zone_name}") as response:
-            await response.read()
+            if response.status not in (200, 204, 404):
+                raise RuntimeError(f"delete_zone {response.status}: {await response.text()}")
 
     async def _patch(self, zone_name: str, name: str, record_type: str, changetype: str,
                      record: dict | None) -> bool:
@@ -141,13 +142,19 @@ class PowerDnsAdapter(DnsAdapter):
         """Check whether the record identified by the handle is present."""
         fqdn, record_type = handle.rsplit("|", 1)
         fqdn_zone_name = zone_name if zone_name.endswith(".") else zone_name + "."
-        url = self.base + f"/zones/{fqdn_zone_name}?rrset_name={fqdn}&rrset_type={record_type}"
-
-        async with self.session.get(url) as response:
-            if response.status != 200:
+        params = {"rrset_name": fqdn, "rrset_type": record_type}
+        async with self.session.get(self.base + f"/zones/{fqdn_zone_name}", params=params) as response:
+            if response.status == 404:
                 return False
+            if response.status != 200:
+                raise RuntimeError(f"get_record {response.status}: {await response.text()}")
             data = await response.json()
-            return bool(data.get("rrsets"))
+            return any(
+                rrset["name"].rstrip(".").lower() == fqdn.rstrip(".").lower()
+                and rrset["type"].upper() == record_type.upper()
+                and rrset["records"]
+                for rrset in data["rrsets"]
+            )
 
     async def update_record(self, zone_name: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""

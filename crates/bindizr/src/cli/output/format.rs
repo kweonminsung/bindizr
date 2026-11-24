@@ -6,6 +6,8 @@ use tabled::settings::Style;
 use tabled::{Table, Tabled};
 use thiserror::Error;
 
+use crate::socket::types::DaemonResponse;
+
 /// Why a daemon response could not be rendered.
 #[derive(Debug, Error)]
 pub(crate) enum RenderOutputError {
@@ -41,6 +43,24 @@ where
         print_payload(data, output)?;
     }
     Ok(())
+}
+
+/// Mark a preview in table output. Structured output carries its own dry-run flag.
+pub(crate) fn print_write_response<T, U>(
+    response: &DaemonResponse<T>,
+    output: OutputFormat,
+    dry_run: bool,
+    to_table_rows: impl Fn(&T) -> Vec<U>,
+) -> Result<(), RenderOutputError>
+where
+    T: Serialize,
+    U: Tabled,
+{
+    if output == OutputFormat::Table && dry_run {
+        outln!("{}", response.message);
+    }
+
+    print_response(&response.data, output, to_table_rows)
 }
 
 /// Print a page as JSON, YAML, or a table that also reports omitted items.

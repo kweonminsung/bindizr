@@ -35,7 +35,6 @@ pub enum TransferLogErrorCode {
     IncompletePrefix,
     IncompleteMessage,
     IxfrVersionMissing,
-    InvalidQuery,
     UpdateResponseEncodingFailed,
     TsigAuthenticationFailed,
 }
@@ -56,7 +55,6 @@ impl TransferLogErrorCode {
             Self::IncompletePrefix => "INCOMPLETE_PREFIX".to_string(),
             Self::IncompleteMessage => "INCOMPLETE_MESSAGE".to_string(),
             Self::IxfrVersionMissing => "IXFR_VERSION_MISSING".to_string(),
-            Self::InvalidQuery => "INVALID_QUERY".to_string(),
             Self::UpdateResponseEncodingFailed => "UPDATE_RESPONSE_ENCODING_FAILED".to_string(),
             Self::TsigAuthenticationFailed => "TSIG_AUTHENTICATION_FAILED".to_string(),
         }
@@ -208,10 +206,9 @@ pub async fn list(
     // with an address too, that address only when the secondary resolves to it.
     if let Some(secondary_name) = secondary_name {
         let secondary = secondary::lookup_by_name(cx, secondary_name).await?;
-        let secondary_addrs = secondary::resolve_ips(cx, &secondary)
-            .await
-            .into_iter()
-            .map(|ip| ip.to_string());
+        let target =
+            secondary::SecondaryTarget::resolve(secondary, cx.config().dns.notify.timeout()).await;
+        let secondary_addrs = target.client_ips().into_iter().map(|ip| ip.to_string());
 
         filter.client_addrs = Some(match filter.client_addrs {
             Some(client_addrs) => secondary_addrs

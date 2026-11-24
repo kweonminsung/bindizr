@@ -119,6 +119,28 @@ fn changes_to_bindizr_rejects_mismatched_update_pairs() {
     assert!(ApplyExternalDnsChangesRequest::try_from(&changes).is_err());
 }
 
+/// Verify that adjustment refuses an answer that cannot be paired by position.
+#[test]
+fn adjusted_endpoints_require_one_record_per_endpoint() {
+    let original = endpoint("a.example.com", "A", 300, &["192.0.2.1"]);
+    let record = BindizrRecord::try_from(&original).unwrap();
+
+    assert_eq!(
+        build_adjusted_endpoints(vec![original.clone()], vec![]),
+        Err(AdjustedRecordCountError {
+            records: 0,
+            endpoints: 1
+        })
+    );
+    assert_eq!(
+        build_adjusted_endpoints(vec![original], vec![record.clone(), record]),
+        Err(AdjustedRecordCountError {
+            records: 2,
+            endpoints: 1
+        })
+    );
+}
+
 /// Verify that ExternalDNS's zero TTL is sent as unset and every other value
 /// as given, for the server to range-check.
 #[test]

@@ -10,6 +10,8 @@ from lib import process, zonefile
 class NsupdateAdapter(DnsAdapter):
     """Query records with dig and apply changes with nsupdate."""
 
+    server_name = "DNS primary"
+
     def __init__(self, config: dict, project: str, endpoint: Endpoint, zone_name: str):
         """Store the primary endpoint, managed zone, and update failure detail."""
         super().__init__(config, project)
@@ -17,16 +19,38 @@ class NsupdateAdapter(DnsAdapter):
         self._zone_name = zone_name
         self._last_error = ""
 
+    async def _wait_dns(self, timeout: int = 90) -> None:
+        """Wait until the configured zone supports SOA queries and dynamic updates."""
+        owner = self._fqdn("probe0")
+        for _ in range(timeout * 2):
+            answered, _ = await self._dig(self._zone_name, "SOA")
+            if answered and await self._nsupdate(
+                    f"update add {owner} 10 A 127.0.0.1\n"
+                    f"update delete {owner} A\n"):
+                return
+
+            await asyncio.sleep(0.5)
+
+        raise RuntimeError(f"{self.server_name} did not become ready")
+
+    async def teardown(self) -> None:
+        """Stop the benchmark system and release its resources."""
+        await self.compose.down()
+
+    async def create_zone(self, zone_name: str) -> None:
+        """Use the primary zone already defined in the server configuration."""
+        return
+
     async def _dig(self, name: str, record_type: str) -> tuple[bool, str]:
         """Query a record through the primary's DNS endpoint."""
-        proc = await process.run(
+        result = await process.run(
             "dig", f"@{self._endpoint.host}", "-p", str(self._endpoint.port),
             name, record_type, "+short", "+tries=1", "+time=3",
             timeout=5, stderr=asyncio.subprocess.DEVNULL)
 
-        text = proc.stdout.decode().strip()
+        text = result.stdout.decode().strip()
 
-        return (bool(text), text)
+        return (result.returncode == 0 and bool(text), text)
 
     async def _nsupdate(self, script: str, retries: int = 5) -> bool:
         """Send an UPDATE script, retaining the last failure for diagnostics."""
@@ -35,13 +59,13 @@ class NsupdateAdapter(DnsAdapter):
         delay = 0.05
 
         for attempt in range(retries + 1):
-            proc = await process.run("nsupdate", input=payload,
+            result = await process.run("nsupdate", input=payload,
                                      stdout=asyncio.subprocess.DEVNULL)
 
-            if proc.returncode == 0:
+            if result.returncode == 0:
                 return True
 
-            self._last_error = (proc.stderr or b"").decode(errors="replace").strip()
+            self._last_error = (result.stderr or b"").decode(errors="replace").strip()
 
             # A primary can refuse updates while flushing its journal.
             if attempt < retries:

@@ -43,11 +43,11 @@ fn extract_tcp_keepalive_checks_timeout_units_and_option_shape() {
         assert_eq!(extract_tcp_keepalive_timeout(&response).unwrap(), expected);
     }
 
-    for data in [
-        vec![0, 11, 0, 0],
-        vec![0, 11, 0, 1, 0],
-        vec![0, 11, 0, 3, 0, 0, 0],
-        vec![0, 11, 0, 2, 0, 0, 0, 11, 0, 2, 0, 1],
+    for (data, malformed_wire_value) in [
+        (vec![0, 11, 0, 0], false),
+        (vec![0, 11, 0, 1, 0], true),
+        (vec![0, 11, 0, 3, 0, 0, 0], true),
+        (vec![0, 11, 0, 2, 0, 0, 0, 11, 0, 2, 0, 1], false),
     ] {
         let mut response = build_soa_response(1, &name("example.com"), Class::IN);
         append_opt(&mut response, OptRcode::NOERROR, 0);
@@ -55,10 +55,17 @@ fn extract_tcp_keepalive_checks_timeout_units_and_option_shape() {
         response[end - 2..].copy_from_slice(&(data.len() as u16).to_be_bytes());
         response.extend_from_slice(&data);
 
-        assert!(matches!(
-            extract_tcp_keepalive_timeout(&response),
-            Err(ParseResponseError::MalformedEdns)
-        ));
+        let error = extract_tcp_keepalive_timeout(&response).unwrap_err();
+        if malformed_wire_value {
+            assert!(matches!(error, ParseResponseError::MalformedKeepalive(_)));
+            assert!(
+                std::error::Error::source(&error)
+                    .unwrap()
+                    .is::<domain::base::wire::ParseError>()
+            );
+        } else {
+            assert!(matches!(error, ParseResponseError::MalformedEdns));
+        }
     }
 }
 

@@ -8,17 +8,21 @@ use crate::error::ServiceError;
 use crate::{Context, dnssec, serial, transaction, zone};
 
 /// Advance a named zone's serial and save its signed version atomically.
+/// Report whether the locked zone was still enabled and could be bumped.
 pub(crate) async fn force_increment_serial(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-) -> Result<(), ServiceError> {
+) -> Result<bool, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to force increment zone serial").await?;
 
     let apply_result: Result<_, ServiceError> = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
+        if !zone.enabled {
+            return Ok(None);
+        }
 
         let new_serial = serial::generate_serial(Some(zone.serial));
 
@@ -36,12 +40,15 @@ pub(crate) async fn force_increment_serial(
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok((zone, new_serial))
+        Ok(Some((zone, new_serial)))
     }
     .await;
 
-    let (zone, new_serial) =
-        transaction::finish_tx(tx, apply_result, "failed to force increment zone serial").await?;
+    let Some((zone, new_serial)) =
+        transaction::finish_tx(tx, apply_result, "failed to force increment zone serial").await?
+    else {
+        return Ok(false);
+    };
 
     cx.metrics().track_serial_bumps(1);
     log::info!(
@@ -51,5 +58,5 @@ pub(crate) async fn force_increment_serial(
         zone.id
     );
 
-    Ok(())
+    Ok(true)
 }

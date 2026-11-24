@@ -93,7 +93,7 @@ impl DsRecordValue {
     }
 
     /// Render the DS value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn to_text(&self) -> String {
         format!(
             "{} {} {} {}",
             self.key_tag,
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn parse_joins_spaced_digest_and_canonicalizes_hex_case() {
         let parsed = DsRecordValue::parse("34217 13 2 4b9b 6b07 3edd").unwrap();
-        assert_eq!(parsed.canonical(), "34217 13 2 4B9B6B073EDD");
+        assert_eq!(parsed.to_text(), "34217 13 2 4B9B6B073EDD");
     }
 
     /// Verify that `parse` reads an algorithm mnemonic as its number (RFC
@@ -137,7 +137,7 @@ mod tests {
             ("MLDSA44", 18),
         ] {
             let parsed = DsRecordValue::parse(&format!("34217 {mnemonic} 2 4B9B")).unwrap();
-            assert_eq!(parsed.canonical(), format!("34217 {number} 2 4B9B"));
+            assert_eq!(parsed.to_text(), format!("34217 {number} 2 4B9B"));
         }
         assert!(DsRecordValue::parse("34217 SHA256 2 4B9B").is_err());
     }

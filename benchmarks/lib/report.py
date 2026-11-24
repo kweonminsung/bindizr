@@ -6,34 +6,37 @@ from __future__ import annotations
 
 import csv
 import json
+from pathlib import Path
 from statistics import stdev
+from tempfile import NamedTemporaryFile
 from typing import Any
 
-from .settings import GRAPHS_DIR, RESULTS_DIR
 
-RAW_DIR = RESULTS_DIR / "raw"
+def replace_results(results_dir: Path, benchmark: str, results: list[dict]) -> None:
+    """Replace one benchmark's raw rows after its requested runs have finished."""
+    raw_dir = results_dir / "raw"
+    path = raw_dir / f"{benchmark}.json"
+    if not results:
+        path.unlink(missing_ok=True)
+        return
+
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    file = NamedTemporaryFile(mode="w", encoding="utf-8", dir=raw_dir, prefix=".raw-", delete=False)
+    temporary = Path(file.name)
+    try:
+        with file:
+            json.dump({"benchmark": benchmark, "results": results}, file, indent=2)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
-def write_result(benchmark: str, result: dict[str, Any]) -> None:
-    """Append one benchmark result to its raw JSON file."""
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-    path = RAW_DIR / f"{benchmark}.json"
-    payload: dict[str, Any] = {"benchmark": benchmark, "results": []}
-
-    if path.exists():
-        payload = json.loads(path.read_text())
-
-    payload["results"].append(result)
-    path.write_text(json.dumps(payload, indent=2))
-
-
-def _load_all() -> dict[str, dict]:
+def _load_all(results_dir: Path) -> dict[str, dict]:
     """Load all saved raw benchmark result files."""
     data: dict[str, dict] = {}
-    if RAW_DIR.exists():
-        for file in sorted(RAW_DIR.glob("*.json")):
-            payload = json.loads(file.read_text())
-            data[payload["benchmark"]] = payload
+    for file in sorted((results_dir / "raw").glob("*.json")):
+        payload = json.loads(file.read_text())
+        data[payload["benchmark"]] = payload
     return data
 
 
@@ -42,18 +45,17 @@ def _render_markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
     line = "| " + " | ".join(headers) + " |\n"
     line += "| " + " | ".join("---" for _ in headers) + " |\n"
     for row in rows:
-        line += "| " + " | ".join(str(cell) for cell in row) + " |\n"
+        line += "| " + " | ".join("-" if cell is None else str(cell) for cell in row) + " |\n"
     return line
 
 
-def write_report(env: dict, config: dict) -> None:
+def write_report(results_dir: Path, env: dict, config: dict) -> None:
     """Write the combined JSON, CSV, Markdown, and graph reports."""
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
-    data = _load_all()
+    results_dir.mkdir(parents=True, exist_ok=True)
+    data = _load_all(results_dir)
 
     full = {"environment": env, "config_seed": config.get("seed"), "benchmarks": data}
-    (RESULTS_DIR / "performance.json").write_text(json.dumps(full, indent=2))
+    (results_dir / "performance.json").write_text(json.dumps(full, indent=2))
 
     csv_rows: list[dict] = []
 
@@ -63,28 +65,21 @@ def write_report(env: dict, config: dict) -> None:
             row.update({key: value for key, value in result.items() if not isinstance(value, (dict, list))})
             csv_rows.append(row)
 
-    if csv_rows:
-        keys: list[str] = []
-
-        for result in csv_rows:
-            for key in result:
-                if key not in keys:
-                    keys.append(key)
-
-        with open(RESULTS_DIR / "performance.csv", "w", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=keys)
-            writer.writeheader()
-            writer.writerows(csv_rows)
+    keys = list(dict.fromkeys(key for row in csv_rows for key in row)) or ["benchmark"]
+    with (results_dir / "performance.csv").open("w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(csv_rows)
 
     aggregated = {name: _aggregate(payload["results"]) for name, payload in data.items()}
-    (RESULTS_DIR / "performance.md").write_text(_render_markdown(env, aggregated))
-    _write_graphs(aggregated)
+    (results_dir / "performance.md").write_text(_render_markdown(env, aggregated))
+    _write_graphs(results_dir / "graphs", aggregated)
 
 
 # Fields that identify a distinct measurement (not metrics to average over).
 # `status` is a dimension so a FAILED row is never merged into a successful one
 # sharing the other fields.
-DIMENSION_FIELDS = ("system", "backend", "size", "changes", "status")
+DIMENSION_FIELDS = ("system", "backend", "size", "changes", "status", "phase", "transfer_kind")
 
 
 def _aggregate(rows: list[dict]) -> list[dict]:
@@ -105,9 +100,12 @@ def _aggregate(rows: list[dict]) -> list[dict]:
             numeric = [value for value in values
                        if isinstance(value, (int, float)) and not isinstance(value, bool)]
 
-            if key not in DIMENSION_FIELDS and numeric and len(numeric) == len(values):
-                aggregate[key] = round(sum(numeric) / len(numeric), 3)
-                aggregate[f"{key}_std"] = round(stdev(numeric), 3) if len(numeric) > 1 else 0.0
+            if key not in DIMENSION_FIELDS and numeric:
+                if len(numeric) == len(values):
+                    aggregate[key] = round(sum(numeric) / len(numeric), 3)
+                    aggregate[f"{key}_std"] = round(stdev(numeric), 3) if len(numeric) > 1 else 0.0
+                else:
+                    aggregate[key] = None
             else:
                 aggregate[key] = base.get(key)
 
@@ -271,9 +269,10 @@ def _render_b07(rows: list[dict]) -> str:
              for row in bulk]))
 
     if failed:
-        lines.append("\n> ⚠️ Failed backends: " +
-                   ", ".join(f'{row.get("system", "-")} / {row.get("backend")} '
-                             f'({row.get("error", "?")})'
+        lines.append("\n> ⚠️ Failed runs: " +
+                   ", ".join(f'{row.get("system", "-")}'
+                             + (f' / {row["backend"]}' if "backend" in row else "")
+                             + f' ({row.get("error", "?")})'
                              for row in failed) + "\n")
 
     return "".join(lines)
@@ -415,8 +414,21 @@ def _render_markdown(env: dict, data: dict[str, list[dict]]) -> str:
     return "\n".join(lines)
 
 
-def _write_graphs(data: dict[str, list[dict]]) -> None:
+def _write_graphs(graphs_dir: Path, data: dict[str, list[dict]]) -> None:
     """Write measured comparison graphs from aggregated results when plotting is available."""
+    charts = (
+        ("b01_crud_tps", "b01_create_tps.png", "Record Create TPS", "create_tps", "TPS"),
+        ("b01_crud_tps", "b01_read_tps.png", "Record Read TPS", "read_tps", "TPS"),
+        ("b08_query_perf", "b08_qps.png", "DNS Query Throughput (QPS)", "qps", "QPS"),
+        ("b03_propagation", "b03_visible_p95.png",
+         "DNS-Visible Latency p95 (create -> answerable)", "visible_p95_ms", "ms"),
+        ("b02_bulk_import", "b02_records_per_sec.png", "Bulk Import Throughput (records/sec)",
+         "records_per_sec", "records/sec"),
+    )
+    graphs_dir.mkdir(parents=True, exist_ok=True)
+    for _, filename, _, _, _ in charts:
+        (graphs_dir / filename).unlink(missing_ok=True)
+
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -424,11 +436,18 @@ def _write_graphs(data: dict[str, list[dict]]) -> None:
     except Exception:
         return
 
-    def write_bar_chart(fname: str, title: str, rows: list[dict], metric: str, ylabel: str):
-        """Write measured values of one benchmark metric to a PNG, omitting failed or missing data."""
-        rows = [row for row in rows if _has_reportable_metric(row, metric)]
+    for benchmark, filename, title, metric, ylabel in charts:
+        rows = [row for row in data.get(benchmark, []) if _has_reportable_metric(row, metric)]
+        if benchmark == "b02_bulk_import":
+            # Use the largest measured size, since a failed one has no rate.
+            by_system = {}
+            for row in rows:
+                previous = by_system.get(row["system"])
+                if previous is None or row.get("size", 0) >= previous.get("size", 0):
+                    by_system[row["system"]] = row
+            rows = list(by_system.values())
         if not rows:
-            return
+            continue
 
         fig, ax = plt.subplots(figsize=(8, 4.5))
         ax.bar([row["system"] for row in rows], [row[metric] for row in rows], color="#3b82f6")
@@ -436,33 +455,7 @@ def _write_graphs(data: dict[str, list[dict]]) -> None:
         ax.set_ylabel(ylabel)
         ax.grid(axis="y", alpha=0.3)
         fig.tight_layout()
-        fig.savefig(GRAPHS_DIR / fname, dpi=120)
-        plt.close(fig)
-
-    if "b01_crud_tps" in data:
-        rows = data["b01_crud_tps"]
-        write_bar_chart("b01_create_tps.png", "Record Create TPS", rows, "create_tps", "TPS")
-        write_bar_chart("b01_read_tps.png", "Record Read TPS", rows, "read_tps", "TPS")
-
-    if "b08_query_perf" in data:
-        write_bar_chart("b08_qps.png", "DNS Query Throughput (QPS)",
-                        data["b08_query_perf"], "qps", "QPS")
-
-    if "b03_propagation" in data:
-        write_bar_chart("b03_visible_p95.png", "DNS-Visible Latency p95 (create -> answerable)",
-                        data["b03_propagation"], "visible_p95_ms", "ms")
-
-    if "b02_bulk_import" in data:
-        # Largest measured size per system; a larger failed run has no throughput to compare.
-        by_sys: dict[str, dict] = {}
-
-        for row in data["b02_bulk_import"]:
-            if not _has_reportable_metric(row, "records_per_sec"):
-                continue
-            prev = by_sys.get(row["system"])
-            if prev is None or row.get("size", 0) >= prev.get("size", 0):
-                by_sys[row["system"]] = row
-
-        rows = list(by_sys.values())
-        write_bar_chart("b02_records_per_sec.png", "Bulk Import Throughput (records/sec)",
-                        rows, "records_per_sec", "records/sec")
+        try:
+            fig.savefig(graphs_dir / filename, dpi=120)
+        finally:
+            plt.close(fig)

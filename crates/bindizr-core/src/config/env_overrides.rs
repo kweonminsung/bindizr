@@ -10,65 +10,65 @@ impl Config {
     /// Apply the `BINDIZR_*` environment variables to the loaded configuration.
     pub(crate) fn apply_env_overrides(
         &mut self,
-        get_env: impl Fn(&str) -> Option<String>,
+        get_env: impl Fn(&'static str) -> Result<Option<String>, ConfigError>,
     ) -> Result<(), ConfigError> {
-        if let Some(value) = get_env("BINDIZR_API_LISTEN_ADDR") {
+        if let Some(value) = get_env("BINDIZR_API_LISTEN_ADDR")? {
             self.api.listen_addr = parse_env_value("BINDIZR_API_LISTEN_ADDR", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_API_LISTEN_PORT") {
+        if let Some(value) = get_env("BINDIZR_API_LISTEN_PORT")? {
             self.api.listen_port = parse_env_value("BINDIZR_API_LISTEN_PORT", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_API_AUTHENTICATION_REQUIRED") {
+        if let Some(value) = get_env("BINDIZR_API_AUTHENTICATION_REQUIRED")? {
             self.api.authentication_required =
                 parse_env_value("BINDIZR_API_AUTHENTICATION_REQUIRED", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_API_METRICS_ENABLED") {
+        if let Some(value) = get_env("BINDIZR_API_METRICS_ENABLED")? {
             self.api.metrics_enabled = parse_env_value("BINDIZR_API_METRICS_ENABLED", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_API_EXTERNAL_DNS_ENABLED") {
+        if let Some(value) = get_env("BINDIZR_API_EXTERNAL_DNS_ENABLED")? {
             self.api.external_dns_enabled =
                 parse_env_value("BINDIZR_API_EXTERNAL_DNS_ENABLED", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_API_OPENAPI_ENABLED") {
+        if let Some(value) = get_env("BINDIZR_API_OPENAPI_ENABLED")? {
             self.api.openapi_enabled = parse_env_value("BINDIZR_API_OPENAPI_ENABLED", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_API_TLS_CERT_FILE") {
+        if let Some(value) = get_env("BINDIZR_API_TLS_CERT_FILE")? {
             self.api.tls.cert_file = to_optional_setting(value);
         }
-        if let Some(value) = get_env("BINDIZR_API_TLS_KEY_FILE") {
+        if let Some(value) = get_env("BINDIZR_API_TLS_KEY_FILE")? {
             self.api.tls.key_file = to_optional_setting(value);
         }
 
-        if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
+        if let Some(value) = get_env("BINDIZR_DATABASE_TYPE")? {
             self.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_DATABASE_MYSQL_URL") {
+        if let Some(value) = get_env("BINDIZR_DATABASE_MYSQL_URL")? {
             self.database.mysql.url = value;
         }
 
-        if let Some(value) = get_env("BINDIZR_DATABASE_POSTGRESQL_URL") {
+        if let Some(value) = get_env("BINDIZR_DATABASE_POSTGRESQL_URL")? {
             self.database.postgresql.url = value;
         }
 
-        if let Some(value) = get_env("BINDIZR_DATABASE_SQLITE_FILE_PATH") {
+        if let Some(value) = get_env("BINDIZR_DATABASE_SQLITE_FILE_PATH")? {
             self.database.sqlite.file_path = value;
         }
 
-        if let Some(value) = get_env("BINDIZR_DATABASE_TLS_MODE") {
+        if let Some(value) = get_env("BINDIZR_DATABASE_TLS_MODE")? {
             self.database.tls.mode = match to_optional_setting(value) {
                 Some(value) => Some(parse_env_value("BINDIZR_DATABASE_TLS_MODE", &value)?),
                 None => None,
             };
         }
-        if let Some(value) = get_env("BINDIZR_DATABASE_TLS_CA_FILE") {
+        if let Some(value) = get_env("BINDIZR_DATABASE_TLS_CA_FILE")? {
             self.database.tls.ca_file = to_optional_setting(value);
         }
 
         // The generic URL overrides the selected backend's URL above; SQLite
         // continues to use its file path.
-        if let Some(value) = get_env("BINDIZR_DATABASE_URL") {
+        if let Some(value) = get_env("BINDIZR_DATABASE_URL")? {
             match self.database.database_type {
                 DatabaseType::MySql => self.database.mysql.url = value,
                 DatabaseType::Postgres => self.database.postgresql.url = value,
@@ -76,118 +76,118 @@ impl Config {
             }
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_LISTEN_ADDR") {
+        if let Some(value) = get_env("BINDIZR_DNS_LISTEN_ADDR")? {
             self.dns.listen_addr = parse_env_value("BINDIZR_DNS_LISTEN_ADDR", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_LISTEN_PORT") {
+        if let Some(value) = get_env("BINDIZR_DNS_LISTEN_PORT")? {
             self.dns.listen_port = parse_env_value("BINDIZR_DNS_LISTEN_PORT", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_CATALOG_ZONE_NAME") {
+        if let Some(value) = get_env("BINDIZR_DNS_CATALOG_ZONE_NAME")? {
             self.dns.catalog_zone_name =
                 ZoneName::parse(&value).map_err(ConfigError::CatalogZoneName)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED") {
+        if let Some(value) = get_env("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED")? {
             self.dns.nsupdate.tsig_required =
                 parse_env_value("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_SCHEDULER_INTERVAL_SECS") {
+        if let Some(value) = get_env("BINDIZR_DNS_SCHEDULER_INTERVAL_SECS")? {
             self.dns.scheduler_interval_secs =
                 parse_env_value("BINDIZR_DNS_SCHEDULER_INTERVAL_SECS", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_BATCH_MS") {
+        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_BATCH_MS")? {
             self.dns.notify.batch_ms = parse_env_value("BINDIZR_DNS_NOTIFY_BATCH_MS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_RETRIES") {
+        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_RETRIES")? {
             self.dns.notify.retries = parse_env_value("BINDIZR_DNS_NOTIFY_RETRIES", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_TIMEOUT_SECS") {
+        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_TIMEOUT_SECS")? {
             self.dns.notify.timeout_secs =
                 parse_env_value("BINDIZR_DNS_NOTIFY_TIMEOUT_SECS", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_TLS_LISTEN_PORT") {
+        if let Some(value) = get_env("BINDIZR_DNS_TLS_LISTEN_PORT")? {
             self.dns.tls.listen_port = parse_env_value("BINDIZR_DNS_TLS_LISTEN_PORT", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_TLS_CERT_FILE") {
+        if let Some(value) = get_env("BINDIZR_DNS_TLS_CERT_FILE")? {
             self.dns.tls.cert_file = to_optional_setting(value);
         }
-        if let Some(value) = get_env("BINDIZR_DNS_TLS_KEY_FILE") {
+        if let Some(value) = get_env("BINDIZR_DNS_TLS_KEY_FILE")? {
             self.dns.tls.key_file = to_optional_setting(value);
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS") {
+        if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS")? {
             self.dns.transfer.cache_max_records =
                 parse_env_value("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_REQUIRE_TLS") {
+        if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_REQUIRE_TLS")? {
             self.dns.transfer.require_tls =
                 parse_env_value("BINDIZR_DNS_TRANSFER_REQUIRE_TLS", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS") {
+        if let Some(value) = get_env("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS")? {
             self.dns.tcp_idle_timeout_secs =
                 parse_env_value("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_TCP_MAX_CONNECTIONS") {
+        if let Some(value) = get_env("BINDIZR_DNS_TCP_MAX_CONNECTIONS")? {
             self.dns.tcp_max_connections =
                 parse_env_value("BINDIZR_DNS_TCP_MAX_CONNECTIONS", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_IMPORT_TIMEOUT_SECS") {
+        if let Some(value) = get_env("BINDIZR_DNS_IMPORT_TIMEOUT_SECS")? {
             self.dns.import.timeout_secs =
                 parse_env_value("BINDIZR_DNS_IMPORT_TIMEOUT_SECS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_IMPORT_MAX_RECORDS") {
+        if let Some(value) = get_env("BINDIZR_DNS_IMPORT_MAX_RECORDS")? {
             self.dns.import.max_records =
                 parse_env_value("BINDIZR_DNS_IMPORT_MAX_RECORDS", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_TTL") {
+        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_TTL")? {
             self.dns.zone_defaults.ttl = parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_TTL", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_REFRESH") {
+        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_REFRESH")? {
             self.dns.zone_defaults.refresh =
                 parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_REFRESH", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_RETRY") {
+        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_RETRY")? {
             self.dns.zone_defaults.retry =
                 parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_RETRY", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE") {
+        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE")? {
             self.dns.zone_defaults.expire =
                 parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL") {
+        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL")? {
             self.dns.zone_defaults.minimum_ttl =
                 parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_HISTORY_MAX_DAYS") {
+        if let Some(value) = get_env("BINDIZR_HISTORY_MAX_DAYS")? {
             self.history.max_days = parse_env_value("BINDIZR_HISTORY_MAX_DAYS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_AUDIT_LOG_MAX_DAYS") {
+        if let Some(value) = get_env("BINDIZR_AUDIT_LOG_MAX_DAYS")? {
             self.audit_log.max_days = parse_env_value("BINDIZR_AUDIT_LOG_MAX_DAYS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_ACCESS_LOG_SAVE") {
+        if let Some(value) = get_env("BINDIZR_ACCESS_LOG_SAVE")? {
             self.access_log.save = parse_env_value("BINDIZR_ACCESS_LOG_SAVE", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_ACCESS_LOG_MAX_DAYS") {
+        if let Some(value) = get_env("BINDIZR_ACCESS_LOG_MAX_DAYS")? {
             self.access_log.max_days = parse_env_value("BINDIZR_ACCESS_LOG_MAX_DAYS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_TRANSFER_LOG_SAVE") {
+        if let Some(value) = get_env("BINDIZR_TRANSFER_LOG_SAVE")? {
             self.transfer_log.save = parse_env_value("BINDIZR_TRANSFER_LOG_SAVE", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_TRANSFER_LOG_MAX_DAYS") {
+        if let Some(value) = get_env("BINDIZR_TRANSFER_LOG_MAX_DAYS")? {
             self.transfer_log.max_days = parse_env_value("BINDIZR_TRANSFER_LOG_MAX_DAYS", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_LOGGING_LEVEL") {
+        if let Some(value) = get_env("BINDIZR_LOGGING_LEVEL")? {
             self.logging.level = parse_env_value("BINDIZR_LOGGING_LEVEL", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_LOGGING_FORMAT") {
+        if let Some(value) = get_env("BINDIZR_LOGGING_FORMAT")? {
             self.logging.format = parse_env_value("BINDIZR_LOGGING_FORMAT", &value)?;
         }
 

@@ -6,15 +6,14 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 from pathlib import Path
 
 import aiohttp
 
+from adapters.base import DnsAdapter, Endpoint
+from lib import docker, zonefile
+
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent))
-from adapters.base import DnsAdapter, Endpoint  # noqa: E402
-from lib import docker, zonefile  # noqa: E402
 
 API_PORT = 18000
 DNS_PORT = 15353
@@ -92,15 +91,14 @@ class BindizrAdapter(DnsAdapter):
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
-        self.compose.down()
         # A networked backend waits on its own: bindizr exits when the DB host
         # does not resolve yet, and that exit alone fails a shared `up --wait`.
         db_service = {"mysql": "mysql", "postgresql": "postgres"}.get(self.db_type)
 
         if db_service:
-            self.compose.up(db_service, wait=True)
+            await self.compose.up(db_service, wait=True)
 
-        self.compose.up("bindizr", self.secondary_service, wait=True)
+        await self.compose.up("bindizr", self.secondary_service, wait=True)
         self.session = aiohttp.ClientSession()
 
         await self._wait_api()
@@ -131,9 +129,11 @@ class BindizrAdapter(DnsAdapter):
 
     async def teardown(self) -> None:
         """Stop the benchmark system and release its resources."""
-        if self.session:
-            await self.session.close()
-        self.compose.down()
+        try:
+            if self.session:
+                await self.session.close()
+        finally:
+            await self.compose.down()
 
     async def create_zone(self, zone_name: str) -> None:
         """Create the zone used by the benchmark, with the NS records its secondary needs."""
@@ -161,7 +161,16 @@ class BindizrAdapter(DnsAdapter):
     async def delete_zone(self, zone_name: str) -> None:
         """Remove the benchmark zone and its records."""
         async with self.session.delete(self.base + f"/zones/{zone_name.rstrip('.')}") as response:
-            await response.read()
+            if response.status == 200:
+                return
+            if response.status == 404:
+                try:
+                    data = await response.json()
+                except (aiohttp.ContentTypeError, ValueError):
+                    data = None
+                if isinstance(data, dict) and data.get("code") == "ZONE_NOT_FOUND":
+                    return
+            raise RuntimeError(f"delete_zone {response.status}: {await response.text()}")
 
     def _build_record_request(self, zone_name: str, record: dict) -> dict:
         """Build a bindizr record request from a benchmark record."""

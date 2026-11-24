@@ -23,7 +23,7 @@ pub(crate) use create::create_tx;
 pub use delete::delete;
 pub use export::export;
 pub(crate) use force::force_increment_serial;
-pub use get::{count_all, get_by_name, list, list_by_filter, probe_table};
+pub use get::{count_all, get_by_name, list_by_filter, list_enabled, probe_table};
 pub(crate) use get::{
     find_served_by_name, find_served_by_name_tx, lookup_by_name, lookup_by_name_tx,
 };
