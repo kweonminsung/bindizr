@@ -2,7 +2,7 @@
 //! Partial updates lock the policy row; creates and deletes rely on constraints.
 //! Zone signing consumes these policies in `dnssec`.
 
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult};
 use bindizr_core::model::dnssec_key::DnssecAlgorithm;
 use bindizr_core::model::dnssec_policy::{
     DEFAULT_DNSSEC_POLICY_NAME, Days, DnssecDenial, DnssecPolicy, PolicyId,
@@ -17,7 +17,7 @@ use crate::types::{
     CreateDnssecPolicyRequest, DnssecPolicyResponse, MessageResponse, PageRequest,
     PaginatedResponse, UpdateDnssecPolicyRequest,
 };
-use crate::{Context, audit, pagination, text, transaction};
+use crate::{Context, activity, pagination, text, transaction};
 
 /// RFC 1982 serial arithmetic is only unambiguous while expiration -
 /// inception stays under 2^31 seconds (RFC 4034, Section 3.1.5).
@@ -83,7 +83,7 @@ pub async fn create(
                 name: name.clone(),
                 algorithm,
                 denial,
-                split_keys: request.split_keys,
+                key_layout: request.key_layout,
                 signature_validity_days: timings.signature_validity_days,
                 signature_refresh_days: timings.signature_refresh_days,
                 zsk_lifetime_days: timings.zsk_lifetime_days,
@@ -100,16 +100,16 @@ pub async fn create(
                 error.into()
             }
         })?;
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::DnssecPolicy,
-            &policy.name,
-            AuditOperation::Create,
+            ActivityOperation::DnssecPolicyCreate,
+            ActivityResult::Changed,
+            activity::named_target(&policy.name),
             Some(format!(
-                "algorithm {}, denial {}, split_keys {}, signature_validity_days {}, signature_refresh_days {}, zsk_lifetime_days {}",
+                "algorithm {}, denial {}, key_layout {}, signature_validity_days {}, signature_refresh_days {}, zsk_lifetime_days {}",
                 policy.algorithm,
                 policy.denial,
-                policy.split_keys,
+                policy.key_layout.as_str(),
                 policy.signature_validity_days,
                 policy.signature_refresh_days,
                 policy.zsk_lifetime_days
@@ -160,7 +160,7 @@ pub async fn get_by_name(
 }
 
 /// Look up one policy by name. This is the unchecked lookup for
-/// service-internal use; front ends go through [`get`].
+/// service-internal use; front ends go through [`get_by_name`].
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<DnssecPolicy, ServiceError> {
     let name = normalize_name(name)?;
     bindizr_db::dnssec_policy::get_by_name(cx.db(), &name)
@@ -207,18 +207,18 @@ pub async fn update(
             zsk_lifetime_days,
         )?;
 
-        let detail = audit::join_changes([
-            audit::changed(
+        let detail = activity::join_changes([
+            activity::changed(
                 "signature_validity_days",
                 policy.signature_validity_days,
                 timings.signature_validity_days,
             ),
-            audit::changed(
+            activity::changed(
                 "signature_refresh_days",
                 policy.signature_refresh_days,
                 timings.signature_refresh_days,
             ),
-            audit::changed(
+            activity::changed(
                 "zsk_lifetime_days",
                 policy.zsk_lifetime_days,
                 timings.zsk_lifetime_days,
@@ -235,11 +235,11 @@ pub async fn update(
             },
         )
         .await?;
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::DnssecPolicy,
-            &policy.name,
-            AuditOperation::Update,
+            ActivityOperation::DnssecPolicyUpdate,
+            activity::update_result(detail.as_deref()),
+            activity::named_target(&policy.name),
             detail,
             caller.change_origin(),
         )
@@ -299,16 +299,16 @@ pub async fn delete(
                 }
             })?;
 
-        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        // A concurrent removal makes this deletion report not found.
         if !deleted {
             return Err(ServiceError::dnssec_policy_not_found(&policy.name));
         }
 
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::DnssecPolicy,
-            &policy.name,
-            AuditOperation::Delete,
+            ActivityOperation::DnssecPolicyDelete,
+            ActivityResult::Changed,
+            activity::named_target(&policy.name),
             None,
             caller.change_origin(),
         )

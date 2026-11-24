@@ -24,11 +24,11 @@ pub struct ZoneFilter {
     pub serial: Option<Serial>,
     pub min_serial: Option<Serial>,
     pub max_serial: Option<Serial>,
-    pub created_after: Option<DateTime<Utc>>,
-    pub created_before: Option<DateTime<Utc>>,
+    pub since: Option<DateTime<Utc>>,
+    pub until: Option<DateTime<Utc>>,
     /// `Some(true)` keeps the zones signing under a policy, `Some(false)`
     /// the rest.
-    pub signed: Option<bool>,
+    pub dnssec_enabled: Option<bool>,
     /// `Some(true)` keeps the zones the DNS plane serves, `Some(false)` the
     /// disabled ones.
     pub enabled: Option<bool>,

@@ -13,13 +13,13 @@ pub(crate) mod transfer_cache;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
-use bindizr_core::dns::message;
 use bindizr_core::dns::message::{
     Class, ExtendedErrorCode, Keepalive, Opcode, OptRcode, ParsedQuery, QueryMetadata,
     ResponseLimit, Rtype,
 };
+use bindizr_core::dns::{DnsTransport, message};
 use bindizr_core::metrics::XfrResult;
-use bindizr_core::model::transfer::{TransferKind, TransferTransport};
+use bindizr_core::model::transfer::TransferKind;
 use bindizr_service::transfer::TransferLogErrorCode;
 use bindizr_service::{Context, transfer};
 
@@ -60,7 +60,7 @@ pub(crate) async fn refuse_unsupported_opcode(
     dns_cx: &DnsContext,
     query_data: &[u8],
     keepalive: Keepalive,
-    transport: TransferTransport,
+    transport: DnsTransport,
 ) -> Result<Option<(Vec<u8>, ResponseLimit)>, DnsError> {
     let Some(opcode) = message::extract_opcode(query_data) else {
         return Ok(None);
@@ -68,8 +68,7 @@ pub(crate) async fn refuse_unsupported_opcode(
 
     // RFC 9103, Section 7.8: the TLS listener serves transfers alone, so an
     // UPDATE is refused there instead of reaching nsupdate.
-    if opcode == Opcode::QUERY || (opcode == Opcode::UPDATE && transport != TransferTransport::Tls)
-    {
+    if opcode == Opcode::QUERY || (opcode == Opcode::UPDATE && transport != DnsTransport::Tls) {
         return Ok(None);
     }
 
@@ -82,7 +81,7 @@ pub(crate) async fn refuse_unsupported_opcode(
         // An UPDATE has DNS sections, unlike an opaque body: one whose framing
         // does not read gets the header-only FORMERR any unreadable message does.
         (OptRcode::FORMERR, None)
-    } else if transport == TransferTransport::Tls {
+    } else if transport == DnsTransport::Tls {
         (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
     } else {
         (OptRcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED))
@@ -108,7 +107,7 @@ pub(crate) enum QueryDispatch {
 pub(crate) fn classify_query(
     client_addr: SocketAddr,
     query: &ParsedQuery,
-    transport: TransferTransport,
+    transport: DnsTransport,
 ) -> QueryDispatch {
     if let Some(rcode) = query.format_error() {
         log::info!("Refusing DNS {transport} query format from {client_addr}: {rcode}");
@@ -124,7 +123,7 @@ pub(crate) fn classify_query(
     };
 
     // RFC 9103, Section 7.8: refuse non-XoT traffic regardless of its class.
-    if transport == TransferTransport::Tls && dispatch.is_none() {
+    if transport == DnsTransport::Tls && dispatch.is_none() {
         log::info!(
             "Refusing unsupported TLS query from {client_addr} (opcode={:?}, qtype={:?})",
             query.opcode,
@@ -192,7 +191,7 @@ pub(crate) async fn handle_stream_xfr(
     };
 
     log::info!(
-        "XFR {transport} query: zone={:?}, qtype={:?}, from={client_ip}, signed={}",
+        "XFR {transport} query: zone={:?}, qtype={:?}, client_ip={client_ip}, tsig_signed={}",
         query.zone_name,
         query.qtype,
         identity.signer.is_some()
@@ -361,7 +360,7 @@ pub(crate) async fn handle_udp_axfr(
     let client_addr = target.client_addr;
 
     let identity =
-        auth::admit_transfer(dns_cx, client_addr.ip(), query_data, TransferTransport::Udp).await;
+        auth::admit_transfer(dns_cx, client_addr.ip(), query_data, DnsTransport::Udp).await;
     let (response, outcome) = match identity {
         Ok(mut identity) => (
             query
@@ -405,7 +404,7 @@ pub(crate) async fn handle_udp_axfr(
     // The transfer itself follows over TCP; count this response only after sending it.
     cx.metrics().track_xfr(
         TransferKind::Axfr,
-        TransferTransport::Udp,
+        DnsTransport::Udp,
         if sent.is_err() {
             XfrResult::Failed
         } else {

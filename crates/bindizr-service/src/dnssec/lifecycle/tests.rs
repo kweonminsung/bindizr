@@ -1,6 +1,6 @@
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::model::dnssec_key::DnssecAlgorithm;
-use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, PolicyId};
+use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, DnssecKeyLayout, PolicyId};
 use bindizr_core::model::zone::ZoneId;
 
 use super::*;
@@ -33,7 +33,7 @@ fn policy(policy_id: i32, name: &str) -> DnssecPolicy {
         name: name.to_string(),
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
         denial: DnssecDenial::Nsec,
-        split_keys: false,
+        key_layout: DnssecKeyLayout::Csk,
         signature_validity_days: Days::try_from(14).unwrap(),
         signature_refresh_days: Days::try_from(5).unwrap(),
         zsk_lifetime_days: Days::try_from(0).unwrap(),
@@ -81,7 +81,7 @@ fn policy_move_accepts_denial_chain_change_in_place() {
 fn policy_move_rejects_key_layout_change() {
     let current = policy(1, "default");
     let mut target = policy(2, "split");
-    target.split_keys = true;
+    target.key_layout = DnssecKeyLayout::Split;
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
@@ -95,7 +95,7 @@ fn policy_move_rejects_combined_key_layout_and_denial_change() {
     let current = policy(1, "default");
     let mut target = policy(2, "other");
     target.denial = DnssecDenial::Nsec3;
-    target.split_keys = true;
+    target.key_layout = DnssecKeyLayout::Split;
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 

@@ -3,9 +3,11 @@
 
 use bindizr_core::dns::dnssec::SigningPass;
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
-use bindizr_core::model::dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecPolicy};
+use bindizr_core::model::dnssec_policy::{
+    DEFAULT_DNSSEC_POLICY_NAME, DnssecKeyLayout, DnssecPolicy,
+};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
 use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
@@ -19,7 +21,7 @@ use crate::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, MessageResponse,
     UpdateDnssecSettingsRequest,
 };
-use crate::{Context, audit, dnssec, dnssec_policy, notify, serial, transaction, zone};
+use crate::{Context, activity, dnssec, dnssec_policy, notify, serial, transaction, zone};
 
 /// Validate a policy move: layout changes require disabling DNSSEC first; algorithms use rollover.
 /// Denial changes are atomic because all supported algorithms sign NSEC3 (RFC 5702, Section 2; RFC 6605, Section 2; RFC 8080, Section 2).
@@ -28,14 +30,11 @@ fn validate_policy_move(
     current: &DnssecPolicy,
     target: &DnssecPolicy,
 ) -> Result<(), ServiceError> {
-    if target.split_keys != current.split_keys {
+    if target.key_layout != current.key_layout {
         return Err(ServiceError::invalid_input(format!(
             "policy '{}' uses {} but zone '{}' signs with {}; the key layout is fixed while \
              signed, so disable DNSSEC and re-enable under the new policy",
-            target.name,
-            target.key_layout(),
-            zone.name,
-            current.key_layout()
+            target.name, target.key_layout, zone.name, current.key_layout
         )));
     }
 
@@ -89,7 +88,7 @@ pub async fn enable(
 
         // Create every signer role before building the zone's first signed view.
         let now = Utc::now();
-        let roles: &[DnssecKeyRole] = if policy.split_keys {
+        let roles: &[DnssecKeyRole] = if policy.key_layout == DnssecKeyLayout::Split {
             &[DnssecKeyRole::Ksk, DnssecKeyRole::Zsk]
         } else {
             &[DnssecKeyRole::Csk]
@@ -144,6 +143,14 @@ pub async fn enable(
             Some(&signed.policy),
             &signed.keys,
             new_serial,
+        )
+        .await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::DnssecEnable,
+            zone::activity_target(&signed.zone.name),
+            caller.change_origin(),
         )
         .await?;
 
@@ -219,14 +226,14 @@ pub async fn update_settings(
                 .await?
                 .ok_or_else(|| ServiceError::dnssec_policy_not_found(policy_name))?;
                 validate_policy_move(&zone, &current, &target)?;
-                let policy_change = audit::changed("policy", &current.name, &target.name);
+                let policy_change = activity::changed("policy", &current.name, &target.name);
 
                 (Some(target), policy_change)
             }
             None => (dnssec::find_zone_policy_tx(&mut tx, &zone).await?, None),
         };
         let parent_ns_addrs_change = parent_ns_addrs.as_deref().and_then(|next| {
-            audit::changed(
+            activity::changed(
                 "parent_ns_addrs",
                 zone.parent_ns_addrs.as_deref().unwrap_or("none"),
                 next,
@@ -280,20 +287,20 @@ pub async fn update_settings(
             .await?;
         }
 
-        // A version holds records, never these settings, so the audit log keeps them.
-        audit::save_tx(
-            &mut tx,
-            AuditEntity::Zone,
-            candidate.name.as_str(),
-            AuditOperation::Update,
-            audit::join_changes([policy_change, parent_ns_addrs_change]),
-            caller.change_origin(),
-        )
-        .await?;
-
         let response =
             dnssec::lookup_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial)
                 .await?;
+
+        let detail = activity::join_changes([policy_change, parent_ns_addrs_change]);
+        activity::save_detail_tx(
+            &mut tx,
+            ActivityOperation::DnssecUpdate,
+            activity::update_result(detail.as_deref()),
+            zone::activity_target(&candidate.name),
+            detail,
+            caller.change_origin(),
+        )
+        .await?;
 
         Ok((response, new_serial != candidate.serial))
     }
@@ -375,6 +382,14 @@ pub async fn disable(
         bindizr_db::zone::update_dnssec_policy_id_tx(&mut tx, signed.zone.id, None).await?;
         zone::advance_serial_tx(&mut tx, &signed.zone, new_serial, caller.change_origin()).await?;
 
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::DnssecDisable,
+            zone::activity_target(&signed.zone.name),
+            caller.change_origin(),
+        )
+        .await?;
+
         Ok(())
     }
     .await;
@@ -418,6 +433,16 @@ pub async fn sign(
             dnssec::resign_zone_tx(&mut tx, &signed, SigningPass::Full, caller.change_origin())
                 .await?
                 .is_some();
+
+        if changed {
+            crate::activity::save_tx(
+                &mut tx,
+                ActivityOperation::DnssecSign,
+                zone::activity_target(&signed.zone.name),
+                caller.change_origin(),
+            )
+            .await?;
+        }
 
         Ok(changed)
     }

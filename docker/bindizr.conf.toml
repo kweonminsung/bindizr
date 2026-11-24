@@ -51,14 +51,14 @@ listen_port = 53
 
 [dns.transfer]                # Zone transfers
 # cache_max_records = 500000  # Total cached records; oversized zones bypass the cache (0 = disabled)
-# require_tls = false         # true | false; true requires [dns.tls] for AXFR/IXFR; SOA queries remain available
+# tls_required = false         # true | false; true requires [dns.tls] for AXFR/IXFR; SOA queries remain available
 
 [dns.import]                  # zone import --from-server: the AXFR Bindizr pulls
 # timeout_secs = 30
 # max_records = 200000        # A larger zone is refused
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
-# ttl = 3600                    # Default record TTL (seconds)
+# default_ttl = 3600                    # Default record TTL (seconds)
 # refresh = 300                 # SOA refresh; fallback when NOTIFY is lost
 # retry = 60                    # SOA retry
 # expire = 3600000              # SOA expire
@@ -68,7 +68,7 @@ listen_port = 53
 # max_days = 365              # Days kept; older versions are pruned by the scheduler pass (0 = forever)
 
 # The logs read with `bindizr log <subject>` and GET /logs/<subject>; [logging] below is Bindizr's own output
-[audit_log]                   # Who changed a token, role, grant, key, secondary, policy or zone's DNSSEC settings, or deleted a zone
+[activity_log]                   # Committed DNS and management operations and their recorded results
 # max_days = 365              # Days kept (0 = forever)
 
 [access_log]                  # The API requests and nsupdates answered, denied, or failed

@@ -27,8 +27,8 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
 :   `nsec3` (default, RFC 9276 parameters) or `nsec`. NSEC lets anyone walk
     the zone's names; NSEC3 hashes them.
 
-`split_keys`
-:   A KSK/ZSK pair instead of one CSK: the KSK is the only key the parent DS
+`key_layout`
+:   `csk` (the default) uses one combined signing key. `split` uses a KSK/ZSK pair: the KSK is the only key the parent DS
     names, so the ZSK rolls without touching the parent. A CSK is simpler
     otherwise.
 

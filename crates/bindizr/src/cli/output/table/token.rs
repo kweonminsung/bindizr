@@ -1,20 +1,20 @@
 use std::fmt;
 
-use bindizr_core::model::api_token::TokenId;
-use bindizr_service::types::{CreateTokenResponse, TokenResponse};
+use bindizr_core::model::api_token::ApiTokenId;
+use bindizr_service::types::{ApiTokenResponse, CreateApiTokenResponse};
 use tabled::Tabled;
 
 use crate::cli::output::display;
 
-/// TOKEN is filled only from a create response, the one time the secret is shown.
+/// SECRET is filled only from a create response, the one time the secret is shown.
 #[derive(Clone, PartialEq, Eq, Tabled)]
-pub(crate) struct TokenRow {
+pub(crate) struct ApiTokenRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: TokenId,
+    pub(crate) id: ApiTokenId,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
-    #[tabled(rename = "TOKEN")]
-    pub(crate) token: String,
+    #[tabled(rename = "SECRET")]
+    pub(crate) secret: String,
     #[tabled(rename = "ROLE")]
     pub(crate) role_name: String,
     #[tabled(rename = "DESCRIPTION")]
@@ -27,13 +27,13 @@ pub(crate) struct TokenRow {
     pub(crate) last_used_at: String,
 }
 
-impl fmt::Debug for TokenRow {
+impl fmt::Debug for ApiTokenRow {
     /// Format the diagnostic fields with credential material redacted.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TokenRow")
+        f.debug_struct("ApiTokenRow")
             .field("id", &self.id)
             .field("name", &self.name)
-            .field("token", &"<redacted>")
+            .field("secret", &"<redacted>")
             .field("role_name", &self.role_name)
             .field("description", &self.description)
             .field("created_at", &self.created_at)
@@ -43,13 +43,13 @@ impl fmt::Debug for TokenRow {
     }
 }
 
-impl From<&TokenResponse> for TokenRow {
+impl From<&ApiTokenResponse> for ApiTokenRow {
     /// Build a CLI table row from the token response.
-    fn from(token: &TokenResponse) -> Self {
+    fn from(token: &ApiTokenResponse) -> Self {
         Self {
             id: token.id,
             name: token.name.clone(),
-            token: display::MISSING_CELL.to_string(),
+            secret: display::MISSING_CELL.to_string(),
             role_name: token.role_name.clone(),
             description: display::display_option(&token.description),
             created_at: display::display_time(token.created_at),
@@ -61,11 +61,11 @@ impl From<&TokenResponse> for TokenRow {
     }
 }
 
-impl From<&CreateTokenResponse> for TokenRow {
+impl From<&CreateApiTokenResponse> for ApiTokenRow {
     /// Build a CLI table row from the newly created token.
-    fn from(created: &CreateTokenResponse) -> Self {
+    fn from(created: &CreateApiTokenResponse) -> Self {
         Self {
-            token: created.secret.clone(),
+            secret: created.secret.clone(),
             ..Self::from(&created.token)
         }
     }

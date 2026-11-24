@@ -1,12 +1,12 @@
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{DeleteZoneResponse, Run, ZoneResponse};
-use crate::{Context, audit, notify, transaction, zone};
+use crate::{Context, activity, notify, transaction, zone};
 
 /// Delete a zone, records, and rollback history; NOTIFY the catalog after commit.
 /// A dry run reports the contents without removing them.
@@ -45,12 +45,12 @@ pub async fn delete(
             .await
             .map_err(|error| ServiceError::internal_with_source("failed to delete zone", error))?;
 
-        // The zone's versions went with it, so the deletion is the audit log's.
-        audit::save_tx(
+        // The independent activity row survives the zone and its versions.
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::Zone,
-            zone.name.as_str(),
-            AuditOperation::Delete,
+            ActivityOperation::ZoneDelete,
+            ActivityResult::Changed,
+            zone::activity_target(&zone.name),
             Some(format!(
                 "records_deleted {records}, versions_deleted {versions}"
             )),

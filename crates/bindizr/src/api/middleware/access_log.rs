@@ -1,4 +1,4 @@
-//! Save every management API request to the access log once it is answered.
+//! Save answered management requests to the access log.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -55,13 +55,13 @@ pub(crate) async fn save_access_log(
         AccessLogEntry {
             source: AccessSource::Api,
             // An IPv4-mapped peer of a dual-stack listener reads as IPv4.
-            client_addr: peer.ip().to_canonical().to_string(),
+            client_ip: peer.ip().to_canonical().to_string(),
             method,
             target,
-            status: status.as_str().to_string(),
+            response_code: status.as_str().to_string(),
             result,
-            caller: response.extensions().get::<ChangeActor>().cloned(),
-            error: response
+            actor: response.extensions().get::<ChangeActor>().cloned(),
+            error_code: response
                 .extensions()
                 .get::<ErrorCode>()
                 .copied()

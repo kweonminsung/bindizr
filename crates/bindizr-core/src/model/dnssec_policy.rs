@@ -98,9 +98,8 @@ pub struct DnssecPolicy {
     pub algorithm: DnssecAlgorithm,
     #[sqlx(try_from = "String")]
     pub denial: DnssecDenial,
-    /// A KSK/ZSK pair instead of one CSK, so the ZSK rolls without touching
-    /// the parent DS.
-    pub split_keys: bool,
+    #[sqlx(try_from = "String")]
+    pub key_layout: DnssecKeyLayout,
     /// Days a new signature stays valid.
     pub signature_validity_days: Days,
     /// Re-sign when a signature has fewer than this many days left; always
@@ -116,11 +115,6 @@ impl DnssecPolicy {
     /// Return whether this is the built-in `default` policy, which cannot be deleted.
     pub fn is_builtin(&self) -> bool {
         self.name == DEFAULT_DNSSEC_POLICY_NAME
-    }
-
-    /// Return the policy's key layout.
-    pub fn key_layout(&self) -> DnssecKeyLayout {
-        DnssecKeyLayout::from_split_keys(self.split_keys)
     }
 
     /// Return the expiration jitter, half the available window, to avoid zone-wide
@@ -256,21 +250,55 @@ where
     }
 }
 
+/// An unsupported DNSSEC key layout.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unsupported key layout '{value}' (supported: csk, split)")]
+pub struct ParseDnssecKeyLayoutError {
+    pub value: String,
+}
+
 /// How a zone divides DNSSEC signing responsibilities among keys.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
 pub enum DnssecKeyLayout {
+    /// One combined signing key.
+    #[default]
     Csk,
+    /// Separate key-signing and zone-signing keys.
     Split,
 }
 
 impl DnssecKeyLayout {
-    /// Interpret the stored split-key setting at a key-operation boundary.
-    pub fn from_split_keys(split_keys: bool) -> Self {
-        if split_keys {
-            Self::Split
-        } else {
-            Self::Csk
+    /// Return the canonical text representation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Csk => "csk",
+            Self::Split => "split",
         }
+    }
+}
+
+impl FromStr for DnssecKeyLayout {
+    type Err = ParseDnssecKeyLayoutError;
+
+    /// Parse a key layout from its canonical text representation.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "csk" => Ok(Self::Csk),
+            "split" => Ok(Self::Split),
+            _ => Err(ParseDnssecKeyLayoutError {
+                value: value.to_string(),
+            }),
+        }
+    }
+}
+
+impl TryFrom<String> for DnssecKeyLayout {
+    type Error = ParseDnssecKeyLayoutError;
+
+    /// Validate and convert a stored key layout.
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse::<Self>()
     }
 }
 
@@ -289,6 +317,20 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// Verify that a DNSSEC key layout has one spelling in JSON, SQL, and the CLI.
+    #[test]
+    fn dnssec_key_layout_spells_itself_once() {
+        for layout in [DnssecKeyLayout::Csk, DnssecKeyLayout::Split] {
+            let name = layout.as_str();
+            assert_eq!(serde_json::to_value(layout).unwrap(), json!(name));
+            assert_eq!(
+                serde_json::from_value::<DnssecKeyLayout>(json!(name)).unwrap(),
+                layout
+            );
+            assert_eq!(name.parse::<DnssecKeyLayout>().unwrap(), layout);
+        }
+    }
 
     /// Verify that `DnssecDenial` has one spelling across `as_str`, serde, and `FromStr`.
     #[test]
@@ -310,7 +352,7 @@ mod tests {
             name: "default".to_string(),
             algorithm: DnssecAlgorithm::EcdsaP256Sha256,
             denial: DnssecDenial::Nsec,
-            split_keys: false,
+            key_layout: DnssecKeyLayout::Csk,
             signature_validity_days: Days::try_from(signature_validity_days).unwrap(),
             signature_refresh_days: Days::try_from(signature_refresh_days).unwrap(),
             zsk_lifetime_days: Days::try_from(0).unwrap(),

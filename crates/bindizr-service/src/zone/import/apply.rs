@@ -7,6 +7,7 @@ use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::SoaMailbox;
 use bindizr_core::dns::zonefile::{ParsedZoneFile, ZoneFileSoa, ZoneFileValue};
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::record::{Record, RecordData, RecordId, RecordKey, RecordType};
 use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
@@ -112,7 +113,7 @@ pub(crate) async fn apply_import(
             zone.default_ttl
         } else if missing_zone_action == MissingZoneAction::Create {
             import::authorize_new_zone_import(caller, mode)?;
-            cx.config().dns.zone_defaults.ttl
+            cx.config().dns.zone_defaults.default_ttl
         } else {
             return Err(ServiceError::zone_not_found(zone_name));
         };
@@ -359,8 +360,20 @@ pub(crate) async fn apply_import(
             timings.serial_ms = time::elapsed_ms(started);
         }
 
+        let changed = will_apply && (has_changes || zone_missing);
+        if changed {
+            crate::activity::save_tx(
+                &mut tx,
+                ActivityOperation::ZoneImport,
+                zone::activity_target(&zone.name),
+                caller.change_origin(),
+            )
+            .await?;
+        }
+
         let response = ImportZoneResponse {
             applied: will_apply,
+            changed,
             dry_run: run.is_dry_run(),
             summary,
             diff,

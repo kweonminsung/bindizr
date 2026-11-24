@@ -389,6 +389,43 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     assert_eq!(body["changed_zones"], json!([]));
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 1);
 
+    let (status, activity) = app.send_request(Method::GET, "/logs/activity", None).await;
+    assert_eq!(status, StatusCode::OK, "{activity}");
+    let changes: Vec<&Value> = activity["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| {
+            item["target"]["zone_name"] == zone_name && item["operation"] == "record.create"
+        })
+        .collect();
+    assert_eq!(changes.len(), 3, "{activity}");
+    assert!(
+        changes.iter().all(|item| {
+            item["result"] == "changed"
+                && item["source"] == "api"
+                && item["target"]["record_name"] == "app"
+                && item["target"]["record_id"]
+                    .as_i64()
+                    .is_some_and(|id| id > 0)
+        }),
+        "{activity}"
+    );
+    assert!(
+        !activity.to_string().contains("heritage=external-dns"),
+        "{activity}"
+    );
+    assert_eq!(
+        activity["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["operation"] == "external_dns.apply")
+            .count(),
+        1,
+        "{activity}"
+    );
+
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/records", None)
         .await;

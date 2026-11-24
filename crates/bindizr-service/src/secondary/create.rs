@@ -1,6 +1,6 @@
-//! Register a secondary and save its management audit entry.
+//! Register a secondary and save the activity log row.
 
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::secondary::{Secondary, SecondaryId};
 use chrono::Utc;
@@ -8,10 +8,10 @@ use chrono::Utc;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{CreateSecondaryRequest, SecondaryResponse};
-use crate::{Context, audit, secondary, transaction, tsig_key};
+use crate::{Context, activity, secondary, transaction, tsig_key};
 
 /// Register a secondary by name and `host[:port]` address; with
-/// `notify_key_name`, NOTIFY to it is signed with that TSIG key.
+/// `notify_tsig_key_name`, NOTIFY to it is signed with that TSIG key.
 pub async fn create(
     cx: &Context,
     caller: &Caller,
@@ -23,8 +23,10 @@ pub async fn create(
     let address = secondary::normalize_address(&request.address)?;
 
     // Unlocked read to learn the FK target; the constraint backstops.
-    let notify_tsig_key = match request.notify_key_name.as_deref() {
-        Some(notify_key_name) => Some(tsig_key::lookup_by_name(cx, notify_key_name).await?),
+    let notify_tsig_key = match request.notify_tsig_key_name.as_deref() {
+        Some(notify_tsig_key_name) => {
+            Some(tsig_key::lookup_by_name(cx, notify_tsig_key_name).await?)
+        }
         None => None,
     };
 
@@ -78,13 +80,13 @@ pub async fn create(
                 error.into()
             }
         })?;
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::Secondary,
-            &secondary.name,
-            AuditOperation::Create,
+            ActivityOperation::SecondaryCreate,
+            ActivityResult::Changed,
+            activity::named_target(&secondary.name),
             Some(format!(
-                "address {}, notify_key_name {}",
+                "address {}, notify_tsig_key_name {}",
                 secondary.address,
                 notify_tsig_key
                     .as_ref()

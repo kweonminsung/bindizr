@@ -76,7 +76,10 @@ async fn notify_reports_only_serials_it_advanced() {
     let empty = notify(&cx, &caller, NotifyTarget::All, NotifySerial::Bump)
         .await
         .unwrap();
-    assert_eq!(empty.message, "NOTIFY sent successfully for all zones");
+    assert_eq!(
+        empty.message,
+        "NOTIFY sent successfully for all enabled zones"
+    );
 
     let catalog_zone = refresh_catalog(&cx).await;
     assert_eq!(u32::from(catalog_zone.serial), 1);
@@ -150,7 +153,7 @@ async fn notify_reports_only_serials_it_advanced() {
         .await
         .unwrap();
     assert!(
-        !zone::force_increment_serial(&cx, &caller, &selected.name)
+        !bump_zone_serial(&cx, &caller, &selected.name)
             .await
             .unwrap()
     );
@@ -161,7 +164,10 @@ async fn notify_reports_only_serials_it_advanced() {
     let all = notify(&cx, &caller, NotifyTarget::All, NotifySerial::Bump)
         .await
         .unwrap();
-    assert_eq!(all.message, "NOTIFY sent successfully for all zones");
+    assert_eq!(
+        all.message,
+        "NOTIFY sent successfully for all enabled zones"
+    );
     let error = notify(
         &cx,
         &caller,
@@ -195,7 +201,7 @@ async fn announce_committed_bump_before_returning_later_failure() {
         &CreateSecondaryRequest {
             name: "loopback".to_string(),
             address: socket.local_addr().unwrap().to_string(),
-            notify_key_name: None,
+            notify_tsig_key_name: None,
         },
     )
     .await

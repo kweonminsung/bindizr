@@ -81,10 +81,10 @@ by ID. CLI list commands use `--limit` and `--offset` and return all matching
 items when `--limit` is omitted. An explicit limit must be 1–1000.
 
 To include generated DNSSEC records, use
-`GET /records?zone_name=example.com&signed=true`. They follow user records in
+`GET /records?zone_name=example.com&include_dnssec=true`. They follow user records in
 the same pagination. Name, type, and TTL filters apply to both; `search`
 matches generated records by name only, `priority` excludes them, and
-`value` cannot be combined with `signed=true`.
+`value` cannot be combined with `include_dnssec=true`.
 
 ## Rejected requests
 

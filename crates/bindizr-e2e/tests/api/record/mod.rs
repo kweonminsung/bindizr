@@ -600,7 +600,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     assert_eq!(
         body["diff"]["summary"],
         json!({ "added": 0, "removed": 1, "changed": 0 }),
-        "the three A records form one removed record set: {body}"
+        "all three A records at this name were removed: {body}"
     );
     assert_eq!(
         body["diff"]["entries"][0]["from"].as_array().unwrap().len(),
@@ -2564,7 +2564,7 @@ async fn signed_record_listing_paginates_derived_records() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&signed=true"),
+            &format!("/records?zone_name={zone_name}&include_dnssec=true"),
             None,
         )
         .await;
@@ -2599,7 +2599,9 @@ async fn signed_record_listing_paginates_derived_records() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&signed=true&offset={user_total}&limit=2"),
+            &format!(
+                "/records?zone_name={zone_name}&include_dnssec=true&offset={user_total}&limit=2"
+            ),
             None,
         )
         .await;
@@ -2613,7 +2615,7 @@ async fn signed_record_listing_paginates_derived_records() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&signed=true&type=RRSIG"),
+            &format!("/records?zone_name={zone_name}&include_dnssec=true&type=RRSIG"),
             None,
         )
         .await;
@@ -2671,7 +2673,9 @@ async fn signed_record_listing_filters_derived_records_by_name() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&search=searchable&signed=true&limit=1000"),
+            &format!(
+                "/records?zone_name={zone_name}&search=searchable&include_dnssec=true&limit=1000"
+            ),
             None,
         )
         .await;
@@ -2690,7 +2694,9 @@ async fn signed_record_listing_filters_derived_records_by_name() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&search=caf%C3%A9&signed=true&type=RRSIG"),
+            &format!(
+                "/records?zone_name={zone_name}&search=caf%C3%A9&include_dnssec=true&type=RRSIG"
+            ),
             None,
         )
         .await;
@@ -2703,7 +2709,7 @@ async fn signed_record_listing_filters_derived_records_by_name() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&value=192.0.2.1&signed=true"),
+            &format!("/records?zone_name={zone_name}&value=192.0.2.1&include_dnssec=true"),
             None,
         )
         .await;

@@ -8,9 +8,10 @@ mod get;
 mod update;
 mod validation;
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::activity_log::ActivityTarget;
 use bindizr_core::model::dnssec_record::DnssecRecordWithZone;
-use bindizr_core::model::record::{RecordType, RecordWithZone};
+use bindizr_core::model::record::{Record, RecordType, RecordWithZone};
 use bindizr_core::model::zone::ZoneId;
 pub use bulk::create_bulk;
 pub(crate) use changes::{create_with_changes_tx, delete_with_changes_tx, update_with_changes_tx};
@@ -26,6 +27,16 @@ pub(crate) use validation::{
 
 use crate::authorization::{Caller, GrantedRecord, ReadableRecords};
 use crate::types::{RecordResponse, RecordValue};
+
+/// Identify the record with the same relative owner and type used by grants.
+pub(crate) fn activity_target(zone_name: &ZoneName, record: &Record) -> ActivityTarget {
+    ActivityTarget {
+        record_id: record.id.written().map(i32::from),
+        record_name: Some(record.name.to_string()),
+        record_type: Some(record.record_type.to_string()),
+        ..crate::zone::activity_target(zone_name)
+    }
+}
 
 /// An API-visible user or derived DNSSEC record; SOA stays in zone metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]

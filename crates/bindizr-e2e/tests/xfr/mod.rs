@@ -367,7 +367,7 @@ async fn udp_ixfr_returns_current_soa() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     let ixfr_truncated = [
-        r#"type="ixfr""#,
+        r#"kind="ixfr""#,
         r#"result="truncated""#,
         r#"transport="udp""#,
     ];
@@ -943,7 +943,7 @@ async fn ixfr_steps_across_a_forced_serial_bump() {
 /// secondary, a refusal to an address no secondary had included.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn transfer_log_lists_transfers_by_address_and_secondary() {
+async fn transfer_log_lists_transfers_by_client_ip_and_secondary() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -953,13 +953,14 @@ async fn transfer_log_lists_transfers_by_address_and_secondary() {
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
-    let body = common::wait_for_transfer_log(&app, "address=127.0.0.1", 1).await;
+    let body = common::wait_for_transfer_log(&app, "client_ip=127.0.0.1&sort=created_at", 1).await;
 
     assert_eq!(body["items"][0]["zone_name"], zone_name, "{body}");
     assert_eq!(body["items"][0]["kind"], "axfr");
     assert_eq!(body["items"][0]["result"], "refused");
     assert!(body["items"][0]["serial"].is_null(), "{body}");
-    assert!(!body["items"][0]["error"].is_null(), "{body}");
+    assert!(!body["items"][0]["error_code"].is_null(), "{body}");
+    assert!(body["items"][0]["created_at"].is_string(), "{body}");
 
     app.create_secondary("loopback", "127.0.0.1").await;
 
@@ -975,8 +976,8 @@ async fn transfer_log_lists_transfers_by_address_and_secondary() {
     assert_eq!(body["items"][0]["transport"], "tcp");
     assert_eq!(body["items"][0]["incremental"], false);
     assert_eq!(body["items"][0]["serial"], zone["serial"], "{body}");
-    assert!(body["items"][0]["error"].is_null(), "{body}");
-    assert_eq!(body["items"][0]["address"], "127.0.0.1");
+    assert!(body["items"][0]["error_code"].is_null(), "{body}");
+    assert_eq!(body["items"][0]["client_ip"], "127.0.0.1");
     assert_eq!(body["items"][1]["result"], "refused", "{body}");
 
     for (query, expected) in [
@@ -985,8 +986,8 @@ async fn transfer_log_lists_transfers_by_address_and_secondary() {
         ("zone_name=other.example".to_string(), 0),
         // The filter is a zone name, so the absolute spelling selects the same rows.
         (format!("zone_name={zone_name}."), 2),
-        ("address=192.0.2.1".to_string(), 0),
-        ("secondary_name=loopback&address=192.0.2.1".to_string(), 0),
+        ("client_ip=192.0.2.1".to_string(), 0),
+        ("secondary_name=loopback&client_ip=192.0.2.1".to_string(), 0),
     ] {
         let (status, body) = app
             .send_request(Method::GET, &format!("/logs/transfer?{query}"), None)
@@ -1004,7 +1005,11 @@ async fn transfer_log_lists_transfers_by_address_and_secondary() {
         ),
         ("zone_name=*", StatusCode::BAD_REQUEST, "INVALID_ZONE_FIELD"),
         ("result=served", StatusCode::BAD_REQUEST, "INVALID_INPUT"),
-        ("address=loopback", StatusCode::BAD_REQUEST, "INVALID_INPUT"),
+        (
+            "client_ip=loopback",
+            StatusCode::BAD_REQUEST,
+            "INVALID_INPUT",
+        ),
         (
             "secondary_name=missing",
             StatusCode::NOT_FOUND,
@@ -2153,7 +2158,7 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
             let mut labels = vec![format!(r#"result="{outcome}""#)];
 
             if metric == "bindizr_xfr_total" {
-                labels.push(format!(r#"type="{}""#, qtype.to_string().to_lowercase()));
+                labels.push(format!(r#"kind="{}""#, qtype.to_string().to_lowercase()));
                 labels.push(r#"transport="udp""#.to_string());
             }
 
@@ -2237,9 +2242,9 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
     .unwrap();
 
     for advertised in [512, 1232] {
-        let failed = [r#"type="axfr""#, r#"transport="udp""#, r#"result="failed""#];
+        let failed = [r#"kind="axfr""#, r#"transport="udp""#, r#"result="failed""#];
         let truncated = [
-            r#"type="axfr""#,
+            r#"kind="axfr""#,
             r#"transport="udp""#,
             r#"result="truncated""#,
         ];

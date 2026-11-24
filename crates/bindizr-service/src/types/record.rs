@@ -272,7 +272,7 @@ pub struct RecordFilter {
     /// Include derived DNSSEC records after user records in the same pagination.
     /// Derived rows have no id; `type` accepts derived types and search matches names only.
     /// Priority filters exclude derived rows; value filters are rejected.
-    pub signed: Option<bool>,
+    pub include_dnssec: Option<bool>,
     /// Records per page, 1 to 1000; the HTTP API pages at 50 when it is
     /// omitted, the daemon socket not at all.
     #[param(minimum = 1, maximum = 1000)]

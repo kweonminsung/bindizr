@@ -1,6 +1,6 @@
 mod access_log;
+mod activity_log;
 mod api;
-mod audit_log;
 mod database;
 mod dns;
 mod env_overrides;
@@ -12,8 +12,8 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::{env, fs, io};
 
 pub use access_log::{AccessLogConfig, SavedRequests};
+pub use activity_log::ActivityLogConfig;
 pub use api::{ApiConfig, ApiTlsConfig};
-pub use audit_log::AuditLogConfig;
 pub use database::{
     DatabaseConfig, DatabaseTlsConfig, DatabaseTlsMode, DatabaseType, MySqlConfig, PostgresConfig,
     SqliteConfig,
@@ -109,7 +109,7 @@ pub enum ConfigError {
         present: &'static str,
         missing: &'static str,
     },
-    #[error("dns.transfer.require_tls needs dns.tls.cert_file and dns.tls.key_file")]
+    #[error("dns.transfer.tls_required needs dns.tls.cert_file and dns.tls.key_file")]
     TransferRequiresTlsListener,
     #[error("{key} must be between {min} and {max}")]
     OutOfRange {
@@ -143,7 +143,7 @@ pub struct Config {
     #[serde(default)]
     pub history: HistoryConfig,
     #[serde(default)]
-    pub audit_log: AuditLogConfig,
+    pub activity_log: ActivityLogConfig,
     #[serde(default)]
     pub access_log: AccessLogConfig,
     #[serde(default)]
@@ -184,8 +184,8 @@ impl Config {
         if self.history != next.history {
             changed.push("history".to_string());
         }
-        if self.audit_log != next.audit_log {
-            changed.push("audit_log".to_string());
+        if self.activity_log != next.activity_log {
+            changed.push("activity_log".to_string());
         }
         if self.access_log != next.access_log {
             changed.push("access_log".to_string());

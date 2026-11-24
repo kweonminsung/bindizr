@@ -76,18 +76,18 @@ async fn context(save: SavedTransfers, zone_names: &[&str]) -> (Context, Vec<Zon
     (cx, zone_ids)
 }
 
-/// Build a served AXFR of `zone_id` answered at `served_at`.
-fn test_log(zone_id: ZoneId, served_at: DateTime<Utc>) -> TransferLog {
+/// Build a served AXFR of `zone_id` answered at `created_at`.
+fn test_log(zone_id: ZoneId, created_at: DateTime<Utc>) -> TransferLog {
     TransferLog {
-        client_addr: CLIENT.to_string(),
+        client_ip: CLIENT.to_string(),
         zone_id,
         kind: TransferKind::Axfr,
         result: TransferResult::Ok,
-        transport: TransferTransport::Tcp,
+        transport: DnsTransport::Tcp,
         incremental: false,
         serial: Some(Serial::from(1)),
-        served_at,
-        error: None,
+        created_at,
+        error_code: None,
     }
 }
 
@@ -123,7 +123,7 @@ async fn list_ages(
         .await
         .iter()
         .map(|log| {
-            let age = now - log.log.served_at + Duration::hours(12);
+            let age = now - log.log.created_at + Duration::hours(12);
             (log.zone_name.to_string(), age.num_days())
         })
         .collect()
@@ -133,7 +133,7 @@ async fn list_ages(
 #[tokio::test]
 async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
     let (cx, zone_ids) = context(SavedTransfers::All, &["example.test"]).await;
-    let (axfr, tcp) = (TransferKind::Axfr, TransferTransport::Tcp);
+    let (axfr, tcp) = (TransferKind::Axfr, DnsTransport::Tcp);
 
     save_refused(
         &cx,
@@ -168,13 +168,13 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
     );
     // The failure that followed did not erase the serial last served.
     assert_eq!(logs[1].log.serial, Some(Serial::from(7)));
-    assert_eq!(logs[0].log.error.as_deref(), Some("PEER_CLOSED"));
-    assert_eq!(logs[1].log.error, None);
-    assert_eq!(logs[2].log.error.as_deref(), Some("REFUSED"));
+    assert_eq!(logs[0].log.error_code.as_deref(), Some("PEER_CLOSED"));
+    assert_eq!(logs[1].log.error_code, None);
+    assert_eq!(logs[2].log.error_code.as_deref(), Some("REFUSED"));
 
-    let latest = list_latest_by_clients(&cx, &[CLIENT]).await.unwrap();
+    let latest = list_latest_by_client_ips(&cx, &[CLIENT]).await.unwrap();
     let zone_name = ZoneName::parse("example.test").unwrap();
-    let found = find_by_clients_and_zone_name(&cx, &[CLIENT], &zone_name)
+    let found = find_by_client_ips_and_zone_name(&cx, &[CLIENT], &zone_name)
         .await
         .unwrap();
 
@@ -189,9 +189,9 @@ async fn save_appends_a_row_per_transfer_and_latest_reads_the_newest() {
 /// Verify that the latest transfer of a zone served to several addresses of
 /// one secondary is one row, the newest among them.
 #[tokio::test]
-async fn list_latest_by_clients_keeps_one_row_per_zone_across_addresses() {
+async fn list_latest_by_client_ips_keeps_one_row_per_zone_across_ips() {
     let (cx, zone_ids) = context(SavedTransfers::All, &["example.test"]).await;
-    let (axfr, tcp) = (TransferKind::Axfr, TransferTransport::Tcp);
+    let (axfr, tcp) = (TransferKind::Axfr, DnsTransport::Tcp);
     let other_client = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2));
 
     save_ok(&cx, CLIENT, zone_ids[0], axfr, tcp, false, Serial::from(7)).await;
@@ -206,7 +206,7 @@ async fn list_latest_by_clients_keeps_one_row_per_zone_across_addresses() {
     )
     .await;
 
-    let latest = list_latest_by_clients(&cx, &[CLIENT, other_client])
+    let latest = list_latest_by_client_ips(&cx, &[CLIENT, other_client])
         .await
         .unwrap();
 
@@ -218,7 +218,7 @@ async fn list_latest_by_clients_keeps_one_row_per_zone_across_addresses() {
 #[tokio::test]
 async fn save_ok_leaves_no_row_when_only_unserved_transfers_are_saved() {
     let (cx, zone_ids) = context(SavedTransfers::Unserved, &["example.test"]).await;
-    let (axfr, tcp) = (TransferKind::Axfr, TransferTransport::Tcp);
+    let (axfr, tcp) = (TransferKind::Axfr, DnsTransport::Tcp);
 
     save_ok(&cx, CLIENT, zone_ids[0], axfr, tcp, false, Serial::from(7)).await;
     save_refused(
@@ -241,7 +241,7 @@ async fn save_ok_leaves_no_row_when_only_unserved_transfers_are_saved() {
 #[tokio::test]
 async fn save_leaves_no_row_when_no_transfers_are_saved() {
     let (cx, zone_ids) = context(SavedTransfers::None, &["example.test"]).await;
-    let (axfr, tcp) = (TransferKind::Axfr, TransferTransport::Tcp);
+    let (axfr, tcp) = (TransferKind::Axfr, DnsTransport::Tcp);
 
     save_ok(&cx, CLIENT, zone_ids[0], axfr, tcp, false, Serial::from(7)).await;
     save_refused(
@@ -319,14 +319,14 @@ async fn list_by_filter_with_zone_applies_zone_time_window_and_page() {
         ),
         (
             transfer_log::TransferLogFilter {
-                client_addrs: Some(vec!["192.0.2.99".to_string()]),
+                client_ips: Some(vec!["192.0.2.99".to_string()]),
                 ..Default::default()
             },
             Vec::new(),
         ),
         (
             transfer_log::TransferLogFilter {
-                client_addrs: Some(Vec::new()),
+                client_ips: Some(Vec::new()),
                 ..Default::default()
             },
             Vec::new(),
@@ -393,7 +393,7 @@ async fn prune_older_than_preserves_latest_when_inserts_arrive_out_of_order() {
         (1, "192.0.2.2", 1, 5),
     ] {
         let mut log = test_log(zone_ids[zone_index], now - Duration::days(days));
-        log.client_addr = client.to_string();
+        log.client_ip = client.to_string();
         log.serial = Some(Serial::from(serial));
         transfer_log::create(cx.db(), log).await.unwrap();
     }
@@ -410,7 +410,7 @@ async fn prune_older_than_preserves_latest_when_inserts_arrive_out_of_order() {
         .map(|entry| {
             (
                 entry.zone_name.to_string(),
-                entry.log.client_addr,
+                entry.log.client_ip,
                 entry.log.serial,
             )
         })
@@ -447,7 +447,7 @@ async fn prune_older_than_preserves_latest_when_inserts_arrive_out_of_order() {
 #[tokio::test]
 async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
     let (cx, zone_ids) = context(SavedTransfers::All, &["example.test"]).await;
-    let (axfr, tcp) = (TransferKind::Axfr, TransferTransport::Tcp);
+    let (axfr, tcp) = (TransferKind::Axfr, DnsTransport::Tcp);
 
     save_ok(&cx, CLIENT, zone_ids[0], axfr, tcp, false, Serial::from(7)).await;
     save_refused(
@@ -464,7 +464,7 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
         &cx,
         &Caller::socket(),
         &TransferLogFilter {
-            address: Some(CLIENT.to_string()),
+            client_ip: Some(CLIENT.to_string()),
             result: Some(" Refused ".to_string()),
             ..Default::default()
         },
@@ -480,7 +480,7 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
         &cx,
         &Caller::socket(),
         &TransferLogFilter {
-            address: Some(" ::ffff:192.0.2.1 ".to_string()),
+            client_ip: Some(" ::ffff:192.0.2.1 ".to_string()),
             ..Default::default()
         },
     )
@@ -494,7 +494,7 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
         &Caller::socket(),
         &TransferLogFilter {
             result: Some(" ".to_string()),
-            address: Some("\t".to_string()),
+            client_ip: Some("\t".to_string()),
             sort: Some(String::new()),
             order: Some(" ".to_string()),
             ..Default::default()
@@ -530,14 +530,14 @@ async fn list_selects_by_address_and_result_orders_and_rejects_bad_filters() {
         ),
         (
             TransferLogFilter {
-                address: Some("ns2.example.net".to_string()),
+                client_ip: Some("ns2.example.net".to_string()),
                 ..Default::default()
             },
             ErrorCode::InvalidInput,
         ),
         (
             TransferLogFilter {
-                sort: Some("served_at".to_string()),
+                sort: Some("at".to_string()),
                 ..Default::default()
             },
             ErrorCode::InvalidInput,

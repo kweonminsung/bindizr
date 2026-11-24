@@ -3,7 +3,7 @@
 pub(crate) enum PrunedTable {
     Journal,
     Version,
-    Audit,
+    Activity,
     Access,
     Transfer,
 }
@@ -12,7 +12,7 @@ impl PrunedTable {
     pub(crate) const ALL: [Self; 5] = [
         Self::Journal,
         Self::Version,
-        Self::Audit,
+        Self::Activity,
         Self::Access,
         Self::Transfer,
     ];
@@ -20,11 +20,11 @@ impl PrunedTable {
     /// Return the canonical text representation.
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            Self::Journal => "journal",
-            Self::Version => "version",
-            Self::Audit => "audit",
-            Self::Access => "access",
-            Self::Transfer => "transfer",
+            Self::Journal => "zone_journal",
+            Self::Version => "zone_versions",
+            Self::Activity => "activity_log",
+            Self::Access => "access_log",
+            Self::Transfer => "transfer_log",
         }
     }
 }
@@ -40,7 +40,13 @@ mod tests {
         let spellings = PrunedTable::ALL.map(PrunedTable::as_str);
         assert_eq!(
             spellings,
-            ["journal", "version", "audit", "access", "transfer"]
+            [
+                "zone_journal",
+                "zone_versions",
+                "activity_log",
+                "access_log",
+                "transfer_log",
+            ]
         );
 
         let mut expected = spellings.map(str::to_string).to_vec();

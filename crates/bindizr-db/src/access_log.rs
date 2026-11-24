@@ -15,8 +15,8 @@ pub struct AccessLogFilter {
     pub source: Option<AccessSource>,
     pub result: Option<AccessResult>,
     /// Requests made with the token or TSIG key of this name.
-    pub caller_name: Option<String>,
-    pub client_addr: Option<String>,
+    pub actor_name: Option<String>,
+    pub client_ip: Option<String>,
     /// Requests made at or after this time.
     pub since: Option<DateTime<Utc>>,
     /// Requests made before this time.
@@ -33,8 +33,8 @@ impl Default for AccessLogFilter {
         Self {
             source: None,
             result: None,
-            caller_name: None,
-            client_addr: None,
+            actor_name: None,
+            client_ip: None,
             since: None,
             until: None,
             sort: AccessLogSortField::default(),

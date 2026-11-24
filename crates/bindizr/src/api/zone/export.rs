@@ -21,22 +21,22 @@ use crate::api::params::NameParams;
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExportZoneQuery {
     /// Append the derived DNSSEC records.
-    signed: Option<bool>,
+    include_dnssec: Option<bool>,
 }
 
-/// Render a zone as BIND master-file text.
+/// Render a zone as a BIND zone file.
 #[utoipa::path(
         get,
         path = "/zones/{name}/export",
         tag = "Zone",
-        summary = "Export a zone as BIND master-file text",
-        description = "Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint. With `signed`, the derived DNSSEC records (DNSKEY, RRSIG, the denial chain, CDS/CDNSKEY) are appended in presentation form — an inspection artifact, not an import input.",
+        summary = "Export a zone as a BIND zone file",
+        description = "Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint. With `include_dnssec`, the derived DNSSEC records (DNSKEY, RRSIG, the denial chain, CDS/CDNSKEY) are appended in presentation form — an inspection artifact, not an import input.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to export."),
             ExportZoneQuery
         ),
         responses(
-            (status = 200, description = "The zone as master-file text", content_type = "text/plain", body = String),
+            (status = 200, description = "The zone as a BIND zone file", content_type = "text/plain", body = String),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -54,7 +54,7 @@ pub(crate) async fn export_zone(
         &cx,
         &caller,
         &zone::normalize_name(&params.name)?,
-        ZoneView::from_signed(query.signed.unwrap_or(false)),
+        ZoneView::from_include_dnssec(query.include_dnssec.unwrap_or(false)),
     )
     .await?;
 

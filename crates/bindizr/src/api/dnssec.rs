@@ -29,7 +29,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
             routing::post(start_dnssec_rollover),
         )
         .route(
-            "/zones/{name}/dnssec/rollover/ds-seen",
+            "/zones/{name}/dnssec/rollover/advance",
             routing::post(advance_dnssec_rollover),
         )
         .route(
@@ -218,7 +218,7 @@ pub(crate) async fn start_dnssec_rollover(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-/// The check switches of a ds-seen request.
+/// Checks to apply before advancing the rollover.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
@@ -232,9 +232,9 @@ pub(crate) struct AdvanceDnssecRolloverQuery {
 /// Confirm the new DS is at the parent, promoting the pre-published key(s).
 #[utoipa::path(
         post,
-        path = "/zones/{name}/dnssec/rollover/ds-seen",
+        path = "/zones/{name}/dnssec/rollover/advance",
         tag = "DNSSEC",
-        summary = "Confirm the new DS is at the parent (ds-seen)",
+        summary = "Advance a DNSSEC rollover",
         description = "Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),

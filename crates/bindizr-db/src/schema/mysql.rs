@@ -11,7 +11,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             name VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
             algorithm INT NOT NULL,
             denial VARCHAR(8) NOT NULL,
-            split_keys BOOLEAN NOT NULL DEFAULT FALSE,
+            key_layout VARCHAR(5) NOT NULL DEFAULT 'csk',
             signature_validity_days INT NOT NULL,
             signature_refresh_days INT NOT NULL,
             zsk_lifetime_days INT NOT NULL DEFAULT 0,
@@ -89,14 +89,14 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             retry INT NOT NULL,
             expire INT NOT NULL,
             minimum_ttl BIGINT NOT NULL,
-            change_source VARCHAR(16) NOT NULL,
-            changed_by_kind VARCHAR(16),
-            changed_by_name VARCHAR(255),
+            source VARCHAR(16) NOT NULL,
+            actor_kind VARCHAR(16),
+            actor_name VARCHAR(255),
             created_at DATETIME NOT NULL,
-            CONSTRAINT chk_zone_versions_changed_by CHECK (
-                (changed_by_kind IS NULL AND changed_by_name IS NULL)
-                OR (changed_by_kind IS NOT NULL AND changed_by_name IS NOT NULL
-                    AND changed_by_kind IN ('token', 'tsig_key'))
+            CONSTRAINT chk_zone_versions_actor CHECK (
+                (actor_kind IS NULL AND actor_name IS NULL)
+                OR (actor_kind IS NOT NULL AND actor_name IS NOT NULL
+                    AND actor_kind IN ('token', 'tsig_key'))
             ),
             UNIQUE KEY uq_zone_serial (zone_id, serial),
             INDEX idx_zone_versions_created (created_at),
@@ -115,7 +115,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS api_tokens (
             id INT PRIMARY KEY AUTO_INCREMENT,
             name VARCHAR(255) UNIQUE NOT NULL,
-            token VARCHAR(64) UNIQUE NOT NULL,
+            token_hash VARCHAR(64) UNIQUE NOT NULL,
             description VARCHAR(255),
             role_id INT NOT NULL,
             created_at DATETIME NOT NULL,
@@ -159,68 +159,71 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             notify_tsig_key_id INT NULL,
             created_at DATETIME NOT NULL,
             FOREIGN KEY (notify_tsig_key_id) REFERENCES tsig_keys(id),
-            INDEX idx_secondaries_notify_key (notify_tsig_key_id)
+            INDEX idx_secondaries_notify_tsig_key (notify_tsig_key_id)
         );
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS transfer_log (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            client_addr VARCHAR(45) COLLATE utf8mb4_bin NOT NULL,
+            client_ip VARCHAR(45) COLLATE utf8mb4_bin NOT NULL,
             zone_id INT NOT NULL,
             kind VARCHAR(4) NOT NULL,
             result VARCHAR(7) NOT NULL,
             transport VARCHAR(3) NOT NULL,
             incremental BOOLEAN NOT NULL,
             serial BIGINT NULL,
-            served_at DATETIME NOT NULL,
-            error TEXT NULL,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            INDEX idx_transfer_log_client_zone (client_addr, zone_id, id),
-            INDEX idx_transfer_log_zone (zone_id),
-            INDEX idx_transfer_log_served (served_at)
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS audit_log (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            entity VARCHAR(16) NOT NULL,
-            entity_name VARCHAR(1020) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-            operation VARCHAR(16) NOT NULL,
-            detail TEXT NULL,
-            change_source VARCHAR(16) NOT NULL,
-            changed_by_kind VARCHAR(16),
-            changed_by_name VARCHAR(255),
             created_at DATETIME NOT NULL,
-            CONSTRAINT chk_audit_log_changed_by CHECK (
-                (changed_by_kind IS NULL AND changed_by_name IS NULL)
-                OR (changed_by_kind IS NOT NULL AND changed_by_name IS NOT NULL
-                    AND changed_by_kind IN ('token', 'tsig_key'))
-            ),
-            INDEX idx_audit_log_created (created_at),
-            INDEX idx_audit_log_entity (entity, entity_name)
+            error_code TEXT NULL,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            INDEX idx_transfer_log_client_zone (client_ip, zone_id, id),
+            INDEX idx_transfer_log_zone (zone_id),
+            INDEX idx_transfer_log_created (created_at)
         );
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS access_log (
             id BIGINT PRIMARY KEY AUTO_INCREMENT,
             source VARCHAR(8) NOT NULL,
-            client_addr VARCHAR(45) COLLATE utf8mb4_bin NOT NULL,
+            client_ip VARCHAR(45) COLLATE utf8mb4_bin NOT NULL,
             method VARCHAR(16) NOT NULL,
             target TEXT COLLATE utf8mb4_bin NOT NULL,
-            status VARCHAR(16) NOT NULL,
+            response_code VARCHAR(16) NOT NULL,
             result VARCHAR(6) NOT NULL,
-            caller_kind VARCHAR(16),
-            caller_name VARCHAR(255) COLLATE utf8mb4_bin,
-            error TEXT NULL,
+            actor_kind VARCHAR(16),
+            actor_name VARCHAR(255) COLLATE utf8mb4_bin,
+            error_code TEXT NULL,
             requested_at DATETIME NOT NULL,
-            CONSTRAINT chk_access_log_caller CHECK (
-                (caller_kind IS NULL AND caller_name IS NULL)
-                OR (caller_kind IS NOT NULL AND caller_name IS NOT NULL
-                    AND caller_kind IN ('token', 'tsig_key'))
+            CONSTRAINT chk_access_log_actor CHECK (
+                (actor_kind IS NULL AND actor_name IS NULL)
+                OR (actor_kind IS NOT NULL AND actor_name IS NOT NULL
+                    AND actor_kind IN ('token', 'tsig_key'))
             ),
             INDEX idx_access_log_requested (requested_at),
-            INDEX idx_access_log_client (client_addr),
-            INDEX idx_access_log_caller (caller_name)
+            INDEX idx_access_log_client (client_ip),
+            INDEX idx_access_log_actor (actor_name)
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id BIGINT PRIMARY KEY AUTO_INCREMENT,
+            operation VARCHAR(64) NOT NULL,
+            result VARCHAR(64) NOT NULL,
+            target_name VARCHAR(1024) COLLATE utf8mb4_bin,
+            zone_name VARCHAR(1024) COLLATE utf8mb4_bin,
+            record_id INT,
+            record_name VARCHAR(1024) COLLATE utf8mb4_bin,
+            record_type VARCHAR(16),
+            source VARCHAR(16) NOT NULL,
+            actor_kind VARCHAR(16),
+            actor_name VARCHAR(255),
+            created_at DATETIME(6) NOT NULL,
+            detail TEXT,
+            CONSTRAINT chk_activity_log_actor CHECK (
+                (actor_kind IS NULL AND actor_name IS NULL)
+                OR (actor_kind IS NOT NULL AND actor_name IS NOT NULL
+                    AND actor_kind IN ('token', 'tsig_key'))
+            ),
+            INDEX idx_activity_log_created (created_at)
         );
         "#,
         r#"
@@ -278,9 +281,9 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
 /// Return the statement that seeds the built-in `default` DNSSEC policy.
 pub(crate) fn default_policy_seed() -> &'static str {
     r#"
-    INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
+    INSERT INTO dnssec_policies (name, algorithm, denial, key_layout, signature_validity_days,
         signature_refresh_days, zsk_lifetime_days, created_at)
-    SELECT 'default', 13, 'nsec3', FALSE, 14, 5, 0, ? FROM DUAL
+    SELECT 'default', 13, 'nsec3', 'csk', 14, 5, 0, ? FROM DUAL
     WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
     "#
 }

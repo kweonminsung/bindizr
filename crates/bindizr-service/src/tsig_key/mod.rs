@@ -3,7 +3,7 @@
 use base64::Engine;
 use base64::engine::general_purpose;
 use bindizr_core::dns::name;
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
 use chrono::Utc;
@@ -15,7 +15,7 @@ use crate::text::MAX_COLUMN_TEXT_LEN;
 use crate::types::{
     CreateTsigKeyRequest, MessageResponse, PaginatedResponse, TsigKeyFilter, TsigKeyResponse,
 };
-use crate::{Context, audit, pagination, role, transaction};
+use crate::{Context, activity, pagination, role, transaction};
 
 /// Imported secrets must contain at least 128 bits. RFC 8945, Section 8
 /// recommends output-sized keys; shorter imports preserve secrets already
@@ -84,11 +84,11 @@ pub async fn create(
                 error.into()
             }
         })?;
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::TsigKey,
-            &tsig_key.name,
-            AuditOperation::Create,
+            ActivityOperation::TsigKeyCreate,
+            ActivityResult::Changed,
+            activity::named_target(&tsig_key.name),
             Some(format!(
                 "role_name {}, algorithm {}",
                 role.name, tsig_key.algorithm
@@ -156,7 +156,7 @@ pub async fn get_by_name(
 }
 
 /// Look up one TSIG key by name. This is the unchecked lookup for
-/// service-internal use; front ends go through [`get`].
+/// service-internal use; front ends go through [`get_by_name`].
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<TsigKey, ServiceError> {
     let name = normalize_name(name)?;
     bindizr_db::tsig_key::get_by_name(cx.db(), &name)
@@ -222,16 +222,16 @@ pub async fn delete(
                 }
             })?;
 
-        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        // A concurrent removal makes this deletion report not found.
         if !deleted {
             return Err(ServiceError::tsig_key_not_found(&tsig_key.name));
         }
 
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::TsigKey,
-            &tsig_key.name,
-            AuditOperation::Delete,
+            ActivityOperation::TsigKeyDelete,
+            ActivityResult::Changed,
+            activity::named_target(&tsig_key.name),
             None,
             caller.change_origin(),
         )

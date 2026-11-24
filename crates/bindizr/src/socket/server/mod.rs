@@ -227,14 +227,14 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::DeleteTsigKey { name } => {
             encode_response(tsig_key::delete_tsig_key(cx, &name).await)
         }
-        DaemonCommand::ListAuditLogs(filter) => {
-            encode_response(logs::list_audit_logs(cx, &filter).await)
-        }
         DaemonCommand::ListAccessLogs(filter) => {
             encode_response(logs::list_access_logs(cx, &filter).await)
         }
         DaemonCommand::ListTransferLogs(filter) => {
             encode_response(logs::list_transfer_logs(cx, &filter).await)
+        }
+        DaemonCommand::ListActivityLogs(filter) => {
+            encode_response(logs::list_activity_logs(cx, &filter).await)
         }
         DaemonCommand::CreateRole(request) => {
             encode_response(role::create_role(cx, &request).await)

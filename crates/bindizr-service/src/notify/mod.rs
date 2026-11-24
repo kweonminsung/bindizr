@@ -48,7 +48,7 @@ impl From<NotifyError> for ServiceError {
     }
 }
 
-/// Notify one or all zones and aggregate failures; this layer enumerates the zones.
+/// Notify one zone or all enabled zones and aggregate failures.
 pub(crate) async fn send_notify(
     cx: &Arc<Context>,
     target: NotifyTarget<'_>,

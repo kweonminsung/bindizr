@@ -64,7 +64,7 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
         &CreateSecondaryRequest {
             name: "silent".to_string(),
             address: socket.local_addr().unwrap().to_string(),
-            notify_key_name: None,
+            notify_tsig_key_name: None,
         },
     )
     .await

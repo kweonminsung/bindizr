@@ -150,22 +150,22 @@ impl TryFrom<String> for AccessResult {
 pub struct AccessLog {
     #[sqlx(try_from = "String")]
     pub source: AccessSource,
-    /// The connection's peer address; a proxy in front shows as itself.
-    pub client_addr: String,
+    /// The connection's peer IP address; a proxy in front shows as itself.
+    pub client_ip: String,
     /// The HTTP method, or `UPDATE` for an nsupdate.
     pub method: String,
     /// The request path without its query, or the zone an nsupdate named.
     pub target: String,
     /// The HTTP status code, or the DNS RCODE mnemonic.
-    pub status: String,
+    pub response_code: String,
     #[sqlx(try_from = "String")]
     pub result: AccessResult,
     /// The token or TSIG key the request authenticated with; none when it
     /// presented none, or what it presented did not verify.
     #[sqlx(flatten, try_from = "ChangeActorColumns")]
-    pub caller: Option<ChangeActor>,
+    pub actor: Option<ChangeActor>,
     /// A fixed error classification, without rejected input or client diagnostics.
-    pub error: Option<String>,
+    pub error_code: Option<String>,
     pub requested_at: DateTime<Utc>,
 }
 

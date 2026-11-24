@@ -4,11 +4,11 @@ use serde_json::Value;
 use crate::common;
 use crate::common::TestApp;
 
-/// Verify that `log audit` shows socket changes without an actor and
+/// Verify that `log activity` shows socket changes without an actor and
 /// narrows by entity and name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn log_audit_shows_socket_changes() {
+async fn log_activity_shows_socket_changes() {
     let app = TestApp::start().await;
     let name = format!("{}-cli-audited", app.namespace());
 
@@ -20,7 +20,16 @@ async fn log_audit_shows_socket_changes() {
     let listed = app
         .run_cli_success(
             &[
-                "log", "audit", "--entity", "token", "--name", &name, "--output", "json",
+                "log",
+                "activity",
+                "--entity",
+                "token",
+                "--name",
+                &name,
+                "--sort",
+                "created_at",
+                "--output",
+                "json",
             ],
             None,
         )
@@ -30,21 +39,21 @@ async fn log_audit_shows_socket_changes() {
     assert_eq!(listed["pagination"]["total"], 2, "{listed}");
     let items = listed["items"].as_array().expect("log list has items");
 
-    assert_eq!(items[0]["operation"], "delete");
-    assert_eq!(items[1]["operation"], "create");
+    assert_eq!(items[0]["operation"], "token.delete");
+    assert_eq!(items[1]["operation"], "token.create");
 
     for log in items {
-        assert_eq!(log["entity"], "token");
-        assert_eq!(log["entity_name"], name);
+        assert_eq!(log["target"]["name"], name);
+        assert!(log["created_at"].is_string(), "{log}");
         // A socket command is the daemon's own user: no token names it.
-        assert_eq!(log["change_source"], "socket");
-        assert!(log["changed_by"].is_null(), "{log}");
+        assert_eq!(log["source"], "socket");
+        assert!(log["actor"].is_null(), "{log}");
     }
 
     // Without an entity, the role's own creation is listed beside its token's;
     // DETAIL says what each set.
     let table = app
-        .run_cli_success(&["log", "audit", "--name", &name], None)
+        .run_cli_success(&["log", "activity", "--name", &name], None)
         .await;
     let rows: Vec<&str> = table.lines().filter(|line| line.contains(&name)).collect();
 
@@ -59,32 +68,44 @@ async fn log_audit_shows_socket_changes() {
         "{table}"
     );
 
-    // Sorted by entity, oldest first within the role's changes.
+    // Sort by canonical operation in ascending order.
     let sorted = app
         .run_cli_success(
             &[
-                "log", "audit", "--name", &name, "--sort", "entity", "--order", "asc", "--output",
+                "log",
+                "activity",
+                "--name",
+                &name,
+                "--sort",
+                "operation",
+                "--order",
+                "asc",
+                "--output",
                 "json",
             ],
             None,
         )
         .await;
     let sorted: Value = serde_json::from_str(&sorted).expect("CLI did not return valid JSON");
-    let entities: Vec<&str> = sorted["items"]
+    let operations: Vec<&str> = sorted["items"]
         .as_array()
         .expect("log list has items")
         .iter()
-        .map(|log| log["entity"].as_str().expect("log row has an entity"))
+        .map(|log| log["operation"].as_str().expect("log row has an operation"))
         .collect();
 
-    assert_eq!(entities, ["role", "token", "token"], "{sorted}");
+    assert_eq!(
+        operations,
+        ["role.create", "token.create", "token.delete"],
+        "{sorted}"
+    );
 
     // A span ago reaches the daemon as a time: everything is newer than an
     // hour ago, and nothing is older.
     let recent = app
         .run_cli_success(
             &[
-                "log", "audit", "--name", &name, "--since", "1h", "--output", "json",
+                "log", "activity", "--name", &name, "--since", "1h", "--output", "json",
             ],
             None,
         )
@@ -96,7 +117,7 @@ async fn log_audit_shows_socket_changes() {
     let older = app
         .run_cli_success(
             &[
-                "log", "audit", "--name", &name, "--until", "1h", "--output", "json",
+                "log", "activity", "--name", &name, "--until", "1h", "--output", "json",
             ],
             None,
         )
@@ -105,12 +126,12 @@ async fn log_audit_shows_socket_changes() {
 
     assert_eq!(older["pagination"]["total"], 0, "{older}");
 
-    let args = ["log", "audit", "--entity", "record"];
+    let args = ["log", "activity", "--entity", "unrecognised"];
 
     let refused = app.run_cli(&args, None).await;
-    common::assert_cli_failure_contains(&args, &refused, "unsupported audit entity");
+    common::assert_cli_failure_contains(&args, &refused, "unknown activity entity");
 
-    let args = ["log", "audit", "--since", "yesterday"];
+    let args = ["log", "activity", "--since", "yesterday"];
 
     let refused = app.run_cli(&args, None).await;
 
@@ -148,7 +169,7 @@ async fn log_access_lists_api_requests() {
             .as_array()
             .expect("log list has items")
             .iter()
-            .any(|log| log["target"] == path && log["status"] == "404"),
+            .any(|log| log["target"] == path && log["response_code"] == "404"),
         "{listed}"
     );
 

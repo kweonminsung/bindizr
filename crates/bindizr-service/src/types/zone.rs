@@ -20,9 +20,9 @@ pub enum ZoneView {
 }
 
 impl ZoneView {
-    /// Return the view a `signed` flag asks for.
-    pub fn from_signed(signed: bool) -> Self {
-        if signed {
+    /// Return the view an `include_dnssec` flag asks for.
+    pub fn from_include_dnssec(include_dnssec: bool) -> Self {
+        if include_dnssec {
             Self::Signed
         } else {
             Self::Plain
@@ -90,11 +90,13 @@ pub struct ZoneResponse {
     pub expire: SoaInterval,
     #[schema(example = 3600, inline)]
     pub minimum_ttl: Ttl,
-    /// Whether the DNS plane serves the zone. A disabled one stays editable but
-    /// leaves the catalog and answers no transfer, so secondaries drop it.
+    /// Whether the DNS plane serves the zone. A disabled zone stays editable,
+    /// is omitted from the catalog, and refuses transfers.
     #[schema(example = true)]
     pub enabled: bool,
     pub description: Option<String>,
+    /// When this zone was created, or null for a preview of a new zone.
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl From<&Zone> for ZoneResponse {
@@ -113,6 +115,7 @@ impl From<&Zone> for ZoneResponse {
             minimum_ttl: zone.minimum_ttl,
             enabled: zone.enabled,
             description: zone.description.clone(),
+            created_at: zone.id.written().map(|_| zone.created_at),
         }
     }
 }
@@ -128,7 +131,7 @@ pub struct CreateZoneRequest {
     #[schema(example = "admin@example.com")]
     pub rname: String,
     /// Record TTL the zone hands out when a record names none; defaults to
-    /// `dns.zone_defaults.ttl`.
+    /// `dns.zone_defaults.default_ttl`.
     #[schema(example = 3600, minimum = 60, maximum = 604_800)]
     pub default_ttl: Option<i64>,
     /// Starting serial, auto-generated if not provided. Accepts 0-4294967295, advances modulo 2^32, and can only be set at creation.
@@ -194,11 +197,11 @@ pub struct ZoneFilter {
     #[param(inline)]
     pub max_serial: Option<Serial>,
     /// Keep zones created at or after this RFC 3339 timestamp.
-    pub created_after: Option<DateTime<Utc>>,
-    /// Keep zones created at or before this RFC 3339 timestamp.
-    pub created_before: Option<DateTime<Utc>>,
+    pub since: Option<DateTime<Utc>>,
+    /// Keep zones created before this RFC 3339 timestamp.
+    pub until: Option<DateTime<Utc>>,
     /// `true` keeps the zones signing under a DNSSEC policy, `false` the rest.
-    pub signed: Option<bool>,
+    pub dnssec_enabled: Option<bool>,
     /// `true` keeps the zones the DNS plane serves, `false` the disabled ones.
     pub enabled: Option<bool>,
     /// Partially search zones.
@@ -295,7 +298,7 @@ pub struct WriteZoneResponse {
     pub zone: ZoneResponse,
 }
 
-/// A zone rendered as BIND master-file text. Only the daemon socket wraps the
+/// A zone rendered as a BIND zone file. Only the daemon socket wraps the
 /// export this way; the HTTP endpoint serves the text as its body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportZoneFileResponse {

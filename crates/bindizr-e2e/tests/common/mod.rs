@@ -65,7 +65,7 @@ pub(crate) struct TestAppOptions {
     /// Serve zone transfers over TLS on a second port with that same certificate.
     pub(crate) dns_tls: bool,
     /// Refuse transfers on the plain listeners, so only `dns_tls` serves them.
-    pub(crate) dns_transfer_require_tls: bool,
+    pub(crate) dns_transfer_tls_required: bool,
 }
 
 impl Default for TestAppOptions {
@@ -82,7 +82,7 @@ impl Default for TestAppOptions {
             catalog_zone_name: "catalog.bindizr".to_string(),
             tls: false,
             dns_tls: false,
-            dns_transfer_require_tls: false,
+            dns_transfer_tls_required: false,
         }
     }
 }

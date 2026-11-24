@@ -122,9 +122,9 @@ impl Config {
             self.dns.transfer.cache_max_records =
                 parse_env_value("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_REQUIRE_TLS")? {
-            self.dns.transfer.require_tls =
-                parse_env_value("BINDIZR_DNS_TRANSFER_REQUIRE_TLS", &value)?;
+        if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_TLS_REQUIRED")? {
+            self.dns.transfer.tls_required =
+                parse_env_value("BINDIZR_DNS_TRANSFER_TLS_REQUIRED", &value)?;
         }
 
         if let Some(value) = get_env("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS")? {
@@ -145,8 +145,9 @@ impl Config {
                 parse_env_value("BINDIZR_DNS_IMPORT_MAX_RECORDS", &value)?;
         }
 
-        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_TTL")? {
-            self.dns.zone_defaults.ttl = parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_TTL", &value)?;
+        if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_DEFAULT_TTL")? {
+            self.dns.zone_defaults.default_ttl =
+                parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_DEFAULT_TTL", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_REFRESH")? {
             self.dns.zone_defaults.refresh =
@@ -168,8 +169,8 @@ impl Config {
         if let Some(value) = get_env("BINDIZR_HISTORY_MAX_DAYS")? {
             self.history.max_days = parse_env_value("BINDIZR_HISTORY_MAX_DAYS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_AUDIT_LOG_MAX_DAYS")? {
-            self.audit_log.max_days = parse_env_value("BINDIZR_AUDIT_LOG_MAX_DAYS", &value)?;
+        if let Some(value) = get_env("BINDIZR_ACTIVITY_LOG_MAX_DAYS")? {
+            self.activity_log.max_days = parse_env_value("BINDIZR_ACTIVITY_LOG_MAX_DAYS", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_ACCESS_LOG_SAVE")? {
             self.access_log.save = parse_env_value("BINDIZR_ACCESS_LOG_SAVE", &value)?;

@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::common::TestApp;
 
-/// Verify that the CLI notifies all zones or one named zone.
+/// Verify that the CLI notifies all enabled zones or one named zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn notify_supports_all_zones_and_one_zone() {
@@ -11,11 +11,11 @@ async fn notify_supports_all_zones_and_one_zone() {
 
     app.create_zone_cli(&zone_name, "3600").await;
 
-    // No zone name means all zones.
+    // No zone name means all enabled zones.
     let all = app.run_cli_success(&["zone", "notify"], None).await;
 
     assert!(
-        all.contains("NOTIFY sent successfully for all zones"),
+        all.contains("NOTIFY sent successfully for all enabled zones"),
         "{all}"
     );
 

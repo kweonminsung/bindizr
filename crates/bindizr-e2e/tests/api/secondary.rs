@@ -178,16 +178,19 @@ async fn notify_signs_requests_when_secondary_has_key() {
         .send_request(
             Method::POST,
             "/secondaries",
-            Some(json!({ "name": "signed", "address": signed_receiver.addr(), "notify_key_name": key.name })),
+            Some(json!({ "name": "signed", "address": signed_receiver.addr(), "notify_tsig_key_name": key.name })),
         )
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_eq!(body["secondary"]["notify_key_name"], key.name);
+    assert_eq!(body["secondary"]["notify_tsig_key_name"], key.name);
 
     let plain = app.create_secondary("plain", &plain_receiver.addr()).await;
 
-    assert!(plain["secondary"]["notify_key_name"].is_null(), "{plain}");
+    assert!(
+        plain["secondary"]["notify_tsig_key_name"].is_null(),
+        "{plain}"
+    );
 
     // NOTIFY is sent before the request is answered (no batching window).
     let (status, body) = app
@@ -260,12 +263,15 @@ async fn notify_signs_requests_when_secondary_has_key() {
         .send_request(
             Method::PUT,
             "/secondaries/signed",
-            Some(json!({ "notify_key_name": "" })),
+            Some(json!({ "notify_tsig_key_name": "" })),
         )
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body["secondary"]["notify_key_name"].is_null(), "{body}");
+    assert!(
+        body["secondary"]["notify_tsig_key_name"].is_null(),
+        "{body}"
+    );
 
     let (status, _) = app
         .send_request(Method::DELETE, "/tsig-keys/notify-key", None)
@@ -323,4 +329,35 @@ async fn secondary_check_reports_resolution_catalog_and_notify() {
 
     let failed = app.run_cli(&args, None).await;
     common::assert_cli_failure_contains(&args, &failed, "secondary 'dead' failed the check");
+
+    let (status, feed) = app
+        .send_request(
+            Method::GET,
+            "/logs/activity?operation=secondary.check&order=asc",
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{feed}");
+    let checks: Vec<_> = feed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|event| event["operation"] == "secondary.check")
+        .map(|event| {
+            (
+                event["source"].as_str().unwrap(),
+                event["target"]["name"].as_str().unwrap(),
+                event["result"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        checks,
+        [
+            ("api", "fake", "succeeded"),
+            ("api", "dead", "failed"),
+            ("socket", "fake", "succeeded"),
+            ("socket", "dead", "failed"),
+        ]
+    );
 }

@@ -93,7 +93,7 @@ remote:
 ```
 
 Keep the NOTIFY ACL matched by address unless you also register the
-secondary with `--notify-key`. See
+secondary with `--notify-tsig-key`. See
 [Signed NOTIFY](../cli/secondaries.md#signed-notify).
 
 See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)

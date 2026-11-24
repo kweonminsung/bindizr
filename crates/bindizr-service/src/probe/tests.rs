@@ -75,7 +75,7 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
         &CreateSecondaryRequest {
             name: "secondary".to_string(),
             address: socket.local_addr().unwrap().to_string(),
-            notify_key_name: None,
+            notify_tsig_key_name: None,
         },
     )
     .await
@@ -113,7 +113,7 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
             &CreateSecondaryRequest {
                 name: name.to_string(),
                 address: socket.local_addr().unwrap().to_string(),
-                notify_key_name: None,
+                notify_tsig_key_name: None,
             },
         )
         .await
@@ -183,7 +183,7 @@ async fn diagnostic_reuses_resolved_target_after_secondary_changes() {
         &CreateSecondaryRequest {
             name: "selected".to_string(),
             address: "127.0.0.1:1".to_string(),
-            notify_key_name: None,
+            notify_tsig_key_name: None,
         },
     )
     .await
@@ -199,7 +199,7 @@ async fn diagnostic_reuses_resolved_target_after_secondary_changes() {
         &UpdateSecondaryRequest {
             address: Some("127.0.0.1:2".to_string()),
             enabled: Some(false),
-            notify_key_name: None,
+            notify_tsig_key_name: None,
         },
     )
     .await
@@ -254,7 +254,7 @@ async fn diagnostic_reuses_resolution_failure_for_probe_and_notify() {
         &CreateSecondaryRequest {
             name: "failed".to_string(),
             address: "127.0.0.1:1".to_string(),
-            notify_key_name: None,
+            notify_tsig_key_name: None,
         },
     )
     .await
@@ -306,7 +306,7 @@ async fn diagnostic_loads_all_keys_before_sending_any_notify() {
         &CreateSecondaryRequest {
             name: "selected".to_string(),
             address: addr.to_string(),
-            notify_key_name: None,
+            notify_tsig_key_name: None,
         },
     )
     .await

@@ -97,11 +97,11 @@ bindizr tsig-key create xfr-key --role secondaries
     member zones that catalog provisions. PowerDNS does not — see
     [PowerDNS](powerdns.md#tsig-does-not-reach-member-zones).
 
-Bindizr logs every transfer with `signed=true` or `signed=false`, so whether a
+Bindizr logs every transfer with `tsig_signed=true` or `tsig_signed=false`, so whether a
 key was actually used is visible rather than assumed:
 
 ```text
-XFR TCP query: zone="example.com", qtype=Rtype::AXFR, from=10.0.0.14, signed=false
+XFR TCP query: zone="example.com", qtype=Rtype::AXFR, client_ip=10.0.0.14, tsig_signed=false
 ```
 
 A transfer over TLS logs as `XFR TLS query`, and `log transfer` lists the
@@ -127,7 +127,7 @@ the plain listener takes either alone. [BIND](bind.md#transfers-over-tls)
 9.18.10, [Knot DNS](knot.md#transfers-over-tls) 3.4, and
 [NSD](nsd.md#transfers-over-tls) 4.3.7 or newer speak it. `bindizr log
 transfer` shows the transport, and the log says `XFR TLS query`. Once every
-secondary pulls over TLS, `dns.transfer.require_tls = true` refuses a
+secondary pulls over TLS, `dns.transfer.tls_required = true` refuses a
 transfer over plain TCP or UDP, as RFC 9103, Section 11 asks of a zone
 whose transfers are XoT; SOA queries keep answering on every listener.
 

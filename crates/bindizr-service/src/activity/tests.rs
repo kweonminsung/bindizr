@@ -1,4 +1,4 @@
-use bindizr_db::{AuditLogSortField, SortOrder};
+use bindizr_db::ActivityLogSortField;
 use chrono::TimeZone;
 
 use super::*;
@@ -7,20 +7,20 @@ use crate::error::ErrorCode;
 /// Verify that `normalize_filter` parses the entity, lowercases the name, and bounds the page.
 #[test]
 fn normalize_filter_parses_entity_and_folds_name_case() {
-    let filter = normalize_filter(&AuditLogFilter {
+    let filter = normalize_filter(&ActivityLogFilter {
         entity: Some(" TSIG_KEY ".to_string()),
-        entity_name: Some(" Update-Key ".to_string()),
+        name: Some(" Update-Key ".to_string()),
         limit: Some(10),
         offset: Some(5),
         ..Default::default()
     })
     .unwrap();
 
-    assert_eq!(filter.entity, Some(AuditEntity::TsigKey));
-    assert_eq!(filter.entity_name.as_deref(), Some("update-key"));
+    assert_eq!(filter.entity, Some("tsig_key".to_string()));
+    assert_eq!(filter.name.as_deref(), Some("update-key"));
     assert_eq!(filter.limit, Some(10));
     assert_eq!(filter.offset, Some(5));
-    assert_eq!(filter.sort, AuditLogSortField::CreatedAt);
+    assert_eq!(filter.sort, ActivityLogSortField::CreatedAt);
     assert_eq!(filter.order, SortOrder::Desc);
 }
 
@@ -33,32 +33,32 @@ fn normalize_filter_spells_the_name_as_its_entity_stores_it() {
         ("tsig_key", "Update-Key.Example.", "update-key.example"),
         ("role", " Ops ", "ops"),
     ] {
-        let filter = normalize_filter(&AuditLogFilter {
+        let filter = normalize_filter(&ActivityLogFilter {
             entity: Some(entity.to_string()),
-            entity_name: Some(name.to_string()),
+            name: Some(name.to_string()),
             ..Default::default()
         })
         .unwrap();
 
-        assert_eq!(filter.entity_name.as_deref(), Some(expected), "{entity}");
+        assert_eq!(filter.name.as_deref(), Some(expected), "{entity}");
     }
 }
 
 /// Verify that `normalize_filter` reads the sort field and direction, and refuses unknown ones.
 #[test]
 fn normalize_filter_reads_sort_and_order() {
-    let filter = normalize_filter(&AuditLogFilter {
-        sort: Some("entity_name".to_string()),
+    let filter = normalize_filter(&ActivityLogFilter {
+        sort: Some("target".to_string()),
         order: Some("asc".to_string()),
         ..Default::default()
     })
     .unwrap();
 
-    assert_eq!(filter.sort, AuditLogSortField::EntityName);
+    assert_eq!(filter.sort, ActivityLogSortField::Target);
     assert_eq!(filter.order, SortOrder::Asc);
 
     for (sort, order) in [(Some("name"), None), (None, Some("newest"))] {
-        let error = normalize_filter(&AuditLogFilter {
+        let error = normalize_filter(&ActivityLogFilter {
             sort: sort.map(str::to_string),
             order: order.map(str::to_string),
             ..Default::default()
@@ -72,32 +72,32 @@ fn normalize_filter_reads_sort_and_order() {
 /// Verify that blank selectors normalize to absent without supplying a page limit.
 #[test]
 fn normalize_filter_reads_blank_selectors_as_absent() {
-    let filter = normalize_filter(&AuditLogFilter {
+    let filter = normalize_filter(&ActivityLogFilter {
         entity: Some(String::new()),
-        entity_name: Some("   ".to_string()),
+        name: Some("   ".to_string()),
         ..Default::default()
     })
     .unwrap();
 
     assert_eq!(filter.entity, None);
-    assert_eq!(filter.entity_name, None);
+    assert_eq!(filter.name, None);
     assert_eq!(filter.limit, None);
 }
 
 /// Verify that `normalize_filter` rejects an unknown entity and an empty time window.
 #[test]
 fn normalize_filter_rejects_unknown_entity_and_inverted_window() {
-    let unknown = normalize_filter(&AuditLogFilter {
-        entity: Some("record".to_string()),
+    let unknown = normalize_filter(&ActivityLogFilter {
+        entity: Some("unknown".to_string()),
         ..Default::default()
     })
     .unwrap_err();
 
     assert_eq!(unknown.code(), ErrorCode::InvalidInput);
-    assert!(unknown.to_string().contains("tsig_key"), "{unknown}");
+    assert!(unknown.to_string().contains("unknown"), "{unknown}");
 
     let later = Utc.with_ymd_and_hms(2026, 10, 2, 0, 0, 0).unwrap();
-    let inverted = normalize_filter(&AuditLogFilter {
+    let inverted = normalize_filter(&ActivityLogFilter {
         since: Some(later),
         until: Some(later),
         ..Default::default()

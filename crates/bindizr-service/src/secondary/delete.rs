@@ -1,12 +1,12 @@
-//! Delete a registered secondary and save its management audit entry.
+//! Delete a registered secondary and save the activity log row.
 
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult};
 use bindizr_core::model::role_grant::Action;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::MessageResponse;
-use crate::{Context, audit, secondary, transaction};
+use crate::{Context, activity, secondary, transaction};
 
 /// Delete a secondary by name.
 pub async fn delete(
@@ -27,16 +27,16 @@ pub async fn delete(
             .await?
             .authorize_action(Action::SecondaryManage)?;
 
-        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        // A concurrent removal makes this deletion report not found.
         if !bindizr_db::secondary::delete_tx(&mut tx, secondary.id).await? {
             return Err(ServiceError::secondary_not_found(&secondary.name));
         }
 
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::Secondary,
-            &secondary.name,
-            AuditOperation::Delete,
+            ActivityOperation::SecondaryDelete,
+            ActivityResult::Changed,
+            activity::named_target(&secondary.name),
             None,
             caller.change_origin(),
         )

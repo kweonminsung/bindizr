@@ -69,15 +69,23 @@ impl RecordOperation {
     }
 }
 
-/// Apply one authorized nsupdate operation in the current transaction.
-pub(crate) async fn apply_record_operation_tx(
+/// The records an applied update created, retimed, or deleted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum RecordMutation {
+    Created(Record),
+    Updated(Record),
+    Deleted(Record),
+}
+
+/// Apply one authorized operation and return its mutations in write order.
+pub(super) async fn apply_record_operation_tx(
     tx: &mut Transaction<'_>,
     caller: &Caller,
     zone: &Zone,
     operation: &RecordOperation,
     new_serial: Serial,
-) -> Result<bool, NsupdateError> {
-    match operation {
+) -> Result<Vec<RecordMutation>, NsupdateError> {
+    let deleted = match operation {
         RecordOperation::AddRecord {
             name: owner,
             record_type,
@@ -111,7 +119,7 @@ pub(crate) async fn apply_record_operation_tx(
                 .any(|record| record.record_type != RecordType::Cname);
 
             if (adding_cname && (owner.is_apex() || has_other)) || (!adding_cname && has_cname) {
-                return Ok(false);
+                return Ok(Vec::new());
             }
 
             // RFC 2136, Section 3.4.2.2 and RFC 6672, Section 5.2: a second
@@ -125,7 +133,7 @@ pub(crate) async fn apply_record_operation_tx(
                     retimed.push(record);
                 }
             }
-            let mut changed = false;
+            let mut mutations = Vec::new();
 
             if !replaced.is_empty() {
                 // Replacing deletes what stood there; the create grant alone
@@ -140,8 +148,7 @@ pub(crate) async fn apply_record_operation_tx(
                 )?;
 
                 record::delete_with_changes_tx(tx, new_serial, &replaced).await?;
-
-                changed = true;
+                mutations.extend(replaced.into_iter().map(RecordMutation::Deleted));
             }
 
             // RFC 2136, Section 3.4.2.2 and RFC 2181, Section 5.2:
@@ -169,9 +176,8 @@ pub(crate) async fn apply_record_operation_tx(
                     })
                     .collect();
 
-                record::create_with_changes_tx(tx, new_serial, &renewed).await?;
-
-                changed = true;
+                let updated = record::create_with_changes_tx(tx, new_serial, &renewed).await?;
+                mutations.extend(updated.into_iter().map(RecordMutation::Updated));
             }
 
             let outcome =
@@ -180,10 +186,10 @@ pub(crate) async fn apply_record_operation_tx(
 
             // An rdata-identical add changes nothing beyond the TTL above.
             if outcome == AddResult::Duplicate {
-                return Ok(changed);
+                return Ok(mutations);
             }
 
-            record::create_with_changes_tx(
+            let created = record::create_with_changes_tx(
                 tx,
                 new_serial,
                 &[Record {
@@ -199,12 +205,13 @@ pub(crate) async fn apply_record_operation_tx(
             )
             .await?;
 
-            Ok(true)
+            mutations.extend(created.into_iter().map(RecordMutation::Created));
+            return Ok(mutations);
         }
         RecordOperation::DeleteRecordSet {
             name: owner,
             record_type,
-        } => delete_matching_tx(tx, zone, owner, *record_type, None, None, new_serial).await,
+        } => delete_matching_tx(tx, zone, owner, *record_type, None, None, new_serial).await?,
         RecordOperation::DeleteRecord {
             name: owner,
             record_type,
@@ -220,9 +227,11 @@ pub(crate) async fn apply_record_operation_tx(
                 *priority,
                 new_serial,
             )
-            .await
+            .await?
         }
-    }
+    };
+
+    Ok(deleted.into_iter().map(RecordMutation::Deleted).collect())
 }
 
 /// Delete every record at `owner` matching the given type and (optionally)
@@ -235,7 +244,7 @@ async fn delete_matching_tx(
     value: Option<&str>,
     priority: Option<i32>,
     new_serial: Serial,
-) -> Result<bool, NsupdateError> {
+) -> Result<Vec<Record>, NsupdateError> {
     // Only records at the owner name can match, so lock just those.
     let records_at_name = bindizr_db::record::list_by_name_tx(tx, zone.id, owner).await?;
 
@@ -262,11 +271,7 @@ async fn delete_matching_tx(
         }
     }
 
-    if matched.is_empty() {
-        return Ok(false);
-    }
-
     record::delete_with_changes_tx(tx, new_serial, &matched).await?;
 
-    Ok(true)
+    Ok(matched)
 }

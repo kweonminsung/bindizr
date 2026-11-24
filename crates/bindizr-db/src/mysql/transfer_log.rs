@@ -12,19 +12,19 @@ pub(crate) async fn create(pool: &Pool<MySql>, log: TransferLog) -> Result<(), D
 
     sqlx::query(
         r#"
-        INSERT INTO transfer_log (client_addr, zone_id, kind, result, transport, incremental, serial, served_at, error)
+        INSERT INTO transfer_log (client_ip, zone_id, kind, result, transport, incremental, serial, created_at, error_code)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
-    .bind(&log.client_addr)
+    .bind(&log.client_ip)
     .bind(log.zone_id)
     .bind(log.kind.as_str())
     .bind(log.result.as_str())
     .bind(log.transport.as_str())
     .bind(log.incremental)
     .bind(log.serial)
-    .bind(log.served_at)
-    .bind(&log.error)
+    .bind(log.created_at)
+    .bind(&log.error_code)
     .execute(&mut *connection)
     .await?;
 
@@ -38,13 +38,13 @@ pub(crate) async fn list_by_filter_with_zone(
 ) -> Result<Vec<TransferLogWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let client_addrs = filter.client_addrs.as_deref().unwrap_or_default();
+    let client_ips = filter.client_ips.as_deref().unwrap_or_default();
     // An empty address list selects nothing; `IN ()` is not valid SQL.
-    let client_addr_clause = match &filter.client_addrs {
-        Some(client_addrs) if client_addrs.is_empty() => "AND 1 = 0".to_string(),
-        Some(client_addrs) => format!(
-            "AND t.client_addr IN ({})",
-            sql::placeholders(client_addrs.len())
+    let client_ip_clause = match &filter.client_ips {
+        Some(client_ips) if client_ips.is_empty() => "AND 1 = 0".to_string(),
+        Some(client_ips) => format!(
+            "AND t.client_ip IN ({})",
+            sql::placeholders(client_ips.len())
         ),
         None => String::new(),
     };
@@ -54,14 +54,14 @@ pub(crate) async fn list_by_filter_with_zone(
 
     let mut query = sqlx::query_as::<_, TransferLogWithZone>(AssertSqlSafe(format!(
         r#"
-        SELECT t.client_addr, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
+        SELECT t.client_ip, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.created_at, t.error_code, z.name AS zone_name
         FROM transfer_log t
         INNER JOIN zones z ON z.id = t.zone_id
         WHERE (? IS NULL OR z.name = ?)
           AND (? IS NULL OR t.result = ?)
-          AND (? IS NULL OR t.served_at >= ?)
-          AND (? IS NULL OR t.served_at < ?)
-          {client_addr_clause}
+          AND (? IS NULL OR t.created_at >= ?)
+          AND (? IS NULL OR t.created_at < ?)
+          {client_ip_clause}
         {order_by}
         LIMIT ? OFFSET ?
         "#
@@ -75,8 +75,8 @@ pub(crate) async fn list_by_filter_with_zone(
     .bind(filter.until)
     .bind(filter.until);
 
-    for client_addr in client_addrs {
-        query = query.bind(client_addr);
+    for client_ip in client_ips {
+        query = query.bind(client_ip);
     }
 
     let logs = query
@@ -99,13 +99,13 @@ pub(crate) async fn count_by_filter(
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let client_addrs = filter.client_addrs.as_deref().unwrap_or_default();
+    let client_ips = filter.client_ips.as_deref().unwrap_or_default();
     // An empty address list selects nothing; `IN ()` is not valid SQL.
-    let client_addr_clause = match &filter.client_addrs {
-        Some(client_addrs) if client_addrs.is_empty() => "AND 1 = 0".to_string(),
-        Some(client_addrs) => format!(
-            "AND t.client_addr IN ({})",
-            sql::placeholders(client_addrs.len())
+    let client_ip_clause = match &filter.client_ips {
+        Some(client_ips) if client_ips.is_empty() => "AND 1 = 0".to_string(),
+        Some(client_ips) => format!(
+            "AND t.client_ip IN ({})",
+            sql::placeholders(client_ips.len())
         ),
         None => String::new(),
     };
@@ -118,9 +118,9 @@ pub(crate) async fn count_by_filter(
         INNER JOIN zones z ON z.id = t.zone_id
         WHERE (? IS NULL OR z.name = ?)
           AND (? IS NULL OR t.result = ?)
-          AND (? IS NULL OR t.served_at >= ?)
-          AND (? IS NULL OR t.served_at < ?)
-          {client_addr_clause}
+          AND (? IS NULL OR t.created_at >= ?)
+          AND (? IS NULL OR t.created_at < ?)
+          {client_ip_clause}
         "#
     )))
     .bind(&filter.zone_name)
@@ -132,8 +132,8 @@ pub(crate) async fn count_by_filter(
     .bind(filter.until)
     .bind(filter.until);
 
-    for client_addr in client_addrs {
-        query = query.bind(client_addr);
+    for client_ip in client_ips {
+        query = query.bind(client_ip);
     }
 
     let count = query.fetch_one(&mut *connection).await?;
@@ -141,14 +141,14 @@ pub(crate) async fn count_by_filter(
     Ok(count as u64)
 }
 
-/// List the newest row of each zone any of `client_addrs` asked for, with
-/// zone names: newest by `served_at`, then id, as the listings sort.
-pub(crate) async fn list_by_client_addrs_with_zone_latest_per_zone(
+/// List the newest row of each zone any of `client_ips` asked for, with
+/// zone names: newest by `created_at`, then id, as the listings sort.
+pub(crate) async fn list_by_client_ips_with_zone_latest_per_zone(
     pool: &Pool<MySql>,
-    client_addrs: &[String],
+    client_ips: &[String],
 ) -> Result<Vec<TransferLogWithZone>, DatabaseError> {
     // An empty address list selects nothing; `IN ()` is not valid SQL.
-    if client_addrs.is_empty() {
+    if client_ips.is_empty() {
         return Ok(Vec::new());
     }
 
@@ -156,23 +156,23 @@ pub(crate) async fn list_by_client_addrs_with_zone_latest_per_zone(
 
     let sql = format!(
         r#"
-        SELECT client_addr, zone_id, kind, result, transport, incremental, serial, served_at, error, zone_name
+        SELECT client_ip, zone_id, kind, result, transport, incremental, serial, created_at, error_code, zone_name
         FROM (
-            SELECT t.client_addr, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name, t.id,
-                ROW_NUMBER() OVER (PARTITION BY t.zone_id ORDER BY t.served_at DESC, t.id DESC) AS recency
+            SELECT t.client_ip, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.created_at, t.error_code, z.name AS zone_name, t.id,
+                ROW_NUMBER() OVER (PARTITION BY t.zone_id ORDER BY t.created_at DESC, t.id DESC) AS recency
             FROM transfer_log t
             INNER JOIN zones z ON z.id = t.zone_id
-            WHERE t.client_addr IN ({})
+            WHERE t.client_ip IN ({})
         ) latest
         WHERE recency = 1
-        ORDER BY served_at DESC, id DESC
+        ORDER BY created_at DESC, id DESC
         "#,
-        sql::placeholders(client_addrs.len()),
+        sql::placeholders(client_ips.len()),
     );
     let mut query = sqlx::query_as::<_, TransferLogWithZone>(AssertSqlSafe(sql));
 
-    for client_addr in client_addrs {
-        query = query.bind(client_addr);
+    for client_ip in client_ips {
+        query = query.bind(client_ip);
     }
 
     let logs = query.fetch_all(&mut *connection).await?;
@@ -194,11 +194,11 @@ pub(crate) async fn prune_older_than(
     let result = sqlx::query(
         r#"
         DELETE FROM transfer_log
-        WHERE served_at < ?
+        WHERE created_at < ?
           AND id NOT IN (
               SELECT id FROM (
                   SELECT id, ROW_NUMBER() OVER (
-                      PARTITION BY client_addr, zone_id ORDER BY served_at DESC, id DESC
+                      PARTITION BY client_ip, zone_id ORDER BY created_at DESC, id DESC
                   ) AS recency
                   FROM transfer_log
               ) AS newest

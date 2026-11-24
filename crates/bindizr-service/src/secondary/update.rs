@@ -1,6 +1,6 @@
 //! Apply a partial secondary update against its locked row.
 
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::secondary::Secondary;
 use bindizr_core::model::tsig_key::TsigKey;
@@ -9,7 +9,7 @@ use bindizr_db::LockLevel;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{SecondaryResponse, UpdateSecondaryRequest};
-use crate::{Context, audit, secondary, transaction, tsig_key};
+use crate::{Context, activity, secondary, transaction, tsig_key};
 
 /// Change a secondary's address, enabled flag, or NOTIFY key; an empty
 /// key name sends NOTIFY unsigned again.
@@ -28,16 +28,18 @@ pub async fn update(
         .map(secondary::normalize_address)
         .transpose()?;
 
-    if address.is_none() && request.enabled.is_none() && request.notify_key_name.is_none() {
+    if address.is_none() && request.enabled.is_none() && request.notify_tsig_key_name.is_none() {
         return Err(ServiceError::invalid_input(
-            "nothing to update: give an address, enabled, or notify_key_name",
+            "nothing to update: give an address, enabled, or notify_tsig_key_name",
         ));
     }
 
     // Unlocked read to learn the FK target; the constraint backstops.
-    let notify_tsig_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
+    let notify_tsig_key: Option<Option<TsigKey>> = match request.notify_tsig_key_name.as_deref() {
         Some("") => Some(None),
-        Some(notify_key_name) => Some(Some(tsig_key::lookup_by_name(cx, notify_key_name).await?)),
+        Some(notify_tsig_key_name) => Some(Some(
+            tsig_key::lookup_by_name(cx, notify_tsig_key_name).await?,
+        )),
         None => None,
     };
 
@@ -70,7 +72,7 @@ pub async fn update(
 
         // The detail names keys, so the replaced one is read by id; gone
         // meanwhile, it reads as the id.
-        let notify_key_change = match &notify_tsig_key {
+        let notify_tsig_key_change = match &notify_tsig_key {
             Some(next) => {
                 let previous = match secondary.notify_tsig_key_id {
                     Some(tsig_key_id) => {
@@ -81,8 +83,8 @@ pub async fn update(
                     None => "none".to_string(),
                 };
 
-                audit::changed(
-                    "notify_key_name",
+                activity::changed(
+                    "notify_tsig_key_name",
                     previous,
                     next.as_ref()
                         .map_or("none".to_string(), |tsig_key| tsig_key.name.clone()),
@@ -90,10 +92,10 @@ pub async fn update(
             }
             None => None,
         };
-        let detail = audit::join_changes([
-            audit::changed("address", &secondary.address, &address),
-            audit::changed("enabled", secondary.enabled, enabled),
-            notify_key_change,
+        let detail = activity::join_changes([
+            activity::changed("address", &secondary.address, &address),
+            activity::changed("enabled", secondary.enabled, enabled),
+            notify_tsig_key_change,
         ]);
 
         let secondary = bindizr_db::secondary::update_tx(
@@ -126,7 +128,7 @@ pub async fn update(
         })?;
 
         // The response names the key on the row this transaction writes.
-        let notify_key_name = match (notify_tsig_key, secondary.notify_tsig_key_id) {
+        let notify_tsig_key_name = match (notify_tsig_key, secondary.notify_tsig_key_id) {
             (Some(key), _) => key.map(|key| key.name),
             (None, Some(tsig_key_id)) => Some(
                 bindizr_db::tsig_key::get_tx(&mut tx, tsig_key_id, LockLevel::Unlocked)
@@ -139,11 +141,11 @@ pub async fn update(
             (None, None) => None,
         };
 
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::Secondary,
-            &secondary.name,
-            AuditOperation::Update,
+            ActivityOperation::SecondaryUpdate,
+            activity::update_result(detail.as_deref()),
+            activity::named_target(&secondary.name),
             detail,
             caller.change_origin(),
         )
@@ -151,7 +153,7 @@ pub async fn update(
 
         Ok(SecondaryResponse::from_secondary(
             &secondary,
-            notify_key_name.as_deref(),
+            notify_tsig_key_name.as_deref(),
         ))
     }
     .await;

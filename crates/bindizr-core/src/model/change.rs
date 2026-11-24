@@ -1,4 +1,4 @@
-//! Change provenance shared by zone versions and management audit rows.
+//! Change provenance shared by zone versions and activity logs.
 
 use std::fmt;
 use std::str::FromStr;
@@ -113,8 +113,8 @@ impl fmt::Display for ChangeActor {
 /// boundary, by every row that carries an actor.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub(crate) struct ChangeActorColumns {
-    changed_by_kind: Option<String>,
-    changed_by_name: Option<String>,
+    actor_kind: Option<String>,
+    actor_name: Option<String>,
 }
 
 impl TryFrom<ChangeActorColumns> for Option<ChangeActor> {
@@ -122,7 +122,7 @@ impl TryFrom<ChangeActorColumns> for Option<ChangeActor> {
 
     /// Decode both columns together, rejecting partial or unknown identities.
     fn try_from(columns: ChangeActorColumns) -> Result<Self, Self::Error> {
-        match (columns.changed_by_kind, columns.changed_by_name) {
+        match (columns.actor_kind, columns.actor_name) {
             (None, None) => Ok(None),
             (Some(kind), Some(name)) => match kind.as_str() {
                 "token" => Ok(Some(ChangeActor::Token { name })),
@@ -158,8 +158,8 @@ mod tests {
                 json!({ "kind": kind, "name": name })
             );
             let decoded = Option::<ChangeActor>::try_from(ChangeActorColumns {
-                changed_by_kind: Some(kind.to_string()),
-                changed_by_name: Some(name.to_string()),
+                actor_kind: Some(kind.to_string()),
+                actor_name: Some(name.to_string()),
             })
             .unwrap();
 
@@ -172,8 +172,8 @@ mod tests {
     fn actor_columns_decode_only_complete_known_identities() {
         assert_eq!(
             Option::<ChangeActor>::try_from(ChangeActorColumns {
-                changed_by_kind: None,
-                changed_by_name: None,
+                actor_kind: None,
+                actor_name: None,
             })
             .unwrap(),
             None
@@ -192,8 +192,8 @@ mod tests {
         ] {
             assert_eq!(
                 Option::<ChangeActor>::try_from(ChangeActorColumns {
-                    changed_by_kind: kind.map(str::to_string),
-                    changed_by_name: name.map(str::to_string),
+                    actor_kind: kind.map(str::to_string),
+                    actor_name: name.map(str::to_string),
                 }),
                 Err(expected)
             );

@@ -100,7 +100,7 @@ depends on the application; letter case is preserved (RFC 3403, Section 4.1).
 
 ```bash
 bindizr record list example.com --sort ttl --order desc
-bindizr zone list --min-serial 100 --signed --sort created_at
+bindizr zone list --min-serial 100 --dnssec-enabled true --sort created_at
 bindizr zone update example.com --refresh 300 --retry 60
 ```
 
@@ -117,10 +117,10 @@ bindizr zone update example.com --enabled true
 ## Export, NOTIFY, and secondary status
 
 ```bash
-# Export BIND master-file text; --signed includes generated DNSSEC records
+# Export a BIND zone file; --include-dnssec includes generated DNSSEC records
 bindizr zone export example.com > db.example.com
 
-# Send NOTIFY for one zone, or for all zones
+# Send NOTIFY for one zone, or for all enabled zones
 bindizr zone notify example.com
 bindizr zone notify
 
@@ -213,7 +213,7 @@ bindizr zone version rollback example.com <SERIAL> --dry-run
 ```
 
 Omit `TO_SERIAL` to compare with the current version. Versions record
-`change_source` (`api`, `socket`, `nsupdate`, or `system`) and `changed_by`
+`source` (`api`, `socket`, `nsupdate`, or `system`) and `actor`
 (the API token or TSIG key's kind and name). That identity survives credential
 deletion. CLI commands, unauthenticated requests, and background work have no
 named credential, shown as `null` in JSON and `-` in a table.

@@ -54,9 +54,9 @@ registered all the same.
 NOTIFY goes out unsigned unless the secondary is registered with a key:
 
 ```bash
-bindizr secondary create ns2 --address 10.0.0.14 --notify-key notify-key
-bindizr secondary update ns2 --notify-key notify-key
-bindizr secondary update ns2 --notify-key ""        # unsigned again
+bindizr secondary create ns2 --address 10.0.0.14 --notify-tsig-key notify-key
+bindizr secondary update ns2 --notify-tsig-key notify-key
+bindizr secondary update ns2 --notify-tsig-key ""        # unsigned again
 ```
 
 Every NOTIFY to that server is then signed with the key and the signature on
@@ -113,15 +113,16 @@ and `secondary check` and `doctor` print a summary per secondary:
 
 ```text
 $ bindizr log transfer --secondary ns2
-ZONE            TRANSFER     TRANSPORT  SERIAL  ADDRESS     AT                    ERROR
-example.com     IXFR delta   TLS        42      10.0.0.14   2026-09-28T09:41:05Z  -
-example.net     AXFR         TLS        7       10.0.0.14   2026-09-28T09:40:58Z  -
-internal.test   refused      TCP        -       10.0.0.14   2026-09-28T09:40:58Z  REFUSED
-example.com     IXFR delta   TLS        41      10.0.0.14   2026-09-28T09:12:31Z  -
+ZONE            TRANSFER TYPE  RESPONSE  RESULT   TRANSPORT  SERIAL  CLIENT IP  AT                    ERROR CODE
+example.com     IXFR           delta     ok       TLS        42      10.0.0.14  2026-09-28T09:41:05Z  -
+example.net     AXFR           full      ok       TLS        7       10.0.0.14  2026-09-28T09:40:58Z  -
+internal.test   AXFR           -         refused  TCP        -       10.0.0.14  2026-09-28T09:40:58Z  REFUSED
+example.com     IXFR           delta     ok       TLS        41      10.0.0.14  2026-09-28T09:12:31Z  -
 ```
 
-`IXFR full` is an IXFR answered with the whole zone; `refused` and `failed`
-carry a fixed classification in `ERROR`, such as `REFUSED` or
+`TRANSFER TYPE` is the client's request type. A `full` response to an IXFR
+contains the whole zone. The `refused` and `failed` results carry a fixed
+classification in `ERROR CODE`, such as `REFUSED` or
 `DNS_ENCODING_FAILED`. Stored entries exclude record values and detailed
 diagnostics; the process log retains failure details for troubleshooting.
 An equal- or newer-serial IXFR receives only the current SOA, including for
@@ -131,12 +132,12 @@ UDP IXFRs return the current SOA. Serial comparisons follow RFC 1982, Section 3.
 status` marks a TLS transfer with `over TLS`.
 
 Without `--secondary` the log covers every client, so a refusal to an address
-no secondary has — a server probing for zones — shows up too; `--address`
+no secondary has — a server probing for zones — shows up too; `--client-ip`
 selects one. `--zone` and `--result` (`ok`, `refused`, `failed`) narrow the
 list, `--since` and `--until` bound it in time (a span ago such as `7d`, a
 UTC date, or RFC 3339), and `--limit` and `--offset` page it. Newest first
-by default; `--sort` takes `at`, `address`, `zone_name`, `kind`, or
-`result`, and `--order` `desc` or `asc`. A transfer of
+by default. `--sort` takes `created_at`, `client_ip`, `zone_name`, `kind`, or
+`result`, and `--order` takes `desc` or `asc`. A transfer of
 a zone Bindizr does not have leaves no row, and neither does a transfer of
 the catalog zone, which is virtual: a check's catalog status has no last
 transfer. The rows are in the database, so

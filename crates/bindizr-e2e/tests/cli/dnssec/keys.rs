@@ -127,7 +127,8 @@ async fn zone_dnssec_keys_round_trip_export_and_import() {
             "policy",
             "create",
             &split_policy_name,
-            "--split-keys",
+            "--key-layout",
+            "split",
         ],
         None,
     )
@@ -186,7 +187,14 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     let policy_name = format!("{}-split", app.namespace());
 
     app.run_cli_success(
-        &["dnssec", "policy", "create", &policy_name, "--split-keys"],
+        &[
+            "dnssec",
+            "policy",
+            "create",
+            &policy_name,
+            "--key-layout",
+            "split",
+        ],
         None,
     )
     .await;
@@ -284,7 +292,7 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     assert!(imported.contains("IN DS"), "{imported}");
 
     let signed_export = app
-        .run_cli_success(&["zone", "export", &zone_name, "--signed"], None)
+        .run_cli_success(&["zone", "export", &zone_name, "--include-dnssec"], None)
         .await;
 
     assert!(

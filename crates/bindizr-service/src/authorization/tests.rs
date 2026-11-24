@@ -64,9 +64,9 @@ fn create(name: &str, record_type: Option<RecordType>) -> RecordAccess {
 /// Build a token row authenticating into role 3.
 fn token_record() -> ApiToken {
     ApiToken {
-        id: TokenId::from(3),
+        id: ApiTokenId::from(3),
         name: "deploy".to_string(),
-        token: String::new(),
+        token_hash: String::new(),
         description: None,
         role_id: RoleId::from(3),
         created_at: Utc::now(),

@@ -3,8 +3,9 @@
 
 use std::fmt;
 
-use bindizr_core::dns::Serial;
-use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
+use bindizr_core::dns::{DnsTransport, Serial};
+use bindizr_core::model::activity_log::ActivityTarget;
+use bindizr_core::model::transfer::{TransferKind, TransferResult};
 use bindizr_service::types::{
     AccessLogResponse, RecordValue, SecondaryStatus, TransferLogResponse, TransferSummaryResponse,
 };
@@ -106,9 +107,30 @@ pub(crate) fn display_access_request(log: &AccessLogResponse) -> String {
     format!("{} {}", log.method, log.target)
 }
 
-/// Render what a transfer was: the kind and whether a delta, or that it was
-/// refused or failed.
-pub(crate) fn display_transfer_kind(transfer: &TransferLogResponse) -> String {
+/// Render the known identifiers that name an activity target.
+pub(crate) fn display_activity_target(target: &ActivityTarget) -> String {
+    let record_id = target.record_id.map(|id| format!("#{id}"));
+    let label = [
+        target.zone_name.as_deref(),
+        target.name.as_deref(),
+        target.record_name.as_deref(),
+        target.record_type.as_deref(),
+        record_id.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
+
+    if label.is_empty() {
+        MISSING_CELL.to_string()
+    } else {
+        label
+    }
+}
+
+/// Render a transfer's response kind or unsuccessful result.
+fn display_transfer_description(transfer: &TransferLogResponse) -> String {
     match (transfer.result, transfer.kind, transfer.incremental) {
         (TransferResult::Ok, TransferKind::Ixfr, true) => format!("{} delta", transfer.kind),
         (TransferResult::Ok, TransferKind::Ixfr, false) => format!("{} full", transfer.kind),
@@ -121,14 +143,14 @@ pub(crate) fn display_transfer_kind(transfer: &TransferLogResponse) -> String {
 /// `over TLS` when it was.
 pub(crate) fn display_transfer(transfer: &TransferLogResponse) -> String {
     let over_tls = match transfer.transport {
-        TransferTransport::Tls => " over TLS",
-        TransferTransport::Udp | TransferTransport::Tcp => "",
+        DnsTransport::Tls => " over TLS",
+        DnsTransport::Udp | DnsTransport::Tcp => "",
     };
     format!(
         "{} {} at {}{over_tls}",
-        display_transfer_kind(transfer),
+        display_transfer_description(transfer),
         display_option(&transfer.serial),
-        display_time(transfer.at)
+        display_time(transfer.created_at)
     )
 }
 

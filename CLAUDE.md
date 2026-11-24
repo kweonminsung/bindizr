@@ -128,7 +128,7 @@ when reusing a directory, including removing charts whose data is now absent.
 Within the service, `zone` owns single-zone and bulk imports, while `record`
 owns record validation and journaled row mutations. Common change provenance
 lives in core's `model::change` and service's `change`, shared by callers,
-audit logs, and zone versions. The service-root `scheduler` owns periodic work
+activity log rows, and zone versions. The service-root `scheduler` owns periodic work
 and its lifecycle; zone history owns retention transactions, and DNSSEC owns
 signing and key-maintenance transactions. Keep the existing scheduler settings
 and metrics names independent of these internal module paths.
@@ -300,7 +300,7 @@ code, including core and db, propagates errors to its caller.
 - `DaemonCommand` is a data-carrying enum with
   `#[serde(tag = "command", content = "data")]`. Match directly into its typed
   variants; do not split a command into a kind plus `serde_json::Value` and re-parse.
-- A field naming another entity is `<entity>_name` (`zone_name`, `notify_key_name`,
+- A field naming another entity is `<entity>_name` (`zone_name`, `notify_tsig_key_name`,
   `policy_name`). Serials use `u32`, key tags `u16`, counts `u64`. Change counts are
   `added` / `deleted` / `unchanged`; a diff uses `removed`.
 - Responses use enums for fixed values, with schema values exposed. An optional
@@ -416,7 +416,8 @@ than returning anything.
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
   `record:read`, an add `record:create`, a delete `record:delete`, against the
   signing key's role; an add that replaces a CNAME, DNAME, or matching WKS record needs
-  `record:delete` too, one that moves the record set's TTL `record:update`.
+  `record:delete` too, one that moves the TTL of records sharing a name and type
+  `record:update`.
   An SOA addition needs `zone:update`, since it replaces zone metadata.
   A TSIG-signed transfer needs `zone:transfer` (the
   catalog zone an `All` grant); an unsigned one is the ACL's alone.
@@ -425,78 +426,77 @@ than returning anything.
 
 Keep the request path, actor, and access scope separate. `ChangeSource` names
 `Api`, `Socket`, `Nsupdate`, or `System`, never an authentication method or a
-permission level. `changed_by` is an optional `ChangeActor` carrying a credential
+permission level. `actor` is an optional `ChangeActor` carrying a credential
 kind and its name (`Token` or `TsigKey`), snapshotted without a foreign key.
 Socket commands, unauthenticated API requests, unsigned updates, and background
 work have no named token/key actor. The trusted entry point supplies the origin;
 request payloads cannot choose it. `CallerScope` decides permissions independently
 of the `ChangeOrigin` stored with a version. Persist an actor in the scalar
-columns `changed_by_kind` and `changed_by_name`; both are populated or both null.
+columns `actor_kind` and `actor_name`; both are populated or both null.
 Decode them into `Option<ChangeActor>` at the row boundary. The API's object shape
 does not dictate a JSON database column.
 
-A management change — a token, role, grant, TSIG key, secondary or DNSSEC
-policy created, updated or deleted, a zone deleted, whose versions go
-with it, and a zone's DNSSEC settings changed (`dnssec set`: its policy and
-parent nameservers, which a version never holds, even when the re-signing
-they cause saves one) — is the one write no zone version records, so it saves an
-`AuditLog` (`audit::save_tx`) in its own transaction, after its row write
-and before commit: a change that rolled back leaves no row and a committed
-one always has one. The entry names the entity kind and name (a grant's is
-its role's), the operation, and the `ChangeSource` and `ChangeActor` a
-version carries. Reads, refused requests, and startup setup (the built-in
-`admin` role) leave none. `log:read`, an all-zones action, lists the log;
-`audit_log.max_days` bounds it, as [Logs and history](#logs-and-history)
-describes.
-
 ### Logs and history
 
-A log holds rows that only say what happened: nothing decides on them. Its
-table is `<subject>_log`, singular where entity tables are plural, and its row
-type and db module carry that name (`audit_log`, `AuditLog`;
-`transfer_log`, `TransferLog`). The service module keeps the subject (`audit`,
-`access`, `transfer`). The audit log holds management changes. The access log
-records HTTP management responses, authentication denials, and the unknown
-path and method fallbacks. Health, metrics, OpenAPI reads and CORS preflights
-are outside that path. For nsupdate, record the processing and encoding
-outcome before the transport write. Identify the surface, client address and
-verified credential. The transfer log records the configured outcomes by
-client address and stored zone. Unknown zones, the synthesized catalog zone,
-and an IXFR answered with the current SOA alone leave no row. Count UDP
-refusals in metrics only because their source addresses can be forged.
-IXFR, diff, and rollback read `zone_journal` and `zone_versions`.
+A log holds rows that only say what happened. The activity log records committed
+DNS and management changes and recorded operation results. The access log
+records HTTP management responses, authentication denials, the unknown path
+and method fallbacks, and nsupdate outcomes. Keep health, metrics, OpenAPI,
+and CORS preflights outside the access log. For nsupdate, record the
+processing and encoding result before the transport write. Record the request
+surface, `client_ip`, and verified `actor`. Use `requested_at` for request arrival,
+`response_code` for the HTTP status or DNS RCODE, and `error_code` for a fixed
+failure classification.
 
-Every log is read the same way: `GET /logs/<subject>`, `bindizr log
-<subject>`, and a paged `list` in its service module under `log:read`, an
-all-zones action. Keep the named target, verified actor, outcome, and explicitly
-selected non-secret change metadata, such as audited policy timings. Never store
-a raw query string or body, credential material, or record values.
-This applies to derived diagnostics too: copying a response's error message is
-not safe merely because the body itself was omitted. Keep a classified outcome
-or a diagnostic known to exclude input values; a length limit is not redaction.
+The transfer log records configured results by `client_ip` and stored
+zone. Unknown zones, the synthesized catalog zone, and an IXFR answered
+with the current SOA alone leave no row. Count UDP refusals in metrics
+because their source addresses can be forged. IXFR, diff, and rollback
+read `zone_journal` and `zone_versions`.
 
-A log is append-only. `save_*` writes a row once the outcome is known and
-nothing updates it: the audit row inside its change's transaction, the
-transfer log on the pool, and the access log through a bounded queue to one
-writer task, so no request waits on its row; a full queue drops the row and
-counts it. A failure to save an access or transfer log row is logged and leaves
-the answer already given as it was. An audit-log failure propagates and rolls
-back the management change; it is part of that change's transaction.
+The log service modules carry the subject (`activity`, `access`, `transfer`).
+The storage modules carry the table names (`activity_log`, `access_log`,
+`transfer_log`). Read each log with `GET /logs/<subject>` or
+`bindizr log <subject>`. A paged service listing requires `log:read`, an
+all-zones action. Keep the named target, verified actor, result, and selected
+change details such as audited policy timings. Keep raw query strings, bodies,
+credential material, and record values outside the logs. A classification or
+diagnostic must exclude rejected input and private values.
 
-Zone history has a `[history]` table and each log a `[<subject>_log]` one,
-named as its table is (`[access_log]` for `access_log`), so no log setting
-reads like `[logging]`, the process's own output. `max_days` bounds each, pruned by the scheduler
-pass, and `0` keeps it forever. `save` narrows what a log writes, where a
-narrower set means something: `transfer_log.save = "unserved"` keeps
-refusals and failures alone, so zone status and a secondary's summary then
-show no successful transfer, and `access_log.save = "denied"` keeps 401,
-403, TSIG rejections and REFUSED alone; `"none"` turns either log off. The
-audit log has no `save`, since a committed change always has its row. A
-setting spelled with a fixed set of words, booleans included, lists them in
-the commented config and the chart values as `a | b | c` (`true | false`)
-before what they mean; a number needs no list. The transfer log's prune keeps the
-newest row of each client address and zone whatever its age: that row is the
-last transfer those reports read.
+Append committed activity to `activity_log` inside its change's transaction
+after the domain locks, reads, and writes. Batch related changes and let the
+database assign each row its own ID. Activities carry a canonical
+`ActivityOperation`, target, `source`, `actor`, `result`, `created_at`, and optional
+change detail. Keep `ActivityOperation` and `ActivityTarget` at the activity
+recording and listing boundaries. DNS input, plans, and mutation helpers use
+domain types and return the effects they applied. The service that owns the
+transaction maps those effects to activity rows. Authorization uses the target
+and request to decide which actions are required. The `GET /logs/activity`
+response includes the canonical operation names alongside its page, even when
+the filters select no rows. Each catalogued operation has a producer.
+Single and multi-zone imports both write
+`zone.import` per committed zone. The commit determines the activity operation.
+The import options describe reconciliation, preview, and missing-zone behavior.
+
+Transfer log rows also use `created_at` for the time recorded. Management listing
+time windows use `since` inclusive and `until` exclusive.
+
+An activity write failure rolls the corresponding domain change back. Completed
+nontransactional outcomes are saved separately. Transfer log writes use the
+pool. Access log writes go through a bounded queue and drop and count excess
+requests. Access or transfer log write failures leave the answer already given
+as it was.
+
+Zone history has a `[history]` section. The log sections are `[activity_log]`,
+`[access_log]`, and `[transfer_log]`. Their `max_days` values are pruned by the
+scheduler. Set zero to retain all records. `transfer_log.save = "unserved"`
+keeps refusals and failures, so status and secondary summaries have no
+successful transfers then.
+`access_log.save = "denied"` keeps 401, 403, TSIG rejections and REFUSED.
+`"none"` turns either of these logs off. The activity log records every committed
+event. Settings with a fixed set of words list them in the commented config
+and chart values as `a | b | c` before describing them. Transfer log pruning
+retains the latest row for each client address and zone.
 
 ### Transactions and locking
 
@@ -538,11 +538,11 @@ One locking model covers the service layer; keep new code on it:
   page as plain statements; drift between the two is accepted.
 - **Management writes** (tokens, TSIG keys, roles, grants, policies,
   secondaries) run in a transaction that re-authenticates the caller and
-  commits the entity change together with its audit row. UNIQUE/FK constraints
+  commits the entity change together with its activity log row. UNIQUE/FK constraints
   backstop their check-then-act races, read as friendly conflicts where the
   service calls the statement. A delete whose
   statement removed no row — its target went meanwhile — reports not found,
-  as the zone delete's locked lookup does, and saves no audit row.
+  as the zone delete's locked lookup does, and saves no activity log row.
 - MySQL and PostgreSQL use READ COMMITTED with row locks and constraints.
   SQLite uses WAL: mutations begin IMMEDIATE to reserve the database writer,
   and read-only transactions begin DEFERRED to read a consistent snapshot.
@@ -601,13 +601,13 @@ Reads keep their own transaction contract.
   a rejected sequence rolls back in full.
 - A dry run performs the same input, authorization and state validation as apply,
   then returns before changing managed data or signing. It leaves entity rows,
-  serials, journal, versions, signing state and change audit rows unchanged, with
+  serials, journal, versions, signing state and committed activity unchanged, with
   no successful-write metrics or NOTIFY. Authentication may stamp credential use,
   and access logs and request/failure metrics may record that the request occurred.
   SQL constraints still backstop actual writes; a preview cannot promise that a
   later request or commit will succeed.
 - Imports resolve text using the locked zone's TTL, or configured creation defaults
-  for a missing zone. Parse once; AXFR passes records without rendering a master
+  for a missing zone. Parse once; AXFR passes records without rendering a zone
   file. Plan and validate missing-zone imports before inserting the zone.
   A bulk import (`zone::import_many`) runs that flow once per zone, each in its
   own transaction in list order. The result reports each zone's outcome and a
@@ -617,8 +617,9 @@ Reads keep their own transaction contract.
   catalog before the first transfer. Each zone's transaction re-authenticates
   the caller and authorizes the actual import or creation against the locked state.
 - NOTIFY, successful-write metrics and success logs follow commit. A no-op reports
-  its outcome without claiming a version change. A preview log says `dry_run` or
-  `applied`. A transaction result carries any change information these steps need.
+  its result without claiming a version change. The response identifies a preview
+  with `dry_run` and `applied`. A transaction result carries any change information
+  these steps need.
 
 These are responsibility boundaries, not a requirement for a helper or struct per
 stage. Keep orchestration explicit; do not introduce a callback-based execution
@@ -635,7 +636,7 @@ Service `notify` and `probe` flows select secondaries, load keys/history and
 assemble reports; `dns_client` owns network exchanges and response validation.
 Service flows choose configured targets and timeouts, including parent DS probes;
 network clients receive those inputs explicitly. SOA/XFR response metrics and
-transfer history reflect the final encoding/transmission outcome; handlers do
+the transfer log reflect the final encoding/transmission result; handlers do
 not count a refusal or success before work that could turn it into a failure.
 Encoding failures remain typed outcomes until the handler
 chooses its fallback response. UPDATE metrics describe request processing and
@@ -1074,7 +1075,7 @@ Use `From` / `TryFrom` for a value derived from one other value and nothing else
 Use `from_<source>` when the source type alone does not express the representation
 (`OwnerName::from_row`, `SoaMailbox::from_email`, `Run::from_dry_run`), or the main
 source needs supplementary representation data (`from_secondary(secondary,
-notify_key_name)`). These conversions do no I/O and make no service policy decision.
+notify_tsig_key_name)`). These conversions do no I/O and make no service policy decision.
 Combining independent inputs or classifying an outcome is assembly; ownership,
 not argument count, decides whether it is a constructor or free function.
 
@@ -1264,12 +1265,12 @@ Inspect fields, variants, and call sites. A precise noun (`Run`, `DsCheck`,
 | --- | --- | --- |
 | Response data, including nested objects | `<Subject>Response` | `ZoneResponse`, `PaginationResponse`, `RecordDiffResponse`; no `Info` suffix for reuse or nesting. |
 | One entity wrapped under its named field | `Single<Subject>Response` | `SingleZoneResponse { zone: ZoneResponse }`; distinguishes the existing envelope from its reusable payload, independent of read/write operation. |
-| Operation-specific input/output | `<Operation><Subject><Request\|Response\|Query>` | `CreateTokenResponse`, `WriteZoneResponse`, `CheckSecondaryResponse`, `AdvanceDnssecRolloverQuery`. |
+| Operation-specific input/output | `<Operation><Subject><Request\|Response\|Query>` | `CreateApiTokenResponse`, `WriteZoneResponse`, `CheckSecondaryResponse`, `AdvanceDnssecRolloverQuery`. |
 | A whole operation's input | `<Operation><Subject>Request` | `DeleteRecordsRequest` includes selection and mutation controls such as `dry_run`; it is more than a filter. |
 | HTTP query extraction | `<Subject>Query` or the operation-specific form above | Front-end extraction, not a shared payload role. |
 | Grouped operation inputs | `*Params`, `*Options` | Use only where a more specific responsibility does not name the group. |
 
-Use a base-form verb followed by the complete subject and suffix: `CreateTokenResponse`,
+Use a base-form verb followed by the complete subject and suffix: `CreateApiTokenResponse`,
 not `CreatedTokenResponse`; `WriteZoneResponse`, not `ZoneWriteResponse`.
 Request/response pairs share their stem (`CreateBulkRecordsRequest` /
 `CreateBulkRecordsResponse`). Protocol qualifiers are part of the subject
@@ -1324,7 +1325,7 @@ unspecified judgment (`Relevant`), or changeable default.
 `VersionFilter::ExcludePastSignerOnly` excludes past versions whose nonempty
 journal contains only derived DNSSEC changes; current versions and versions
 without journal entries remain. `All` includes every stored version. This filter
-is independent of `change_source` and `changed_by`.
+is independent of `source` and `actor`.
 
 Use the same role in fields, parameters, SQL constants, and selectors:
 `filter: VersionFilter`, `list_by_filter`, `count_by_filter`.

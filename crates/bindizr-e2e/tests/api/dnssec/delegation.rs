@@ -103,13 +103,13 @@ async fn dnssec_disable_rejects_invalid_parent_responses_without_changes() {
 /// Verify that skipping holddown still requires a parent DS check.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
+async fn dnssec_rollover_advance_checks_the_parent_even_when_the_holddown_is_skipped() {
     let app = TestApp::start_local().await;
 
     let parent = FakeParent::start();
 
     // A short TTL lets the test reach rollover promotion.
-    let zone_name = app.zone_name("ds-seen.example");
+    let zone_name = app.zone_name("advance.example");
 
     let (status, _) = app
         .send_request(
@@ -164,7 +164,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
     let (status, _) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+            &format!("/zones/{zone_name}/dnssec/rollover/advance"),
             None,
         )
         .await;
@@ -174,7 +174,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true"),
+            &format!("/zones/{zone_name}/dnssec/rollover/advance?skip_holddown=true"),
             None,
         )
         .await;
@@ -221,7 +221,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true"),
+            &format!("/zones/{zone_name}/dnssec/rollover/advance?skip_holddown=true"),
             None,
         )
         .await;
@@ -323,6 +323,17 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     assert_eq!(body["delegation"]["ds_key_tags"], json!([]));
     assert!(body["delegation"]["ds_ttl"].is_null(), "{body}");
     assert_eq!(body["delegation"]["keys"][0]["ds_published"], false);
+
+    let (status, activity) = app
+        .send_request(
+            Method::GET,
+            &format!("/logs/activity?operation=dnssec.check_ds&zone_name={zone_name}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{activity}");
+    assert_eq!(activity["pagination"]["total"], 2, "{activity}");
+    assert_eq!(activity["items"][0]["result"], "succeeded", "{activity}");
 
     let (status, _) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
@@ -446,12 +457,12 @@ async fn dnssec_disable_rejects_unreachable_parent() {
 /// Verify that every parent must serve the exact DS before key promotion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
+async fn dnssec_rollover_advance_requires_the_exact_ds_on_every_parent_server() {
     let app = TestApp::start_local().await;
 
     let first_parent = FakeParent::start();
     let second_parent = FakeParent::start();
-    let zone_name = app.zone_name("ds-seen-servers.example");
+    let zone_name = app.zone_name("advance-servers.example");
 
     let (status, _) = app
         .send_request(
@@ -507,7 +518,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
     .unwrap();
     let new_ds = DsRecord::from_status(&body, new_key_tag, 60);
 
-    let ds_seen_path = format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true");
+    let advance_path = format!("/zones/{zone_name}/dnssec/rollover/advance?skip_holddown=true");
     let new_key_published = |body: &Value| {
         body["delegation"]["keys"]
             .as_array()
@@ -533,7 +544,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(new_key_published(&body), false, "{body}");
 
-    let (status, body) = app.send_request(Method::POST, &ds_seen_path, None).await;
+    let (status, body) = app.send_request(Method::POST, &advance_path, None).await;
 
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_DS_NOT_PUBLISHED");
@@ -554,14 +565,14 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
     assert_eq!(body["delegation"]["ds_state"], "published");
     assert_eq!(new_key_published(&body), false, "{body}");
 
-    let (status, body) = app.send_request(Method::POST, &ds_seen_path, None).await;
+    let (status, body) = app.send_request(Method::POST, &advance_path, None).await;
 
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_DS_NOT_PUBLISHED");
 
     second_parent.set_ds(vec![old_ds, new_ds]);
 
-    let (status, body) = app.send_request(Method::POST, &ds_seen_path, None).await;
+    let (status, body) = app.send_request(Method::POST, &advance_path, None).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
@@ -577,11 +588,11 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
 /// Verify that SHA-1 DS records computed by a parent are accepted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
+async fn dnssec_rollover_advance_accepts_the_sha1_ds_a_parent_computed_itself() {
     let app = TestApp::start_local().await;
 
     let parent = FakeParent::start();
-    let zone_name = app.zone_name("ds-seen-sha1.example");
+    let zone_name = app.zone_name("advance-sha1.example");
 
     let (status, _) = app
         .send_request(
@@ -660,7 +671,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true"),
+            &format!("/zones/{zone_name}/dnssec/rollover/advance?skip_holddown=true"),
             None,
         )
         .await;
@@ -679,11 +690,11 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
 /// Verify that unsupported parent digests remain distinct from missing DS.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds() {
+async fn dnssec_rollover_advance_separates_an_unverifiable_digest_type_from_a_missing_ds() {
     let app = TestApp::start_local().await;
 
     let parent = FakeParent::start();
-    let zone_name = app.zone_name("ds-seen-digest.example");
+    let zone_name = app.zone_name("advance-digest.example");
 
     let (status, _) = app
         .send_request(
@@ -762,7 +773,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true"),
+            &format!("/zones/{zone_name}/dnssec/rollover/advance?skip_holddown=true"),
             None,
         )
         .await;

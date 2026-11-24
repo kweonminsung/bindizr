@@ -3,7 +3,7 @@ use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::Rdata;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::metrics::Metrics;
-use bindizr_core::model::audit_log::{AuditEntity, AuditLog, AuditLogId, AuditOperation};
+use bindizr_core::model::activity_log::{ActivityLog, ActivityOperation, ActivityResult};
 use bindizr_core::model::change::ChangeSource;
 use bindizr_core::model::dnssec_record::{DnssecRecord, DnssecRecordId, DnssecRecordType};
 use bindizr_core::model::record::{Record, RecordId, RecordType};
@@ -19,9 +19,9 @@ use super::*;
 use crate::authorization::Caller;
 use crate::error::ErrorCode;
 use crate::types::{
-    AuditLogFilter, PageRequest, RecordFilter, TokenFilter, TsigKeyFilter, ZoneFilter,
+    ActivityLogFilter, ApiTokenFilter, PageRequest, RecordFilter, TsigKeyFilter, ZoneFilter,
 };
-use crate::{Context, audit, record, role, secondary, token, tsig_key, zone};
+use crate::{Context, activity, record, role, secondary, token, tsig_key, zone};
 
 /// Build real service state over a disposable in-memory database.
 async fn context() -> Context {
@@ -104,7 +104,7 @@ async fn management_metadata_pages_keep_names_filters_and_cardinalities() {
         &cx,
         &caller,
         &serde_json::from_value(json!({
-            "name": "metadata-secondary", "address": "192.0.2.1", "notify_key_name": "a-credential"
+            "name": "metadata-secondary", "address": "192.0.2.1", "notify_tsig_key_name": "a-credential"
         }))
         .unwrap(),
     )
@@ -113,7 +113,7 @@ async fn management_metadata_pages_keep_names_filters_and_cardinalities() {
     let tokens = token::list(
         &cx,
         &caller,
-        &TokenFilter {
+        &ApiTokenFilter {
             role_name: Some("metadata".to_string()),
             limit: Some(1),
             offset: Some(1),
@@ -124,7 +124,7 @@ async fn management_metadata_pages_keep_names_filters_and_cardinalities() {
     assert_eq!(tokens.pagination.total, 2);
     assert_eq!(tokens.items[0].name, "a-credential");
     assert_eq!(tokens.items[0].role_name, "metadata");
-    let all_tokens = token::list(&cx, &caller, &TokenFilter::default())
+    let all_tokens = token::list(&cx, &caller, &ApiTokenFilter::default())
         .await
         .unwrap();
     assert_eq!(
@@ -187,7 +187,7 @@ async fn management_metadata_pages_keep_names_filters_and_cardinalities() {
     .await
     .unwrap();
     assert_eq!(
-        secondaries.items[0].notify_key_name.as_deref(),
+        secondaries.items[0].notify_tsig_key_name.as_deref(),
         Some("a-credential")
     );
     let role = role::get_by_name(&cx, &caller, "metadata").await.unwrap();
@@ -198,7 +198,7 @@ async fn management_metadata_pages_keep_names_filters_and_cardinalities() {
     let page = token::list(
         &cx,
         &caller,
-        &TokenFilter {
+        &ApiTokenFilter {
             limit: Some(1),
             offset: Some(u64::MAX),
             ..Default::default()
@@ -261,16 +261,16 @@ async fn listings_preserve_unbounded_windows_across_records_and_management() {
         )
         .await
         .unwrap();
-        bindizr_db::audit_log::create_tx(
+        bindizr_db::activity_log::create_tx(
             &mut tx,
-            AuditLog {
-                id: AuditLogId::UNWRITTEN,
-                entity: AuditEntity::Role,
-                entity_name: format!("page{index:04}"),
-                operation: AuditOperation::Create,
+            &ActivityLog {
+                id: 0,
+                operation: ActivityOperation::RoleCreate,
+                result: ActivityResult::Changed,
+                target: activity::named_target(&format!("page{index:04}")),
                 detail: None,
-                change_source: ChangeSource::Socket,
-                changed_by: None,
+                source: ChangeSource::Socket,
+                actor: None,
                 created_at: Utc::now(),
             },
         )
@@ -328,8 +328,8 @@ async fn listings_preserve_unbounded_windows_across_records_and_management() {
                 retry: zone.retry,
                 expire: zone.expire,
                 minimum_ttl: zone.minimum_ttl,
-                change_source: ChangeSource::Socket,
-                changed_by: None,
+                source: ChangeSource::Socket,
+                actor: None,
                 created_at: Utc::now(),
             },
         )
@@ -369,10 +369,10 @@ async fn listings_preserve_unbounded_windows_across_records_and_management() {
         )
         .await
         .unwrap();
-        let logs = audit::list(
+        let logs = activity::list(
             &cx,
             &caller,
-            &AuditLogFilter {
+            &ActivityLogFilter {
                 limit,
                 offset,
                 ..Default::default()
@@ -441,7 +441,7 @@ async fn listings_preserve_unbounded_windows_across_records_and_management() {
             &cx,
             &caller,
             &RecordFilter {
-                signed: Some(true),
+                include_dnssec: Some(true),
                 limit,
                 offset,
                 ..Default::default()
@@ -493,7 +493,7 @@ async fn management_listings_reject_invalid_limits_before_role_queries() {
         let token_error = token::list(
             &cx,
             &caller,
-            &TokenFilter {
+            &ApiTokenFilter {
                 role_name: Some("missing".to_string()),
                 limit: Some(limit),
                 ..Default::default()

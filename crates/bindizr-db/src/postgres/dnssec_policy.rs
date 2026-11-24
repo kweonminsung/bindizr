@@ -14,7 +14,7 @@ pub(crate) async fn create_tx(
 
     let row = sqlx::query(
         r#"
-        INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at)
+        INSERT INTO dnssec_policies (name, algorithm, denial, key_layout, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id
         "#,
@@ -22,7 +22,7 @@ pub(crate) async fn create_tx(
     .bind(&policy.name)
     .bind(policy.algorithm.as_i32())
     .bind(policy.denial.as_str())
-    .bind(policy.split_keys)
+    .bind(policy.key_layout.as_str())
     .bind(policy.signature_validity_days)
     .bind(policy.signature_refresh_days)
     .bind(policy.zsk_lifetime_days)
@@ -42,7 +42,7 @@ pub(crate) async fn get_tx(
     policy_id: PolicyId,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(
-        "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = $1",
+        "SELECT id, name, algorithm, denial, key_layout, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = $1",
     )
     .bind(policy_id)
     .fetch_optional(&mut **tx)
@@ -59,7 +59,7 @@ pub(crate) async fn get_by_name(
     let mut connection = pool.acquire().await?;
 
     let policy = sqlx::query_as::<_, DnssecPolicy>(
-        "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = $1",
+        "SELECT id, name, algorithm, denial, key_layout, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = $1",
     )
     .bind(name)
     .fetch_optional(&mut *connection)
@@ -75,7 +75,7 @@ pub(crate) async fn get_by_name_tx(
     lock_level: LockLevel,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
-        "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = $1{}",
+        "SELECT id, name, algorithm, denial, key_layout, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = $1{}",
         lock_level.clause(),
     )))
     .bind(name)
@@ -132,7 +132,7 @@ pub(crate) async fn list_all(
 
     let policies = sqlx::query_as::<_, DnssecPolicy>(
         r#"
-        SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at
+        SELECT id, name, algorithm, denial, key_layout, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at
         FROM dnssec_policies
         ORDER BY name
         LIMIT $1

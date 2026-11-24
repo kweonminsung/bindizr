@@ -66,14 +66,14 @@ data:
 
     [dns.transfer]
     cache_max_records = {{ int64 .Values.bindizr.dns.transfer.cacheMaxRecords }}
-    require_tls = {{ .Values.bindizr.dns.transfer.requireTls }}
+    tls_required = {{ .Values.bindizr.dns.transfer.tlsRequired }}
 
     [dns.import]
     timeout_secs = {{ int64 .Values.bindizr.dns.import.timeoutSecs }}
     max_records = {{ int64 .Values.bindizr.dns.import.maxRecords }}
 
     [dns.zone_defaults]
-    ttl = {{ int64 .Values.bindizr.zoneDefaults.ttl }}
+    default_ttl = {{ int64 .Values.bindizr.zoneDefaults.defaultTtl }}
     refresh = {{ int64 .Values.bindizr.zoneDefaults.refresh }}
     retry = {{ int64 .Values.bindizr.zoneDefaults.retry }}
     expire = {{ int64 .Values.bindizr.zoneDefaults.expire }}
@@ -82,8 +82,8 @@ data:
     [history]
     max_days = {{ int64 .Values.bindizr.history.maxDays }}
 
-    [audit_log]
-    max_days = {{ int64 .Values.bindizr.auditLog.maxDays }}
+    [activity_log]
+    max_days = {{ int64 .Values.bindizr.activityLog.maxDays }}
 
     [access_log]
     save = "{{ .Values.bindizr.accessLog.save }}"

@@ -69,7 +69,7 @@ pub async fn list_by_filter_with_zone(
     pagination::validate_page_limit(filter.limit)?;
     let limit = filter.limit;
     let offset = filter.offset;
-    let view = ZoneView::from_signed(filter.signed.unwrap_or(false));
+    let view = ZoneView::from_include_dnssec(filter.include_dnssec.unwrap_or(false));
 
     // Scoped callers read unknown and invisible zones alike as empty
     // pages, so skip the 404 probe.
@@ -86,7 +86,7 @@ pub async fn list_by_filter_with_zone(
     // for both would answer a narrower question than the one put.
     if view == ZoneView::Signed && filter.value.is_some() {
         return Err(ServiceError::invalid_input(
-            "value cannot narrow the derived DNSSEC records; drop value, or drop signed",
+            "value cannot narrow the derived DNSSEC records; drop value, or drop include_dnssec",
         ));
     }
 

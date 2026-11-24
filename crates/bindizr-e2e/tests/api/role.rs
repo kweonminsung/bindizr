@@ -174,7 +174,7 @@ async fn signed_record_listing_preserves_scoped_grants_and_pagination() {
     }
 
     app.set_auth_token(scoped_token);
-    let query = "/records?signed=true&sort=name&order=asc";
+    let query = "/records?include_dnssec=true&sort=name&order=asc";
     let (status, body) = app.send_request(Method::GET, query, None).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -790,7 +790,7 @@ async fn narrowed_grant_reads_only_matching_records() {
     let (status, _) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions/diff?from=1&to=2"),
+            &format!("/zones/{zone_name}/versions/diff?from_serial=1&to_serial=2"),
             None,
         )
         .await;
@@ -2046,7 +2046,7 @@ async fn responses_hide_records_outside_read_grants() {
         ),
         (
             Method::GET,
-            format!("/zones/{zone_name}/versions/diff?from={first_serial}"),
+            format!("/zones/{zone_name}/versions/diff?from_serial={first_serial}"),
             None,
         ),
         (Method::GET, format!("/zones/{zone_name}/dnssec"), None),

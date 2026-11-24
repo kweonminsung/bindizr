@@ -72,10 +72,16 @@ async fn secondary_supports_create_update_and_delete() {
     );
 
     // A NOTIFY key is named on the row and cleared with an empty name.
-    let notify_key_name = format!("{}-notify", app.namespace());
+    let notify_tsig_key_name = format!("{}-notify", app.namespace());
 
     app.run_cli_success(
-        &["tsig-key", "create", &notify_key_name, "--role", "admin"],
+        &[
+            "tsig-key",
+            "create",
+            &notify_tsig_key_name,
+            "--role",
+            "admin",
+        ],
         None,
     )
     .await;
@@ -85,14 +91,14 @@ async fn secondary_supports_create_update_and_delete() {
                 "secondary",
                 "update",
                 &name,
-                "--notify-key",
-                &notify_key_name,
+                "--notify-tsig-key",
+                &notify_tsig_key_name,
             ],
             None,
         )
         .await;
 
-    assert!(keyed.contains(&notify_key_name), "{keyed}");
+    assert!(keyed.contains(&notify_tsig_key_name), "{keyed}");
 
     let cleared = app
         .run_cli_success(
@@ -100,7 +106,7 @@ async fn secondary_supports_create_update_and_delete() {
                 "secondary",
                 "update",
                 &name,
-                "--notify-key",
+                "--notify-tsig-key",
                 "",
                 "--output",
                 "json",
@@ -111,11 +117,11 @@ async fn secondary_supports_create_update_and_delete() {
     let cleared: Value = serde_json::from_str(&cleared).expect("CLI did not return valid JSON");
 
     assert!(
-        cleared["secondary"]["notify_key_name"].is_null(),
+        cleared["secondary"]["notify_tsig_key_name"].is_null(),
         "{cleared}"
     );
 
-    app.run_cli_success(&["tsig-key", "delete", &notify_key_name], None)
+    app.run_cli_success(&["tsig-key", "delete", &notify_tsig_key_name], None)
         .await;
 
     let args = ["secondary", "update", &name];

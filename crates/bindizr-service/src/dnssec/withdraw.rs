@@ -3,13 +3,14 @@
 
 use bindizr_core::dns::dnssec::SigningPass;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::DnssecStatusResponse;
-use crate::{Context, dnssec, notify, transaction};
+use crate::{Context, dnssec, notify, transaction, zone};
 
 /// Publish the delete CDS/CDNSKEY pair (RFC 8078, Section 4), asking a
 /// CDS-consuming parent to drop the zone's DS: the first step of going insecure.
@@ -56,6 +57,14 @@ pub async fn withdraw(
             Some(&signed.policy),
             &signed.keys,
             new_serial,
+        )
+        .await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::DnssecWithdraw,
+            zone::activity_target(&signed.zone.name),
+            caller.change_origin(),
         )
         .await?;
 
@@ -122,6 +131,14 @@ pub async fn cancel_withdrawal(
             Some(&signed.policy),
             &signed.keys,
             new_serial,
+        )
+        .await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::DnssecCancelWithdrawal,
+            zone::activity_target(&signed.zone.name),
+            caller.change_origin(),
         )
         .await?;
 

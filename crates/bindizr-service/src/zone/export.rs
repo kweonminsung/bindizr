@@ -1,4 +1,4 @@
-//! Render a zone as BIND master-file text, the inverse of `zone import`.
+//! Render a zone as a BIND zone file, the inverse of `zone import`.
 
 use std::fmt::Write as _;
 

@@ -16,17 +16,17 @@ mod zone;
 pub(crate) use dnssec::{DnssecKeyRow, DnssecPolicyRow};
 pub(crate) use history::{RollbackSummaryRow, VersionRecordRow, VersionRow};
 pub(crate) use import::{ImportSummaryRow, ImportZonesRow};
-pub(crate) use logs::{AccessLogRow, AuditLogRow, TransferLogRow};
+pub(crate) use logs::{AccessLogRow, ActivityLogRow, TransferLogRow};
 pub(crate) use record::RecordRow;
 pub(crate) use role::{RoleGrantRow, RoleRow};
 pub(crate) use secondary::{SecondaryRow, SecondaryStatusRow};
-pub(crate) use token::TokenRow;
+pub(crate) use token::ApiTokenRow;
 pub(crate) use tsig_key::TsigKeyRow;
 pub(crate) use zone::ZoneRow;
 
 #[cfg(test)]
 mod tests {
-    use bindizr_service::types::{CreateTokenResponse, SingleTsigKeyResponse};
+    use bindizr_service::types::{CreateApiTokenResponse, SingleTsigKeyResponse};
     use serde_json::json;
     use tabled::Tabled;
 
@@ -41,14 +41,14 @@ mod tests {
             "secret": "private-fixture"
         }))
         .unwrap();
-        let token: CreateTokenResponse = serde_json::from_value(json!({
+        let token: CreateApiTokenResponse = serde_json::from_value(json!({
             "token": {"id": 1, "name": "test", "description": null, "role_name": "admin",
                 "created_at": "2026-01-01T00:00:00Z", "expires_at": null, "last_used_at": null},
             "secret": "private-fixture"
         }))
         .unwrap();
         let tsig_row = TsigKeyRow::from(&tsig_key);
-        let token_row = TokenRow::from(&token);
+        let token_row = ApiTokenRow::from(&token);
 
         for debug in [format!("{tsig_row:#?}"), format!("{token_row:?}")] {
             assert!(debug.contains("<redacted>"));

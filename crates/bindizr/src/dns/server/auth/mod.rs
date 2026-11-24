@@ -7,8 +7,7 @@ use bindizr_core::dns::message::{ExtendedErrorCode, Opcode, OptRcode, QueryMetad
 use bindizr_core::dns::tsig::{
     RequestSignature, RequestTsig, ResponseSigner, TransferSigner, TsigError,
 };
-use bindizr_core::dns::{message, tsig};
-use bindizr_core::model::transfer::TransferTransport;
+use bindizr_core::dns::{DnsTransport, message, tsig};
 use bindizr_core::model::tsig_key::TsigKey;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
@@ -157,13 +156,13 @@ pub(crate) async fn admit_transfer(
     dns_cx: &DnsContext,
     client_ip: IpAddr,
     query_data: &[u8],
-    transport: TransferTransport,
+    transport: DnsTransport,
 ) -> Result<QueryIdentity, QueryRefusal> {
     let identity = authenticate_query(dns_cx, client_ip, query_data, transport).await?;
 
-    if dns_cx.daemon().config().dns.transfer.require_tls && transport != TransferTransport::Tls {
+    if dns_cx.daemon().config().dns.transfer.tls_required && transport != DnsTransport::Tls {
         return Err(QueryRefusal::refused(
-            "transfers require TLS (dns.transfer.require_tls)".to_string(),
+            "transfers require TLS (dns.transfer.tls_required)".to_string(),
             identity.signer,
         ));
     }
@@ -262,9 +261,9 @@ pub(crate) async fn authenticate_query(
     dns_cx: &DnsContext,
     client_ip: IpAddr,
     query_data: &[u8],
-    transport: TransferTransport,
+    transport: DnsTransport,
 ) -> Result<QueryIdentity, QueryRefusal> {
-    let over_tls = transport == TransferTransport::Tls;
+    let over_tls = transport == DnsTransport::Tls;
 
     let Some(identity) = authenticate_query_tsig(dns_cx, query_data).await? else {
         if over_tls {

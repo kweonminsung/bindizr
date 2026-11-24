@@ -17,15 +17,15 @@ pub struct AccessLogFilter {
     /// Only requests that ended this way: `ok`, `denied`, or `failed`.
     pub result: Option<String>,
     /// Only requests made with the token or TSIG key of this name.
-    pub caller_name: Option<String>,
+    pub actor_name: Option<String>,
     /// Only requests from this client IP address.
-    pub address: Option<String>,
+    pub client_ip: Option<String>,
     /// Only requests made at or after this time (RFC 3339).
     pub since: Option<DateTime<Utc>>,
     /// Only requests made before this time (RFC 3339).
     pub until: Option<DateTime<Utc>>,
-    /// `requested_at` (the default), `source`, `target`, `status`, `result`,
-    /// or `address`.
+    /// `requested_at` (the default), `source`, `target`, `response_code`, `result`,
+    /// or `client_ip`.
     pub sort: Option<String>,
     /// `desc` (the default) or `asc`.
     pub order: Option<String>,
@@ -39,9 +39,9 @@ pub struct AccessLogFilter {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct AccessLogResponse {
     pub source: AccessSource,
-    /// The connection's peer address; a proxy in front shows as itself.
+    /// The connection's peer IP address; a proxy in front shows as itself.
     #[schema(example = "192.0.2.10")]
-    pub address: String,
+    pub client_ip: String,
     /// The HTTP method, or `UPDATE` for an nsupdate.
     #[schema(example = "DELETE")]
     pub method: String,
@@ -50,17 +50,18 @@ pub struct AccessLogResponse {
     pub target: String,
     /// The HTTP status code, or the DNS RCODE.
     #[schema(example = "403")]
-    pub status: String,
+    pub response_code: String,
     pub result: AccessResult,
     /// The token or TSIG key the request authenticated with. Null when it
     /// presented none or what it presented did not verify, and when API
     /// authentication is off.
-    pub caller: Option<ChangeActor>,
+    pub actor: Option<ChangeActor>,
     /// A fixed error classification: an API error code, DNS/TSIG RCODE, or
     /// transport failure code. Null on success; excludes rejected input and
     /// detailed client diagnostics.
     #[schema(example = "FORBIDDEN")]
-    pub error: Option<String>,
+    pub error_code: Option<String>,
+    /// When the request arrived at the front end.
     pub requested_at: DateTime<Utc>,
 }
 
@@ -69,13 +70,13 @@ impl From<&AccessLog> for AccessLogResponse {
     fn from(log: &AccessLog) -> Self {
         Self {
             source: log.source,
-            address: log.client_addr.clone(),
+            client_ip: log.client_ip.clone(),
             method: log.method.clone(),
             target: log.target.clone(),
-            status: log.status.clone(),
+            response_code: log.response_code.clone(),
             result: log.result,
-            caller: log.caller.clone(),
-            error: log.error.clone(),
+            actor: log.actor.clone(),
+            error_code: log.error_code.clone(),
             requested_at: log.requested_at,
         }
     }

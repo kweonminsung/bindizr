@@ -1,6 +1,7 @@
 use std::slice;
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::record::{Record, RecordData, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::{Zone, ZoneId};
@@ -334,6 +335,14 @@ async fn update_locked(
 
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::RecordUpdate,
+            record::activity_target(&zone.name, &updated_record),
+            caller.change_origin(),
+        )
+        .await?;
 
         // Only a preview carries the diff.
         Ok((

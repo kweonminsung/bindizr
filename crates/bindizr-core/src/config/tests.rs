@@ -145,7 +145,7 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.catalog_zone_name.as_str(), "catalog.bindizr");
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
     assert_eq!(parsed.history.max_days, 365);
-    assert_eq!(parsed.audit_log.max_days, 365);
+    assert_eq!(parsed.activity_log.max_days, 365);
     assert_eq!(parsed.access_log.save, SavedRequests::All);
     assert_eq!(parsed.access_log.max_days, 30);
     assert_eq!(parsed.transfer_log.save, SavedTransfers::All);
@@ -159,7 +159,7 @@ fn from_toml_defaults_listeners_backend_and_logging() {
     let minimal = "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n";
     let omitted = Config::from_toml(minimal, |_| Ok(None)).unwrap();
     let empty_sections = Config::from_toml(
-        &format!("[api]\n[database]\n[dns]\n[history]\n[audit_log]\n[access_log]\n[transfer_log]\n[logging]\n{minimal}"),
+        &format!("[api]\n[database]\n[dns]\n[history]\n[activity_log]\n[access_log]\n[transfer_log]\n[logging]\n{minimal}"),
         |_| Ok(None),
     )
     .unwrap();
@@ -374,9 +374,9 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
                 "BINDIZR_DNS_TLS_CERT_FILE" => Some("/tls/xot.crt".to_string()),
                 "BINDIZR_DNS_TLS_KEY_FILE" => Some("/tls/xot.key".to_string()),
                 "BINDIZR_DNS_SCHEDULER_INTERVAL_SECS" => Some("0".to_string()),
-                "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
+                "BINDIZR_DNS_ZONE_DEFAULTS_DEFAULT_TTL" => Some("600".to_string()),
                 "BINDIZR_HISTORY_MAX_DAYS" => Some("0".to_string()),
-                "BINDIZR_AUDIT_LOG_MAX_DAYS" => Some("30".to_string()),
+                "BINDIZR_ACTIVITY_LOG_MAX_DAYS" => Some("30".to_string()),
                 "BINDIZR_ACCESS_LOG_SAVE" => Some("denied".to_string()),
                 "BINDIZR_ACCESS_LOG_MAX_DAYS" => Some("3".to_string()),
                 "BINDIZR_TRANSFER_LOG_SAVE" => Some("unserved".to_string()),
@@ -427,9 +427,9 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
 
     // 0 is the off switch, not a rejected value.
     assert_eq!(overridden.dns.scheduler_interval_secs, 0);
-    assert_eq!(overridden.dns.zone_defaults.ttl.as_secs(), 600);
+    assert_eq!(overridden.dns.zone_defaults.default_ttl.as_secs(), 600);
     assert_eq!(overridden.history.max_days, 0);
-    assert_eq!(overridden.audit_log.max_days, 30);
+    assert_eq!(overridden.activity_log.max_days, 30);
     assert_eq!(overridden.access_log.save, SavedRequests::Denied);
     assert_eq!(overridden.access_log.max_days, 3);
     assert_eq!(overridden.transfer_log.save, SavedTransfers::Unserved);
@@ -1012,7 +1012,7 @@ fn from_toml_reads_history_and_log_tables() {
     let parsed = Config::from_toml(
         "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n\
          [history]\nmax_days = 30\n\
-         [audit_log]\nmax_days = 0\n\
+         [activity_log]\nmax_days = 0\n\
          [access_log]\nsave = \"denied\"\nmax_days = 7\n\
          [transfer_log]\nsave = \"unserved\"\nmax_days = 14\n",
         |_| Ok(None),
@@ -1020,7 +1020,7 @@ fn from_toml_reads_history_and_log_tables() {
     .unwrap();
 
     assert_eq!(parsed.history.max_days, 30);
-    assert_eq!(parsed.audit_log.max_days, 0);
+    assert_eq!(parsed.activity_log.max_days, 0);
     assert_eq!(parsed.access_log.save, SavedRequests::Denied);
     assert_eq!(parsed.access_log.max_days, 7);
     assert_eq!(parsed.transfer_log.save, SavedTransfers::Unserved);
@@ -1059,12 +1059,12 @@ fn log_level_spells_itself_once() {
     }
 }
 
-/// Verify that `dns.transfer.require_tls` needs the TLS listener the
+/// Verify that `dns.transfer.tls_required` needs the TLS listener the
 /// transfers are sent to.
 #[test]
-fn from_toml_requires_the_tls_listener_to_require_tls() {
+fn from_toml_requires_the_tls_listener_to_tls_required() {
     let error = parse_config(TestConfigToml {
-        dns_extra: "[dns.transfer]\nrequire_tls = true",
+        dns_extra: "[dns.transfer]\ntls_required = true",
         ..Default::default()
     })
     .unwrap_err();
@@ -1072,17 +1072,17 @@ fn from_toml_requires_the_tls_listener_to_require_tls() {
     assert!(
         error
             .to_string()
-            .contains("dns.transfer.require_tls needs dns.tls.cert_file and dns.tls.key_file"),
+            .contains("dns.transfer.tls_required needs dns.tls.cert_file and dns.tls.key_file"),
         "{error}"
     );
 
     let parsed = parse_config(TestConfigToml {
-        dns_extra: "[dns.tls]\ncert_file = \"/tls/xot.crt\"\nkey_file = \"/tls/xot.key\"\n\n[dns.transfer]\nrequire_tls = true",
+        dns_extra: "[dns.tls]\ncert_file = \"/tls/xot.crt\"\nkey_file = \"/tls/xot.key\"\n\n[dns.transfer]\ntls_required = true",
         ..Default::default()
     })
     .unwrap();
 
-    assert!(parsed.dns.transfer.require_tls);
+    assert!(parsed.dns.transfer.tls_required);
 }
 
 /// Verify that the TCP limits and the `[dns.import]` block are read with their bounds and

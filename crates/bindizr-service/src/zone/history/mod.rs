@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::record::SoaMailbox;
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::record::{Record, RecordData, RecordId, RecordKey};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
@@ -330,6 +331,14 @@ pub async fn rollback(
         // never restored (derived journal rows are skipped on rewind).
         dnssec::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
         zone::save_version_tx(&mut tx, &restored_zone, new_serial, caller.change_origin()).await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::ZoneRollback,
+            zone::activity_target(&restored_zone.name),
+            caller.change_origin(),
+        )
+        .await?;
 
         Ok((
             RollbackZoneResponse {

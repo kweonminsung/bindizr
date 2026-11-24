@@ -23,7 +23,7 @@ catch up (RFC 7583, Section 3.2.1). Then:
 To request CSK/KSK promotion without waiting for the next scheduler pass:
 
 ```sh
-bindizr dnssec rollover ds-seen example.com
+bindizr dnssec rollover advance example.com
 ```
 
 This applies the same wait and DS checks. `bindizr dnssec check-ds example.com`

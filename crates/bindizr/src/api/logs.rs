@@ -7,11 +7,12 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing};
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_service::types::{
-    AccessLogFilter, AccessLogResponse, AuditLogFilter, AuditLogResponse, ErrorResponse,
+    AccessLogFilter, AccessLogResponse, ActivityLogFilter, ActivityLogResponse, ErrorResponse,
     PaginatedResponse, TransferLogFilter, TransferLogResponse,
 };
-use bindizr_service::{Context, access, audit, transfer};
+use bindizr_service::{Context, access, activity, transfer};
 
 use crate::api::error::ApiError;
 use crate::api::extract::{Query, RequestCaller};
@@ -20,34 +21,39 @@ use crate::api::query::DEFAULT_PAGE_LIMIT;
 /// Build the log routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {
     Router::new()
-        .route("/logs/audit", routing::get(list_audit_logs))
+        .route("/logs/activity", routing::get(list_activity_logs))
         .route("/logs/access", routing::get(list_access_logs))
         .route("/logs/transfer", routing::get(list_transfer_logs))
 }
 
-/// List the audit log.
+/// List the activity log rows selected by the filters.
 #[utoipa::path(
-        get,
-        path = "/logs/audit",
-        tag = "Log",
-        summary = "List the audit log",
-        description = "The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, a zone's DNSSEC settings changed, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone's versions instead. Kept for `audit_log.max_days`. Needs `log:read` in all zones.",
-        params(AuditLogFilter),
-        responses(
-            (status = 200, description = "The rows selected", body = PaginatedResponse<AuditLogResponse>),
-            (status = 400, description = "Invalid query parameters", body = ErrorResponse),
-            (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
-            (status = 500, description = "Internal server error", body = ErrorResponse)
-        )
+    get,
+    path = "/logs/activity",
+    tag = "Log",
+    summary = "List the activity log",
+    description = "Changes confirmed by Bindizr and recorded operation results, with the canonical operation names for filtering. Filter changed results to inspect committed changes. Rows expire according to activity_log.max_days. Requires log:read in all zones.",
+    params(ActivityLogFilter),
+    responses(
+        (status = 200, description = "The activity rows selected", body = ActivityLogResponse),
+        (status = 400, description = "Invalid query parameters", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    )
 )]
-pub(crate) async fn list_audit_logs(
+pub(crate) async fn list_activity_logs(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut filter): Query<AuditLogFilter>,
+    Query(mut filter): Query<ActivityLogFilter>,
 ) -> Result<Response, ApiError> {
     filter.limit = filter.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = audit::list(&cx, &caller, &filter).await?;
+    let PaginatedResponse { items, pagination } = activity::list(&cx, &caller, &filter).await?;
+    let response = ActivityLogResponse {
+        items,
+        pagination,
+        operations: ActivityOperation::ALL.to_vec(),
+    };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

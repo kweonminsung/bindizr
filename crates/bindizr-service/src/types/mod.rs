@@ -2,7 +2,7 @@
 //! HTTP and the daemon socket share this contract; CLI responses also need `Deserialize`.
 
 mod access;
-mod audit;
+mod activity;
 mod common;
 mod dnssec;
 mod dnssec_policy;
@@ -20,7 +20,7 @@ mod version;
 mod zone;
 
 pub use access::{AccessLogFilter, AccessLogResponse};
-pub use audit::{AuditLogFilter, AuditLogResponse};
+pub use activity::{ActivityLogFilter, ActivityLogResponse};
 pub use common::{ErrorResponse, HealthResponse, HealthStatus, MessageResponse, Run};
 pub use dnssec::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecDsResponse,
@@ -60,7 +60,8 @@ pub use secondary::{
     TransferSummaryResponse, UpdateSecondaryRequest,
 };
 pub use token::{
-    CreateTokenRequest, CreateTokenResponse, SingleTokenResponse, TokenFilter, TokenResponse,
+    ApiTokenFilter, ApiTokenResponse, CreateApiTokenRequest, CreateApiTokenResponse,
+    SingleApiTokenResponse,
 };
 pub use transfer::{TransferLogFilter, TransferLogResponse};
 pub use tsig_key::{CreateTsigKeyRequest, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse};

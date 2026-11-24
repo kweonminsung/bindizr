@@ -160,31 +160,24 @@ impl FromStr for RecordSortField {
     }
 }
 
-/// The column a audit log listing sorts by.
+/// The column an activity log listing sorts by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AuditLogSortField {
+pub enum ActivityLogSortField {
     #[default]
     CreatedAt,
-    Entity,
-    EntityName,
+    Target,
     Operation,
 }
 
-impl AuditLogSortField {
+impl ActivityLogSortField {
     /// Every field, in the order an error lists them.
-    pub const ALL: [Self; 4] = [
-        Self::CreatedAt,
-        Self::Entity,
-        Self::EntityName,
-        Self::Operation,
-    ];
+    pub const ALL: [Self; 3] = [Self::CreatedAt, Self::Target, Self::Operation];
 
     /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::CreatedAt => "created_at",
-            Self::Entity => "entity",
-            Self::EntityName => "entity_name",
+            Self::Target => "target",
             Self::Operation => "operation",
         }
     }
@@ -193,13 +186,12 @@ impl AuditLogSortField {
     fn column(self) -> &'static str {
         match self {
             Self::CreatedAt => "created_at",
-            Self::Entity => "entity",
-            Self::EntityName => "entity_name",
+            Self::Target => "COALESCE(target_name, zone_name, record_name, '')",
             Self::Operation => "operation",
         }
     }
 
-    /// Return the `ORDER BY` a audit log listing pages under. The row id breaks ties in
+    /// Return the `ORDER BY` an activity log listing pages under. The row id breaks ties in
     /// the same direction, so tied rows neither move between pages nor read
     /// against the order asked for.
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
@@ -209,10 +201,10 @@ impl AuditLogSortField {
     }
 }
 
-impl FromStr for AuditLogSortField {
+impl FromStr for ActivityLogSortField {
     type Err = ParseSortError;
 
-    /// Parse a audit log sort from its text representation, ignoring case.
+    /// Parse an activity log sort from its text representation, ignoring case.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
@@ -224,16 +216,16 @@ impl FromStr for AuditLogSortField {
     }
 }
 
-/// The column a access log listing sorts by.
+/// The column an access log listing sorts by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AccessLogSortField {
     #[default]
     RequestedAt,
     Source,
     Target,
-    Status,
+    ResponseCode,
     Result,
-    Address,
+    ClientIp,
 }
 
 impl AccessLogSortField {
@@ -242,9 +234,9 @@ impl AccessLogSortField {
         Self::RequestedAt,
         Self::Source,
         Self::Target,
-        Self::Status,
+        Self::ResponseCode,
         Self::Result,
-        Self::Address,
+        Self::ClientIp,
     ];
 
     /// Return the canonical text representation.
@@ -253,38 +245,26 @@ impl AccessLogSortField {
             Self::RequestedAt => "requested_at",
             Self::Source => "source",
             Self::Target => "target",
-            Self::Status => "status",
+            Self::ResponseCode => "response_code",
             Self::Result => "result",
-            Self::Address => "address",
+            Self::ClientIp => "client_ip",
         }
     }
 
-    /// Return the SQL column for this sort field.
-    fn column(self) -> &'static str {
-        match self {
-            Self::RequestedAt => "requested_at",
-            Self::Source => "source",
-            Self::Target => "target",
-            Self::Status => "status",
-            Self::Result => "result",
-            Self::Address => "client_addr",
-        }
-    }
-
-    /// Return the `ORDER BY` a access log listing pages under. The row id breaks ties in
+    /// Return the `ORDER BY` an access log listing pages under. The row id breaks ties in
     /// the same direction, so tied rows neither move between pages nor read
     /// against the order asked for.
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
         let direction = order.keyword();
 
-        format!("ORDER BY {} {direction}, id {direction}", self.column())
+        format!("ORDER BY {} {direction}, id {direction}", self.as_str())
     }
 }
 
 impl FromStr for AccessLogSortField {
     type Err = ParseSortError;
 
-    /// Parse a access log sort from its text representation, ignoring case.
+    /// Parse an access log sort from its text representation, ignoring case.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
@@ -300,8 +280,8 @@ impl FromStr for AccessLogSortField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TransferLogSortField {
     #[default]
-    At,
-    Address,
+    CreatedAt,
+    ClientIp,
     ZoneName,
     Kind,
     Result,
@@ -310,8 +290,8 @@ pub enum TransferLogSortField {
 impl TransferLogSortField {
     /// Every field, in the order an error lists them.
     pub const ALL: [Self; 5] = [
-        Self::At,
-        Self::Address,
+        Self::CreatedAt,
+        Self::ClientIp,
         Self::ZoneName,
         Self::Kind,
         Self::Result,
@@ -320,8 +300,8 @@ impl TransferLogSortField {
     /// Return the canonical text representation.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::At => "at",
-            Self::Address => "address",
+            Self::CreatedAt => "created_at",
+            Self::ClientIp => "client_ip",
             Self::ZoneName => "zone_name",
             Self::Kind => "kind",
             Self::Result => "result",
@@ -331,8 +311,8 @@ impl TransferLogSortField {
     /// Return the SQL column for this sort field.
     fn column(self) -> &'static str {
         match self {
-            Self::At => "t.served_at",
-            Self::Address => "t.client_addr",
+            Self::CreatedAt => "t.created_at",
+            Self::ClientIp => "t.client_ip",
             Self::ZoneName => "z.name",
             Self::Kind => "t.kind",
             Self::Result => "t.result",
@@ -428,12 +408,12 @@ mod tests {
             "ORDER BY r.name ASC, r.id ASC"
         );
         assert_eq!(
-            AccessLogSortField::Address.order_by_sql(SortOrder::Asc),
-            "ORDER BY client_addr ASC, id ASC"
+            AccessLogSortField::ClientIp.order_by_sql(SortOrder::Asc),
+            "ORDER BY client_ip ASC, id ASC"
         );
         assert_eq!(
             TransferLogSortField::default().order_by_sql(SortOrder::Desc),
-            "ORDER BY t.served_at DESC, t.id DESC"
+            "ORDER BY t.created_at DESC, t.id DESC"
         );
     }
 
@@ -455,7 +435,7 @@ mod tests {
 
         assert_round_trip(&ZoneSortField::ALL, ZoneSortField::as_str);
         assert_round_trip(&RecordSortField::ALL, RecordSortField::as_str);
-        assert_round_trip(&AuditLogSortField::ALL, AuditLogSortField::as_str);
+        assert_round_trip(&ActivityLogSortField::ALL, ActivityLogSortField::as_str);
         assert_round_trip(&AccessLogSortField::ALL, AccessLogSortField::as_str);
         assert_round_trip(&TransferLogSortField::ALL, TransferLogSortField::as_str);
         assert_round_trip(&SortOrder::ALL, SortOrder::as_str);

@@ -1,3 +1,4 @@
+use bindizr_core::model::dnssec_policy::DnssecKeyLayout;
 use bindizr_core::outln;
 use bindizr_service::types::{
     CreateDnssecPolicyRequest, DnssecPolicyResponse, MessageResponse, PageRequest,
@@ -19,9 +20,9 @@ pub(crate) enum DnssecPolicyCommand {
     #[command(after_help = "\
 Examples:
   bindizr dnssec policy create strict --algorithm ed25519
-  bindizr dnssec policy create split --split-keys --zsk-lifetime-days 90
+  bindizr dnssec policy create split --key-layout split --zsk-lifetime-days 90
 
---algorithm, --denial and --split-keys are fixed at creation, because changing
+--algorithm, --denial and --key-layout are fixed at creation, because changing
 them rebuilds the zone's key set; the day counts stay editable with
 `dnssec policy update`.")]
     Create {
@@ -34,10 +35,9 @@ them rebuilds the zone's key set; the day counts stay editable with
         /// Denial-of-existence mode: nsec3 (default) or nsec. Fixed at creation
         #[arg(long, value_name = "nsec|nsec3")]
         denial: Option<String>,
-        /// Generate split KSK/ZSK keys instead of one CSK, so the ZSK rolls
-        /// without touching the parent zone's DS. Fixed at creation
-        #[arg(long)]
-        split_keys: bool,
+        /// One combined signing key (csk, default) or separate KSK/ZSK keys (split). Fixed at creation
+        #[arg(long, value_name = "csk|split")]
+        key_layout: Option<DnssecKeyLayout>,
         /// Days a new signature stays valid (default 14)
         #[arg(long, value_name = "DAYS")]
         signature_validity_days: Option<u32>,
@@ -115,7 +115,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             name,
             algorithm,
             denial,
-            split_keys,
+            key_layout,
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days,
@@ -126,7 +126,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                     name,
                     algorithm,
                     denial,
-                    split_keys,
+                    key_layout: key_layout.unwrap_or_default(),
                     signature_validity_days,
                     signature_refresh_days,
                     zsk_lifetime_days,

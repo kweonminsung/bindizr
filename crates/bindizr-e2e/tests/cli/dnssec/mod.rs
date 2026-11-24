@@ -75,7 +75,7 @@ async fn zone_dnssec_supports_enable_sign_and_disable() {
     assert!(!moved.contains("published"), "{moved}");
 
     let signed_export = app
-        .run_cli_success(&["zone", "export", &zone_name, "--signed"], None)
+        .run_cli_success(&["zone", "export", &zone_name, "--include-dnssec"], None)
         .await;
 
     assert!(

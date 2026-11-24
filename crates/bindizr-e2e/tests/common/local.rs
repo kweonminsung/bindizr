@@ -195,8 +195,8 @@ level = "error"
             ),
             None => String::new(),
         },
-        dns_transfer = if options.dns_transfer_require_tls {
-            "\n[dns.transfer]\nrequire_tls = true\n"
+        dns_transfer = if options.dns_transfer_tls_required {
+            "\n[dns.transfer]\ntls_required = true\n"
         } else {
             ""
         }

@@ -6,6 +6,7 @@ use std::slice;
 use std::time::Instant;
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
@@ -108,6 +109,7 @@ pub async fn apply_changes(
         }
 
         let mut changed_zones = Vec::new();
+        let mut activities = Vec::new();
         let mut added = 0u64;
         let mut deleted = 0u64;
 
@@ -149,16 +151,37 @@ pub async fn apply_changes(
             let new_serial = serial::generate_serial(Some(zone.serial));
 
             record::delete_with_changes_tx(&mut tx, new_serial, &change_set.deletes).await?;
-            record::create_with_changes_tx(&mut tx, new_serial, &change_set.creates).await?;
+            let created =
+                record::create_with_changes_tx(&mut tx, new_serial, &change_set.creates).await?;
             dnssec::sign_zone_tx(&mut tx, zone, new_serial).await?;
 
             // Advance the serial once so IXFR consumers detect the change
             zone::advance_serial_tx(&mut tx, zone, new_serial, caller.change_origin()).await?;
 
+            activities.extend(change_set.deletes.iter().map(|record| {
+                (
+                    ActivityOperation::RecordDelete,
+                    record::activity_target(&zone.name, record),
+                )
+            }));
+            activities.extend(created.iter().map(|record| {
+                (
+                    ActivityOperation::RecordCreate,
+                    record::activity_target(&zone.name, record),
+                )
+            }));
+            activities.push((
+                ActivityOperation::ExternalDnsApply,
+                zone::activity_target(&zone.name),
+            ));
+
             deleted += change_set.deletes.len() as u64;
             added += change_set.creates.len() as u64;
             changed_zones.push(zone.name.clone());
         }
+
+        // Publish only after all affected zones have been written and versioned.
+        crate::activity::save_operations_tx(&mut tx, activities, caller.change_origin()).await?;
 
         Ok((changed_zones, added, deleted))
     }

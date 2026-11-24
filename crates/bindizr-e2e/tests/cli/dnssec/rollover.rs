@@ -59,7 +59,7 @@ async fn zone_dnssec_rolls_nsec3_keys() {
     // The API test covers the far side of the hold-down wait;
     // `--skip-ds-check` skips only the parent check, never the hold-down.
     let refused = app
-        .run_cli(&["dnssec", "rollover", "ds-seen", &zone_name], None)
+        .run_cli(&["dnssec", "rollover", "advance", &zone_name], None)
         .await;
 
     assert!(!refused.status.success());
@@ -67,7 +67,7 @@ async fn zone_dnssec_rolls_nsec3_keys() {
     let args = [
         "dnssec",
         "rollover",
-        "ds-seen",
+        "advance",
         &zone_name,
         "--skip-ds-check",
     ];
@@ -81,7 +81,7 @@ async fn zone_dnssec_rolls_nsec3_keys() {
             &[
                 "dnssec",
                 "rollover",
-                "ds-seen",
+                "advance",
                 &zone_name,
                 "--skip-ds-check",
                 "--skip-holddown",

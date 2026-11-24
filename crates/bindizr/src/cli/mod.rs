@@ -18,7 +18,7 @@ use crate::cli::commands::logs::LogCommand;
 use crate::cli::commands::record::RecordCommand;
 use crate::cli::commands::role::RoleCommand;
 use crate::cli::commands::secondary::SecondaryCommand;
-use crate::cli::commands::token::TokenCommand;
+use crate::cli::commands::token::ApiTokenCommand;
 use crate::cli::commands::tsig_key::TsigKeyCommand;
 use crate::cli::commands::zone::ZoneCommand;
 use crate::cli::error::CliError;
@@ -97,14 +97,14 @@ pub(crate) enum Command {
     /// Manage API tokens, each authenticating into a role
     Token {
         #[command(subcommand)]
-        subcommand: TokenCommand,
+        subcommand: ApiTokenCommand,
     },
     /// Manage TSIG keys, each authenticating nsupdate and transfers into a role
     TsigKey {
         #[command(subcommand)]
         subcommand: TsigKeyCommand,
     },
-    /// Read the logs: management changes (audit), API requests and nsupdates (access), and zone transfers (transfer)
+    /// Read the activity, access and transfer logs
     Log {
         #[command(subcommand)]
         subcommand: LogCommand,
