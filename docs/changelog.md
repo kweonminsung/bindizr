@@ -2,6 +2,7 @@
 
 Release notes are organized by version, newest first.
 
+- [0.2.0](changelog/0.2.0.md) — 2026-11-25
 - [0.2.0-rc.1](changelog/0.2.0-rc.1.md) — 2026-11-17
 - [0.1.0](changelog/0.1.0.md) — 2026-10-26
 - [0.1.0-rc.3](changelog/0.1.0-rc.3.md) — 2026-10-18
