@@ -56,9 +56,8 @@ Every server above has been run as a Bindizr secondary: transfers, updates on NO
   AXFR/IXFR. Pushing zones to Route 53, Cloud DNS, Azure DNS, and Cloudflare
   through their APIs lets a managed provider hold a copy where no transfer
   reaches.
-- **Webhooks** — a change is visible today only by polling the API or the
-  zone versions. Posting each zone, record, and DNSSEC key event to a
-  configured URL lets other systems react as it happens.
+- **Webhooks in Bindizr UI** — post selected operations observed by the UI
+  to a configured endpoint so other systems can react to changes.
 - **More Record Types** — fifteen types are parsed and validated today,
   including WKS. Other ordinary types are rejected. Adding SVCB/HTTPS would
   let those records be managed through the same API and CLI.
@@ -80,7 +79,7 @@ The default BIND image is amd64-only. On arm64, use the image override in the
 
 ```bash
 $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.2.0-rc.1 --set postgresql.enabled=true
+  --version 0.2.0 --set postgresql.enabled=true
 ```
 
 ### Docker Compose

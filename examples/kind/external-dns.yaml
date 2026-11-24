@@ -71,7 +71,7 @@ spec:
         - name: bindizr-external-dns
           # For an unpublished Bindizr build, use the locally loaded
           # bindizr:local image and set imagePullPolicy to Never.
-          image: kweonminsung/bindizr:0.2.0-rc.1
+          image: kweonminsung/bindizr:0.2.0
           command: ["bindizr-external-dns"]
           args:
             - --bindizr-url=http://bindizr-api:8000
