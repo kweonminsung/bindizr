@@ -1,5 +1,6 @@
 use std::slice;
 
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
@@ -117,6 +118,14 @@ pub async fn create(
 
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::RecordCreate,
+            record::activity_target(&zone.name, &created_record),
+            caller.change_origin(),
+        )
+        .await?;
 
         // Only a preview carries the diff.
         Ok((

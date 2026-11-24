@@ -64,7 +64,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
     let (status, versions) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
+            &format!("/zones/{zone_name}/versions?include_signer_only_versions=true"),
             None,
         )
         .await;
@@ -94,7 +94,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
     let (status, after) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
+            &format!("/zones/{zone_name}/versions?include_signer_only_versions=true"),
             None,
         )
         .await;
@@ -729,7 +729,7 @@ async fn zone_import_leaves_no_zone_when_creation_is_rejected() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Verify that native WKS master-file values survive export and re-import as the supported type.
+/// Verify that native WKS zone file values survive export and re-import as the supported type.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_preserves_native_wks_values() {
@@ -1341,7 +1341,7 @@ async fn import_zones_reports_each_zone_outcome() {
     let zone_name = zone["name"].as_str().unwrap().to_string();
     let missing_zone_name = app.zone_name("bulk-missing.example");
 
-    let (status, _) = app
+    let (status, single) = app
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
@@ -1350,6 +1350,7 @@ async fn import_zones_reports_each_zone_outcome() {
         .await;
 
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(single["changed"], true, "{single}");
     let address = format!("127.0.0.1:{}", app.dns_port());
 
     let (status, body) = app
@@ -1373,12 +1374,24 @@ async fn import_zones_reports_each_zone_outcome() {
     assert_eq!(body["zones"][0]["zone_name"], zone_name);
     assert_eq!(body["zones"][0]["result"], "ok");
     assert_eq!(body["zones"][0]["import"]["applied"], true);
+    assert_eq!(body["zones"][0]["import"]["changed"], false);
     assert_eq!(body["zones"][0]["import"]["summary"]["unchanged"], 2);
     assert!(body["zones"][0]["error"].is_null(), "{body}");
     assert_eq!(body["zones"][1]["zone_name"], missing_zone_name);
     assert_eq!(body["zones"][1]["result"], "failed");
     assert!(body["zones"][1]["import"].is_null(), "{body}");
     assert_eq!(body["zones"][1]["error"]["code"], "ZONE_NOT_FOUND");
+
+    let (status, activity) = app
+        .send_request(
+            Method::GET,
+            &format!("/logs/activity?operation=zone.import&zone_name={zone_name}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{activity}");
+    assert_eq!(activity["pagination"]["total"], 1, "{activity}");
+    assert_eq!(activity["items"][0]["result"], "changed", "{activity}");
 
     let (status, body) = app
         .send_request(
@@ -1772,6 +1785,18 @@ async fn catalog_import_ignores_repeated_records() {
             assert_eq!(body["summary"]["ok"], 1, "{body}");
             assert_eq!(body["summary"]["zones"], 1, "{body}");
             assert_eq!(body["zones"][0]["import"]["applied"], true, "{body}");
+            assert_eq!(body["zones"][0]["import"]["changed"], true, "{body}");
+
+            let (status, activity) = app
+                .send_request(
+                    Method::GET,
+                    &format!("/logs/activity?operation=zone.import&zone_name={member_zone_name}"),
+                    None,
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "{activity}");
+            assert_eq!(activity["pagination"]["total"], 1, "{activity}");
+            assert_eq!(activity["items"][0]["result"], "changed", "{activity}");
 
             let (status, body) = app
                 .send_request(
@@ -1970,7 +1995,8 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     app.create_zone_cli(&first_zone_name, "3600").await;
     let records = app.list_records(&first_zone_name).await;
     let zones = app.send_request(Method::GET, "/zones", None).await;
-    let versions_path = format!("/zones/{first_zone_name}/versions?include_signer_serials=true");
+    let versions_path =
+        format!("/zones/{first_zone_name}/versions?include_signer_only_versions=true");
 
     let versions = app.send_request(Method::GET, &versions_path, None).await;
 

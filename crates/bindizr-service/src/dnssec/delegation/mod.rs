@@ -4,6 +4,7 @@ use bindizr_core::dns::dnssec::{DsDigestType, KeyTag};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecordSet;
 use bindizr_core::dns::record::Rdata;
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult};
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyState};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
@@ -19,7 +20,7 @@ use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState,
 };
-use crate::{Context, dnssec, transaction};
+use crate::{Context, activity, dnssec, transaction, zone};
 
 /// Why the zone's configuration prevents a delegation check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -65,6 +66,14 @@ pub async fn check_ds(
     // Read-only, so the wait stays outside the transaction; the keys are
     // the ones the status describes.
     status.delegation = Some(probe_delegation(cx, &signed).await?);
+    activity::save_result(
+        cx,
+        ActivityOperation::DnssecCheckDs,
+        ActivityResult::Succeeded,
+        zone::activity_target(zone_name),
+        caller.change_origin(),
+    )
+    .await;
 
     Ok(status)
 }

@@ -2,8 +2,8 @@
 //! whose functions run its queries on whichever backend it holds.
 
 pub mod access_log;
+pub mod activity_log;
 pub mod api_token;
-pub mod audit_log;
 pub mod catalog_zone;
 pub mod dnssec_key;
 pub mod dnssec_policy;
@@ -36,7 +36,7 @@ use bindizr_core::model::role_grant::{Action, ActionSet};
 use chrono::Utc;
 use error::DatabaseError;
 pub use sql::{
-    AccessLogSortField, AuditLogSortField, ParseSortError, RecordSortField, SortOrder,
+    AccessLogSortField, ActivityLogSortField, ParseSortError, RecordSortField, SortOrder,
     TransferLogSortField, ZoneSortField,
 };
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode};

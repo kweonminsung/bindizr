@@ -5,7 +5,6 @@ mod create;
 mod delete;
 pub(crate) mod diff;
 mod export;
-mod force;
 mod get;
 pub(crate) mod history;
 mod import;
@@ -16,13 +15,14 @@ mod update;
 mod validation;
 mod version;
 
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::activity_log::ActivityTarget;
 pub use catalog_zone::validate_catalog_zone_name;
 pub(crate) use catalog_zone::{CATALOG_SOA_REFRESH, refresh_catalog_tx};
 pub use create::create;
 pub(crate) use create::create_tx;
 pub use delete::delete;
 pub use export::export;
-pub(crate) use force::force_increment_serial;
 pub use get::{count_all, get_by_name, list_by_filter, list_enabled, probe_table};
 pub(crate) use get::{
     find_served_by_name, find_served_by_name_tx, lookup_by_name, lookup_by_name_tx,
@@ -44,3 +44,11 @@ pub(crate) use validation::{
     validate_record_changes_tx,
 };
 pub(crate) use version::{advance_serial_tx, save_version_tx};
+
+/// Identify the canonical zone affected by an operation.
+pub(crate) fn activity_target(zone_name: &ZoneName) -> ActivityTarget {
+    ActivityTarget {
+        zone_name: Some(zone_name.to_string()),
+        ..ActivityTarget::default()
+    }
+}

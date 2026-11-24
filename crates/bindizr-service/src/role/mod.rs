@@ -2,7 +2,7 @@
 
 pub mod grant;
 
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult};
 use bindizr_core::model::role::{Role, RoleId};
 use bindizr_core::model::role_grant::Action;
 use chrono::Utc;
@@ -13,7 +13,7 @@ use crate::text::MAX_COLUMN_TEXT_LEN;
 use crate::types::{
     CreateRoleRequest, MessageResponse, PageRequest, PaginatedResponse, RoleResponse,
 };
-use crate::{Context, audit, pagination, text, transaction};
+use crate::{Context, activity, pagination, text, transaction};
 
 /// Create a role holding no grants yet.
 pub async fn create(
@@ -61,11 +61,11 @@ pub async fn create(
                 error.into()
             }
         })?;
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::Role,
-            &role.name,
-            AuditOperation::Create,
+            ActivityOperation::RoleCreate,
+            ActivityResult::Changed,
+            activity::named_target(&role.name),
             role.description
                 .as_ref()
                 .map(|description| format!("description {description}")),
@@ -182,17 +182,17 @@ pub async fn delete(
                 }
             })?;
 
-        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        // A concurrent removal makes this deletion report not found.
         if !deleted {
             return Err(ServiceError::role_not_found(&role.name));
         }
 
         // Its grants go with it, under the one row.
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::Role,
-            &role.name,
-            AuditOperation::Delete,
+            ActivityOperation::RoleDelete,
+            ActivityResult::Changed,
+            activity::named_target(&role.name),
             None,
             caller.change_origin(),
         )

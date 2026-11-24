@@ -21,9 +21,10 @@ pub use soa_result::SoaResult;
 use thiserror::Error;
 pub use xfr_result::XfrResult;
 
+use crate::dns::DnsTransport;
 use crate::metrics::pruned_table::PrunedTable;
 use crate::metrics::zone_cache_lookup::ZoneCacheLookup;
-use crate::model::transfer::{TransferKind, TransferTransport};
+use crate::model::transfer::TransferKind;
 
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
@@ -163,9 +164,9 @@ impl Metrics {
         let xfr_total = IntCounterVec::new(
             Opts::new(
                 "bindizr_xfr_total",
-                "Zone transfer requests served, by query type, outcome, and transport.",
+                "Zone transfer requests by kind, result, and transport.",
             ),
-            &["type", "result", "transport"],
+            &["kind", "result", "transport"],
         )
         .map_err(RegisterMetricsError)?;
         register(&registry, &xfr_total)?;
@@ -300,7 +301,7 @@ impl Metrics {
         // instead of reading as missing data until the first event.
         for result in XfrResult::ALL {
             for kind in TransferKind::ALL {
-                for transport in TransferTransport::ALL {
+                for transport in DnsTransport::ALL {
                     xfr_total.with_label_values(&[
                         kind.as_str(),
                         result.as_str(),
@@ -371,8 +372,8 @@ impl Metrics {
 }
 
 impl Metrics {
-    /// Count a zone transfer's outcome by its kind and transport.
-    pub fn track_xfr(&self, kind: TransferKind, transport: TransferTransport, result: XfrResult) {
+    /// Count a zone transfer's result by its kind and transport.
+    pub fn track_xfr(&self, kind: TransferKind, transport: DnsTransport, result: XfrResult) {
         self.xfr_total
             .with_label_values(&[kind.as_str(), result.as_str(), transport.as_str()])
             .inc();
@@ -411,10 +412,10 @@ impl Metrics {
             .inc_by(version_rows);
     }
 
-    /// Count the audit log rows the retention pass pruned.
-    pub fn track_pruned_audit_log_rows(&self, rows: u64) {
+    /// Count the activity log rows the retention pass pruned.
+    pub fn track_pruned_activity_log_rows(&self, rows: u64) {
         self.pruned_rows_total
-            .with_label_values(&[PrunedTable::Audit.as_str()])
+            .with_label_values(&[PrunedTable::Activity.as_str()])
             .inc_by(rows);
     }
 

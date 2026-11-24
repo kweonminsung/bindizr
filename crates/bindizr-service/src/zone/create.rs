@@ -1,4 +1,5 @@
 use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::{Zone, ZoneId};
@@ -75,6 +76,14 @@ pub async fn create(
         )
         .await?;
 
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::ZoneCreate,
+            zone::activity_target(&created_zone.name),
+            caller.change_origin(),
+        )
+        .await?;
+
         Ok(created_zone)
     }
     .await;
@@ -114,8 +123,11 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
     let defaults = &cx.config().dns.zone_defaults;
     let mname = zone::normalize_mname(&request.mname)?;
     let rname = zone::normalize_rname(&request.rname)?;
-    let default_ttl =
-        ttl::validate_default_ttl(request.default_ttl.unwrap_or(i64::from(defaults.ttl)))?;
+    let default_ttl = ttl::validate_default_ttl(
+        request
+            .default_ttl
+            .unwrap_or(i64::from(defaults.default_ttl)),
+    )?;
 
     Ok(Zone {
         id: ZoneId::UNWRITTEN,

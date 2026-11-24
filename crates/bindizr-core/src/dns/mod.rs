@@ -8,6 +8,7 @@ pub mod query;
 pub mod record;
 mod serial;
 mod soa_interval;
+mod transport;
 pub mod tsig;
 mod ttl;
 pub mod zonefile;
@@ -16,6 +17,7 @@ pub use catalog_zone::{CatalogZone, ExtractMemberZonesError, extract_member_zone
 pub(crate) use catalog_zone::{MAX_CATALOG_ZONE_WIRE_LEN, catalog_member_owner_name};
 pub use serial::{ConvertSerialError, Serial};
 pub use soa_interval::{ConvertSoaIntervalError, SoaInterval};
+pub use transport::{DnsTransport, ParseDnsTransportError};
 pub use ttl::{ConvertTtlError, Ttl};
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix,

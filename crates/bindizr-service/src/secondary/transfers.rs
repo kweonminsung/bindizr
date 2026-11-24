@@ -13,7 +13,7 @@ pub(crate) async fn summarize_transfers_by_clients(
     cx: &Context,
     clients: &[IpAddr],
 ) -> Result<TransferSummaryResponse, ServiceError> {
-    let latest = transfer::list_latest_by_clients(cx, clients).await?;
+    let latest = transfer::list_latest_by_client_ips(cx, clients).await?;
     Ok(build_transfer_summary(&latest))
 }
 

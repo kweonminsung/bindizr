@@ -5,9 +5,9 @@ use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::dns::message::{DnsMessageBuilder, OptRcode, ParsedQuery, QueryMetadata, Rtype};
 use bindizr_core::dns::tsig::{RequestSignature, TransferSigner};
-use bindizr_core::dns::{Serial, query, tsig};
+use bindizr_core::dns::{DnsTransport, Serial, query, tsig};
 use bindizr_core::metrics::{SoaResult, XfrResult};
-use bindizr_core::model::transfer::{TransferKind, TransferTransport};
+use bindizr_core::model::transfer::TransferKind;
 use bindizr_service::authorization::Caller;
 use bindizr_service::types::ZoneView;
 use bindizr_service::zone;
@@ -102,7 +102,7 @@ pub(crate) async fn handle_udp_soa(
         target.client_addr.ip(),
         query,
         query_data,
-        TransferTransport::Udp,
+        DnsTransport::Udp,
     )
     .await
     .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
@@ -132,30 +132,24 @@ pub(crate) async fn handle_udp_ixfr(
         target.client_addr.ip(),
         query,
         query_data,
-        TransferTransport::Udp,
+        DnsTransport::Udp,
     )
     .await
     .inspect_err(|_| {
-        cx.metrics().track_xfr(
-            TransferKind::Ixfr,
-            TransferTransport::Udp,
-            XfrResult::Failed,
-        );
+        cx.metrics()
+            .track_xfr(TransferKind::Ixfr, DnsTransport::Udp, XfrResult::Failed);
     })?;
     socket
         .send_to(&response, target, query.response_limit())
         .await
         .inspect_err(|_| {
-            cx.metrics().track_xfr(
-                TransferKind::Ixfr,
-                TransferTransport::Udp,
-                XfrResult::Failed,
-            );
+            cx.metrics()
+                .track_xfr(TransferKind::Ixfr, DnsTransport::Udp, XfrResult::Failed);
         })?;
 
     cx.metrics().track_xfr(
         TransferKind::Ixfr,
-        TransferTransport::Udp,
+        DnsTransport::Udp,
         outcome.to_ixfr_result(query.client_serial),
     );
 
@@ -175,7 +169,7 @@ async fn handle_soa_request(
     client_ip: IpAddr,
     query: &ParsedQuery,
     query_data: &[u8],
-    transport: TransferTransport,
+    transport: DnsTransport,
 ) -> Result<(Vec<u8>, SoaOutcome), DnsError> {
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
@@ -272,7 +266,7 @@ async fn handle_soa_request(
     }
 
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
-    let view = ZoneView::from_signed(query.qtype == Rtype::SOA && query.edns.dnssec_ok());
+    let view = ZoneView::from_include_dnssec(query.qtype == Rtype::SOA && query.edns.dnssec_ok());
 
     let access = match zone::normalize_name(zone_name_str) {
         Ok(zone_name) => {
@@ -351,7 +345,7 @@ async fn authenticate_soa(
     dns_cx: &DnsContext,
     client_ip: IpAddr,
     query_data: &[u8],
-    transport: TransferTransport,
+    transport: DnsTransport,
 ) -> Result<QueryIdentity, QueryRefusal> {
     // Only an unsigned probe skips the gate: a request that reached for a key
     // is held to it wherever it came from, or a wrong secret would pass.

@@ -29,5 +29,5 @@ pub struct Secondary {
 pub struct SecondaryWithNotifyKey {
     #[sqlx(flatten)]
     pub secondary: Secondary,
-    pub notify_key_name: Option<String>,
+    pub notify_tsig_key_name: Option<String>,
 }

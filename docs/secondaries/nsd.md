@@ -139,7 +139,7 @@ zone:
 ```
 
 Keep `allow-notify` on `NOKEY` unless the secondary is registered with
-`--notify-key`; then use that key there too. See
+`--notify-tsig-key`; then use that key there too. See
 [Signed NOTIFY](../cli/secondaries.md#signed-notify).
 
 See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)

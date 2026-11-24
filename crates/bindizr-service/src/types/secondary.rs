@@ -21,7 +21,7 @@ pub struct CreateSecondaryRequest {
     /// TSIG key to sign NOTIFY to this server with; omitted sends it unsigned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "notify-key")]
-    pub notify_key_name: Option<String>,
+    pub notify_tsig_key_name: Option<String>,
 }
 
 /// Request body for changing a secondary; an omitted field keeps its value.
@@ -39,7 +39,7 @@ pub struct UpdateSecondaryRequest {
     /// TSIG key to sign NOTIFY with; empty sends it unsigned again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "notify-key")]
-    pub notify_key_name: Option<String>,
+    pub notify_tsig_key_name: Option<String>,
 }
 
 /// API representation of a secondary.
@@ -55,20 +55,23 @@ pub struct SecondaryResponse {
     pub enabled: bool,
     /// The TSIG key NOTIFY to this server is signed with, if any.
     #[schema(example = "notify-key")]
-    pub notify_key_name: Option<String>,
+    pub notify_tsig_key_name: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
 impl SecondaryResponse {
     /// Build the API representation from a stored secondary and its NOTIFY
     /// key's name.
-    pub(crate) fn from_secondary(secondary: &Secondary, notify_key_name: Option<&str>) -> Self {
+    pub(crate) fn from_secondary(
+        secondary: &Secondary,
+        notify_tsig_key_name: Option<&str>,
+    ) -> Self {
         Self {
             id: secondary.id,
             name: secondary.name.clone(),
             address: secondary.address.to_string(),
             enabled: secondary.enabled,
-            notify_key_name: notify_key_name.map(str::to_string),
+            notify_tsig_key_name: notify_tsig_key_name.map(str::to_string),
             created_at: secondary.created_at,
         }
     }

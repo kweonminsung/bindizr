@@ -1,12 +1,13 @@
+use bindizr_core::model::activity_log::ActivityLog;
 use bindizr_service::types::{
-    AccessLogFilter, AccessLogResponse, AuditLogFilter, AuditLogResponse, PaginatedResponse,
-    TransferLogFilter, TransferLogResponse,
+    AccessLogFilter, AccessLogResponse, ActivityLogFilter, PaginatedResponse, TransferLogFilter,
+    TransferLogResponse,
 };
 use chrono::{DateTime, Utc};
 use clap::Subcommand;
 
 use crate::cli::error::CliError;
-use crate::cli::output::{AccessLogRow, AuditLogRow, OutputFormat, TransferLogRow};
+use crate::cli::output::{AccessLogRow, ActivityLogRow, OutputFormat, TransferLogRow};
 use crate::cli::{output, time};
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
@@ -14,38 +15,47 @@ use crate::socket::types::DaemonCommand;
 /// Subcommands for reading the logs.
 #[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum LogCommand {
-    /// List the management changes, newest first: who changed what, and when
+    /// List recorded changes and operation results, newest first
     #[command(after_help = "\
 Examples:
-  bindizr log audit
-  bindizr log audit --entity token --name external-dns
-  bindizr log audit --since 7d -o json
-  bindizr log audit --since 2026-10-01 --until 2026-11-01
-  bindizr log audit --sort entity_name --order asc
+  bindizr log activity
+  bindizr log activity --entity token --name external-dns --result changed
+  bindizr log activity --operation record.create --zone example.com --since 7d -o json
+  bindizr log activity --record-name www --record-type A
+  bindizr log activity --since 2026-10-01 --until 2026-11-01
+  bindizr log activity --sort target --order asc
 
 A time is a span ago (7d, 12h, 30m), a date (2026-10-01, midnight UTC as the
-AT column is), or an RFC 3339 timestamp.
-
-A change to a token, role, grant, TSIG key, secondary or DNSSEC policy, or to a
-zone's DNSSEC settings, and a zone's deletion, is logged with the request path and the token that made it;
-a socket command names no token. Changes to zone data are in the zone's
-versions (`zone version list`) instead.")]
-    Audit {
-        /// Only changes to this kind of entity: token, role, role_grant,
-        /// tsig_key, secondary, dnssec_policy, or zone
-        #[arg(long, value_name = "ENTITY")]
+AT column is), or an RFC 3339 timestamp.")]
+    Activity {
+        /// The operation group, such as zone, record or secondary
+        #[arg(long)]
         entity: Option<String>,
-        /// Only changes to the entity of this name (a grant's is its role's)
-        #[arg(long, value_name = "NAME")]
+        /// A canonical operation name, such as zone.create
+        #[arg(long)]
+        operation: Option<String>,
+        /// Filter by an activity result, such as changed
+        #[arg(long)]
+        result: Option<String>,
+        /// Administrative target or zone name
+        #[arg(long)]
         name: Option<String>,
-        /// Only changes at or after this time: a span ago (7d, 12h, 30m), a
-        /// UTC date (2026-10-01), or RFC 3339
+        /// Zone associated with the operation
+        #[arg(long)]
+        zone: Option<String>,
+        /// Record owner relative to its zone
+        #[arg(long)]
+        record_name: Option<String>,
+        /// Record type mnemonic
+        #[arg(long)]
+        record_type: Option<String>,
+        /// Only rows at or after this time
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
         since: Option<DateTime<Utc>>,
-        /// Only changes before this time, in the same forms
+        /// Only rows before this time
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
         until: Option<DateTime<Utc>>,
-        /// Sort by: created_at (default), entity, entity_name, operation
+        /// Sort by created_at (default), operation or target
         #[arg(long, value_name = "FIELD")]
         sort: Option<String>,
         /// Sort order: desc (default) or asc
@@ -66,8 +76,8 @@ versions (`zone version list`) instead.")]
 Examples:
   bindizr log access
   bindizr log access --result denied --since 1d
-  bindizr log access --caller external-dns
-  bindizr log access --source nsupdate --address 192.0.2.10 -o json
+  bindizr log access --actor external-dns
+  bindizr log access --source nsupdate --client-ip 192.0.2.10 -o json
 
 A time is a span ago (7d, 12h, 30m), a date (2026-10-01, midnight UTC as the
 AT column is), or an RFC 3339 timestamp.
@@ -86,10 +96,10 @@ the OpenAPI document and daemon socket commands are not logged.")]
         result: Option<String>,
         /// Only requests made with the token or TSIG key of this name
         #[arg(long, value_name = "NAME")]
-        caller: Option<String>,
+        actor: Option<String>,
         /// Only requests from this client IP address
         #[arg(long, value_name = "IP")]
-        address: Option<String>,
+        client_ip: Option<String>,
         /// Only requests at or after this time: a span ago (7d, 12h, 30m), a
         /// UTC date (2026-10-01), or RFC 3339
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
@@ -97,7 +107,7 @@ the OpenAPI document and daemon socket commands are not logged.")]
         /// Only requests before this time, in the same forms
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
         until: Option<DateTime<Utc>>,
-        /// Sort by: requested_at (default), source, target, status, result, address
+        /// Sort by: requested_at (default), source, target, response_code, result, client_ip
         #[arg(long, value_name = "FIELD")]
         sort: Option<String>,
         /// Sort order: desc (default) or asc
@@ -119,7 +129,7 @@ Examples:
   bindizr log transfer
   bindizr log transfer --secondary ns2 --since 1d
   bindizr log transfer --result refused
-  bindizr log transfer --address 192.0.2.10 --zone example.com -o json
+  bindizr log transfer --client-ip 192.0.2.10 --zone example.com -o json
 
 A time is a span ago (7d, 12h, 30m), a date (2026-10-01, midnight UTC as the
 AT column is), or an RFC 3339 timestamp.
@@ -134,21 +144,21 @@ secondary resolves to now.")]
         secondary: Option<String>,
         /// Only transfers answered to this client IP address
         #[arg(long, value_name = "IP")]
-        address: Option<String>,
+        client_ip: Option<String>,
         /// Only the transfers of this zone
         #[arg(long, value_name = "ZONE")]
         zone: Option<String>,
         /// Only transfers that turned out this way: ok, refused, or failed
         #[arg(long, value_name = "RESULT")]
         result: Option<String>,
-        /// Only transfers at or after this time: a span ago (7d, 12h, 30m), a
+        /// Only transfers recorded at or after this time: a span ago (7d, 12h, 30m), a
         /// UTC date (2026-10-01), or RFC 3339
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
         since: Option<DateTime<Utc>>,
-        /// Only transfers before this time, in the same forms
+        /// Only transfers recorded before this time, in the same forms
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
         until: Option<DateTime<Utc>>,
-        /// Sort by: at (default), address, zone_name, kind, result
+        /// Sort by: created_at (default), client_ip, zone_name, kind, result
         #[arg(long, value_name = "FIELD")]
         sort: Option<String>,
         /// Sort order: desc (default) or asc
@@ -169,9 +179,14 @@ secondary resolves to now.")]
 /// Handle the `log` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliError> {
     match subcommand {
-        LogCommand::Audit {
+        LogCommand::Activity {
             entity,
+            operation,
+            result,
             name,
+            zone,
+            record_name,
+            record_type,
             since,
             until,
             sort,
@@ -180,10 +195,15 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
             offset,
             output,
         } => {
-            let response = client::send_command::<PaginatedResponse<AuditLogResponse>>(
-                DaemonCommand::ListAuditLogs(AuditLogFilter {
+            let response = client::send_command::<PaginatedResponse<ActivityLog>>(
+                DaemonCommand::ListActivityLogs(ActivityLogFilter {
                     entity,
-                    entity_name: name,
+                    operation,
+                    result,
+                    name,
+                    zone_name: zone,
+                    record_name,
+                    record_type,
                     since,
                     until,
                     sort,
@@ -193,13 +213,13 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
                 }),
             )
             .await?;
-            output::print_page(&response.data, output, |log| AuditLogRow::from(log))?;
+            output::print_page(&response.data, output, |event| ActivityLogRow::from(event))?;
         }
         LogCommand::Access {
             source,
             result,
-            caller,
-            address,
+            actor,
+            client_ip,
             since,
             until,
             sort,
@@ -212,8 +232,8 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
                 DaemonCommand::ListAccessLogs(AccessLogFilter {
                     source,
                     result,
-                    caller_name: caller,
-                    address,
+                    actor_name: actor,
+                    client_ip,
                     since,
                     until,
                     sort,
@@ -227,7 +247,7 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
         }
         LogCommand::Transfer {
             secondary,
-            address,
+            client_ip,
             zone,
             result,
             since,
@@ -241,7 +261,7 @@ pub(crate) async fn handle_command(subcommand: LogCommand) -> Result<(), CliErro
             let response = client::send_command::<PaginatedResponse<TransferLogResponse>>(
                 DaemonCommand::ListTransferLogs(TransferLogFilter {
                     secondary_name: secondary,
-                    address,
+                    client_ip,
                     zone_name: zone,
                     result,
                     since,

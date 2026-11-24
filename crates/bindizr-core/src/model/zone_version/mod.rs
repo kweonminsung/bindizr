@@ -18,9 +18,9 @@ pub enum VersionFilter {
 }
 
 impl VersionFilter {
-    /// Select the history filter requested by `include_signer_serials`.
-    pub fn from_include_signer_serials(include_signer_serials: bool) -> Self {
-        if include_signer_serials {
+    /// Select the history filter requested by `include_signer_only_versions`.
+    pub fn from_include_signer_only_versions(include_signer_only_versions: bool) -> Self {
+        if include_signer_only_versions {
             Self::All
         } else {
             Self::ExcludePastSignerOnly
@@ -58,10 +58,10 @@ pub struct ZoneVersion {
     pub minimum_ttl: Ttl,
     /// The request path or background process that produced this version.
     #[sqlx(try_from = "String")]
-    pub change_source: ChangeSource,
+    pub source: ChangeSource,
     /// A snapshot of the token or TSIG key identity, independent of the request path.
     #[sqlx(flatten, try_from = "ChangeActorColumns")]
-    pub changed_by: Option<ChangeActor>,
+    pub actor: Option<ChangeActor>,
     pub created_at: DateTime<Utc>,
 }
 

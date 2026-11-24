@@ -107,7 +107,7 @@ impl DnsConfig {
         self.import.validate()?;
 
         // Refusing plain transfers with no TLS listener would refuse them all.
-        if self.transfer.require_tls && self.tls.tls_files().is_none() {
+        if self.transfer.tls_required && self.tls.tls_files().is_none() {
             return Err(ConfigError::TransferRequiresTlsListener);
         }
 
@@ -199,7 +199,7 @@ pub struct TransferConfig {
     /// Refuse AXFR and IXFR over plain TCP and UDP (RFC 9103, Section 11);
     /// SOA queries keep answering. Needs `[dns.tls]`.
     #[serde(default)]
-    pub require_tls: bool,
+    pub tls_required: bool,
 }
 
 impl Default for TransferConfig {
@@ -207,7 +207,7 @@ impl Default for TransferConfig {
     fn default() -> Self {
         Self {
             cache_max_records: default_transfer_cache_max_records(),
-            require_tls: false,
+            tls_required: false,
         }
     }
 }
@@ -372,7 +372,7 @@ fn default_dns_tls_listen_port() -> u16 {
 #[serde(deny_unknown_fields)]
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
-    pub ttl: Ttl,
+    pub default_ttl: Ttl,
     /// Short refresh/retry intervals limit staleness when NOTIFY is lost.
     #[serde(default = "default_zone_refresh")]
     pub refresh: SoaInterval,
@@ -388,7 +388,7 @@ impl Default for ZoneDefaultsConfig {
     /// Build the default zone settings.
     fn default() -> Self {
         Self {
-            ttl: default_zone_ttl(),
+            default_ttl: default_zone_ttl(),
             refresh: default_zone_refresh(),
             retry: default_zone_retry(),
             expire: default_zone_expire(),

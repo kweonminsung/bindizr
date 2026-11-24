@@ -1,19 +1,19 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
-    CreateTokenRequest, CreateTokenResponse, MessageResponse, PaginatedResponse, TokenFilter,
-    TokenResponse,
+    ApiTokenFilter, ApiTokenResponse, CreateApiTokenRequest, CreateApiTokenResponse,
+    MessageResponse, PaginatedResponse,
 };
 use clap::Subcommand;
 
 use crate::cli::error::CliError;
 use crate::cli::output;
-use crate::cli::output::{OutputFormat, TokenRow};
+use crate::cli::output::{ApiTokenRow, OutputFormat};
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing API tokens.
 #[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
-pub(crate) enum TokenCommand {
+pub(crate) enum ApiTokenCommand {
     /// Create a new API token in a role; the plaintext token is shown once, here
     #[command(after_help = "\
 Examples:
@@ -65,45 +65,45 @@ Examples:
 }
 
 /// Handle the `token` subcommand by dispatching to the daemon over the socket.
-pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliError> {
+pub(crate) async fn handle_command(subcommand: ApiTokenCommand) -> Result<(), CliError> {
     match subcommand {
-        TokenCommand::Create {
+        ApiTokenCommand::Create {
             name,
             role,
             description,
             expires_in_days,
             output,
         } => {
-            let response = client::send_command::<CreateTokenResponse>(DaemonCommand::CreateToken(
-                CreateTokenRequest {
+            let response = client::send_command::<CreateApiTokenResponse>(
+                DaemonCommand::CreateToken(CreateApiTokenRequest {
                     name,
                     description,
                     expires_in_days,
                     role_name: role,
-                },
-            ))
+                }),
+            )
             .await?;
             output::print_response(&response.data, output, |response| {
-                vec![TokenRow::from(response)]
+                vec![ApiTokenRow::from(response)]
             })?;
         }
-        TokenCommand::List {
+        ApiTokenCommand::List {
             role,
             limit,
             offset,
             output,
         } => {
-            let response = client::send_command::<PaginatedResponse<TokenResponse>>(
-                DaemonCommand::ListTokens(TokenFilter {
+            let response = client::send_command::<PaginatedResponse<ApiTokenResponse>>(
+                DaemonCommand::ListTokens(ApiTokenFilter {
                     role_name: role,
                     limit,
                     offset,
                 }),
             )
             .await?;
-            output::print_page(&response.data, output, |token| TokenRow::from(token))?;
+            output::print_page(&response.data, output, |token| ApiTokenRow::from(token))?;
         }
-        TokenCommand::Delete { name, output } => {
+        ApiTokenCommand::Delete { name, output } => {
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteToken { name })
                     .await?;

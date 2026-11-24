@@ -460,7 +460,7 @@ pub(crate) async fn fetch_exported_record_sets(
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/export?signed=true"),
+            &format!("/zones/{zone_name}/export?include_dnssec=true"),
             None,
         )
         .await;

@@ -1,5 +1,6 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
 use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
@@ -221,6 +222,14 @@ pub async fn update(
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
         zone::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::ZoneUpdate,
+            zone::activity_target(&updated_zone.name),
+            caller.change_origin(),
+        )
+        .await?;
 
         Ok(UpdateZoneResult {
             catalog_changed: existing_zone.name != updated_zone.name

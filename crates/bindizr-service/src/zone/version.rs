@@ -55,8 +55,8 @@ pub(crate) async fn save_version_tx(
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
-            change_source: origin.source,
-            changed_by: origin.actor.clone(),
+            source: origin.source,
+            actor: origin.actor.clone(),
             created_at: Utc::now(),
         },
     )

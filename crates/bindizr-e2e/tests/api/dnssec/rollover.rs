@@ -107,8 +107,8 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
     // A replacement resolvers cannot have learned yet may not sign;
     // `skip_ds_check` skips only the parent check, never the hold-down.
     for path in [
-        format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
-        format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_ds_check=true"),
+        format!("/zones/{zone_name}/dnssec/rollover/advance"),
+        format!("/zones/{zone_name}/dnssec/rollover/advance?skip_ds_check=true"),
     ] {
         let (status, _) = app.send_request(Method::POST, &path, None).await;
 
@@ -121,7 +121,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_ds_check=true"),
+            &format!("/zones/{zone_name}/dnssec/rollover/advance?skip_ds_check=true"),
             None,
         )
         .await;
@@ -150,7 +150,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+            &format!("/zones/{zone_name}/dnssec/rollover/advance"),
             None,
         )
         .await;

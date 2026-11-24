@@ -1,8 +1,8 @@
 //! The SQLite SQL, one module per entity; the crate root dispatches here.
 
 pub(crate) mod access_log;
+pub(crate) mod activity_log;
 pub(crate) mod api_token;
-pub(crate) mod audit_log;
 pub(crate) mod catalog_zone;
 pub(crate) mod dnssec_key;
 pub(crate) mod dnssec_policy;

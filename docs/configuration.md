@@ -24,7 +24,7 @@ rejected and the current configuration stays active.
 
 | Settings | Reload behavior |
 | --- | --- |
-| `[logging]`, `[history]`, `[audit_log]`, `[access_log]`, `[transfer_log]`, and `[dns]` except the settings below | Reloadable |
+| `[logging]`, `[history]`, `[activity_log]`, `[access_log]`, `[transfer_log]`, and `[dns]` except the settings below | Reloadable |
 | `[api]`, `[database]`, `[dns.tls]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name`, `dns.tcp_max_connections` | Restart required |
 | The certificate and key files `[api.tls]` and `[dns.tls]` name | Re-read on reload, so a renewed pair serves without a restart; the paths stay fixed |
 
@@ -98,14 +98,14 @@ file_path = "/var/lib/bindizr/bindizr.db"
 
 [dns.transfer]                # Zone transfers
 # cache_max_records = 500000  # Total cached records; oversized zones bypass the cache (0 = disabled)
-# require_tls = false         # true | false; true requires [dns.tls] for AXFR/IXFR; SOA queries remain available
+# tls_required = false         # true | false; true requires [dns.tls] for AXFR/IXFR; SOA queries remain available
 
 [dns.import]                  # zone import --from-server: the AXFR Bindizr pulls
 # timeout_secs = 30
 # max_records = 200000        # A larger zone is refused
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
-# ttl = 3600                    # Default record TTL (seconds)
+# default_ttl = 3600                    # Default record TTL (seconds)
 # refresh = 300                 # SOA refresh; fallback when NOTIFY is lost
 # retry = 60                    # SOA retry
 # expire = 3600000              # SOA expire
@@ -115,7 +115,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # max_days = 365              # Days kept; older versions are pruned by the scheduler pass (0 = forever)
 
 # The logs read with `bindizr log <subject>` and GET /logs/<subject>; [logging] below is Bindizr's own output
-[audit_log]                   # Who changed a token, role, grant, key, secondary, policy or zone's DNSSEC settings, or deleted a zone
+[activity_log]                   # Committed DNS and management operations and their recorded results
 # max_days = 365              # Days kept (0 = forever)
 
 [access_log]                  # The API requests and nsupdates answered, denied, or failed
@@ -189,18 +189,18 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_TLS_CERT_FILE` | `dns.tls.cert_file` | Empty clears it |
 | `BINDIZR_DNS_TLS_KEY_FILE` | `dns.tls.key_file` | Empty clears it |
 | `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer.cache_max_records` | `0` caches nothing; see [Sizing the transfer cache](configuration/advanced.md#sizing-the-transfer-cache) |
-| `BINDIZR_DNS_TRANSFER_REQUIRE_TLS` | `dns.transfer.require_tls` | `true` or `false`; `true` needs `[dns.tls]` |
+| `BINDIZR_DNS_TRANSFER_TLS_REQUIRED` | `dns.transfer.tls_required` | `true` or `false`; `true` needs `[dns.tls]` |
 | `BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS` | `dns.tcp_idle_timeout_secs` | 1 to 6553 |
 | `BINDIZR_DNS_TCP_MAX_CONNECTIONS` | `dns.tcp_max_connections` | |
 | `BINDIZR_DNS_IMPORT_TIMEOUT_SECS` | `dns.import.timeout_secs` | |
 | `BINDIZR_DNS_IMPORT_MAX_RECORDS` | `dns.import.max_records` | |
-| `BINDIZR_DNS_ZONE_DEFAULTS_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
+| `BINDIZR_DNS_ZONE_DEFAULTS_DEFAULT_TTL` | `dns.zone_defaults.default_ttl` | answers an omitted `default_ttl` on zone creation |
 | `BINDIZR_DNS_ZONE_DEFAULTS_REFRESH` | `dns.zone_defaults.refresh` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE` | `dns.zone_defaults.expire` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL` | `dns.zone_defaults.minimum_ttl` | |
 | `BINDIZR_HISTORY_MAX_DAYS` | `history.max_days` | `0` keeps zone versions forever |
-| `BINDIZR_AUDIT_LOG_MAX_DAYS` | `audit_log.max_days` | `0` keeps the audit log forever |
+| `BINDIZR_ACTIVITY_LOG_MAX_DAYS` | `activity_log.max_days` | `0` keeps the activity log forever |
 | `BINDIZR_ACCESS_LOG_SAVE` | `access_log.save` | `all`, `denied`, or `none` |
 | `BINDIZR_ACCESS_LOG_MAX_DAYS` | `access_log.max_days` | `0` keeps the access log forever |
 | `BINDIZR_TRANSFER_LOG_SAVE` | `transfer_log.save` | `all`, `unserved`, or `none` |

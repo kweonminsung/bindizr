@@ -11,19 +11,19 @@ pub(crate) async fn create(pool: &Pool<Postgres>, log: TransferLog) -> Result<()
 
     sqlx::query(
         r#"
-        INSERT INTO transfer_log (client_addr, zone_id, kind, result, transport, incremental, serial, served_at, error)
+        INSERT INTO transfer_log (client_ip, zone_id, kind, result, transport, incremental, serial, created_at, error_code)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
     )
-    .bind(&log.client_addr)
+    .bind(&log.client_ip)
     .bind(log.zone_id)
     .bind(log.kind.as_str())
     .bind(log.result.as_str())
     .bind(log.transport.as_str())
     .bind(log.incremental)
     .bind(log.serial)
-    .bind(log.served_at)
-    .bind(&log.error)
+    .bind(log.created_at)
+    .bind(&log.error_code)
     .execute(&mut *connection)
     .await?;
 
@@ -43,19 +43,19 @@ pub(crate) async fn list_by_filter_with_zone(
 
     let logs = sqlx::query_as::<_, TransferLogWithZone>(AssertSqlSafe(format!(
         r#"
-        SELECT t.client_addr, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
+        SELECT t.client_ip, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.created_at, t.error_code, z.name AS zone_name
         FROM transfer_log t
         INNER JOIN zones z ON z.id = t.zone_id
-        WHERE ($1::TEXT[] IS NULL OR t.client_addr = ANY($1))
+        WHERE ($1::TEXT[] IS NULL OR t.client_ip = ANY($1))
           AND ($2::TEXT IS NULL OR z.name = $2)
           AND ($3::TEXT IS NULL OR t.result = $3)
-          AND ($4::TIMESTAMPTZ IS NULL OR t.served_at >= $4)
-          AND ($5::TIMESTAMPTZ IS NULL OR t.served_at < $5)
+          AND ($4::TIMESTAMPTZ IS NULL OR t.created_at >= $4)
+          AND ($5::TIMESTAMPTZ IS NULL OR t.created_at < $5)
         {order_by}
         LIMIT $6 OFFSET $7
         "#
     )))
-    .bind(&filter.client_addrs)
+    .bind(&filter.client_ips)
     .bind(&filter.zone_name)
     .bind(result)
     .bind(filter.since)
@@ -86,14 +86,14 @@ pub(crate) async fn count_by_filter(
         SELECT COUNT(*)
         FROM transfer_log t
         INNER JOIN zones z ON z.id = t.zone_id
-        WHERE ($1::TEXT[] IS NULL OR t.client_addr = ANY($1))
+        WHERE ($1::TEXT[] IS NULL OR t.client_ip = ANY($1))
           AND ($2::TEXT IS NULL OR z.name = $2)
           AND ($3::TEXT IS NULL OR t.result = $3)
-          AND ($4::TIMESTAMPTZ IS NULL OR t.served_at >= $4)
-          AND ($5::TIMESTAMPTZ IS NULL OR t.served_at < $5)
+          AND ($4::TIMESTAMPTZ IS NULL OR t.created_at >= $4)
+          AND ($5::TIMESTAMPTZ IS NULL OR t.created_at < $5)
         "#,
     )
-    .bind(&filter.client_addrs)
+    .bind(&filter.client_ips)
     .bind(&filter.zone_name)
     .bind(result)
     .bind(filter.since)
@@ -104,29 +104,29 @@ pub(crate) async fn count_by_filter(
     Ok(count as u64)
 }
 
-/// List the newest row of each zone any of `client_addrs` asked for, with
-/// zone names: newest by `served_at`, then id, as the listings sort.
-pub(crate) async fn list_by_client_addrs_with_zone_latest_per_zone(
+/// List the newest row of each zone any of `client_ips` asked for, with
+/// zone names: newest by `created_at`, then id, as the listings sort.
+pub(crate) async fn list_by_client_ips_with_zone_latest_per_zone(
     pool: &Pool<Postgres>,
-    client_addrs: &[String],
+    client_ips: &[String],
 ) -> Result<Vec<TransferLogWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let logs = sqlx::query_as::<_, TransferLogWithZone>(
         r#"
-        SELECT client_addr, zone_id, kind, result, transport, incremental, serial, served_at, error, zone_name
+        SELECT client_ip, zone_id, kind, result, transport, incremental, serial, created_at, error_code, zone_name
         FROM (
-            SELECT t.client_addr, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name, t.id,
-                ROW_NUMBER() OVER (PARTITION BY t.zone_id ORDER BY t.served_at DESC, t.id DESC) AS recency
+            SELECT t.client_ip, t.zone_id, t.kind, t.result, t.transport, t.incremental, t.serial, t.created_at, t.error_code, z.name AS zone_name, t.id,
+                ROW_NUMBER() OVER (PARTITION BY t.zone_id ORDER BY t.created_at DESC, t.id DESC) AS recency
             FROM transfer_log t
             INNER JOIN zones z ON z.id = t.zone_id
-            WHERE t.client_addr = ANY($1)
+            WHERE t.client_ip = ANY($1)
         ) latest
         WHERE recency = 1
-        ORDER BY served_at DESC, id DESC
+        ORDER BY created_at DESC, id DESC
         "#,
     )
-    .bind(client_addrs)
+    .bind(client_ips)
     .fetch_all(&mut *connection)
     .await?;
 
@@ -145,11 +145,11 @@ pub(crate) async fn prune_older_than(
     let result = sqlx::query(
         r#"
         DELETE FROM transfer_log
-        WHERE served_at < $1
+        WHERE created_at < $1
           AND id NOT IN (
               SELECT id FROM (
                   SELECT id, ROW_NUMBER() OVER (
-                      PARTITION BY client_addr, zone_id ORDER BY served_at DESC, id DESC
+                      PARTITION BY client_ip, zone_id ORDER BY created_at DESC, id DESC
                   ) AS recency
                   FROM transfer_log
               ) AS newest

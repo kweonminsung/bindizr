@@ -5,6 +5,7 @@ use std::mem;
 
 use bindizr_core::dns::dnssec::SigningPass;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState};
 use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
@@ -13,7 +14,7 @@ use chrono::{DateTime, Utc};
 use crate::change::ChangeOrigin;
 use crate::error::ServiceError;
 use crate::types::Holddown;
-use crate::{Context, dnssec, transaction};
+use crate::{Context, dnssec, transaction, zone};
 
 /// Re-sign a zone transactionally, advancing its serial only for changed signatures.
 /// Return `None` if the zone is gone, unsigned, or needs no new signatures.
@@ -30,13 +31,19 @@ pub(crate) async fn resign_zone_by_zone_id(
             return Ok(None);
         };
 
-        let serial = dnssec::resign_zone_tx(
-            &mut tx,
-            &signed,
-            SigningPass::Refresh,
-            &ChangeOrigin::system(),
-        )
-        .await?;
+        let origin = ChangeOrigin::system();
+        let serial =
+            dnssec::resign_zone_tx(&mut tx, &signed, SigningPass::Refresh, &origin).await?;
+
+        if serial.is_some() {
+            crate::activity::save_tx(
+                &mut tx,
+                ActivityOperation::DnssecSign,
+                zone::activity_target(&signed.zone.name),
+                &origin,
+            )
+            .await?;
+        }
 
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
@@ -93,11 +100,15 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
                 .await?;
         signed.keys.push(new_key);
 
-        let serial = dnssec::resign_zone_tx(
+        let origin = ChangeOrigin::system();
+        let serial =
+            dnssec::resign_zone_tx(&mut tx, &signed, SigningPass::Refresh, &origin).await?;
+
+        crate::activity::save_tx(
             &mut tx,
-            &signed,
-            SigningPass::Refresh,
-            &ChangeOrigin::system(),
+            ActivityOperation::DnssecStartRollover,
+            zone::activity_target(&signed.zone.name),
+            &origin,
         )
         .await?;
 
@@ -150,11 +161,15 @@ pub(crate) async fn promote_zsks_by_zone_id(
             dnssec::promote_published_keys_tx(&mut tx, &signed.zone, signed.keys, &due, None)
                 .await?;
 
-        let serial = dnssec::resign_zone_tx(
+        let origin = ChangeOrigin::system();
+        let serial =
+            dnssec::resign_zone_tx(&mut tx, &signed, SigningPass::Refresh, &origin).await?;
+
+        crate::activity::save_tx(
             &mut tx,
-            &signed,
-            SigningPass::Refresh,
-            &ChangeOrigin::system(),
+            ActivityOperation::DnssecMaintain,
+            zone::activity_target(&signed.zone.name),
+            &origin,
         )
         .await?;
 
@@ -187,7 +202,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             return Ok(None);
         };
 
-        // The same rule `ds-seen` applies, minus the errors it reports.
+        // The same rule `advance` applies, minus the errors it reports.
         let Ok(awaiting) = dnssec::promotable_sep_key_ids(&signed, Holddown::Wait) else {
             return Ok(None);
         };
@@ -203,7 +218,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             }
         };
 
-        // Every awaiting key, like `ds-seen`: a parent still propagating the
+        // Every awaiting key, like `advance`: a parent still propagating the
         // change must not move the rollover on a partial answer.
         let confirmed = delegation
             .keys
@@ -230,11 +245,15 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             delegation.ds_ttl,
         )
         .await?;
-        let serial = dnssec::resign_zone_tx(
+        let origin = ChangeOrigin::system();
+        let serial = dnssec::resign_zone_tx(&mut tx, &signed, SigningPass::Refresh, &origin)
+            .await?;
+
+        crate::activity::save_tx(
             &mut tx,
-            &signed,
-            SigningPass::Refresh,
-            &ChangeOrigin::system(),
+            ActivityOperation::DnssecAdvanceRollover,
+            zone::activity_target(&signed.zone.name),
+            &origin,
         )
         .await?;
 
@@ -313,11 +332,15 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
 
         signed.keys = remaining;
 
-        let serial = dnssec::resign_zone_tx(
+        let origin = ChangeOrigin::system();
+        let serial =
+            dnssec::resign_zone_tx(&mut tx, &signed, SigningPass::Refresh, &origin).await?;
+
+        crate::activity::save_tx(
             &mut tx,
-            &signed,
-            SigningPass::Refresh,
-            &ChangeOrigin::system(),
+            ActivityOperation::DnssecMaintain,
+            zone::activity_target(&signed.zone.name),
+            &origin,
         )
         .await?;
 

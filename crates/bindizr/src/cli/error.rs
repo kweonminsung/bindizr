@@ -183,7 +183,7 @@ impl CliError {
                 Some("Run 'bindizr dnssec policy list' to see available policies.")
             }
             ErrorCode::TsigKeyInUse => Some(
-                "Move each secondary off it ('bindizr secondary update --notify-key') before deleting the key.",
+                "Move each secondary off it ('bindizr secondary update --notify-tsig-key') before deleting the key.",
             ),
             ErrorCode::RoleNotFound => Some("Run 'bindizr role list' to see available roles."),
             ErrorCode::RoleInUse => Some(

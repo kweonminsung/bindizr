@@ -138,7 +138,7 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
-/// Verify that NOTIFY reaches one or all zones, with optional serial advancement.
+/// Verify that NOTIFY reaches one or all enabled zones, with optional serial advancement.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
@@ -159,7 +159,10 @@ async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
     let (status, body) = app.send_request(Method::POST, "/notify", None).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["message"], "NOTIFY sent successfully for all zones");
+    assert_eq!(
+        body["message"],
+        "NOTIFY sent successfully for all enabled zones"
+    );
 
     let before_serial = app.read_zone_serial(zone_name).await;
 

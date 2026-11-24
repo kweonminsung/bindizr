@@ -152,22 +152,21 @@ async fn run_scheduler_pass(cx: &Arc<Context>) {
         }
     }
 
-    // The audit log has no row lock to take: one statement bounds it.
-    let audit_max_days = config.audit_log.max_days;
+    let activity_max_days = config.activity_log.max_days;
 
-    if audit_max_days > 0 {
-        let cutoff = Utc::now() - Duration::days(i64::from(audit_max_days));
+    if activity_max_days > 0 {
+        let cutoff = Utc::now() - Duration::days(i64::from(activity_max_days));
 
-        match bindizr_db::audit_log::prune_older_than(cx.db(), cutoff).await {
+        match bindizr_db::activity_log::prune_older_than(cx.db(), cutoff).await {
             Ok(pruned) => {
-                cx.metrics().track_pruned_audit_log_rows(pruned);
+                cx.metrics().track_pruned_activity_log_rows(pruned);
                 if pruned > 0 {
-                    log::info!("Pruned {pruned} audit log rows");
+                    log::info!("Pruned {pruned} activity log rows");
                 }
             }
             Err(error) => {
                 failed = true;
-                log::error!("Audit log pruning failed: {error:?}");
+                log::error!("Activity log pruning failed: {error:?}");
             }
         }
     }

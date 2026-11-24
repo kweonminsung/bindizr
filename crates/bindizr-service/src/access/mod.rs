@@ -53,13 +53,13 @@ impl AccessLogErrorCode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessLogEntry {
     pub source: AccessSource,
-    pub client_addr: String,
+    pub client_ip: String,
     pub method: String,
     pub target: String,
-    pub status: String,
+    pub response_code: String,
     pub result: AccessResult,
-    pub caller: Option<ChangeActor>,
-    pub error: Option<AccessLogErrorCode>,
+    pub actor: Option<ChangeActor>,
+    pub error_code: Option<AccessLogErrorCode>,
     pub requested_at: DateTime<Utc>,
 }
 
@@ -68,13 +68,13 @@ impl From<AccessLogEntry> for AccessLog {
     fn from(entry: AccessLogEntry) -> Self {
         Self {
             source: entry.source,
-            client_addr: entry.client_addr,
+            client_ip: entry.client_ip,
             method: entry.method,
             target: entry.target,
-            status: entry.status,
+            response_code: entry.response_code,
             result: entry.result,
-            caller: entry.caller,
-            error: entry.error.map(AccessLogErrorCode::to_text),
+            actor: entry.actor,
+            error_code: entry.error_code.map(AccessLogErrorCode::to_text),
             requested_at: entry.requested_at,
         }
     }
@@ -184,21 +184,21 @@ pub async fn list(
     ))
 }
 
-/// Parse the listing's source, result, address and order, fold its caller name
-/// to the lowercase every token and TSIG key stores, and bound its page.
+/// Parse the listing's source, result, client IP and order, normalize its actor
+/// name like token and TSIG key names, and bound its page.
 fn normalize_filter(
     filter: &AccessLogFilter,
 ) -> Result<bindizr_db::access_log::AccessLogFilter, ServiceError> {
     let source = text::parse_optional::<AccessSource>(filter.source.as_deref())?;
     let result = text::parse_optional::<AccessResult>(filter.result.as_deref())?;
-    let caller_name = filter
-        .caller_name
+    let actor_name = filter
+        .actor_name
         .as_deref()
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(str::to_ascii_lowercase);
-    let client_addr =
-        text::normalize_ip_address(filter.address.as_deref())?.map(|address| address.to_string());
+    let client_ip =
+        text::normalize_ip_address(filter.client_ip.as_deref())?.map(|ip| ip.to_string());
 
     pagination::validate_time_window(filter.since, filter.until)?;
 
@@ -211,8 +211,8 @@ fn normalize_filter(
     Ok(bindizr_db::access_log::AccessLogFilter {
         source,
         result,
-        caller_name,
-        client_addr,
+        actor_name,
+        client_ip,
         since: filter.since,
         until: filter.until,
         sort,

@@ -38,7 +38,7 @@ Bindizr owns the zone data and the transfer path; any secondary that consumes a 
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 - **nsupdate** — RFC 2136 updates with TSIG-signed requests and managed keys.
 - **Role-Based Access Control** — API tokens and TSIG keys authenticate into roles whose grants set the zones, actions, record names, and record types each may touch.
-- **Logs** — every management change (audit), API request and nsupdate (access), and zone transfer (transfer) is logged with who made it, when, and how it ended; a zone's own changes are its versions.
+- **Logs** — Activity records committed DNS and management changes and recorded operation results. Access records requests and nsupdates. Transfer records how zone transfers ended.
 - **DNSSEC** — named signing policies, automatic signing and re-signing, ZSK rollovers the scheduler starts and completes on a policy's key lifetime, operator-started CSK/KSK rollovers that complete once the parent serves the new DS, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in the zones and subtrees its token's role is granted, through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.

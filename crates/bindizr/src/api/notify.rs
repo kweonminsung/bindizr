@@ -26,16 +26,16 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NotifyQuery {
-    /// Bump the serial first, so secondaries transfer even when nothing changed.
+    /// Bump the SOA serial before sending NOTIFY.
     bump_serial: Option<bool>,
 }
 
-/// Send DNS NOTIFY messages for all zones.
+/// Send DNS NOTIFY messages for all enabled zones.
 #[utoipa::path(
         post,
         path = "/notify",
         tag = "Notify",
-        summary = "Send DNS NOTIFY messages for all zones",
+        summary = "Send DNS NOTIFY messages for all enabled zones",
         params(NotifyQuery),
         responses(
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),
@@ -69,7 +69,7 @@ pub(crate) async fn notify_all_zones(
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "The caller's role does not permit 'zone:update' there; notifying the catalog zone or all zones needs it in all zones", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit 'zone:update' there; notifying the catalog zone or every enabled zone needs it in all zones", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

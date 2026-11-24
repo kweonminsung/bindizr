@@ -30,15 +30,11 @@ pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, Postgres>,
     version: ZoneVersion,
 ) -> Result<(), DatabaseError> {
-    let (changed_by_kind, changed_by_name) = version
-        .changed_by
-        .as_ref()
-        .map(ChangeActor::as_columns)
-        .unzip();
+    let (actor_kind, actor_name) = version.actor.as_ref().map(ChangeActor::as_columns).unzip();
 
     sqlx::query(
         r#"
-        INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at)
+        INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, source, actor_kind, actor_name, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (zone_id, serial)
         DO UPDATE SET
@@ -49,9 +45,9 @@ pub(crate) async fn upsert_tx(
             retry = EXCLUDED.retry,
             expire = EXCLUDED.expire,
             minimum_ttl = EXCLUDED.minimum_ttl,
-            change_source = EXCLUDED.change_source,
-            changed_by_kind = EXCLUDED.changed_by_kind,
-            changed_by_name = EXCLUDED.changed_by_name
+            source = EXCLUDED.source,
+            actor_kind = EXCLUDED.actor_kind,
+            actor_name = EXCLUDED.actor_name
         "#,
     )
     .bind(version.zone_id)
@@ -63,9 +59,9 @@ pub(crate) async fn upsert_tx(
     .bind(version.retry)
     .bind(version.expire)
     .bind(version.minimum_ttl)
-    .bind(version.change_source.as_str())
-    .bind(changed_by_kind)
-    .bind(changed_by_name)
+    .bind(version.source.as_str())
+    .bind(actor_kind)
+    .bind(actor_name)
     .bind(Utc::now())
     .execute(&mut **tx)
     .await?;
@@ -84,7 +80,7 @@ pub(crate) async fn list_in_serial_range_tx(
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     let versions = sqlx::query_as::<_, ZoneVersion>(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, source, actor_kind, actor_name, created_at
         FROM zone_versions
         WHERE zone_id = $1 AND ((serial >= $2 AND serial <= $3) OR ($2 > $3 AND (serial >= $2 OR serial <= $3)))
         "#,
@@ -115,7 +111,7 @@ pub(crate) async fn list_by_filter(
     };
     let versions = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, source, actor_kind, actor_name, created_at
         FROM zone_versions
         WHERE zone_id = $1{predicate}
         ORDER BY created_at DESC, id DESC
@@ -176,7 +172,7 @@ pub(crate) async fn get_by_serial_tx(
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     let version = sqlx::query_as::<_, ZoneVersion>(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, source, actor_kind, actor_name, created_at
         FROM zone_versions
         WHERE zone_id = $1 AND serial = $2
         "#,

@@ -84,12 +84,12 @@ sudo pdnsutil set-meta example.com AXFR-MASTER-TSIG xfr-key
 Apply it to each new member if you require signed member transfers.
 
 **With PowerDNS, treat the registered address as the only thing authorizing
-a member transfer.** Bindizr logs each transfer with `signed=true` or
-`signed=false`, so the difference is visible:
+a member transfer.** Bindizr logs each transfer with `tsig_signed=true` or
+`tsig_signed=false`, so the difference is visible:
 
 ```text
-XFR TCP query: zone="catalog.bindizr", qtype=Rtype::AXFR, from=10.0.0.14, signed=true
-XFR TCP query: zone="example.com",     qtype=Rtype::AXFR, from=10.0.0.14, signed=false
+XFR TCP query: zone="catalog.bindizr", qtype=Rtype::AXFR, client_ip=10.0.0.14, tsig_signed=true
+XFR TCP query: zone="example.com",     qtype=Rtype::AXFR, client_ip=10.0.0.14, tsig_signed=false
 ```
 
 BIND, Knot, and NSD all reuse the catalog's key for member transfers; this is

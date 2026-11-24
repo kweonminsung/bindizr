@@ -415,13 +415,13 @@ async fn tls_transfer_requires_key_and_registered_address() {
     let tls_ok = app
         .read_counter(
             "bindizr_xfr_total",
-            &[r#"type="axfr""#, r#"result="ok""#, r#"transport="tls""#],
+            &[r#"kind="axfr""#, r#"result="ok""#, r#"transport="tls""#],
         )
         .await;
     let tcp_ok = app
         .read_counter(
             "bindizr_xfr_total",
-            &[r#"type="axfr""#, r#"result="ok""#, r#"transport="tcp""#],
+            &[r#"kind="axfr""#, r#"result="ok""#, r#"transport="tcp""#],
         )
         .await;
 
@@ -692,14 +692,14 @@ async fn multi_question_queries_receive_signed_formerr() {
     assert_eq!(response.header_counts().ancount(), 0);
 }
 
-/// Verify that `require_tls` refuses plain transfers while allowing SOA and TLS (RFC 9103,
+/// Verify that `tls_required` refuses plain transfers while allowing SOA and TLS (RFC 9103,
 /// Section 11).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn require_tls_rejects_a_transfer_over_plain_tcp() {
+async fn tls_required_rejects_a_transfer_over_plain_tcp() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
-        dns_transfer_require_tls: true,
+        dns_transfer_tls_required: true,
         ..Default::default()
     })
     .await;
@@ -735,7 +735,7 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
 
     assert_eq!(refused["result"], "refused", "{body}");
     assert_eq!(refused["transport"], "tcp", "{body}");
-    assert_eq!(refused["error"], "REFUSED", "{body}");
+    assert_eq!(refused["error_code"], "REFUSED", "{body}");
 
     let outcome = dns::fetch_axfr_tls(
         app.dns_tls_port(),

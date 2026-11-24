@@ -53,7 +53,7 @@ pub struct ParseActionError {
 /// - `secondary:manage` — register, change, check and remove secondaries; all zones only
 /// - `access:manage` — manage roles, API tokens and TSIG keys; all zones only,
 ///   and equivalent to admin since its holder can grant itself anything
-/// - `log:read` — read the audit, access and transfer logs; all zones only
+/// - `log:read` — read the activity, access and transfer logs and the operation catalog; all zones only
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
 )]

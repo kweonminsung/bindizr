@@ -93,6 +93,8 @@ pub struct ImportZoneRequest {
 pub struct ImportZoneResponse {
     #[schema(example = true)]
     pub applied: bool,
+    /// Whether a new zone or a change to its records was committed.
+    pub changed: bool,
     #[schema(example = false)]
     pub dry_run: bool,
     pub summary: ImportZoneSummaryResponse,

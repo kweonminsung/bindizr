@@ -4,13 +4,13 @@
 use std::net::IpAddr;
 
 use bindizr_core::config::SavedTransfers;
-use bindizr_core::dns::Serial;
 use bindizr_core::dns::message::OptRcode;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::tsig::TsigRcode;
+use bindizr_core::dns::{DnsTransport, Serial};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::transfer::{
-    TransferKind, TransferLog, TransferLogWithZone, TransferResult, TransferTransport,
+    TransferKind, TransferLog, TransferLogWithZone, TransferResult,
 };
 use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
@@ -69,7 +69,7 @@ pub async fn save_ok(
     client_ip: IpAddr,
     zone_id: ZoneId,
     kind: TransferKind,
-    transport: TransferTransport,
+    transport: DnsTransport,
     incremental: bool,
     serial: Serial,
 ) {
@@ -81,15 +81,15 @@ pub async fn save_ok(
     let saved = bindizr_db::transfer_log::create(
         cx.db(),
         TransferLog {
-            client_addr: client_ip.to_string(),
+            client_ip: client_ip.to_string(),
             zone_id,
             kind,
             result: TransferResult::Ok,
             transport,
             incremental,
             serial: Some(serial),
-            served_at: Utc::now(),
-            error: None,
+            created_at: Utc::now(),
+            error_code: None,
         },
     )
     .await;
@@ -105,7 +105,7 @@ pub async fn save_refused(
     client_ip: IpAddr,
     zone_name: &str,
     kind: TransferKind,
-    transport: TransferTransport,
+    transport: DnsTransport,
     error_code: TransferLogErrorCode,
 ) {
     save_unserved(
@@ -127,7 +127,7 @@ pub async fn save_failed(
     client_ip: IpAddr,
     zone_name: &str,
     kind: TransferKind,
-    transport: TransferTransport,
+    transport: DnsTransport,
     error_code: TransferLogErrorCode,
 ) {
     save_unserved(
@@ -149,7 +149,7 @@ async fn save_unserved(
     client_ip: IpAddr,
     zone_name: &str,
     kind: TransferKind,
-    transport: TransferTransport,
+    transport: DnsTransport,
     result: TransferResult,
     error_code: TransferLogErrorCode,
 ) {
@@ -172,15 +172,15 @@ async fn save_unserved(
     let saved = bindizr_db::transfer_log::create(
         cx.db(),
         TransferLog {
-            client_addr: client_ip.to_string(),
+            client_ip: client_ip.to_string(),
             zone_id: zone.id,
             kind,
             result,
             transport,
             incremental: false,
             serial: None,
-            served_at: Utc::now(),
-            error: Some(error_code.to_text()),
+            created_at: Utc::now(),
+            error_code: Some(error_code.to_text()),
         },
     )
     .await;
@@ -208,13 +208,11 @@ pub async fn list(
         let secondary = secondary::lookup_by_name(cx, secondary_name).await?;
         let target =
             secondary::SecondaryTarget::resolve(secondary, cx.config().dns.notify.timeout()).await;
-        let secondary_addrs = target.client_ips().into_iter().map(|ip| ip.to_string());
+        let secondary_ips = target.client_ips().into_iter().map(|ip| ip.to_string());
 
-        filter.client_addrs = Some(match filter.client_addrs {
-            Some(client_addrs) => secondary_addrs
-                .filter(|addr| client_addrs.contains(addr))
-                .collect(),
-            None => secondary_addrs.collect(),
+        filter.client_ips = Some(match filter.client_ips {
+            Some(client_ips) => secondary_ips.filter(|ip| client_ips.contains(ip)).collect(),
+            None => secondary_ips.collect(),
         });
     }
 
@@ -229,7 +227,7 @@ pub async fn list(
     ))
 }
 
-/// Parse the listing's zone, result, address and order, and bound its page.
+/// Parse the listing's zone, result, client IP and order, and bound its page.
 fn normalize_filter(
     filter: &TransferLogFilter,
 ) -> Result<bindizr_db::transfer_log::TransferLogFilter, ServiceError> {
@@ -239,7 +237,7 @@ fn normalize_filter(
         .map(zone::normalize_name)
         .transpose()?;
     let result = text::parse_optional::<TransferResult>(filter.result.as_deref())?;
-    let address = text::normalize_ip_address(filter.address.as_deref())?;
+    let client_ip = text::normalize_ip_address(filter.client_ip.as_deref())?;
 
     pagination::validate_time_window(filter.since, filter.until)?;
 
@@ -250,7 +248,7 @@ fn normalize_filter(
     pagination::validate_page_limit(filter.limit)?;
 
     Ok(bindizr_db::transfer_log::TransferLogFilter {
-        client_addrs: address.map(|address| vec![address.to_string()]),
+        client_ips: client_ip.map(|ip| vec![ip.to_string()]),
         zone_name,
         result,
         since: filter.since,
@@ -263,30 +261,30 @@ fn normalize_filter(
 }
 
 /// List the latest transfer of each zone answered to any of `client_ips`,
-/// one row per zone, by the order `find_by_clients_and_zone_name` reads.
-pub(crate) async fn list_latest_by_clients(
+/// one row per zone, by the order `find_by_client_ips_and_zone_name` reads.
+pub(crate) async fn list_latest_by_client_ips(
     cx: &Context,
     client_ips: &[IpAddr],
 ) -> Result<Vec<TransferLogWithZone>, ServiceError> {
-    let client_addrs: Vec<String> = client_ips.iter().map(IpAddr::to_string).collect();
+    let client_ips: Vec<String> = client_ips.iter().map(IpAddr::to_string).collect();
 
     Ok(
-        bindizr_db::transfer_log::list_by_client_addrs_with_zone_latest_per_zone(
+        bindizr_db::transfer_log::list_by_client_ips_with_zone_latest_per_zone(
             cx.db(),
-            &client_addrs,
+            &client_ips,
         )
         .await?,
     )
 }
 
 /// Find the latest transfer of `zone_name` answered to any of `client_ips`.
-pub(crate) async fn find_by_clients_and_zone_name(
+pub(crate) async fn find_by_client_ips_and_zone_name(
     cx: &Context,
     client_ips: &[IpAddr],
     zone_name: &ZoneName,
 ) -> Result<Option<TransferLogWithZone>, ServiceError> {
     let filter = bindizr_db::transfer_log::TransferLogFilter {
-        client_addrs: Some(client_ips.iter().map(IpAddr::to_string).collect()),
+        client_ips: Some(client_ips.iter().map(IpAddr::to_string).collect()),
         zone_name: Some(zone_name.clone()),
         limit: Some(1),
         ..Default::default()

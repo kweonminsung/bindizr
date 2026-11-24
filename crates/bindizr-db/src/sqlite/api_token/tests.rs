@@ -39,7 +39,7 @@ async fn update_last_used_at_skips_a_held_writer() {
         .await
         .unwrap();
     sqlx::query(
-        "INSERT INTO api_tokens (id, name, token, role_id, created_at) VALUES (1, 't', 'h', 1, ?)",
+        "INSERT INTO api_tokens (id, name, token_hash, role_id, created_at) VALUES (1, 't', 'h', 1, ?)",
     )
     .bind(Utc::now())
     .execute(&pool)
@@ -50,7 +50,7 @@ async fn update_last_used_at_skips_a_held_writer() {
     let started = Instant::now();
 
     assert!(
-        !update_last_used_at(&pool, TokenId::from(1), Utc::now())
+        !update_last_used_at(&pool, ApiTokenId::from(1), Utc::now())
             .await
             .unwrap()
     );
@@ -60,7 +60,7 @@ async fn update_last_used_at_skips_a_held_writer() {
     writer.rollback().await.unwrap();
 
     assert!(
-        update_last_used_at(&pool, TokenId::from(1), Utc::now())
+        update_last_used_at(&pool, ApiTokenId::from(1), Utc::now())
             .await
             .unwrap()
     );
@@ -91,7 +91,7 @@ async fn update_last_used_at_keeps_an_in_memory_database() {
     }
 
     assert!(
-        !update_last_used_at(&pool, TokenId::from(1), Utc::now())
+        !update_last_used_at(&pool, ApiTokenId::from(1), Utc::now())
             .await
             .unwrap()
     );

@@ -1,4 +1,4 @@
-use bindizr_core::model::api_token::{ApiToken, ApiTokenMetadata, TokenId};
+use bindizr_core::model::api_token::{ApiToken, ApiTokenId, ApiTokenMetadata};
 use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
 
@@ -22,7 +22,7 @@ pub async fn create_tx(
 /// on MySQL/PostgreSQL) so a revocation waits for the transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
-    token_id: TokenId,
+    token_id: ApiTokenId,
 ) -> Result<Option<ApiToken>, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::api_token::get_tx(tx, token_id).await,
@@ -41,11 +41,14 @@ pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<ApiToken>, Databa
 }
 
 /// Get an API token by its stored token hash.
-pub async fn get_by_token(db: &Db, token: &str) -> Result<Option<ApiToken>, DatabaseError> {
+pub async fn get_by_token_hash(
+    db: &Db,
+    token_hash: &str,
+) -> Result<Option<ApiToken>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::api_token::get_by_token(pool, token).await,
-        Backend::Postgres(pool) => postgres::api_token::get_by_token(pool, token).await,
-        Backend::Sqlite(pool) => sqlite::api_token::get_by_token(pool, token).await,
+        Backend::MySql(pool) => mysql::api_token::get_by_token_hash(pool, token_hash).await,
+        Backend::Postgres(pool) => postgres::api_token::get_by_token_hash(pool, token_hash).await,
+        Backend::Sqlite(pool) => sqlite::api_token::get_by_token_hash(pool, token_hash).await,
     }
 }
 
@@ -63,7 +66,7 @@ pub async fn count_all(db: &Db) -> Result<u64, DatabaseError> {
 /// records what happened, and nothing may block on it.
 pub async fn update_last_used_at(
     db: &Db,
-    token_id: TokenId,
+    token_id: ApiTokenId,
     last_used_at: DateTime<Utc>,
 ) -> Result<bool, DatabaseError> {
     match &db.0 {
@@ -81,7 +84,10 @@ pub async fn update_last_used_at(
 
 /// Delete an API token by ID.
 /// Reports `false` when no row had the id.
-pub async fn delete_tx(tx: &mut Transaction<'_>, token_id: TokenId) -> Result<bool, DatabaseError> {
+pub async fn delete_tx(
+    tx: &mut Transaction<'_>,
+    token_id: ApiTokenId,
+) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::api_token::delete_tx(tx, token_id).await,
         TransactionKind::Postgres(tx) => postgres::api_token::delete_tx(tx, token_id).await,

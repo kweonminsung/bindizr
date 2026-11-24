@@ -157,7 +157,7 @@ pub(crate) async fn list_all_with_notify_tsig_key(
 
     let secondaries = sqlx::query_as::<_, SecondaryWithNotifyKey>(
         r#"
-        SELECT s.id, s.name, s.address, s.enabled, s.notify_tsig_key_id, s.created_at, k.name AS notify_key_name
+        SELECT s.id, s.name, s.address, s.enabled, s.notify_tsig_key_id, s.created_at, k.name AS notify_tsig_key_name
         FROM secondaries s
         LEFT JOIN tsig_keys k ON k.id = s.notify_tsig_key_id
         ORDER BY s.name

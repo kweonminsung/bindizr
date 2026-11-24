@@ -83,7 +83,7 @@ async fn transfer_log_excludes_record_values_when_encoding_fails() {
         &CreateSecondaryRequest {
             name: "loopback".to_string(),
             address: "127.0.0.1".to_string(),
-            notify_key_name: None,
+            notify_tsig_key_name: None,
         },
     )
     .await
@@ -145,7 +145,7 @@ async fn transfer_log_excludes_record_values_when_encoding_fails() {
 
     assert_eq!(logs.items.len(), 1, "{logs:?}");
     assert_eq!(logs.items[0].result, TransferResult::Failed);
-    let error = logs.items[0].error.as_deref().unwrap();
+    let error = logs.items[0].error_code.as_deref().unwrap();
 
     assert!(
         !error.contains(marker),

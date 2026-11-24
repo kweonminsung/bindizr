@@ -126,7 +126,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
+            &format!("/zones/{zone_name}/versions?include_signer_only_versions=true"),
             None,
         )
         .await;
@@ -136,7 +136,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
 
     assert!(
         all_serials.contains(&signer_serial),
-        "include_signer_serials=true must include signer-only serials: {all_serials:?}"
+        "include_signer_only_versions=true must include signer-only serials: {all_serials:?}"
     );
 
     // A DS secures a delegation, so the NS record set must exist first.
@@ -185,7 +185,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/export?signed=true"),
+            &format!("/zones/{zone_name}/export?include_dnssec=true"),
             None,
         )
         .await;
@@ -263,7 +263,7 @@ async fn dnssec_enable_supports_nsec3_with_split_keys() {
         .send_request(
             Method::POST,
             "/dnssec-policies",
-            Some(json!({ "name": policy_name, "denial": "nsec3", "split_keys": true })),
+            Some(json!({ "name": policy_name, "denial": "nsec3", "key_layout": "split" })),
         )
         .await;
 
@@ -281,7 +281,7 @@ async fn dnssec_enable_supports_nsec3_with_split_keys() {
     let dnssec = &body;
 
     assert_eq!(dnssec["policy"]["denial"], "nsec3");
-    assert_eq!(dnssec["policy"]["split_keys"], true);
+    assert_eq!(dnssec["policy"]["key_layout"], "split");
 
     let keys = dnssec["keys"].as_array().unwrap();
 
@@ -329,12 +329,12 @@ async fn dnssec_enable_supports_nsec3_with_split_keys() {
 
     assert_eq!(published["role"], "zsk");
 
-    // ds-seen has no meaning for a ZSK rollover — no parent DS is involved —
+    // advance has no meaning for a ZSK rollover — no parent DS is involved —
     // and must not bypass the publish hold-down.
     let (status, _) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+            &format!("/zones/{zone_name}/dnssec/rollover/advance"),
             None,
         )
         .await;

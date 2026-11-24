@@ -6,15 +6,17 @@ use std::iter;
 use std::net::SocketAddr;
 
 use bindizr_core::dns::{Serial, address};
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult, ActivityTarget};
 use bindizr_core::model::role_grant::Action;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::secondary::SecondaryTarget;
 use crate::types::{
-    CheckSecondariesResponse, CheckSecondaryResponse, SecondaryTransferSummaryResponse,
+    CheckSecondariesResponse, CheckSecondaryResponse, SecondaryStatusResponse,
+    SecondaryTransferSummaryResponse,
 };
-use crate::{Context, dns_client, notify, probe, secondary};
+use crate::{Context, activity, dns_client, notify, probe, secondary};
 
 /// Check one secondary, enabled or not: resolve it, compare its catalog serial
 /// with Bindizr's listener, and send catalog NOTIFY.
@@ -57,7 +59,7 @@ pub async fn check(
     let notifies =
         notify::send_notify_to_targets(cx, &catalog_zone_name, iter::once(&target)).await?;
 
-    Ok(CheckSecondaryResponse {
+    let response = CheckSecondaryResponse {
         secondary: secondary_response,
         addresses,
         resolve_error,
@@ -67,7 +69,25 @@ pub async fn check(
         catalog,
         notifies,
         transfers,
-    })
+    };
+    let result = if response.is_healthy() {
+        ActivityResult::Succeeded
+    } else {
+        ActivityResult::Failed
+    };
+    activity::save_result(
+        cx,
+        ActivityOperation::SecondaryCheck,
+        result,
+        ActivityTarget {
+            name: Some(response.secondary.name.clone()),
+            ..ActivityTarget::default()
+        },
+        caller.change_origin(),
+    )
+    .await;
+
+    Ok(response)
 }
 
 /// Diagnose enabled secondaries against the listener's observed catalog serial.
@@ -94,6 +114,22 @@ pub async fn check_enabled(
     }
     // Last, once every read has succeeded: a failed report must not follow a NOTIFY it hides.
     let notifies = notify::send_notify_to_targets(cx, catalog_zone_name, &targets).await?;
+
+    let result = if secondaries.iter().all(SecondaryStatusResponse::is_in_sync)
+        && notifies.iter().all(|notify| notify.error.is_none())
+    {
+        ActivityResult::Succeeded
+    } else {
+        ActivityResult::Failed
+    };
+    activity::save_result(
+        cx,
+        ActivityOperation::SecondaryCheckEnabled,
+        result,
+        ActivityTarget::default(),
+        caller.change_origin(),
+    )
+    .await;
 
     Ok(CheckSecondariesResponse {
         secondaries,

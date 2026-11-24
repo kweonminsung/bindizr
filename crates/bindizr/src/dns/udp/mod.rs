@@ -7,9 +7,9 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
 
-use bindizr_core::dns::message;
 use bindizr_core::dns::message::{Keepalive, ParsedQuery, QueryMetadata, ResponseLimit};
-use bindizr_core::model::transfer::{TransferKind, TransferTransport};
+use bindizr_core::dns::{DnsTransport, message};
+use bindizr_core::model::transfer::TransferKind;
 use nix::libc::{in_addr, in_pktinfo, in6_addr, in6_pktinfo};
 use nix::sys::socket;
 use nix::sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, SockaddrStorage, sockopt};
@@ -279,13 +279,8 @@ async fn handle_udp_query(
         return;
     }
 
-    match server::refuse_unsupported_opcode(
-        dns_cx,
-        query_data,
-        Keepalive::None,
-        TransferTransport::Udp,
-    )
-    .await
+    match server::refuse_unsupported_opcode(dns_cx, query_data, Keepalive::None, DnsTransport::Udp)
+        .await
     {
         Ok(Some((response, limit))) => {
             send_udp_response(socket, target, &response, limit).await;
@@ -317,7 +312,7 @@ async fn handle_udp_query(
         }
     };
 
-    let result = match server::classify_query(client_addr, &query, TransferTransport::Udp) {
+    let result = match server::classify_query(client_addr, &query, DnsTransport::Udp) {
         QueryDispatch::Refuse { rcode, ede } => {
             match server::refuse_query(dns_cx, &QueryMetadata::from(&query), query_data, rcode, ede)
                 .await

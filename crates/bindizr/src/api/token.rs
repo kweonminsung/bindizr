@@ -6,8 +6,8 @@ use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing};
 use bindizr_service::role::grant;
 use bindizr_service::types::{
-    CreateTokenRequest, CreateTokenResponse, ErrorResponse, MessageResponse, PageRequest,
-    PaginatedResponse, RoleGrantResponse, SingleTokenResponse, TokenFilter, TokenResponse,
+    ApiTokenFilter, ApiTokenResponse, CreateApiTokenRequest, CreateApiTokenResponse, ErrorResponse,
+    MessageResponse, PageRequest, PaginatedResponse, RoleGrantResponse, SingleApiTokenResponse,
 };
 use bindizr_service::{Context, token};
 
@@ -33,9 +33,9 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         tag = "Token",
         summary = "List API tokens",
         description = "Lists API tokens without their secrets, every one or only those authenticating into `role_name`; a secret is shown once, in the create response.",
-        params(TokenFilter),
+        params(ApiTokenFilter),
         responses(
-            (status = 200, description = "All API tokens", body = PaginatedResponse<TokenResponse>),
+            (status = 200, description = "All API tokens", body = PaginatedResponse<ApiTokenResponse>),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -46,7 +46,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_tokens(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut filter): Query<TokenFilter>,
+    Query(mut filter): Query<ApiTokenFilter>,
 ) -> Result<Response, ApiError> {
     filter.limit = filter.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = token::list(&cx, &caller, &filter).await?;
@@ -60,9 +60,9 @@ pub(crate) async fn list_tokens(
         tag = "Token",
         summary = "Create an API token",
         description = "Creates an API token in a role and returns its secret, the one time it is shown. The role's grants decide what the token may do.",
-        request_body = CreateTokenRequest,
+        request_body = CreateApiTokenRequest,
         responses(
-            (status = 201, description = "API token created; the response carries the secret", body = CreateTokenResponse),
+            (status = 201, description = "API token created; the response carries the secret", body = CreateApiTokenResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -76,10 +76,10 @@ pub(crate) async fn list_tokens(
 pub(crate) async fn create_token(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    JsonBody(body): JsonBody<CreateTokenRequest>,
+    JsonBody(body): JsonBody<CreateApiTokenRequest>,
 ) -> Result<Response, ApiError> {
     let (token, secret) = token::create(&cx, &caller, &body).await?;
-    let response = CreateTokenResponse { token, secret };
+    let response = CreateApiTokenResponse { token, secret };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -91,7 +91,7 @@ pub(crate) async fn create_token(
         summary = "Describe the API token making the request",
         description = "The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 404.",
         responses(
-            (status = 200, description = "The calling token", body = SingleTokenResponse),
+            (status = 200, description = "The calling token", body = SingleApiTokenResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "No token presented: authentication is disabled", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -102,7 +102,7 @@ pub(crate) async fn get_self_token(
     AuthenticatedToken(token): AuthenticatedToken,
 ) -> Result<Response, ApiError> {
     let token = token::get_self(&cx, &token).await?;
-    let response = SingleTokenResponse { token };
+    let response = SingleApiTokenResponse { token };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

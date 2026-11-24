@@ -1,5 +1,5 @@
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
-use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, PolicyId};
+use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, DnssecKeyLayout, PolicyId};
 use bindizr_core::model::zone::ZoneId;
 
 use super::*;
@@ -33,7 +33,7 @@ fn policy() -> DnssecPolicy {
         name: "default".to_string(),
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
         denial: DnssecDenial::Nsec,
-        split_keys: false,
+        key_layout: DnssecKeyLayout::Csk,
         signature_validity_days: Days::try_from(14).unwrap(),
         signature_refresh_days: Days::try_from(5).unwrap(),
         zsk_lifetime_days: Days::try_from(0).unwrap(),
@@ -97,7 +97,7 @@ fn rollover_rejects_confirmation_without_published_keys() {
 /// Verify that a ZSK rollover has no parent DS to confirm.
 #[test]
 fn rollover_rejects_ds_confirmation_for_zsk() {
-    // Only a SEP key is answerable by `ds-seen`; the scheduler promotes a
+    // Only a SEP key is answerable by `advance`; the scheduler promotes a
     // ZSK once its publish hold-down passes.
     let keys = [
         key(1, DnssecKeyRole::Zsk, DnssecKeyState::Active, -1),
@@ -142,7 +142,7 @@ fn rollover_promotes_key_when_hold_down_is_skipped() {
 #[test]
 fn rollover_waits_for_latest_published_key_deadline() {
     // Each key carries its own deadline, so the one published last is what
-    // `ds-seen` waits on for the whole set.
+    // `advance` waits on for the whole set.
     let keys = [
         key(1, DnssecKeyRole::Ksk, DnssecKeyState::Published, -1),
         key(2, DnssecKeyRole::Ksk, DnssecKeyState::Published, 1),

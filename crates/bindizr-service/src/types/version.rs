@@ -37,10 +37,10 @@ pub struct ZoneVersionResponse {
     #[schema(example = 3600, inline)]
     pub minimum_ttl: Ttl,
     /// The request path (`api`, `socket`, `nsupdate`) or background process (`system`).
-    pub change_source: ChangeSource,
+    pub source: ChangeSource,
     /// Token or TSIG key kind and name. Null for socket commands, unauthenticated
     /// API requests, unsigned updates, and background work.
-    pub changed_by: Option<ChangeActor>,
+    pub actor: Option<ChangeActor>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -63,8 +63,8 @@ impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
             retry: version.retry,
             expire: version.expire,
             minimum_ttl: version.minimum_ttl,
-            change_source: version.change_source,
-            changed_by: version.changed_by.clone(),
+            source: version.source,
+            actor: version.actor.clone(),
             created_at: version.created_at,
         })
     }

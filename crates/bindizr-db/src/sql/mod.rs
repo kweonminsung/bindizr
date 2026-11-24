@@ -8,7 +8,7 @@ use bindizr_core::model::record::NAME_LIKE_RECORD_TYPES;
 use chrono::{DateTime, TimeDelta, Utc};
 pub(crate) use grant::{concat_fn, concat_pipes, grant_record_match_sql};
 pub use sort::{
-    AccessLogSortField, AuditLogSortField, ParseSortError, RecordSortField, SortOrder,
+    AccessLogSortField, ActivityLogSortField, ParseSortError, RecordSortField, SortOrder,
     TransferLogSortField, ZoneSortField,
 };
 

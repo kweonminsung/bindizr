@@ -1,4 +1,4 @@
-use bindizr_core::model::api_token::{ApiToken, ApiTokenMetadata, TokenId};
+use bindizr_core::model::api_token::{ApiToken, ApiTokenId, ApiTokenMetadata};
 use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
 use sqlx::pool::PoolConnection;
@@ -17,12 +17,12 @@ pub(crate) async fn create_tx(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO api_tokens (name, token, description, role_id, expires_at, created_at)
+        INSERT INTO api_tokens (name, token_hash, description, role_id, expires_at, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&token.name)
-    .bind(&token.token)
+    .bind(&token.token_hash)
     .bind(&token.description)
     .bind(token.role_id)
     .bind(token.expires_at)
@@ -30,7 +30,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    token.id = TokenId::from(sqlite::last_insert_id(&result)?);
+    token.id = ApiTokenId::from(sqlite::last_insert_id(&result)?);
     token.created_at = now;
 
     Ok(token)
@@ -39,10 +39,10 @@ pub(crate) async fn create_tx(
 /// Get an API token by ID in the current transaction, share-locked.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    token_id: TokenId,
+    token_id: ApiTokenId,
 ) -> Result<Option<ApiToken>, DatabaseError> {
     let token = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?",
+        "SELECT id, name, token_hash, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?",
     )
     .bind(token_id)
     .fetch_optional(&mut **tx)
@@ -59,7 +59,7 @@ pub(crate) async fn get_by_name(
     let mut connection = pool.acquire().await?;
 
     let token = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE name = ?",
+        "SELECT id, name, token_hash, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE name = ?",
     )
     .bind(name)
     .fetch_optional(&mut *connection)
@@ -69,16 +69,16 @@ pub(crate) async fn get_by_name(
 }
 
 /// Get an API token by its stored token hash.
-pub(crate) async fn get_by_token(
+pub(crate) async fn get_by_token_hash(
     pool: &Pool<Sqlite>,
-    token: &str,
+    token_hash: &str,
 ) -> Result<Option<ApiToken>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let token = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE token = ?",
+        "SELECT id, name, token_hash, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE token_hash = ?",
     )
-    .bind(token)
+    .bind(token_hash)
     .fetch_optional(&mut *connection)
     .await?;
 
@@ -101,7 +101,7 @@ pub(crate) async fn count_all(pool: &Pool<Sqlite>) -> Result<u64, DatabaseError>
 /// gives up at once rather than wait for it: nothing may block on a stamp.
 pub(crate) async fn update_last_used_at(
     pool: &Pool<Sqlite>,
-    token_id: TokenId,
+    token_id: ApiTokenId,
     last_used_at: DateTime<Utc>,
 ) -> Result<bool, DatabaseError> {
     let mut stamp = StampConnection {
@@ -155,7 +155,7 @@ impl Drop for StampConnection {
 /// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    token_id: TokenId,
+    token_id: ApiTokenId,
 ) -> Result<bool, DatabaseError> {
     let result = sqlx::query("DELETE FROM api_tokens WHERE id = ?")
         .bind(token_id)
@@ -173,7 +173,7 @@ pub(crate) async fn list_by_role_id(
     let mut connection = pool.acquire().await?;
 
     let tokens = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE role_id = ? ORDER BY created_at DESC, id DESC",
+        "SELECT id, name, token_hash, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE role_id = ? ORDER BY created_at DESC, id DESC",
     )
     .bind(role_id)
     .fetch_all(&mut *connection)

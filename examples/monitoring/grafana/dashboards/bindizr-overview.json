@@ -86,8 +86,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum by (type, result) (rate(bindizr_xfr_total[1m]))",
-          "legendFormat": "xfr {{type}} ({{result}})",
+          "expr": "sum by (kind, result) (rate(bindizr_xfr_total[1m]))",
+          "legendFormat": "xfr {{kind}} ({{result}})",
           "refId": "A"
         },
         {

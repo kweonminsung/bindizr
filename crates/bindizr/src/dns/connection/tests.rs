@@ -73,7 +73,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         let request = CreateSecondaryRequest {
             name: "ack-gate".to_string(),
             address: secondary_socket.local_addr().unwrap().to_string(),
-            notify_key_name: None,
+            notify_tsig_key_name: None,
         };
 
         secondary::create(&cx, &caller, &request).await.unwrap();

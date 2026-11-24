@@ -5,9 +5,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bindizr_core::dns::message;
 use bindizr_core::dns::message::{Keepalive, Opcode, ParsedQuery, QueryMetadata};
-use bindizr_core::model::transfer::{TransferKind, TransferTransport};
+use bindizr_core::dns::{DnsTransport, message};
+use bindizr_core::model::transfer::TransferKind;
 use tokio::task::{JoinError, JoinSet};
 use tokio::time;
 
@@ -156,7 +156,7 @@ pub(crate) async fn serve_connection(
 
 /// Log failed query tasks. Cancelling transfers during shutdown is expected.
 fn log_query_task_failure(
-    transport: TransferTransport,
+    transport: DnsTransport,
     client_addr: SocketAddr,
     result: Result<(), JoinError>,
 ) {

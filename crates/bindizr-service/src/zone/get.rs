@@ -60,6 +60,8 @@ pub async fn list_by_filter(
     caller: &Caller,
     filter: &ZoneFilter,
 ) -> Result<PaginatedResponse<ZoneResponse>, ServiceError> {
+    pagination::validate_time_window(filter.since, filter.until)?;
+
     let default_ttl = filter
         .default_ttl
         .map(ttl::validate_record_ttl)
@@ -102,9 +104,9 @@ pub async fn list_by_filter(
         serial: filter.serial,
         min_serial: filter.min_serial,
         max_serial: filter.max_serial,
-        created_after: filter.created_after,
-        created_before: filter.created_before,
-        signed: filter.signed,
+        since: filter.since,
+        until: filter.until,
+        dnssec_enabled: filter.dnssec_enabled,
         enabled: filter.enabled,
         search: filter.search.clone(),
         scope_role_id,

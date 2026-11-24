@@ -1,4 +1,4 @@
-//! Secondary SOA status and transfer history.
+//! Secondary SOA status and the latest transfer log row.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -49,7 +49,7 @@ fn build_secondary_status(
     }
 }
 
-/// Probe enabled secondaries in parallel and attach their transfer history.
+/// Probe enabled secondaries in parallel and attach their latest transfer log rows.
 pub async fn probe_secondaries(
     cx: &Context,
     zone_name: &ZoneName,
@@ -113,7 +113,7 @@ pub(crate) async fn probe_targets(
     Ok(statuses.into_iter().map(|(_, status)| status).collect())
 }
 
-/// Probe one secondary and attach its serial status and transfer history.
+/// Probe one secondary and attach its serial status and latest transfer log row.
 pub async fn probe_secondary(
     cx: &Context,
     zone_name: &ZoneName,
@@ -170,7 +170,7 @@ async fn attach_last_transfer(
         return Ok(status);
     }
 
-    status.last_transfer = transfer::find_by_clients_and_zone_name(cx, clients, zone_name)
+    status.last_transfer = transfer::find_by_client_ips_and_zone_name(cx, clients, zone_name)
         .await?
         .as_ref()
         .map(TransferLogResponse::from);

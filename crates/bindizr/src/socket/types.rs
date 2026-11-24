@@ -5,13 +5,13 @@ use bindizr_core::model::record::RecordId;
 use bindizr_core::model::role_grant::RoleGrantId;
 use bindizr_core::model::zone_version::VersionFilter;
 use bindizr_service::types::{
-    AccessLogFilter, AuditLogFilter, CheckSecondariesResponse, CreateBulkRecordsRequest,
-    CreateDnssecPolicyRequest, CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest,
-    CreateSecondaryRequest, CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest,
-    DeleteRecordsRequest, DsCheck, EnableDnssecRequest, Holddown, ImportDnssecKeysRequest,
-    ImportZoneRequest, ImportZonesRequest, MessageResponse, NotifySerial, PageRequest,
-    RecordFilter, Run, StartDnssecRolloverRequest, TokenFilter, TransferLogFilter, TsigKeyFilter,
-    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
+    AccessLogFilter, ActivityLogFilter, ApiTokenFilter, CheckSecondariesResponse,
+    CreateApiTokenRequest, CreateBulkRecordsRequest, CreateDnssecPolicyRequest,
+    CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest,
+    CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsRequest, DsCheck, EnableDnssecRequest,
+    Holddown, ImportDnssecKeysRequest, ImportZoneRequest, ImportZonesRequest, MessageResponse,
+    NotifySerial, PageRequest, RecordFilter, Run, StartDnssecRolloverRequest, TransferLogFilter,
+    TsigKeyFilter, UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
     UpdateSecondaryRequest, UpdateZoneRequest, ZoneFilter, ZoneView,
 };
 use serde::{Deserialize, Serialize, Serializer};
@@ -27,8 +27,8 @@ pub(crate) enum DaemonCommand {
     Doctor,
     Shutdown,
     Restart,
-    CreateToken(CreateTokenRequest),
-    ListTokens(TokenFilter),
+    CreateToken(CreateApiTokenRequest),
+    ListTokens(ApiTokenFilter),
     DeleteToken {
         name: String,
     },
@@ -40,9 +40,9 @@ pub(crate) enum DaemonCommand {
     DeleteTsigKey {
         name: String,
     },
-    ListAuditLogs(AuditLogFilter),
     ListAccessLogs(AccessLogFilter),
     ListTransferLogs(TransferLogFilter),
+    ListActivityLogs(ActivityLogFilter),
     CreateRole(CreateRoleRequest),
     ListRoles(PageRequest),
     GetRole {
@@ -185,7 +185,6 @@ pub(crate) enum DaemonCommand {
         zone_name: String,
         request: StartDnssecRolloverRequest,
     },
-    #[serde(rename = "ds_seen_dnssec_rollover")]
     AdvanceDnssecRollover {
         zone_name: String,
         ds_check: DsCheck,
@@ -351,7 +350,7 @@ mod tests {
                     ds_check: DsCheck::Probe,
                     holddown: Holddown::Wait,
                 },
-                "ds_seen_dnssec_rollover",
+                "advance_dnssec_rollover",
             ),
         ] {
             let value = serde_json::to_value(&command).unwrap();

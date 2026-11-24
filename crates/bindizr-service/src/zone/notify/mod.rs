@@ -1,9 +1,13 @@
 //! Manual NOTIFY requests after authorization and optional zone serial increments.
 
+mod serial;
+
 use std::sync::Arc;
 
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult};
 use bindizr_core::model::role_grant::Action;
+use serial::bump_zone_serial;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
@@ -11,7 +15,7 @@ use crate::notify::NotifyTarget;
 use crate::types::{MessageResponse, NotifySerial};
 use crate::{Context, notify, zone};
 
-/// Send a manual NOTIFY for one zone or all zones, bumping the serial
+/// Send a manual NOTIFY for one zone or all enabled zones, bumping the serial
 /// first when `serial` says to; an all-zones round runs the zones concurrently.
 /// If a bump fails partway through an all-zones round, announce the committed ones.
 pub async fn notify(
@@ -41,7 +45,7 @@ pub async fn notify(
                 return Err(disabled_zone());
             }
             if serial == NotifySerial::Bump {
-                serial_bumped = zone::force_increment_serial(cx, caller, zone_name).await?;
+                serial_bumped = bump_zone_serial(cx, caller, zone_name).await?;
                 if !serial_bumped {
                     return Err(disabled_zone());
                 }
@@ -59,9 +63,24 @@ pub async fn notify(
 
     notify::send_notify(cx, target).await?;
 
+    if !serial_bumped {
+        let activity_target = match target {
+            NotifyTarget::Zone(zone_name) => zone::activity_target(zone_name),
+            NotifyTarget::All => Default::default(),
+        };
+        crate::activity::save_result(
+            cx,
+            ActivityOperation::ZoneNotify,
+            ActivityResult::Succeeded,
+            activity_target,
+            caller.change_origin(),
+        )
+        .await;
+    }
+
     let scope = match target {
         NotifyTarget::Zone(zone_name) => format!("zone: {zone_name}"),
-        NotifyTarget::All => "all zones".to_string(),
+        NotifyTarget::All => "all enabled zones".to_string(),
     };
     let suffix = if serial_bumped {
         " (serial bumped)"
@@ -83,7 +102,7 @@ async fn bump_zone_serials(
 ) -> Result<bool, ServiceError> {
     let mut bumped = Vec::new();
     for zone_name in zone_names {
-        match zone::force_increment_serial(cx, caller, &zone_name).await {
+        match bump_zone_serial(cx, caller, &zone_name).await {
             Ok(true) => bumped.push(zone_name),
             Ok(false) => {}
             Err(error) => {

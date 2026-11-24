@@ -7,16 +7,17 @@ use crate::model::role::RoleId;
 
 id_newtype!(
     /// The id of an API token row.
-    TokenId
+    ApiTokenId
 );
 
-/// An API authentication token and its metadata.
+/// An API token hash and the metadata of its credential.
 #[derive(Clone, PartialEq, Eq, FromRow)]
 pub struct ApiToken {
-    pub id: TokenId,
+    pub id: ApiTokenId,
     /// Unique human-facing identifier; CLI and API reference tokens by name.
     pub name: String,
-    pub token: String,
+    /// Hex-encoded SHA-256 digest of the bearer token.
+    pub token_hash: String,
     pub description: Option<String>,
     /// The role whose grants decide what the token may do; the token itself carries no rights.
     pub role_id: RoleId,
@@ -33,7 +34,7 @@ impl fmt::Debug for ApiToken {
         f.debug_struct("ApiToken")
             .field("id", &self.id)
             .field("name", &self.name)
-            .field("token", &"<redacted>")
+            .field("token_hash", &"<redacted>")
             .field("description", &self.description)
             .field("role_id", &self.role_id)
             .field("created_at", &self.created_at)
@@ -53,7 +54,7 @@ impl ApiToken {
 /// Token metadata joined with its role name, without the authentication hash.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ApiTokenMetadata {
-    pub id: TokenId,
+    pub id: ApiTokenId,
     pub name: String,
     pub description: Option<String>,
     pub role_name: String,
@@ -70,9 +71,9 @@ mod tests {
     #[test]
     fn api_token_debug_masks_verifier() {
         let token = ApiToken {
-            id: TokenId::from(1),
+            id: ApiTokenId::from(1),
             name: "test".to_string(),
-            token: "fixture-token-verifier".to_string(),
+            token_hash: "fixture-token-verifier".to_string(),
             description: None,
             role_id: RoleId::from(1),
             created_at: Utc::now(),

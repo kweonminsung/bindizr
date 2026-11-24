@@ -1,8 +1,8 @@
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::{
-    CreateTokenRequest, CreateTokenResponse, MessageResponse, PaginatedResponse, TokenFilter,
-    TokenResponse,
+    ApiTokenFilter, ApiTokenResponse, CreateApiTokenRequest, CreateApiTokenResponse,
+    MessageResponse, PaginatedResponse,
 };
 use bindizr_service::{Context, token};
 
@@ -11,20 +11,20 @@ use crate::socket::types::DaemonResponse;
 /// Create a token from the control request.
 pub(crate) async fn create_token(
     cx: &Context,
-    request: &CreateTokenRequest,
-) -> Result<DaemonResponse<CreateTokenResponse>, ServiceError> {
+    request: &CreateApiTokenRequest,
+) -> Result<DaemonResponse<CreateApiTokenResponse>, ServiceError> {
     let (token, secret) = token::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "Token created successfully".to_string(),
-        data: CreateTokenResponse { token, secret },
+        data: CreateApiTokenResponse { token, secret },
     })
 }
 
 /// List the requested tokens.
 pub(crate) async fn list_tokens(
     cx: &Context,
-    filter: &TokenFilter,
-) -> Result<DaemonResponse<PaginatedResponse<TokenResponse>>, ServiceError> {
+    filter: &ApiTokenFilter,
+) -> Result<DaemonResponse<PaginatedResponse<ApiTokenResponse>>, ServiceError> {
     let response = token::list(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),

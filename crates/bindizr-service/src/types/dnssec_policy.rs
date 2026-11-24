@@ -1,7 +1,9 @@
 //! DNSSEC policy payloads.
 
 use bindizr_core::model::dnssec_key::DnssecAlgorithm;
-use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, DnssecPolicy, PolicyId};
+use bindizr_core::model::dnssec_policy::{
+    Days, DnssecDenial, DnssecKeyLayout, DnssecPolicy, PolicyId,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -22,11 +24,10 @@ pub struct CreateDnssecPolicyRequest {
     /// `nsec`, which leaves the zone's names walkable.
     #[schema(example = "nsec3")]
     pub denial: Option<String>,
-    /// A KSK/ZSK pair instead of one CSK, so the ZSK rolls without touching
-    /// the parent DS.
+    /// One combined signing key (`csk`, the default) or separate KSK/ZSK keys (`split`).
     #[serde(default)]
-    #[schema(example = false)]
-    pub split_keys: bool,
+    #[schema(example = "csk")]
+    pub key_layout: DnssecKeyLayout,
     /// Days a new signature stays valid (default 14).
     #[schema(example = 14)]
     pub signature_validity_days: Option<u32>,
@@ -69,8 +70,8 @@ pub struct DnssecPolicyResponse {
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: DnssecAlgorithm,
     pub denial: DnssecDenial,
-    #[schema(example = false)]
-    pub split_keys: bool,
+    #[schema(example = "csk")]
+    pub key_layout: DnssecKeyLayout,
     #[schema(example = 14, value_type = u32)]
     pub signature_validity_days: Days,
     #[schema(example = 5, value_type = u32)]
@@ -90,7 +91,7 @@ impl From<&DnssecPolicy> for DnssecPolicyResponse {
             builtin: policy.is_builtin(),
             algorithm: policy.algorithm,
             denial: policy.denial,
-            split_keys: policy.split_keys,
+            key_layout: policy.key_layout,
             signature_validity_days: policy.signature_validity_days,
             signature_refresh_days: policy.signature_refresh_days,
             zsk_lifetime_days: policy.zsk_lifetime_days,

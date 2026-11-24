@@ -51,6 +51,43 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
         Rcode::NOERROR
     );
 
+    let (status, activity) = app
+        .send_request(
+            Method::GET,
+            &format!("/logs/activity?zone_name={zone_name}&order=asc"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{activity}");
+    let changes: Vec<&Value> = activity["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["source"] == "nsupdate")
+        .collect();
+    assert_eq!(changes.len(), targets.len() + 1, "{activity}");
+    for (name, record_type) in targets {
+        assert!(
+            changes.iter().any(|item| {
+                item["operation"] == "record.create"
+                    && item["result"] == "changed"
+                    && item["actor"] == json!({"kind": "tsig_key", "name": key.name})
+                    && item["target"]["zone_name"] == zone_name
+                    && item["target"]["record_name"] == name
+                    && item["target"]["record_type"] == record_type.to_string()
+                    && item["target"]["record_id"]
+                        .as_i64()
+                        .is_some_and(|id| id > 0)
+            }),
+            "{activity}"
+        );
+    }
+    assert_eq!(
+        changes.last().unwrap()["operation"],
+        "nsupdate.apply",
+        "{activity}"
+    );
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -292,7 +329,7 @@ async fn nsupdate_rejects_managed_dnssec_changes_without_mutating_zone() {
     let (_, versions) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
+            &format!("/zones/{zone_name}/versions?include_signer_only_versions=true"),
             None,
         )
         .await;
@@ -387,7 +424,7 @@ async fn nsupdate_rejects_managed_dnssec_changes_without_mutating_zone() {
     let (_, after) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
+            &format!("/zones/{zone_name}/versions?include_signer_only_versions=true"),
             None,
         )
         .await;
@@ -769,11 +806,8 @@ async fn nsupdate_adds_and_deletes_records() {
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["items"][0]["change_source"], "nsupdate", "{body}");
-        assert!(
-            body["items"][0].get("changed_by").unwrap().is_null(),
-            "{body}"
-        );
+        assert_eq!(body["items"][0]["source"], "nsupdate", "{body}");
+        assert!(body["items"][0].get("actor").unwrap().is_null(), "{body}");
     }
 }
 
@@ -1528,9 +1562,9 @@ async fn signed_nsupdate_requires_a_grant_for_the_zone() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["items"][0]["change_source"], "nsupdate", "{body}");
+    assert_eq!(body["items"][0]["source"], "nsupdate", "{body}");
     assert_eq!(
-        body["items"][0]["changed_by"],
+        body["items"][0]["actor"],
         json!({ "kind": "tsig_key", "name": key.name }),
         "{body}"
     );
@@ -1896,8 +1930,8 @@ async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {
     );
 }
 
-/// Verify that an add with a new TTL moves the whole record set to it, as
-/// RFC 2181, Section 5.2 keeps one TTL per set.
+/// Verify that an add with a new TTL updates all records sharing its name and type
+/// (RFC 2181, Section 5.2).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_moves_every_record_of_a_name_and_type_to_the_added_ttl() {
@@ -1937,6 +1971,31 @@ async fn nsupdate_moves_every_record_of_a_name_and_type_to_the_added_ttl() {
         .collect();
 
     assert_eq!(ttls, [900, 900]);
+
+    let (status, activity) = app
+        .send_request(
+            Method::GET,
+            &format!("/logs/activity?zone_name={zone_name}&record_name=host&order=asc"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{activity}");
+    let operations: Vec<&str> = activity["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["operation"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        operations,
+        [
+            "record.create",
+            "record.update",
+            "record.create",
+            "record.update",
+            "record.update",
+        ]
+    );
 }
 
 /// Verify that a signed request the parser rejects is still answered under
@@ -2279,7 +2338,7 @@ async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
     );
 }
 
-/// Verify that existence prerequisites see derived names and record sets (RFC 2136,
+/// Verify that existence prerequisites see derived names and records (RFC 2136,
 /// Sections 3.2.1–3.2.2).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -2303,7 +2362,7 @@ async fn dnssec_prerequisites_see_derived_records() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&signed=true&limit=1000"),
+            &format!("/records?zone_name={zone_name}&include_dnssec=true&limit=1000"),
             None,
         )
         .await;
@@ -2374,8 +2433,8 @@ async fn dnssec_prerequisites_see_derived_records() {
     }
 }
 
-/// Verify that record set equality holds with NSEC/NSEC3 and split keys (RFC 2136,
-/// Section 3.2.3).
+/// Verify that record equality at one name and type holds with NSEC/NSEC3 and split keys
+/// (RFC 2136, Section 3.2.3).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_prerequisites_compare_every_served_record_of_a_name_and_type() {
@@ -2407,7 +2466,7 @@ async fn dnssec_prerequisites_compare_every_served_record_of_a_name_and_type() {
                 Method::POST,
                 "/dnssec-policies",
                 Some(json!({
-                    "name": policy_name, "denial": denial, "split_keys": true
+                    "name": policy_name, "denial": denial, "key_layout": "split"
                 })),
             )
             .await;
@@ -2865,7 +2924,7 @@ async fn soa_replacement_versions_the_whole_update_once() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["items"].as_array().unwrap().len(), 2);
     assert_eq!(body["items"][0]["serial"], base_serial + 20);
-    assert_eq!(body["items"][0]["change_source"], "nsupdate");
+    assert_eq!(body["items"][0]["source"], "nsupdate");
 
     for (version, count, mname) in [(base_serial, 0, "ns1"), (base_serial + 20, 3, "ns2")] {
         let (status, body) = app
@@ -3675,25 +3734,25 @@ async fn nsupdate_leaves_access_log_rows_with_their_key_and_outcome() {
         .await;
 
     assert_eq!(refused["method"], "UPDATE", "{refused}");
-    assert_eq!(refused["status"], "REFUSED", "{refused}");
-    assert_eq!(refused["address"], "127.0.0.1", "{refused}");
-    assert!(refused["caller"].is_null(), "{refused}");
-    assert!(refused["error"].is_string(), "{refused}");
+    assert_eq!(refused["response_code"], "REFUSED", "{refused}");
+    assert_eq!(refused["client_ip"], "127.0.0.1", "{refused}");
+    assert!(refused["actor"].is_null(), "{refused}");
+    assert!(refused["error_code"].is_string(), "{refused}");
 
     let applied = app
-        .wait_for_access_log(&format!("caller_name={}", key.name), |log| {
+        .wait_for_access_log(&format!("actor_name={}", key.name), |log| {
             log["target"] == zone_name
         })
         .await;
 
     assert_eq!(applied["source"], "nsupdate", "{applied}");
     assert_eq!(applied["result"], "ok", "{applied}");
-    assert_eq!(applied["status"], "NOERROR", "{applied}");
+    assert_eq!(applied["response_code"], "NOERROR", "{applied}");
     assert_eq!(
-        applied["caller"],
+        applied["actor"],
         json!({ "kind": "tsig_key", "name": key.name })
     );
-    assert!(applied["error"].is_null(), "{applied}");
+    assert!(applied["error_code"].is_null(), "{applied}");
 }
 
 /// Verify that rejected NAPTR RDATA stays out of unsigned UDP and signed TCP access
@@ -3744,7 +3803,7 @@ async fn nsupdate_access_log_excludes_rejected_record_values() {
     for caller in [Value::Null, json!({ "kind": "tsig_key", "name": key.name })] {
         let log = app
             .wait_for_access_log("source=nsupdate&result=denied", |log| {
-                log["target"] == zone_name && log["caller"] == caller
+                log["target"] == zone_name && log["actor"] == caller
             })
             .await;
 
@@ -3752,8 +3811,8 @@ async fn nsupdate_access_log_excludes_rejected_record_values() {
             !log.to_string().contains(&marker),
             "RDATA reached the access log: {log}"
         );
-        assert_eq!(log["error"], "REFUSED", "{log}");
-        assert_eq!(log["status"], "REFUSED", "{log}");
+        assert_eq!(log["error_code"], "REFUSED", "{log}");
+        assert_eq!(log["response_code"], "REFUSED", "{log}");
     }
 
     assert_eq!(app.list_records(zone_name).await, before);

@@ -1,6 +1,6 @@
 //! Manage DNSSEC keys and rollovers; sign and journal changes before each serial bump.
 //! Promotion waits for publication and SEP parent-DS confirmation; retirement waits for caches.
-//! A parent probe whose answer the flow acts on (disable, ds-seen, scheduled SEP
+//! A parent probe whose answer the flow acts on (disable, rollover advance, scheduled SEP
 //! promotion) holds the transaction's zone lock; the read-only `check_ds` probes
 //! after its read transaction. Both are bounded by `dns.notify.timeout_secs`.
 

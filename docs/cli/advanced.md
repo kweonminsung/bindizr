@@ -41,7 +41,7 @@ give it only where you would give `admin`.
 | Rollback | `zone:update`, plus `record:read`, `record:create` and `record:delete` with no narrowing |
 | `zone notify` | `zone:update`; for the catalog zone or all zones, `zone:update` in all zones |
 | DNSSEC policies | `dnssec:read` to list or show, `dnssec:manage` to change, both in all zones |
-| Reading the audit, access, or transfer log | `log:read` in all zones |
+| Reading the activity, access, or transfer log or the operation catalog | `log:read` in all zones |
 
 A view the zone is rebuilt from — an export, a stored version, a diff, an
 import, a rollback — needs a grant with no name or type narrowing: half a zone

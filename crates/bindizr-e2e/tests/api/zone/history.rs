@@ -141,7 +141,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
         .send_request(
             Method::GET,
             &format!(
-                "/zones/{zone_name}/versions/diff?from={base_serial}&to={}",
+                "/zones/{zone_name}/versions/diff?from_serial={base_serial}&to_serial={}",
                 base_serial + 1
             ),
             None,
@@ -165,7 +165,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions/diff?from={base_serial}"),
+            &format!("/zones/{zone_name}/versions/diff?from_serial={base_serial}"),
             None,
         )
         .await;
@@ -438,17 +438,17 @@ async fn zone_versions_record_who_made_each_change() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let items = body["items"].as_array().unwrap();
 
-    assert_eq!(items[0]["change_source"], "api", "{body}");
+    assert_eq!(items[0]["source"], "api", "{body}");
     assert_eq!(
-        items[0]["changed_by"],
+        items[0]["actor"],
         json!({ "kind": "token", "name": admin_name }),
         "{body}"
     );
 
     let created = items.last().unwrap();
 
-    assert_eq!(created["change_source"], "socket", "{body}");
-    assert!(created["changed_by"].is_null(), "{body}");
+    assert_eq!(created["source"], "socket", "{body}");
+    assert!(created["actor"].is_null(), "{body}");
 
     app.run_cli_success(&["token", "delete", &admin_name], None)
         .await;
@@ -462,7 +462,7 @@ async fn zone_versions_record_who_made_each_change() {
     let history: Value = serde_json::from_str(&history).unwrap();
 
     assert_eq!(
-        history["items"][0]["changed_by"],
+        history["items"][0]["actor"],
         json!({ "kind": "token", "name": admin_name })
     );
 
@@ -492,11 +492,11 @@ async fn zone_versions_distinguish_unauthenticated_api_from_socket() {
     let items = body["items"].as_array().unwrap();
 
     assert_eq!(items.len(), 2, "{body}");
-    assert_eq!(items[0]["change_source"], "socket", "{body}");
-    assert_eq!(items[1]["change_source"], "api", "{body}");
+    assert_eq!(items[0]["source"], "socket", "{body}");
+    assert_eq!(items[1]["source"], "api", "{body}");
 
     for version in items {
-        assert!(version.get("changed_by").unwrap().is_null(), "{version}");
+        assert!(version.get("actor").unwrap().is_null(), "{version}");
     }
 }
 
@@ -512,11 +512,11 @@ async fn zone_versions_reject_serials_outside_wire_range() {
     for path in [
         format!("/zones/{zone_name}/versions/{}", u64::from(u32::MAX) + 1),
         format!(
-            "/zones/{zone_name}/versions/diff?from={}",
+            "/zones/{zone_name}/versions/diff?from_serial={}",
             u64::from(u32::MAX) + 1
         ),
         format!(
-            "/zones/{zone_name}/versions/diff?from=1&to={}",
+            "/zones/{zone_name}/versions/diff?from_serial=1&to_serial={}",
             u64::from(u32::MAX) + 1
         ),
         format!("/zones?serial={}", u64::from(u32::MAX) + 1),

@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use bindizr_core::model::api_token::{ApiToken, ApiTokenMetadata, TokenId};
+use bindizr_core::model::api_token::{ApiToken, ApiTokenId, ApiTokenMetadata};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -10,7 +10,7 @@ use utoipa::{IntoParams, ToSchema};
 /// Request body for creating an API token.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct CreateTokenRequest {
+pub struct CreateApiTokenRequest {
     /// Letters, digits, `.`, `_`, and `-`: one URL path segment.
     #[schema(example = "external-dns")]
     pub name: String,
@@ -29,7 +29,7 @@ pub struct CreateTokenRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
-pub struct TokenFilter {
+pub struct ApiTokenFilter {
     /// Only the API tokens authenticating into this role.
     pub role_name: Option<String>,
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
@@ -40,9 +40,9 @@ pub struct TokenFilter {
 
 /// API representation of an API token; never carries the secret.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct TokenResponse {
+pub struct ApiTokenResponse {
     #[schema(example = 1, value_type = i32)]
-    pub id: TokenId,
+    pub id: ApiTokenId,
     #[schema(example = "external-dns")]
     pub name: String,
     pub description: Option<String>,
@@ -54,7 +54,7 @@ pub struct TokenResponse {
     pub last_used_at: Option<DateTime<Utc>>,
 }
 
-impl TokenResponse {
+impl ApiTokenResponse {
     /// Build token information with its role name, without its stored hash.
     pub(crate) fn from_token(token: &ApiToken, role_name: &str) -> Self {
         Self {
@@ -71,29 +71,29 @@ impl TokenResponse {
 
 /// One token without its secret: the self lookup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct SingleTokenResponse {
-    pub token: TokenResponse,
+pub struct SingleApiTokenResponse {
+    pub token: ApiTokenResponse,
 }
 
 /// The create response: the token and its secret, the one time it is shown.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct CreateTokenResponse {
-    pub token: TokenResponse,
+pub struct CreateApiTokenResponse {
+    pub token: ApiTokenResponse,
     #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]
     pub secret: String,
 }
 
-impl fmt::Debug for CreateTokenResponse {
+impl fmt::Debug for CreateApiTokenResponse {
     /// Format the diagnostic fields with credential material redacted.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CreateTokenResponse")
+        f.debug_struct("CreateApiTokenResponse")
             .field("token", &self.token)
             .field("secret", &"<redacted>")
             .finish()
     }
 }
 
-impl From<&ApiTokenMetadata> for TokenResponse {
+impl From<&ApiTokenMetadata> for ApiTokenResponse {
     /// Build the response from metadata that carries no credential material.
     fn from(token: &ApiTokenMetadata) -> Self {
         Self {

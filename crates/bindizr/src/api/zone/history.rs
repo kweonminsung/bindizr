@@ -33,7 +33,7 @@ pub(crate) struct ListZoneVersionsQuery {
     offset: Option<u64>,
     /// Include past serials with only derived DNSSEC changes. By default these are hidden; the current serial and serials without journal entries remain visible.
     #[serde(default)]
-    include_signer_serials: bool,
+    include_signer_only_versions: bool,
 }
 
 /// List a zone's versions, newest serial first.
@@ -68,7 +68,7 @@ pub(crate) async fn list_zone_versions(
         &zone::normalize_name(&params.name)?,
         query.limit.or(Some(DEFAULT_PAGE_LIMIT)),
         query.offset,
-        VersionFilter::from_include_signer_serials(query.include_signer_serials),
+        VersionFilter::from_include_signer_only_versions(query.include_signer_only_versions),
     )
     .await?;
 
@@ -166,10 +166,10 @@ pub(crate) async fn rollback_zone(
 pub(crate) struct DiffZoneVersionsQuery {
     /// The serial to diff from.
     #[param(inline)]
-    from: Serial,
+    from_serial: Serial,
     /// The serial to diff to; defaults to the current serial.
     #[param(inline)]
-    to: Option<Serial>,
+    to_serial: Option<Serial>,
 }
 
 /// Diff the records at two of a zone's serials.
@@ -178,7 +178,7 @@ pub(crate) struct DiffZoneVersionsQuery {
         path = "/zones/{name}/versions/diff",
         tag = "Zone",
         summary = "Diff the records between two of a zone's serials",
-        description = "Reports the records added, removed, and changed between `from` and `to`, grouped by name and type. Omitting `to` compares against the current serial. Each serial must be the current one or an existing version.",
+        description = "Reports the records added, removed, and changed between `from_serial` and `to_serial`, grouped by name and type. Omitting `to_serial` compares against the current serial. Each serial must be the current one or an existing version.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
             DiffZoneVersionsQuery
@@ -202,8 +202,8 @@ pub(crate) async fn diff_zone_versions(
         &cx,
         &caller,
         &zone::normalize_name(&params.name)?,
-        query.from,
-        query.to,
+        query.from_serial,
+        query.to_serial,
     )
     .await?;
 

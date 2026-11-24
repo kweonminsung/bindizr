@@ -7,7 +7,7 @@ use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
 use bindizr_service::secondary;
 use bindizr_service::types::{
-    CreateSecondaryRequest, CreateTokenResponse, CreateZoneRequest, ExportDnssecKeysResponse,
+    CreateApiTokenResponse, CreateSecondaryRequest, CreateZoneRequest, ExportDnssecKeysResponse,
     SingleTsigKeyResponse, UpdateZoneRequest,
 };
 use serde_json::{Value, json};
@@ -75,7 +75,7 @@ fn credential_responses_serialize_secrets_without_debugging_them() {
         "secret": "private-fixture"
     }))
     .unwrap();
-    let token: CreateTokenResponse = serde_json::from_value(json!({
+    let token: CreateApiTokenResponse = serde_json::from_value(json!({
         "token": {"id": 1, "name": "test", "description": null, "role_name": "admin",
             "created_at": "2026-01-01T00:00:00Z", "expires_at": null, "last_used_at": null},
         "secret": "private-fixture"
@@ -188,7 +188,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     let secondary_request = CreateSecondaryRequest {
         name: "ack-gate".to_string(),
         address: secondary_socket.local_addr().unwrap().to_string(),
-        notify_key_name: None,
+        notify_tsig_key_name: None,
     };
 
     secondary::create(&cx, &Caller::socket(), &secondary_request)

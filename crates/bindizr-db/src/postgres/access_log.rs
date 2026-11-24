@@ -10,23 +10,23 @@ use crate::error::DatabaseError;
 pub(crate) async fn create(pool: &Pool<Postgres>, log: &AccessLog) -> Result<(), DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let (caller_kind, caller_name) = log.caller.as_ref().map(ChangeActor::as_columns).unzip();
+    let (actor_kind, actor_name) = log.actor.as_ref().map(ChangeActor::as_columns).unzip();
 
     sqlx::query(
         r#"
-        INSERT INTO access_log (source, client_addr, method, target, status, result, caller_kind, caller_name, error, requested_at)
+        INSERT INTO access_log (source, client_ip, method, target, response_code, result, actor_kind, actor_name, error_code, requested_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
     )
     .bind(log.source.as_str())
-    .bind(&log.client_addr)
+    .bind(&log.client_ip)
     .bind(&log.method)
     .bind(&log.target)
-    .bind(&log.status)
+    .bind(&log.response_code)
     .bind(log.result.as_str())
-    .bind(caller_kind)
-    .bind(caller_name)
-    .bind(&log.error)
+    .bind(actor_kind)
+    .bind(actor_name)
+    .bind(&log.error_code)
     .bind(log.requested_at)
     .execute(&mut *connection)
     .await?;
@@ -48,13 +48,13 @@ pub(crate) async fn list_by_filter(
 
     let logs = sqlx::query_as::<_, AccessLog>(AssertSqlSafe(format!(
         r#"
-        SELECT source, client_addr, method, target, status, result,
-               caller_kind AS changed_by_kind, caller_name AS changed_by_name, error, requested_at
+        SELECT source, client_ip, method, target, response_code, result,
+               actor_kind, actor_name, error_code, requested_at
         FROM access_log
         WHERE ($1::TEXT IS NULL OR source = $1)
           AND ($2::TEXT IS NULL OR result = $2)
-          AND ($3::TEXT IS NULL OR caller_name = $3)
-          AND ($4::TEXT IS NULL OR client_addr = $4)
+          AND ($3::TEXT IS NULL OR actor_name = $3)
+          AND ($4::TEXT IS NULL OR client_ip = $4)
           AND ($5::TIMESTAMPTZ IS NULL OR requested_at >= $5)
           AND ($6::TIMESTAMPTZ IS NULL OR requested_at < $6)
         {order_by}
@@ -63,8 +63,8 @@ pub(crate) async fn list_by_filter(
     )))
     .bind(source)
     .bind(result)
-    .bind(&filter.caller_name)
-    .bind(&filter.client_addr)
+    .bind(&filter.actor_name)
+    .bind(&filter.client_ip)
     .bind(filter.since)
     .bind(filter.until)
     .bind(filter.limit.map_or(i64::MAX, i64::from))
@@ -95,16 +95,16 @@ pub(crate) async fn count_by_filter(
         FROM access_log
         WHERE ($1::TEXT IS NULL OR source = $1)
           AND ($2::TEXT IS NULL OR result = $2)
-          AND ($3::TEXT IS NULL OR caller_name = $3)
-          AND ($4::TEXT IS NULL OR client_addr = $4)
+          AND ($3::TEXT IS NULL OR actor_name = $3)
+          AND ($4::TEXT IS NULL OR client_ip = $4)
           AND ($5::TIMESTAMPTZ IS NULL OR requested_at >= $5)
           AND ($6::TIMESTAMPTZ IS NULL OR requested_at < $6)
         "#,
     )
     .bind(source)
     .bind(result)
-    .bind(&filter.caller_name)
-    .bind(&filter.client_addr)
+    .bind(&filter.actor_name)
+    .bind(&filter.client_ip)
     .bind(filter.since)
     .bind(filter.until)
     .fetch_one(&mut *connection)

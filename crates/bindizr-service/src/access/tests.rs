@@ -32,24 +32,24 @@ async fn context(save: SavedRequests, capacity: usize) -> (Arc<Context>, Receive
     (Arc::new(cx), access_rx)
 }
 
-/// Build an API request row answered with `status` at `requested_at`.
+/// Build an API request row answered with `response_code` at `requested_at`.
 fn test_log(
     result: AccessResult,
-    status: &str,
-    caller: Option<&str>,
+    response_code: &str,
+    actor: Option<&str>,
     requested_at: DateTime<Utc>,
 ) -> AccessLogEntry {
     AccessLogEntry {
         source: AccessSource::Api,
-        client_addr: "192.0.2.1".to_string(),
+        client_ip: "192.0.2.1".to_string(),
         method: "GET".to_string(),
         target: "/zones".to_string(),
-        status: status.to_string(),
+        response_code: response_code.to_string(),
         result,
-        caller: caller.map(|name| ChangeActor::Token {
+        actor: actor.map(|name| ChangeActor::Token {
             name: name.to_string(),
         }),
-        error: None,
+        error_code: None,
         requested_at,
     }
 }
@@ -69,14 +69,14 @@ async fn save_all(
     worker.stop().await.unwrap();
 }
 
-/// List every row `filter` selects as its status, newest first.
-async fn list_statuses(cx: &Context, filter: AccessLogFilter) -> Vec<String> {
+/// List every row `filter` selects as its response_code, newest first.
+async fn list_response_codes(cx: &Context, filter: AccessLogFilter) -> Vec<String> {
     list(cx, &Caller::socket(), &filter)
         .await
         .unwrap()
         .items
         .into_iter()
-        .map(|log| log.status)
+        .map(|log| log.response_code)
         .collect()
 }
 
@@ -98,7 +98,7 @@ async fn save_writes_every_queued_row_before_the_worker_stops() {
     .await;
 
     assert_eq!(
-        list_statuses(&cx, AccessLogFilter::default()).await,
+        list_response_codes(&cx, AccessLogFilter::default()).await,
         ["404", "401", "200"]
     );
 }
@@ -145,7 +145,7 @@ async fn save_preserves_error_codes_through_the_queue() {
         .map(|(source, code, _)| {
             let mut log = test_log(AccessResult::Failed, "failure", Some("deploy"), now);
             log.source = *source;
-            log.error = Some(*code);
+            log.error_code = Some(*code);
             log
         })
         .collect();
@@ -158,7 +158,7 @@ async fn save_preserves_error_codes_through_the_queue() {
     let codes: Vec<_> = logs
         .items
         .iter()
-        .map(|log| (log.source, log.error.as_deref().unwrap()))
+        .map(|log| (log.source, log.error_code.as_deref().unwrap()))
         .collect();
     let expected: Vec<_> = cases
         .iter()
@@ -187,7 +187,7 @@ async fn save_keeps_only_denials_when_only_denied_requests_are_saved() {
     .await;
 
     assert_eq!(
-        list_statuses(&cx, AccessLogFilter::default()).await,
+        list_response_codes(&cx, AccessLogFilter::default()).await,
         ["403"]
     );
 }
@@ -209,7 +209,7 @@ async fn save_keeps_nothing_when_no_requests_are_saved() {
     .await;
 
     assert!(
-        list_statuses(&cx, AccessLogFilter::default())
+        list_response_codes(&cx, AccessLogFilter::default())
             .await
             .is_empty()
     );
@@ -233,13 +233,13 @@ async fn save_drops_and_counts_a_row_the_full_queue_cannot_take() {
     );
 }
 
-/// Verify that a listing applies its result, caller, address, time window, order and page.
+/// Verify that a listing applies its result, actor, address, time window, order and page.
 #[tokio::test]
-async fn list_applies_result_caller_address_window_order_and_page() {
+async fn list_applies_result_actor_ip_window_order_and_page() {
     let (cx, access_rx) = context(SavedRequests::All, 16).await;
     let now = Utc::now();
     let mut from_other = test_log(AccessResult::Ok, "201", Some("deploy"), now);
-    from_other.client_addr = "2001:db8::1".to_string();
+    from_other.client_ip = "2001:db8::1".to_string();
 
     save_all(
         &cx,
@@ -272,14 +272,14 @@ async fn list_applies_result_caller_address_window_order_and_page() {
         ),
         (
             AccessLogFilter {
-                caller_name: Some(" Deploy ".to_string()),
+                actor_name: Some(" Deploy ".to_string()),
                 ..Default::default()
             },
             vec!["201", "200"],
         ),
         (
             AccessLogFilter {
-                address: Some("2001:0db8::0001".to_string()),
+                client_ip: Some("2001:0db8::0001".to_string()),
                 ..Default::default()
             },
             vec!["201"],
@@ -304,7 +304,7 @@ async fn list_applies_result_caller_address_window_order_and_page() {
             AccessLogFilter {
                 // Sort and order read like every other parameter: case and
                 // surrounding space aside.
-                sort: Some(" Status ".to_string()),
+                sort: Some(" Response_Code ".to_string()),
                 order: Some("ASC".to_string()),
                 ..Default::default()
             },
@@ -312,7 +312,7 @@ async fn list_applies_result_caller_address_window_order_and_page() {
         ),
     ] {
         assert_eq!(
-            list_statuses(&cx, filter.clone()).await,
+            list_response_codes(&cx, filter.clone()).await,
             expected,
             "{filter:?}"
         );
@@ -332,7 +332,7 @@ fn normalize_filter_preserves_selector_and_address_semantics() {
         let filter = normalize_filter(&AccessLogFilter {
             source: Some(" ApI ".to_string()),
             result: Some(" oK ".to_string()),
-            address: address.map(str::to_string),
+            client_ip: address.map(str::to_string),
             sort: Some(" ".to_string()),
             order: Some("\t".to_string()),
             ..Default::default()
@@ -341,7 +341,7 @@ fn normalize_filter_preserves_selector_and_address_semantics() {
 
         assert_eq!(filter.source, Some(AccessSource::Api));
         assert_eq!(filter.result, Some(AccessResult::Ok));
-        assert_eq!(filter.client_addr.as_deref(), expected, "{address:?}");
+        assert_eq!(filter.client_ip.as_deref(), expected, "{address:?}");
         assert_eq!(filter.sort, defaults.sort);
         assert_eq!(filter.order, defaults.order);
     }
@@ -372,7 +372,7 @@ fn normalize_filter_rejects_unknown_values_and_inverted_window() {
             ..Default::default()
         },
         AccessLogFilter {
-            address: Some(" ns2.example.net ".to_string()),
+            client_ip: Some(" ns2.example.net ".to_string()),
             ..Default::default()
         },
         AccessLogFilter {
@@ -388,7 +388,7 @@ fn normalize_filter_rejects_unknown_values_and_inverted_window() {
         let error = normalize_filter(&filter).unwrap_err();
 
         assert_eq!(error.code(), ErrorCode::InvalidInput, "{filter:?}");
-        if filter.address.is_some() {
+        if filter.client_ip.is_some() {
             assert_eq!(
                 error.to_string(),
                 "address 'ns2.example.net' is not an IP address"

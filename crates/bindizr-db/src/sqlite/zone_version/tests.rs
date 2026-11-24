@@ -40,8 +40,8 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
         retry: SoaInterval::from_secs(60),
         expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(86400),
-        change_source: ChangeSource::Socket,
-        changed_by: None,
+        source: ChangeSource::Socket,
+        actor: None,
         created_at: Utc::now(),
     };
 
@@ -73,15 +73,15 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
         ),
         (ChangeSource::Socket, None, None, None),
     ] {
-        version.change_source = source;
-        version.changed_by = actor.clone();
+        version.source = source;
+        version.actor = actor.clone();
 
         let mut tx = pool.begin().await.unwrap();
         upsert_tx(&mut tx, version.clone()).await.unwrap();
         tx.commit().await.unwrap();
 
         let columns = sqlx::query_as::<_, (Option<String>, Option<String>)>(
-            "SELECT changed_by_kind, changed_by_name FROM zone_versions",
+            "SELECT actor_kind, actor_name FROM zone_versions",
         )
         .fetch_one(&pool)
         .await
@@ -97,8 +97,8 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
             .unwrap();
         tx.commit().await.unwrap();
 
-        assert_eq!(read.change_source, source);
-        assert_eq!(read.changed_by, actor);
+        assert_eq!(read.source, source);
+        assert_eq!(read.actor, actor);
     }
 }
 
@@ -116,13 +116,12 @@ async fn actor_columns_reject_partial_or_unknown_identities() {
         (None, Some("admin")),
         (Some("unknown"), Some("admin")),
     ] {
-        let error =
-            sqlx::query("UPDATE zone_versions SET changed_by_kind = ?, changed_by_name = ?")
-                .bind(kind)
-                .bind(name)
-                .execute(&pool)
-                .await
-                .unwrap_err();
+        let error = sqlx::query("UPDATE zone_versions SET actor_kind = ?, actor_name = ?")
+            .bind(kind)
+            .bind(name)
+            .execute(&pool)
+            .await
+            .unwrap_err();
 
         assert!(
             error.as_database_error().unwrap().is_check_violation(),

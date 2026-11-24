@@ -4,9 +4,8 @@ use std::pin::Pin;
 use std::task::Poll;
 use std::{io, task};
 
-use bindizr_core::dns::message;
 use bindizr_core::dns::message::{DnsMessageBuilder, EncodeMessageError};
-use bindizr_core::model::transfer::TransferTransport;
+use bindizr_core::dns::{DnsTransport, message};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, ReadBuf, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::watch::Sender;
@@ -28,10 +27,10 @@ pub(crate) enum DnsStream {
 impl DnsStream {
     /// Return the transport the connection arrived over, as the transfer log
     /// and the metrics record it.
-    pub(crate) fn transport(&self) -> TransferTransport {
+    pub(crate) fn transport(&self) -> DnsTransport {
         match self {
-            Self::Tcp(_) => TransferTransport::Tcp,
-            Self::Tls(_) => TransferTransport::Tls,
+            Self::Tcp(_) => DnsTransport::Tcp,
+            Self::Tls(_) => DnsTransport::Tls,
         }
     }
 
@@ -104,13 +103,13 @@ impl AsyncWrite for DnsStream {
 #[derive(Debug)]
 pub(crate) struct ResponseWriter {
     writer: Mutex<WriteHalf<DnsStream>>,
-    transport: TransferTransport,
+    transport: DnsTransport,
     failure: Sender<bool>,
 }
 
 impl ResponseWriter {
     /// Return the transport the connection arrived over.
-    pub(crate) fn transport(&self) -> TransferTransport {
+    pub(crate) fn transport(&self) -> DnsTransport {
         self.transport
     }
 

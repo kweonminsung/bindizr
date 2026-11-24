@@ -29,7 +29,7 @@ Examples:
   bindizr dnssec enable example.com --parent-ns-addrs 198.51.100.1
   bindizr dnssec enable example.com --policy split --parent-ns-addrs 'a.gtld.net,b.gtld.net'
 
---parent-ns-addrs is required: `check-ds`, `rollover ds-seen`, and `disable`
+--parent-ns-addrs is required: `check-ds`, `rollover advance`, and `disable`
 ask those servers whether the parent serves this zone's DS. Signing does not
 publish the DS itself — hand the DS from `dnssec status` to the registrar.")]
     Enable {
@@ -41,7 +41,7 @@ publish the DS itself — hand the DS from `dnssec status` to the registrar.")]
         #[arg(long, value_name = "POLICY_NAME")]
         policy: Option<String>,
         /// The parent zone's nameservers (comma-separated host[:port]),
-        /// asked for this zone's DS by `check-ds`, `rollover ds-seen`, and
+        /// asked for this zone's DS by `check-ds`, `rollover advance`, and
         /// `disable`
         #[arg(long, value_name = "ADDRS", value_delimiter = ',', required = true)]
         parent_ns_addrs: Vec<String>,
@@ -148,7 +148,7 @@ the chain, and a new algorithm starts a rollover."
 pub(crate) enum DnssecRolloverCommand {
     /// Publish a replacement key with the same algorithm. After the publish
     /// wait, the scheduler promotes ZSKs automatically and CSK/KSKs once the
-    /// parent serves their DS; `ds-seen` requests that confirmation manually
+    /// parent serves their DS; `advance` can promote a ready SEP key on request
     #[command(after_help = "\
 Examples:
   bindizr dnssec rollover start example.com
@@ -168,18 +168,18 @@ only one key to roll.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-    /// Confirm the new DS is at the parent: once its nameservers serve the
-    /// DS, promotes the pre-published key and retires the one it replaces.
+    /// Advance a rollover by promoting the pre-published key and retiring the
+    /// one it replaces once the parent DS and hold-down conditions are met.
     /// ZSK rollovers involve no DS and promote automatically
     #[command(after_help = "\
 Examples:
-  bindizr dnssec rollover ds-seen example.com
-  bindizr dnssec rollover ds-seen example.com --skip-ds-check
+  bindizr dnssec rollover advance example.com
+  bindizr dnssec rollover advance example.com --skip-ds-check
 
-The DS goes to the registrar by hand, so this is the step that tells bindizr
-the parent has it. --skip-holddown is for a compromised key only: resolvers
+Add the DS at the registrar before requesting promotion. --skip-holddown
+is for a compromised key only: resolvers
 still caching the previous keys fail until the hold-down would have expired.")]
-    DsSeen {
+    Advance {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
@@ -322,7 +322,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 .await?;
                 print_status(&response.data, output)?;
             }
-            DnssecRolloverCommand::DsSeen {
+            DnssecRolloverCommand::Advance {
                 name,
                 skip_ds_check,
                 skip_holddown,

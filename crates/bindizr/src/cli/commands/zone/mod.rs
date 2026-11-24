@@ -45,7 +45,7 @@ and the contact is the address a resolver operator writes to.")]
         /// SOA RNAME, as an email address (e.g. admin@example.com)
         #[arg(long)]
         rname: String,
-        /// Default record TTL (seconds; defaults to dns.zone_defaults.ttl)
+        /// Default record TTL (seconds; defaults to dns.zone_defaults.default_ttl)
         #[arg(long)]
         default_ttl: Option<i64>,
         /// Starting serial, 0-4294967295 (default 1)
@@ -109,13 +109,13 @@ and the contact is the address a resolver operator writes to.")]
         /// Keep zones created at or after this time: a span ago (7d, 12h, 30m),
         /// a UTC date (2026-10-01), or RFC 3339
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
-        created_after: Option<DateTime<Utc>>,
-        /// Keep zones created at or before this time, in the same forms
+        since: Option<DateTime<Utc>>,
+        /// Keep zones created before this time, in the same forms
         #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
-        created_before: Option<DateTime<Utc>>,
-        /// Keep only zones signing under a DNSSEC policy
-        #[arg(long)]
-        signed: bool,
+        until: Option<DateTime<Utc>>,
+        /// Keep zones with or without a DNSSEC policy
+        #[arg(long, value_name = "true|false")]
+        dnssec_enabled: Option<bool>,
         /// Keep the zones the DNS plane serves, or the disabled ones
         #[arg(long, value_name = "true|false")]
         enabled: Option<bool>,
@@ -275,21 +275,21 @@ skipped); a catalog zone (RFC 9432) names every zone the server provisions.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-    /// Export a zone as BIND master-file text
+    /// Export a BIND zone file
     #[command(after_help = "\
 Examples:
   bindizr zone export example.com > db.example.com
-  bindizr zone export example.com --signed > db.example.com.signed
+  bindizr zone export example.com --include-dnssec > db.example.com.signed
 
---signed appends the derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3), which
+--include-dnssec appends the derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3), which
 bindizr generates rather than stores as editable records.")]
     Export {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
-        /// Append the derived DNSSEC records; for inspection, not re-import
+        /// Append the derived DNSSEC records for inspection
         #[arg(long)]
-        signed: bool,
+        include_dnssec: bool,
     },
     /// Show how far each secondary has caught up with a zone
     Status {
@@ -300,12 +300,12 @@ bindizr generates rather than stores as editable records.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-    /// Send NOTIFY messages to secondary servers for a zone, or for all zones
+    /// Send NOTIFY messages to secondary servers for a zone, or for all enabled zones
     #[command(after_help = "\
 Examples:
   bindizr zone notify example.com
-  bindizr zone notify                 # all zones
-  bindizr zone notify --bump-serial   # all zones, transferring even where nothing changed")]
+  bindizr zone notify                 # all enabled zones
+  bindizr zone notify --bump-serial   # bump the SOA serial before sending NOTIFY")]
     Notify(NotifyArgs),
     /// Inspect or roll back a zone's versions (serial history)
     Version {
@@ -341,11 +341,10 @@ impl From<ImportMode> for types::ImportMode {
 /// Arguments for the `zone notify` subcommand.
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub(crate) struct NotifyArgs {
-    /// The name of the zone; omit it to notify all zones
+    /// The name of the zone; omit it to notify all enabled zones
     #[arg(value_name = "ZONE_NAME")]
     name: Option<String>,
-    /// Bump the serial first, so secondaries transfer even when nothing
-    /// changed
+    /// Bump the SOA serial before sending NOTIFY
     #[arg(long)]
     bump_serial: bool,
     /// Output format
@@ -402,9 +401,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             serial,
             min_serial,
             max_serial,
-            created_after,
-            created_before,
-            signed,
+            since,
+            until,
+            dnssec_enabled,
             enabled,
             search,
             sort,
@@ -427,9 +426,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     serial: serial.map(Serial::from),
                     min_serial: min_serial.map(Serial::from),
                     max_serial: max_serial.map(Serial::from),
-                    created_after,
-                    created_before,
-                    signed: signed.then_some(true),
+                    since,
+                    until,
+                    dnssec_enabled,
                     enabled,
                     search,
                     sort,
@@ -616,11 +615,14 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 )));
             }
         }
-        ZoneCommand::Export { name, signed } => {
+        ZoneCommand::Export {
+            name,
+            include_dnssec,
+        } => {
             let response =
                 client::send_command::<ExportZoneFileResponse>(DaemonCommand::ExportZone {
                     name,
-                    view: ZoneView::from_signed(signed),
+                    view: ZoneView::from_include_dnssec(include_dnssec),
                 })
                 .await?;
             out!("{}", response.data.zone_file);

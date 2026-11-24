@@ -1,7 +1,7 @@
 //! Creates, lists, and revokes API tokens.
 
-use bindizr_core::model::api_token::{ApiToken, TokenId};
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult};
+use bindizr_core::model::api_token::{ApiToken, ApiTokenId};
 use bindizr_core::model::role_grant::Action;
 use chrono::{DateTime, Duration, Utc};
 use rand::RngExt;
@@ -13,9 +13,9 @@ use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::text::MAX_COLUMN_TEXT_LEN;
 use crate::types::{
-    CreateTokenRequest, MessageResponse, PaginatedResponse, TokenFilter, TokenResponse,
+    ApiTokenFilter, ApiTokenResponse, CreateApiTokenRequest, MessageResponse, PaginatedResponse,
 };
-use crate::{Context, audit, pagination, role, text, transaction};
+use crate::{Context, activity, pagination, role, text, transaction};
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
 const MAX_EXPIRES_IN_DAYS: i64 = 36500;
@@ -29,8 +29,8 @@ pub(crate) fn hash_token(token: &str) -> String {
 pub async fn create(
     cx: &Context,
     caller: &Caller,
-    request: &CreateTokenRequest,
-) -> Result<(TokenResponse, String), ServiceError> {
+    request: &CreateApiTokenRequest,
+) -> Result<(ApiTokenResponse, String), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_name(&request.name)?;
@@ -67,9 +67,9 @@ pub async fn create(
         let token = bindizr_db::api_token::create_tx(
             &mut tx,
             ApiToken {
-                id: TokenId::UNWRITTEN,
+                id: ApiTokenId::UNWRITTEN,
                 name: name.clone(),
-                token: token_hash,
+                token_hash,
                 description,
                 role_id: role.id,
                 expires_at,
@@ -89,11 +89,11 @@ pub async fn create(
                 error.into()
             }
         })?;
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::Token,
-            &token.name,
-            AuditOperation::Create,
+            ActivityOperation::TokenCreate,
+            ActivityResult::Changed,
+            activity::named_target(&token.name),
             Some(format!(
                 "role_name {}, expires_at {}",
                 role.name,
@@ -111,15 +111,15 @@ pub async fn create(
 
     let token = transaction::finish_tx(tx, apply_result, "failed to create token").await?;
 
-    Ok((TokenResponse::from_token(&token, &role.name), raw_token))
+    Ok((ApiTokenResponse::from_token(&token, &role.name), raw_token))
 }
 
 /// List the API tokens, every one or one role's.
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    filter: &TokenFilter,
-) -> Result<PaginatedResponse<TokenResponse>, ServiceError> {
+    filter: &ApiTokenFilter,
+) -> Result<PaginatedResponse<ApiTokenResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(filter.limit)?;
 
@@ -136,7 +136,7 @@ pub async fn list(
     let tokens = bindizr_db::api_token::list_by_filter_with_role(cx.db(), &filter).await?;
 
     Ok(pagination::build_paginated_response(
-        tokens.iter().map(TokenResponse::from).collect(),
+        tokens.iter().map(ApiTokenResponse::from).collect(),
         filter.limit,
         filter.offset,
         total,
@@ -144,9 +144,9 @@ pub async fn list(
 }
 
 /// Get `token` described with its role's name; any token may read itself.
-pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<TokenResponse, ServiceError> {
+pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<ApiTokenResponse, ServiceError> {
     let role = role::lookup(cx, token.role_id).await?;
-    Ok(TokenResponse::from_token(token, &role.name))
+    Ok(ApiTokenResponse::from_token(token, &role.name))
 }
 
 /// Count the API tokens, read for the daemon's startup hint.
@@ -173,16 +173,16 @@ pub async fn delete(
             .await?
             .authorize_action(Action::AccessManage)?;
 
-        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        // A concurrent removal makes this deletion report not found.
         if !bindizr_db::api_token::delete_tx(&mut tx, token.id).await? {
             return Err(ServiceError::token_not_found(&token.name));
         }
 
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::Token,
-            &token.name,
-            AuditOperation::Delete,
+            ActivityOperation::TokenDelete,
+            ActivityResult::Changed,
+            activity::named_target(&token.name),
             None,
             caller.change_origin(),
         )

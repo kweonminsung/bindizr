@@ -1,4 +1,4 @@
-//! The `zone version` subcommands: list, show, diff, and rollback.
+//! The `zone version` subcommands: list, get, diff, and rollback.
 
 use bindizr_core::dns::Serial;
 use bindizr_core::model::zone_version::VersionFilter;
@@ -24,11 +24,11 @@ pub(crate) enum ZoneVersionCommand {
         after_help = "\
 Examples:
   bindizr zone version list example.com
-  bindizr zone version list example.com --include-signer-serials
+  bindizr zone version list example.com --include-signer-only-versions
 
 By default, past serials with only derived DNSSEC changes are hidden.
 The current serial and serials without journal entries remain visible.
-Use --include-signer-serials to list every stored version."
+Use --include-signer-only-versions to list every stored version."
     )]
     List {
         /// The name of the zone
@@ -42,7 +42,7 @@ Use --include-signer-serials to list every stored version."
         offset: Option<u64>,
         /// Include signer-only serials (DNSSEC re-signs and rollovers)
         #[arg(long)]
-        include_signer_serials: bool,
+        include_signer_only_versions: bool,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -112,7 +112,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             name,
             limit,
             offset,
-            include_signer_serials,
+            include_signer_only_versions,
             output,
         } => {
             let response = client::send_command::<PaginatedResponse<ZoneVersionResponse>>(
@@ -120,7 +120,9 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                     name,
                     limit,
                     offset,
-                    filter: VersionFilter::from_include_signer_serials(include_signer_serials),
+                    filter: VersionFilter::from_include_signer_only_versions(
+                        include_signer_only_versions,
+                    ),
                 },
             )
             .await?;

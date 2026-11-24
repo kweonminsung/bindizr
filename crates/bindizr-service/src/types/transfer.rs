@@ -1,9 +1,7 @@
 //! Transfer log payloads.
 
-use bindizr_core::dns::Serial;
-use bindizr_core::model::transfer::{
-    TransferKind, TransferLogWithZone, TransferResult, TransferTransport,
-};
+use bindizr_core::dns::{DnsTransport, Serial};
+use bindizr_core::model::transfer::{TransferKind, TransferLogWithZone, TransferResult};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -17,16 +15,16 @@ pub struct TransferLogFilter {
     /// Only transfers answered to the addresses this secondary resolves to now.
     pub secondary_name: Option<String>,
     /// Only transfers answered to this client IP address.
-    pub address: Option<String>,
+    pub client_ip: Option<String>,
     /// Only the transfers of this zone.
     pub zone_name: Option<String>,
     /// Only transfers that turned out this way: `ok`, `refused`, or `failed`.
     pub result: Option<String>,
-    /// Only transfers answered at or after this time (RFC 3339).
+    /// Only transfers recorded at or after this time (RFC 3339).
     pub since: Option<DateTime<Utc>>,
-    /// Only transfers answered before this time (RFC 3339).
+    /// Only transfers recorded before this time (RFC 3339).
     pub until: Option<DateTime<Utc>>,
-    /// `at` (the default), `address`, `zone_name`, `kind`, or `result`.
+    /// `created_at` (the default), `client_ip`, `zone_name`, `kind`, or `result`.
     pub sort: Option<String>,
     /// `desc` (the default) or `asc`.
     pub order: Option<String>,
@@ -39,9 +37,9 @@ pub struct TransferLogFilter {
 /// One transfer Bindizr answered, refused, or failed for a client address.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TransferLogResponse {
-    /// The client address the transfer was served to.
+    /// The IP address of the client that requested the transfer.
     #[schema(example = "10.0.0.14")]
-    pub address: String,
+    pub client_ip: String,
     #[schema(example = "example.com")]
     pub zone_name: String,
     pub kind: TransferKind,
@@ -49,7 +47,7 @@ pub struct TransferLogResponse {
     pub result: TransferResult,
     /// Plain TCP or TLS (XoT).
     #[schema(example = "tcp")]
-    pub transport: TransferTransport,
+    pub transport: DnsTransport,
     /// Whether the answer was a delta; an IXFR the journal could not serve
     /// went out as the whole zone.
     #[schema(example = true)]
@@ -57,11 +55,12 @@ pub struct TransferLogResponse {
     /// The serial the answer reached; absent when nothing was transferred.
     #[schema(inline)]
     pub serial: Option<Serial>,
-    pub at: DateTime<Utc>,
+    /// When the transfer result was recorded.
+    pub created_at: DateTime<Utc>,
     /// A fixed error classification, excluding record values and detailed
     /// diagnostics; null when the transfer succeeded.
     #[schema(example = "DNS_ENCODING_FAILED")]
-    pub error: Option<String>,
+    pub error_code: Option<String>,
 }
 
 impl From<&TransferLogWithZone> for TransferLogResponse {
@@ -70,15 +69,15 @@ impl From<&TransferLogWithZone> for TransferLogResponse {
         let log = &transfer.log;
 
         Self {
-            address: log.client_addr.clone(),
+            client_ip: log.client_ip.clone(),
             zone_name: transfer.zone_name.to_string(),
             kind: log.kind,
             result: log.result,
             transport: log.transport,
             incremental: log.incremental,
             serial: log.serial,
-            at: log.served_at,
-            error: log.error.clone(),
+            created_at: log.created_at,
+            error_code: log.error_code.clone(),
         }
     }
 }

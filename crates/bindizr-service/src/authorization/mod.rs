@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::api_token::{ApiToken, TokenId};
+use bindizr_core::model::api_token::{ApiToken, ApiTokenId};
 use bindizr_core::model::change::{ChangeActor, ChangeSource};
 use bindizr_core::model::record::{Record, RecordData, RecordId, RecordType, RecordWithZone};
 use bindizr_core::model::role::RoleId;
@@ -118,7 +118,7 @@ impl Caller {
     ) -> Result<(Self, ApiToken), ServiceError> {
         let token_hash = token::hash_token(bearer_token);
 
-        let stored_token = bindizr_db::api_token::get_by_token(cx.db(), &token_hash)
+        let stored_token = bindizr_db::api_token::get_by_token_hash(cx.db(), &token_hash)
             .await
             .map_err(|error| ServiceError::internal_with_source("failed to validate token", error))?
             .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
@@ -449,7 +449,7 @@ enum CallerScope {
 /// transaction that acts for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Credential {
-    Token(TokenId),
+    Token(ApiTokenId),
     TsigKey(TsigKeyId),
 }
 

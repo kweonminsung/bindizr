@@ -47,7 +47,7 @@ pub(crate) async fn list_zones(
         path = "/zones/{name}",
         tag = "Zone",
         summary = "Get a specific DNS zone",
-        description = "Returns the zone's SOA metadata. For its records, list them with `GET /records?zone_name=`, or render the whole zone as a master file with `GET /zones/{name}/export`.",
+        description = "Returns the zone's SOA metadata. For its records, list them with `GET /records?zone_name=`, or render the whole zone as a BIND zone file with `GET /zones/{name}/export`.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to retrieve.")
         ),

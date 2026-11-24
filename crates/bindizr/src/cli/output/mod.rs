@@ -11,7 +11,7 @@ pub(crate) use format::{
     print_write_response,
 };
 pub(crate) use table::{
-    AccessLogRow, AuditLogRow, DnssecKeyRow, DnssecPolicyRow, ImportSummaryRow, ImportZonesRow,
-    RecordRow, RoleGrantRow, RoleRow, RollbackSummaryRow, SecondaryRow, SecondaryStatusRow,
-    TokenRow, TransferLogRow, TsigKeyRow, VersionRecordRow, VersionRow, ZoneRow,
+    AccessLogRow, ActivityLogRow, ApiTokenRow, DnssecKeyRow, DnssecPolicyRow, ImportSummaryRow,
+    ImportZonesRow, RecordRow, RoleGrantRow, RoleRow, RollbackSummaryRow, SecondaryRow,
+    SecondaryStatusRow, TransferLogRow, TsigKeyRow, VersionRecordRow, VersionRow, ZoneRow,
 };

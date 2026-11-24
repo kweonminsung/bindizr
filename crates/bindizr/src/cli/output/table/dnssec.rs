@@ -55,8 +55,8 @@ pub(crate) struct DnssecPolicyRow {
     pub(crate) algorithm: String,
     #[tabled(rename = "DENIAL")]
     pub(crate) denial: String,
-    #[tabled(rename = "KEYS")]
-    pub(crate) keys: String,
+    #[tabled(rename = "KEY-LAYOUT")]
+    pub(crate) key_layout: String,
     #[tabled(rename = "VALIDITY")]
     pub(crate) validity: String,
     #[tabled(rename = "REFRESH")]
@@ -75,12 +75,7 @@ impl From<&DnssecPolicyResponse> for DnssecPolicyRow {
             name: policy.name.clone(),
             algorithm: policy.algorithm.to_string(),
             denial: policy.denial.to_string(),
-            keys: if policy.split_keys {
-                "KSK/ZSK"
-            } else {
-                "CSK"
-            }
-            .to_string(),
+            key_layout: policy.key_layout.to_string(),
             validity: format!("{}d", policy.signature_validity_days),
             refresh: format!("{}d", policy.signature_refresh_days),
             zsk_lifetime: if policy.zsk_lifetime_days.as_days() == 0 {

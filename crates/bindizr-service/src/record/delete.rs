@@ -1,5 +1,6 @@
 use std::slice;
 
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::record::{Record, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
@@ -96,6 +97,14 @@ pub async fn delete(
 
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::RecordDelete,
+            record::activity_target(&zone.name, &existing_record),
+            caller.change_origin(),
+        )
+        .await?;
 
         Ok((response, zone.name))
     }
@@ -199,6 +208,17 @@ pub async fn delete_matching(
 
         // Once for the whole set, so IXFR consumers see one step.
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
+
+        crate::activity::save_many_tx(
+            &mut tx,
+            ActivityOperation::RecordDelete,
+            matched
+                .iter()
+                .map(|record| record::activity_target(&zone.name, record))
+                .collect(),
+            caller.change_origin(),
+        )
+        .await?;
 
         Ok(response)
     }

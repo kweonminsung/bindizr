@@ -1,4 +1,5 @@
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
@@ -7,9 +8,9 @@ use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::{Context, dnssec, serial, transaction, zone};
 
-/// Advance a named zone's serial and save its signed version atomically.
+/// Advance a named zone's serial for a manual NOTIFY and save its signed version atomically.
 /// Report whether the locked zone was still enabled and could be bumped.
-pub(crate) async fn force_increment_serial(
+pub(super) async fn bump_zone_serial(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
@@ -39,6 +40,14 @@ pub(crate) async fn force_increment_serial(
         // every bump — forced ones included.
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::ZoneNotify,
+            zone::activity_target(&zone.name),
+            caller.change_origin(),
+        )
+        .await?;
 
         Ok(Some((zone, new_serial)))
     }

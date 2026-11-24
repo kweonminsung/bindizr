@@ -627,8 +627,27 @@ async fn zone_listing_sorts_and_filters_on_more_than_the_name() {
     assert_eq!(listed(&app, "max_serial=10").await, [zone_names[1].clone()]);
 
     // None of these is signed, so the DNSSEC filter splits them all one way.
-    assert!(listed(&app, "signed=true").await.is_empty());
-    assert_eq!(listed(&app, "signed=false").await.len(), 3);
+    assert!(listed(&app, "dnssec_enabled=true").await.is_empty());
+    assert_eq!(listed(&app, "dnssec_enabled=false").await.len(), 3);
+
+    let first_zone = &zone_names[0];
+    let (status, body) = app
+        .send_request(Method::GET, &zone_path(first_zone), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let first_created_at = body["zone"]["created_at"]
+        .as_str()
+        .unwrap()
+        .replace('+', "%2B");
+    assert_eq!(
+        listed(&app, &format!("name={first_zone}&since={first_created_at}")).await,
+        std::slice::from_ref(first_zone)
+    );
+    assert!(
+        listed(&app, &format!("name={first_zone}&until={first_created_at}"))
+            .await
+            .is_empty()
+    );
 
     let (status, body) = app
         .send_request(Method::GET, "/zones?sort=nope", None)

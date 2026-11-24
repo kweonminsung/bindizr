@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
@@ -190,6 +191,17 @@ pub async fn create_bulk(
             zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
             timings.serial_ms = time::elapsed_ms(started);
+
+            crate::activity::save_many_tx(
+                &mut tx,
+                ActivityOperation::RecordBulkCreate,
+                created_records
+                    .iter()
+                    .map(|record| record::activity_target(&zone.name, record))
+                    .collect(),
+                caller.change_origin(),
+            )
+            .await?;
 
             (created_records, RecordDiffResponse::default())
         };

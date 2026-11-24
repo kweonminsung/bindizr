@@ -25,7 +25,7 @@ pub(crate) fn validate_page_limit(limit: Option<u32>) -> Result<(), ServiceError
     Ok(())
 }
 
-/// Validate a log listing's time window: `since` must come before `until`.
+/// Validate a listing's time window: `since` must come before `until`.
 pub(crate) fn validate_time_window(
     since: Option<DateTime<Utc>>,
     until: Option<DateTime<Utc>>,

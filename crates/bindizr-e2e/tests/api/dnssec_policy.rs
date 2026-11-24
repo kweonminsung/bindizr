@@ -32,7 +32,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
     assert_eq!(policy["builtin"], false);
     assert_eq!(policy["algorithm"], "ed25519");
     assert_eq!(policy["denial"], "nsec3");
-    assert_eq!(policy["split_keys"], false);
+    assert_eq!(policy["key_layout"], "csk");
     assert_eq!(policy["signature_validity_days"], 21);
     assert_eq!(policy["signature_refresh_days"], 7);
     assert_eq!(policy["zsk_lifetime_days"], 90);
@@ -326,7 +326,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
         let (status, body) = app
             .send_request(
                 Method::GET,
-                &format!("/records?zone_name={zone_name}&signed=true&limit=1000"),
+                &format!("/records?zone_name={zone_name}&include_dnssec=true&limit=1000"),
                 None,
             )
             .await;

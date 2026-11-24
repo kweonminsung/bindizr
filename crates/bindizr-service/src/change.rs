@@ -1,4 +1,4 @@
-//! Change origin shared by caller identity, audit logs, and zone history.
+//! Change origin shared by caller identity, activity, and zone history.
 
 use bindizr_core::model::change::{ChangeActor, ChangeSource};
 

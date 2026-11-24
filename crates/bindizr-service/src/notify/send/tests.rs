@@ -74,7 +74,7 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
             &CreateSecondaryRequest {
                 name: name.to_string(),
                 address,
-                notify_key_name: None,
+                notify_tsig_key_name: None,
             },
         )
         .await

@@ -143,7 +143,7 @@ Omit the zone to list records from all zones the caller can see."
         order: Option<String>,
         /// Append the derived DNSSEC records (RRSIG, DNSKEY, NSEC, ...)
         #[arg(long)]
-        signed: bool,
+        include_dnssec: bool,
         /// Maximum number of records to return
         #[arg(long)]
         limit: Option<u32>,
@@ -387,7 +387,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             search,
             sort,
             order,
-            signed,
+            include_dnssec,
             limit,
             offset,
             output,
@@ -407,7 +407,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     search,
                     sort,
                     order,
-                    signed: signed.then_some(true),
+                    include_dnssec: include_dnssec.then_some(true),
                     limit,
                     offset,
                 }),

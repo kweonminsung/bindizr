@@ -16,8 +16,9 @@ use crate::external_dns::change_set::{
     RecordSetOperation, ZoneChangeSet, ZoneOperations, ZoneRecordSet,
 };
 use crate::types::{
-    ApplyExternalDnsChangesRequest, CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest,
-    CreateTokenRequest, CreateZoneRequest, ExternalDnsRecordUpdate, RecordValue, RoleGrantResponse,
+    ApplyExternalDnsChangesRequest, CreateApiTokenRequest, CreateRecordRequest,
+    CreateRoleGrantRequest, CreateRoleRequest, CreateZoneRequest, ExternalDnsRecordUpdate,
+    RecordValue, RoleGrantResponse,
 };
 use crate::{record, role, token, zone};
 
@@ -77,7 +78,7 @@ async fn credential(cx: &Context) -> String {
     token::create(
         cx,
         &caller,
-        &CreateTokenRequest {
+        &CreateApiTokenRequest {
             name: "external-dns".to_string(),
             description: None,
             expires_in_days: None,

@@ -12,17 +12,19 @@ use bindizr_core::dns::nsupdate::parser::{
     ParseUpdateError, UpdateRecord, ValidateUpdateShapeError,
 };
 use bindizr_core::dns::record::ParseRecordValueError;
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::record::RecordType;
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use bindizr_db::error::DatabaseError;
+use operation::RecordMutation;
 use plan::UpdateOperation;
 use prerequisite::RecordSets;
 use thiserror::Error;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::{Context, dnssec, notify, transaction, zone};
+use crate::{Context, dnssec, notify, record, transaction, zone};
 
 /// An UPDATE failure and its RFC 2136 response classification.
 #[derive(Debug, Error)]
@@ -205,19 +207,30 @@ pub async fn apply(
 
         let plan = plan::UpdatePlan::compute(&zone, updates)?;
         let new_serial = plan.zone.serial;
-        let mut changed = plan.soa_changed;
+        let soa_changed = plan.soa_changed;
+        let mut changed = soa_changed;
+        let mut activities = Vec::new();
 
         for operation in &plan.records {
-            changed |= operation::apply_record_operation_tx(
+            let mutations = operation::apply_record_operation_tx(
                 &mut tx, caller, &plan.zone, operation, new_serial,
             )
             .await?;
+            changed |= !mutations.is_empty();
+            activities.extend(mutations.into_iter().map(|mutation| {
+                let (operation, record) = match mutation {
+                    RecordMutation::Created(record) => (ActivityOperation::RecordCreate, record),
+                    RecordMutation::Updated(record) => (ActivityOperation::RecordUpdate, record),
+                    RecordMutation::Deleted(record) => (ActivityOperation::RecordDelete, record),
+                };
+                (operation, record::activity_target(&plan.zone.name, &record))
+            }));
         }
 
         if changed {
             zone::validate_record_changes_tx(&mut tx, &plan.zone, &[], &[]).await?;
 
-            if plan.soa_changed {
+            if soa_changed {
                 let changes = zone::soa_replacement_changes(&zone, &plan.zone, new_serial)?;
                 bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
             }
@@ -225,6 +238,19 @@ pub async fn apply(
             let updated_zone = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
             dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
             zone::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin())
+                .await?;
+
+            if soa_changed {
+                activities.push((
+                    ActivityOperation::ZoneUpdate,
+                    zone::activity_target(&updated_zone.name),
+                ));
+            }
+            activities.push((
+                ActivityOperation::NsupdateApply,
+                zone::activity_target(&updated_zone.name),
+            ));
+            crate::activity::save_operations_tx(&mut tx, activities, caller.change_origin())
                 .await?;
         }
 

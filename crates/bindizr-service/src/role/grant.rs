@@ -1,7 +1,7 @@
 //! A role's grants: actions in one zone or all zones.
 
+use bindizr_core::model::activity_log::{ActivityOperation, ActivityResult, ActivityTarget};
 use bindizr_core::model::api_token::ApiToken;
-use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::grant_pattern::MATCH_ANY;
 use bindizr_core::model::role::Role;
 use bindizr_core::model::role_grant::{Action, ActionSet, RoleGrant, RoleGrantId, RoleZoneScope};
@@ -13,7 +13,7 @@ use crate::error::ServiceError;
 use crate::types::{
     CreateRoleGrantRequest, MessageResponse, PageRequest, PaginatedResponse, RoleGrantResponse,
 };
-use crate::{Context, audit, grant_pattern, pagination, role, transaction, zone};
+use crate::{Context, activity, grant_pattern, pagination, role, transaction, zone};
 
 /// Grant `role_name` the request's actions in its zone, or in all zones
 /// when it names none.
@@ -101,11 +101,14 @@ pub async fn create(
                 ServiceError::role_not_found(&role.name)
             }
         })?;
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::RoleGrant,
-            &role.name,
-            AuditOperation::Create,
+            ActivityOperation::RoleGrantCreate,
+            ActivityResult::Changed,
+            ActivityTarget {
+                zone_name: zone.as_ref().map(|zone| zone.name.to_string()),
+                ..activity::named_target(&role.name)
+            },
             Some(describe_grant(
                 &grant,
                 zone.as_ref().map(|zone| zone.name.as_str()),
@@ -179,27 +182,35 @@ pub async fn revoke(
             .await?
             .authorize_action(Action::AccessManage)?;
 
-        // Read for the audit row's detail alone; a zone gone meanwhile reads as its id.
-        let zone_name = match grant.zone_scope.zone_id() {
-            Some(zone_id) => Some(
-                bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Unlocked)
-                    .await?
-                    .map_or_else(|| format!("zone {zone_id}"), |zone| zone.name.to_string()),
-            ),
+        let zone = match grant.zone_scope.zone_id() {
+            Some(zone_id) => {
+                bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Unlocked).await?
+            }
             None => None,
         };
+        let zone_name = zone.as_ref().map(|zone| zone.name.to_string());
+        let detail_zone_name = zone_name.clone().or_else(|| {
+            grant
+                .zone_scope
+                .zone_id()
+                .map(|zone_id| format!("zone {zone_id}"))
+        });
 
-        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        // A concurrent deletion already recorded the change.
+
         if !bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await? {
             return Err(ServiceError::role_grant_not_found(grant.id));
         }
 
-        audit::save_tx(
+        activity::save_detail_tx(
             &mut tx,
-            AuditEntity::RoleGrant,
-            &role.name,
-            AuditOperation::Delete,
-            Some(describe_grant(&grant, zone_name.as_deref())),
+            ActivityOperation::RoleGrantDelete,
+            ActivityResult::Changed,
+            ActivityTarget {
+                zone_name,
+                ..activity::named_target(&role.name)
+            },
+            Some(describe_grant(&grant, detail_zone_name.as_deref())),
             caller.change_origin(),
         )
         .await
@@ -216,7 +227,7 @@ pub async fn revoke(
     })
 }
 
-/// Describe a grant for its audit detail, in the request's field names.
+/// Describe a grant for its activity detail, in the request's field names.
 fn describe_grant(grant: &RoleGrant, zone_name: Option<&str>) -> String {
     format!(
         "zone_name {}, actions {}, record_name_pattern {}, record_types {}",

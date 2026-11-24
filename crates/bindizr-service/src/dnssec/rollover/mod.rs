@@ -5,6 +5,7 @@
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::dnssec::{KeyTag, SigningPass};
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::activity_log::ActivityOperation;
 use bindizr_core::model::dnssec_key::{
     DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
 };
@@ -100,6 +101,14 @@ pub async fn start_rollover(
             Some(&signed.policy),
             &signed.keys,
             new_serial,
+        )
+        .await?;
+
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::DnssecStartRollover,
+            zone::activity_target(&signed.zone.name),
+            caller.change_origin(),
         )
         .await?;
 
@@ -228,6 +237,14 @@ pub async fn advance_rollover(
         )
         .await?;
 
+        crate::activity::save_tx(
+            &mut tx,
+            ActivityOperation::DnssecAdvanceRollover,
+            zone::activity_target(&signed.zone.name),
+            caller.change_origin(),
+        )
+        .await?;
+
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
@@ -241,19 +258,19 @@ pub async fn advance_rollover(
 
     if ds_check == DsCheck::Skip {
         log::warn!(
-            "event=dnssec_rollover_ds_seen_ds_check_skipped zone={}",
+            "event=dnssec_rollover_advanced_ds_check_skipped zone={}",
             response.zone_name
         );
     }
 
     if holddown == Holddown::Skip {
         log::warn!(
-            "event=dnssec_rollover_ds_seen_holddown_skipped zone={}",
+            "event=dnssec_rollover_advanced_holddown_skipped zone={}",
             response.zone_name
         );
     }
 
-    log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
+    log::info!("event=dnssec_rollover_advanced zone={}", response.zone_name);
 
     if changed {
         notify::notify_after_update(cx, zone_name).await;
@@ -348,7 +365,7 @@ pub(crate) async fn promote_published_keys_tx(
 }
 
 /// Return promotable SEP keys or reject absent, ZSK-only, or still-waiting rollovers.
-/// The scheduler treats these rejections as idle; `ds-seen` reports them.
+/// The scheduler treats these rejections as idle; `advance` reports them.
 pub(crate) fn promotable_sep_key_ids(
     signed: &SignedZone,
     holddown: Holddown,

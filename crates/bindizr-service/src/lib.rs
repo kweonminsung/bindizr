@@ -2,7 +2,7 @@
 //! workflows over `bindizr_db`, with explicit context and transaction dependencies.
 
 pub mod access;
-pub mod audit;
+pub mod activity;
 pub mod authorization;
 mod change;
 pub mod context;

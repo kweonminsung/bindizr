@@ -28,7 +28,7 @@ pub async fn list(
             .map(|secondary| {
                 SecondaryResponse::from_secondary(
                     &secondary.secondary,
-                    secondary.notify_key_name.as_deref(),
+                    secondary.notify_tsig_key_name.as_deref(),
                 )
             })
             .collect(),

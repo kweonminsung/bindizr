@@ -109,7 +109,7 @@ deny rules. How grants combine, and what each operation needs, is in
 | `secondary:read` | Listing secondaries and their details — needs all zones |
 | `secondary:manage` | Creating, updating, deleting, and checking secondaries — needs all zones |
 | `access:manage` | Tokens, TSIG keys, and roles — needs all zones |
-| `log:read` | Reading the [audit, access, and transfer logs](#logs) — needs all zones |
+| `log:read` | Reading the [activity, access, and transfer logs](#logs) — needs all zones |
 
 A response carries only records the role can read. A write preview includes
 the readable records it changes and the readable ones beside them. The regular
@@ -156,7 +156,7 @@ to, per zone, as a client deciding what to offer needs. See the
 ## TSIG keys
 
 TSIG keys authenticate [nsupdate](nsupdate.md), zone transfers, and
-the NOTIFY Bindizr sends to a secondary registered with `--notify-key` — see
+the NOTIFY Bindizr sends to a secondary registered with `--notify-tsig-key` — see
 [Signed NOTIFY](secondaries.md#signed-notify). A key's name is what appears
 on the wire.
 
@@ -202,13 +202,13 @@ and [Signing zone transfers](advanced.md#signing-zone-transfers).
 
 ## Logs
 
-Three logs say what happened, and nothing decides on them. Each is read with
-`bindizr log <subject>` or `GET /logs/<subject>`, newest first, and needs
-`log:read`, which only a grant without `--zone` carries:
+Read each log with `bindizr log <subject>` or `GET /logs/<subject>`. These
+commands and the activity feed need `log:read`, which only a grant without
+`--zone` carries. The logs list rows newest first.
 
 | Log | What it holds | Kept |
 | --- | --- | --- |
-| `audit` | Management changes: who changed a token, role, grant, key, secondary, policy or zone's DNSSEC settings, or deleted a zone | `audit_log.max_days`, 365 days |
+| `activity` | Committed DNS and management changes and recorded operation results | `activity_log.max_days`, 365 days |
 | `access` | Management API requests and nsupdates: who asked what, from where, and how it ended | `access_log.max_days`, 30 days |
 | `transfer` | Zone transfers answered, refused, or failed — see [Secondaries](secondaries.md#transfer-log) | `transfer_log.max_days`, 90 days |
 
@@ -218,42 +218,38 @@ RFC 3339, beside `limit` and `offset`. `max_days = 0` keeps a log forever,
 and the scheduler pass prunes what is older — see
 [Configuration](../configuration.md).
 
-### Audit log
+### Activity log
 
-Every change to a token, role, grant, TSIG key, secondary, or DNSSEC policy,
-every zone deletion, and every change to a zone's DNSSEC settings (`dnssec
-set`: its policy and parent nameservers) leaves an entry naming the entity, the operation,
-the request path (`api` or `socket`), the token that made it (a CLI command
-names none), when, and a detail: what a creation set, in the request's own
-field names (`role_name admin, expires_at never`), what an update moved
-(`enabled true -> false`), or what a deletion took with it (`records_deleted
-3, versions_deleted 2`); a secret never appears. A grant's entry carries
-its role's name. Changes to
-a zone's records and its other settings are in its [versions](zones.md#zone-history)
-instead, so the two together answer who changed what, and when. A request
-that was refused or failed leaves nothing here; the access log has it.
+Each activity log row identifies an operation, its target and result, the source,
+the verified actor, and the time recorded. Management activity can include safe
+change details such as `enabled true -> false`. Committed changes are logged in
+the transaction that applies the change. The `changed` result selects changes.
+Zone versions still support comparing and rolling back DNS data.
 
 ```bash
-# Newest first; narrow by entity, name, or time, or sort by a column
-bindizr log audit
-bindizr log audit --entity token --name cluster-a
-bindizr log audit --since 7d -o json
-bindizr log audit --since 2026-10-01 --until 2026-11-01
-bindizr log audit --sort entity_name --order asc
+bindizr log activity --result changed
+bindizr log activity --entity token --name cluster-a
+bindizr log activity --operation record.create --zone example.com --since 7d
+bindizr log activity --sort target --order asc
 ```
 
-`--sort` takes `created_at` (the default), `entity`, `entity_name`, or
-`operation`, and `--order` is `desc` (the default) or `asc`. Over HTTP the
-same is `GET /logs/audit`, with the same `entity`, `entity_name`, `sort`, and
-`order` parameters.
+Use `GET /logs/activity` for the same paged listing. Filter by `entity`,
+`operation`, `result`, `name`, `zone_name`, `record_name`, `record_type`,
+`since`, or `until`. The `entity` filter selects an operation group, and
+`name` matches the target or zone name. Sort by `created_at` (when the activity was recorded),
+`operation`, or `target`.
+
+The HTTP response includes an `operations` array with the canonical operation
+names for filters. An empty page still includes this array.
 
 ### Access log
 
 Every management API request and every nsupdate leaves an entry once it is
-answered: the source (`api` or `nsupdate`), the client address, the method
-and path (`GET /zones/example.com`) or `UPDATE` and the zone, the HTTP status
-or RCODE, the token or TSIG key that verified, and a fixed error classification
-(`FORBIDDEN`, `REFUSED`, or a transport failure code). The result is `ok`,
+answered. It records the source (`api` or `nsupdate`), the client IP, the method
+and path (`GET /zones/example.com`) or `UPDATE` and the zone, and the
+`response_code` (HTTP status code or DNS RCODE). The `actor` identifies the
+verified token or TSIG key. The `error_code` holds a fixed classification such as
+`FORBIDDEN`, `REFUSED`, or a transport failure code. The result is `ok`,
 `denied` — HTTP 401 or 403, or an nsupdate whose
 TSIG was rejected or that was `REFUSED` — or `failed` for any other error.
 A zone a role may not see answers 404 and is `failed` like any other, so the
@@ -261,22 +257,22 @@ log tells a scope no more than the response did.
 
 No query string, body, record value, or detailed client diagnostic is kept;
 rejected input stays out of the error classification too. A token that did not
-verify names no caller. The client address is the connection's peer: behind a
+verify names no actor. The client IP is the connection's peer address: behind a
 proxy, the proxy's. `/health`, `/metrics`, the OpenAPI document, and daemon
 socket commands are not logged.
 
 ```bash
 bindizr log access
 bindizr log access --result denied --since 1d
-bindizr log access --caller external-dns
-bindizr log access --source nsupdate --address 192.0.2.10 -o json
-bindizr log access --sort status --order asc
+bindizr log access --actor external-dns
+bindizr log access --source nsupdate --client-ip 192.0.2.10 -o json
+bindizr log access --sort response_code --order asc
 ```
 
-`--sort` takes `requested_at` (the default), `source`, `target`, `status`,
-`result`, or `address`, and `--order` is `desc` (the default) or `asc`. Over
-HTTP the same is `GET /logs/access`, with `source`, `result`, `caller_name`,
-`address`, `sort`, and `order`. Entries are written off the request path, so
+`--sort` takes `requested_at` (the default), `source`, `target`, `response_code`,
+`result`, or `client_ip`, and `--order` is `desc` (the default) or `asc`. Over
+HTTP the same is `GET /logs/access`, with `source`, `result`, `actor_name`,
+`client_ip`, `sort`, and `order`. Entries are written off the request path, so
 a request never waits on its own; under a flood the queue drops what it
 cannot hold and counts it in `bindizr_access_log_dropped_total`.
 `access_log.save = "denied"` keeps denials alone, and `"none"` turns the

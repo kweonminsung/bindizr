@@ -8,8 +8,8 @@ use tokio::sync::{mpsc, watch};
 use super::*;
 use crate::error::ErrorCode;
 use crate::types::{
-    BulkRecordItem, CreateBulkRecordsRequest, CreateRecordRequest, CreateRoleGrantRequest,
-    CreateRoleRequest, CreateTokenRequest, CreateZoneRequest, RoleGrantResponse,
+    BulkRecordItem, CreateApiTokenRequest, CreateBulkRecordsRequest, CreateRecordRequest,
+    CreateRoleGrantRequest, CreateRoleRequest, CreateZoneRequest, RoleGrantResponse,
     UpdateRecordRequest,
 };
 use crate::{Context, role, token, zone};
@@ -84,7 +84,7 @@ async fn credential(cx: &Context) -> String {
     token::create(
         cx,
         &admin,
-        &CreateTokenRequest {
+        &CreateApiTokenRequest {
             name: "writer-token".to_string(),
             description: None,
             expires_in_days: None,

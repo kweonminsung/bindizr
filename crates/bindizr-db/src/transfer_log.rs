@@ -14,7 +14,7 @@ use crate::{Backend, Db, mysql, postgres, sqlite};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferLogFilter {
     /// Transfers answered to one of these addresses; any address when absent.
-    pub client_addrs: Option<Vec<String>>,
+    pub client_ips: Option<Vec<String>>,
     pub zone_name: Option<ZoneName>,
     pub result: Option<TransferResult>,
     /// Transfers answered at or after this time.
@@ -31,7 +31,7 @@ impl Default for TransferLogFilter {
     /// Select every row, newest first: the log's natural order.
     fn default() -> Self {
         Self {
-            client_addrs: None,
+            client_ips: None,
             zone_name: None,
             result: None,
             since: None,
@@ -76,26 +76,23 @@ pub async fn count_by_filter(db: &Db, filter: &TransferLogFilter) -> Result<u64,
     }
 }
 
-/// List the newest row of each zone any of `client_addrs` asked for, with
-/// zone names: newest by `served_at`, then id, as the listings sort.
-pub async fn list_by_client_addrs_with_zone_latest_per_zone(
+/// List the newest row of each zone any of `client_ips` asked for, with
+/// zone names: newest by `created_at`, then id, as the listings sort.
+pub async fn list_by_client_ips_with_zone_latest_per_zone(
     db: &Db,
-    client_addrs: &[String],
+    client_ips: &[String],
 ) -> Result<Vec<TransferLogWithZone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
-            mysql::transfer_log::list_by_client_addrs_with_zone_latest_per_zone(pool, client_addrs)
+            mysql::transfer_log::list_by_client_ips_with_zone_latest_per_zone(pool, client_ips)
                 .await
         }
         Backend::Postgres(pool) => {
-            postgres::transfer_log::list_by_client_addrs_with_zone_latest_per_zone(
-                pool,
-                client_addrs,
-            )
-            .await
+            postgres::transfer_log::list_by_client_ips_with_zone_latest_per_zone(pool, client_ips)
+                .await
         }
         Backend::Sqlite(pool) => {
-            sqlite::transfer_log::list_by_client_addrs_with_zone_latest_per_zone(pool, client_addrs)
+            sqlite::transfer_log::list_by_client_ips_with_zone_latest_per_zone(pool, client_ips)
                 .await
         }
     }

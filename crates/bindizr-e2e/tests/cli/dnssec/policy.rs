@@ -18,7 +18,8 @@ async fn dnssec_policy_supports_create_update_and_delete() {
                 &policy_name,
                 "--algorithm",
                 "ecdsap384sha384",
-                "--split-keys",
+                "--key-layout",
+                "split",
                 "--signature-validity-days",
                 "21",
                 "--signature-refresh-days",
@@ -34,7 +35,7 @@ async fn dnssec_policy_supports_create_update_and_delete() {
 
     assert_eq!(created["name"], policy_name);
     assert_eq!(created["algorithm"], "ecdsap384sha384");
-    assert_eq!(created["split_keys"], true);
+    assert_eq!(created["key_layout"], "split");
     assert_eq!(created["signature_validity_days"], 21);
     assert_eq!(created["signature_refresh_days"], 7);
 

@@ -10,23 +10,23 @@ use crate::error::DatabaseError;
 pub(crate) async fn create(pool: &Pool<Sqlite>, log: &AccessLog) -> Result<(), DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let (caller_kind, caller_name) = log.caller.as_ref().map(ChangeActor::as_columns).unzip();
+    let (actor_kind, actor_name) = log.actor.as_ref().map(ChangeActor::as_columns).unzip();
 
     sqlx::query(
         r#"
-        INSERT INTO access_log (source, client_addr, method, target, status, result, caller_kind, caller_name, error, requested_at)
+        INSERT INTO access_log (source, client_ip, method, target, response_code, result, actor_kind, actor_name, error_code, requested_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(log.source.as_str())
-    .bind(&log.client_addr)
+    .bind(&log.client_ip)
     .bind(&log.method)
     .bind(&log.target)
-    .bind(&log.status)
+    .bind(&log.response_code)
     .bind(log.result.as_str())
-    .bind(caller_kind)
-    .bind(caller_name)
-    .bind(&log.error)
+    .bind(actor_kind)
+    .bind(actor_name)
+    .bind(&log.error_code)
     .bind(log.requested_at)
     .execute(&mut *connection)
     .await?;
@@ -48,13 +48,13 @@ pub(crate) async fn list_by_filter(
 
     let logs = sqlx::query_as::<_, AccessLog>(AssertSqlSafe(format!(
         r#"
-        SELECT source, client_addr, method, target, status, result,
-               caller_kind AS changed_by_kind, caller_name AS changed_by_name, error, requested_at
+        SELECT source, client_ip, method, target, response_code, result,
+               actor_kind, actor_name, error_code, requested_at
         FROM access_log
         WHERE (? IS NULL OR source = ?)
           AND (? IS NULL OR result = ?)
-          AND (? IS NULL OR caller_name = ?)
-          AND (? IS NULL OR client_addr = ?)
+          AND (? IS NULL OR actor_name = ?)
+          AND (? IS NULL OR client_ip = ?)
           AND (? IS NULL OR requested_at >= ?)
           AND (? IS NULL OR requested_at < ?)
         {order_by}
@@ -65,10 +65,10 @@ pub(crate) async fn list_by_filter(
     .bind(source)
     .bind(result)
     .bind(result)
-    .bind(&filter.caller_name)
-    .bind(&filter.caller_name)
-    .bind(&filter.client_addr)
-    .bind(&filter.client_addr)
+    .bind(&filter.actor_name)
+    .bind(&filter.actor_name)
+    .bind(&filter.client_ip)
+    .bind(&filter.client_ip)
     .bind(filter.since)
     .bind(filter.since)
     .bind(filter.until)
@@ -101,8 +101,8 @@ pub(crate) async fn count_by_filter(
         FROM access_log
         WHERE (? IS NULL OR source = ?)
           AND (? IS NULL OR result = ?)
-          AND (? IS NULL OR caller_name = ?)
-          AND (? IS NULL OR client_addr = ?)
+          AND (? IS NULL OR actor_name = ?)
+          AND (? IS NULL OR client_ip = ?)
           AND (? IS NULL OR requested_at >= ?)
           AND (? IS NULL OR requested_at < ?)
         "#,
@@ -111,10 +111,10 @@ pub(crate) async fn count_by_filter(
     .bind(source)
     .bind(result)
     .bind(result)
-    .bind(&filter.caller_name)
-    .bind(&filter.caller_name)
-    .bind(&filter.client_addr)
-    .bind(&filter.client_addr)
+    .bind(&filter.actor_name)
+    .bind(&filter.actor_name)
+    .bind(&filter.client_ip)
+    .bind(&filter.client_ip)
     .bind(filter.since)
     .bind(filter.since)
     .bind(filter.until)

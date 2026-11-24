@@ -1,4 +1,6 @@
-use bindizr_service::types::{AccessLogResponse, AuditLogResponse, TransferLogResponse};
+use bindizr_core::model::activity_log::ActivityLog;
+use bindizr_core::model::transfer::TransferResult;
+use bindizr_service::types::{AccessLogResponse, TransferLogResponse};
 use tabled::Tabled;
 
 use crate::cli::output::display;
@@ -8,31 +10,41 @@ use crate::cli::output::display;
 pub(crate) struct TransferLogRow {
     #[tabled(rename = "ZONE")]
     pub(crate) zone_name: String,
-    #[tabled(rename = "TRANSFER")]
-    pub(crate) transfer: String,
+    #[tabled(rename = "TRANSFER TYPE")]
+    pub(crate) kind: String,
+    #[tabled(rename = "RESPONSE")]
+    pub(crate) response: &'static str,
+    #[tabled(rename = "RESULT")]
+    pub(crate) result: String,
     #[tabled(rename = "TRANSPORT")]
     pub(crate) transport: String,
     #[tabled(rename = "SERIAL")]
     pub(crate) serial: String,
-    #[tabled(rename = "ADDRESS")]
-    pub(crate) address: String,
+    #[tabled(rename = "CLIENT IP")]
+    pub(crate) client_ip: String,
     #[tabled(rename = "AT")]
-    pub(crate) at: String,
-    #[tabled(rename = "ERROR")]
-    pub(crate) error: String,
+    pub(crate) created_at: String,
+    #[tabled(rename = "ERROR CODE")]
+    pub(crate) error_code: String,
 }
 
 impl From<&TransferLogResponse> for TransferLogRow {
-    /// Build a CLI table row from one served transfer.
+    /// Build a CLI table row from one transfer log entry.
     fn from(transfer: &TransferLogResponse) -> Self {
         Self {
             zone_name: transfer.zone_name.clone(),
-            transfer: display::display_transfer_kind(transfer),
+            kind: transfer.kind.to_string(),
+            response: match (transfer.result, transfer.incremental) {
+                (TransferResult::Ok, true) => "delta",
+                (TransferResult::Ok, false) => "full",
+                _ => display::MISSING_CELL,
+            },
+            result: transfer.result.to_string(),
             transport: transfer.transport.to_string(),
             serial: display::display_option(&transfer.serial),
-            address: transfer.address.clone(),
-            at: display::display_time(transfer.at),
-            error: display::display_option(&transfer.error),
+            client_ip: transfer.client_ip.clone(),
+            created_at: display::display_time(transfer.created_at),
+            error_code: display::display_option(&transfer.error_code),
         }
     }
 }
@@ -41,68 +53,71 @@ impl From<&TransferLogResponse> for TransferLogRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct AccessLogRow {
     #[tabled(rename = "AT")]
-    pub(crate) at: String,
+    pub(crate) requested_at: String,
     #[tabled(rename = "SOURCE")]
     pub(crate) source: String,
-    #[tabled(rename = "ADDRESS")]
-    pub(crate) address: String,
+    #[tabled(rename = "CLIENT IP")]
+    pub(crate) client_ip: String,
     #[tabled(rename = "REQUEST")]
     pub(crate) request: String,
-    #[tabled(rename = "STATUS")]
-    pub(crate) status: String,
+    #[tabled(rename = "RESPONSE CODE")]
+    pub(crate) response_code: String,
     #[tabled(rename = "RESULT")]
     pub(crate) result: String,
-    #[tabled(rename = "CALLER")]
-    pub(crate) caller: String,
-    #[tabled(rename = "ERROR")]
-    pub(crate) error: String,
+    #[tabled(rename = "ACTOR")]
+    pub(crate) actor: String,
+    #[tabled(rename = "ERROR CODE")]
+    pub(crate) error_code: String,
 }
 
 impl From<&AccessLogResponse> for AccessLogRow {
     /// Build a CLI table row from one access log row.
     fn from(log: &AccessLogResponse) -> Self {
         Self {
-            at: display::display_time(log.requested_at),
+            requested_at: display::display_time(log.requested_at),
             source: log.source.to_string(),
-            address: log.address.clone(),
+            client_ip: log.client_ip.clone(),
             request: display::display_access_request(log),
-            status: log.status.clone(),
+            response_code: log.response_code.clone(),
             result: log.result.to_string(),
-            caller: display::display_option(&log.caller),
-            error: display::display_option(&log.error),
+            actor: display::display_option(&log.actor),
+            error_code: display::display_option(&log.error_code),
         }
     }
 }
 
-/// One management change, as `log audit` lists it.
+/// One recorded activity log entry, as `log activity` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
-pub(crate) struct AuditLogRow {
+pub(crate) struct ActivityLogRow {
+    #[tabled(rename = "ID")]
+    pub(crate) id: i64,
     #[tabled(rename = "AT")]
-    pub(crate) at: String,
-    #[tabled(rename = "ENTITY")]
-    pub(crate) entity: String,
-    #[tabled(rename = "NAME")]
-    pub(crate) entity_name: String,
+    pub(crate) created_at: String,
     #[tabled(rename = "OPERATION")]
     pub(crate) operation: String,
+    #[tabled(rename = "TARGET")]
+    pub(crate) target: String,
     #[tabled(rename = "SOURCE")]
-    pub(crate) change_source: String,
-    #[tabled(rename = "CHANGED BY")]
-    pub(crate) changed_by: String,
+    pub(crate) source: String,
+    #[tabled(rename = "ACTOR")]
+    pub(crate) actor: String,
+    #[tabled(rename = "RESULT")]
+    pub(crate) result: String,
     #[tabled(rename = "DETAIL")]
     pub(crate) detail: String,
 }
 
-impl From<&AuditLogResponse> for AuditLogRow {
-    /// Build a CLI table row from one audit log row.
-    fn from(log: &AuditLogResponse) -> Self {
+impl From<&ActivityLog> for ActivityLogRow {
+    /// Build a CLI table row from one recorded operation.
+    fn from(log: &ActivityLog) -> Self {
         Self {
-            at: display::display_time(log.created_at),
-            entity: log.entity.to_string(),
-            entity_name: log.entity_name.clone(),
+            id: log.id,
+            created_at: display::display_time(log.created_at),
             operation: log.operation.to_string(),
-            change_source: log.change_source.to_string(),
-            changed_by: display::display_option(&log.changed_by),
+            target: display::display_activity_target(&log.target),
+            source: log.source.to_string(),
+            actor: display::display_option(&log.actor),
+            result: log.result.to_string(),
             detail: display::display_option(&log.detail),
         }
     }
