@@ -729,12 +729,13 @@ dependencies = [
 
 [[package]]
 name = "domain"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4cf8d789687f7f45f3be4faf159ef01ce8f21410cc4302859406a03018ad190"
+checksum = "86baea5a64d74dca9f2a58eb8a49ac9a6ddc8031cffe310eaefda4941419724d"
 dependencies = [
  "bytes",
  "constant_time_eq",
+ "domain-new",
  "hashbrown 0.17.1",
  "jiff",
  "log",
@@ -746,6 +747,36 @@ dependencies = [
  "serde",
  "smallvec",
  "tracing",
+]
+
+[[package]]
+name = "domain-base"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1019f917b1856142688bcc894d76b3cf74516e6758ce0f826595b9c113625845"
+dependencies = [
+ "domain-macros",
+ "serde",
+]
+
+[[package]]
+name = "domain-macros"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa78f7a3286cf87edf6354c4dd5960cf03298b972c3c8d1e25b8ed19ba4e49a4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
+name = "domain-new"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d48f379b48195c92c6f625086d338ea21f630c4a37b3a96771a2865a94eededb"
+dependencies = [
+ "domain-base",
 ]
 
 [[package]]
